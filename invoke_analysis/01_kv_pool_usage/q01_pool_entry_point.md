@@ -10,11 +10,11 @@
 
 ### 一、配置入口
 
-池化功能通过 `KVTransferConfig` 配置类作为入口，该类定义在 <mcfile name="kv_transfer.py" path="D:\lzy\code\test\vllm\vllm\config\kv_transfer.py"></mcfile> 中。
+池化功能通过 `KVTransferConfig` 配置类作为入口，该类定义在 "vllm\vllm\config\kv_transfer.py" 中。
 
 #### 核心配置参数
 
-```python
+python
 @config
 class KVTransferConfig:
     """KV缓存传输配置"""
@@ -36,7 +36,7 @@ class KVTransferConfig:
     
     kv_connector_extra_config: dict[str, Any] = {}
     """连接器需要的额外配置"""
-```
+
 
 ---
 
@@ -49,27 +49,27 @@ class KVTransferConfig:
 **流程**: EngineCore → Scheduler → KVConnectorFactory
 
 **关键代码位置**:
-- <mcfile name="core.py" path="D:\lzy\code\test\vllm\vllm\v1\engine\core.py"></mcfile> (第89-250行)
-- <mcfile name="scheduler.py" path="D:\lzy\code\test\vllm\vllm\v1\core\sched\scheduler.py"></mcfile> (第123-136行)
+- "vllm\vllm\v1\engine\core.py" (第89-250行)
+- "vllm\vllm\v1\core\sched\scheduler.py" (第123-136行)
 
-```python
+python
 # Scheduler创建SCHEDULER角色的连接器
 self.connector = KVConnectorFactory.create_connector(
     config=self.vllm_config,
     role=KVConnectorRole.SCHEDULER,
     kv_cache_config=self.kv_cache_config,
 )
-```
+
 
 #### 2.2 Worker端初始化
 
 **流程**: GPUWorker → ensure_kv_transfer_initialized → ActiveKVConnector
 
 **关键代码位置**:
-- <mcfile name="gpu_worker.py" path="D:\lzy\code\test\vllm\vllm\v1\worker\gpu_worker.py"></mcfile> (第520-550行)
-- <mcfile name="kv_transfer_state.py" path="D:\lzy\code\test\vllm\vllm\distributed\kv_transfer\kv_transfer_state.py"></mcfile> (第60-72行)
+- "vllm\vllm\v1\worker\gpu_worker.py" (第520-550行)
+- "vllm\distributed\kv_transfer\kv_transfer_state.py" (第60-72行)
 
-```python
+python
 # Worker创建WORKER角色的连接器
 ensure_kv_transfer_initialized(self.vllm_config, kv_cache_config)
 
@@ -79,7 +79,7 @@ _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
     role=KVConnectorRole.WORKER,
     kv_cache_config=kv_cache_config,
 )
-```
+
 
 ---
 
@@ -89,7 +89,7 @@ _KV_CONNECTOR_AGENT = KVConnectorFactory.create_connector(
 
 ##### 示例1: 使用AscendStoreConnector
 
-```python
+python
 from vllm.config import KVTransferConfig, EngineArgs
 from vllm import LLM
 
@@ -118,11 +118,11 @@ engine_args = EngineArgs(
 )
 
 llm = LLM.from_engine_args(engine_args)
-```
+
 
 ##### 示例2: 使用CPUOffloadingConnector
 
-```python
+python
 kv_transfer_config = KVTransferConfig(
     kv_connector="SimpleCPUOffloadConnector",
     kv_role="kv_both",
@@ -131,11 +131,11 @@ kv_transfer_config = KVTransferConfig(
         "lazy_offload": False,
     }
 )
-```
+
 
 ##### 示例3: P/D分离场景
 
-```python
+python
 # Prefill实例
 prefill_config = KVTransferConfig(
     kv_connector="P2pNcclConnector",
@@ -155,26 +155,26 @@ decode_config = KVTransferConfig(
     kv_ip="192.168.1.100",
     kv_port=14579,
 )
-```
+
 
 #### 3.2 vllm-ascend的连接器注册
 
-**文件**: <mcfile name="__init__.py" path="D:\lzy\code\test\vllm-ascend\vllm_ascend\distributed\kv_transfer\__init__.py"></mcfile>
+**文件**: "vllm-ascend\vllm_ascend\distributed\kv_transfer\__init__.py"
 
-```python
+python
 # 注册Ascend平台特有的连接器
 KVConnectorFactory.register_connector(
     "AscendStoreConnector",
     "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector",
     "AscendStoreConnector",
 )
-```
+
 
 #### 3.3 运行时调用流程
 
 ##### Scheduler端
 
-```python
+python
 # 1. 检查可复用的KV缓存
 num_new_matched, has_external = connector.get_num_new_matched_tokens(
     request, num_computed_tokens
@@ -185,11 +185,11 @@ connector.update_state_after_alloc(request, blocks, num_external_tokens)
 
 # 3. 构建元数据传递给Worker
 metadata = connector.build_connector_meta(scheduler_output)
-```
+
 
 ##### Worker端
 
-```python
+python
 # 1. 注册KV缓存
 connector.register_kv_caches(kv_caches_dict)
 
@@ -201,7 +201,7 @@ connector.save_kv_layer(layer_name, kv_layer, attn_metadata)
 
 # 4. 前向传播后等待保存完成
 connector.wait_for_save()
-```
+
 
 ---
 
@@ -218,7 +218,7 @@ connector.wait_for_save()
 
 通过工厂模式实现插件化：
 
-```python
+python
 # 注册新连接器
 KVConnectorFactory.register_connector(
     "MyCustomConnector",
@@ -232,13 +232,13 @@ connector = KVConnectorFactory.create_connector(
     role=KVConnectorRole.SCHEDULER,
     kv_cache_config=kv_cache_config,
 )
-```
+
 
 #### 4.3 异步传输机制
 
 支持异步传输以避免阻塞推理流程：
 
-```python
+python
 # pre_forward阶段：启动异步加载
 connector.start_load_kv(forward_context)
 
@@ -247,7 +247,7 @@ output = model(input_ids)
 
 # post_forward阶段：等待保存完成
 connector.wait_for_save()
-```
+
 
 ---
 
@@ -255,7 +255,7 @@ connector.wait_for_save()
 
 #### 分布式推理场景（P/D分离）
 
-```python
+python
 # ===== Prefill实例 =====
 from vllm import LLM, SamplingParams
 from vllm.config import KVTransferConfig, EngineArgs
@@ -297,7 +297,7 @@ decode_args = EngineArgs(
 
 decode_llm = LLM.from_engine_args(decode_args)
 outputs = decode_llm.generate(prompts, SamplingParams(max_tokens=100))
-```
+
 
 ---
 
@@ -313,16 +313,16 @@ outputs = decode_llm.generate(prompts, SamplingParams(max_tokens=100))
 ## 代码参考
 
 ### 核心配置类
-- <mcsymbol name="KVTransferConfig" filename="kv_transfer.py" path="D:\lzy\code\test\vllm\vllm\config\kv_transfer.py" startline="1" type="class"></mcsymbol>
+- KVTransferConfig 类定义在 "vllm\vllm\config\kv_transfer.py" 中
 
 ### 初始化相关
-- <mcsymbol name="EngineCore" filename="core.py" path="D:\lzy\code\test\vllm\vllm\v1\engine\core.py" startline="89" type="class"></mcsymbol>
-- <mcsymbol name="Scheduler" filename="scheduler.py" path="D:\lzy\code\test\vllm\vllm\v1\core\sched\scheduler.py" startline="123" type="class"></mcsymbol>
-- <mcsymbol name="ensure_kv_transfer_initialized" filename="kv_transfer_state.py" path="D:\lzy\code\test\vllm\vllm\distributed\kv_transfer\kv_transfer_state.py" startline="60" type="function"></mcsymbol>
+- EngineCore 类定义在 "vllm\vllm\v1\engine\core.py" 中 (第89行起)
+- Scheduler 类定义在 "vllm\vllm\v1\core\sched\scheduler.py" 中 (第123行起)
+- ensure_kv_transfer_initialized 函数定义在 "vllm\distributed\kv_transfer\kv_transfer_state.py" 中 (第60行起)
 
 ### 连接器实现
-- <mcsymbol name="AscendStoreConnector" filename="ascend_store_connector.py" path="D:\lzy\code\test\vllm-ascend\vllm_ascend\distributed\kv_transfer\kv_pool\ascend_store\ascend_store_connector.py" startline="1" type="class"></mcsymbol>
-- <mcsymbol name="SimpleCPUOffloadConnector" filename="simple_cpu_offload_connector.py" path="D:\lzy\code\test\vllm\vllm\distributed\kv_transfer\kv_connector\v1\simple_cpu_offload_connector.py" startline="1" type="class"></mcsymbol>
+- AscendStoreConnector 类定义在 "vllm-ascend\vllm_ascend\distributed\kv_transfer\kv_pool\ascend_store\ascend_store_connector.py" 中
+- SimpleCPUOffloadConnector 类定义在 "vllm\distributed\kv_transfer\kv_connector\v1\simple_cpu_offload_connector.py" 中
 
 ---
 

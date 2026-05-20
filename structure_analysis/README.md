@@ -10,7 +10,7 @@
 
 ### 1. 快速概览文档
 
-**文件**: <mcfile name="kv_pool_quick_overview.md" path="D:\lzy\code\test\analysis\structure_analysis\kv_pool_quick_overview.md"></mcfile>
+**文件**: "analysis\structure_analysis\kv_pool_quick_overview.md"
 
 **内容**:
 - 模块定位与核心功能
@@ -26,7 +26,7 @@
 
 ### 2. 详细功能分析文档
 
-**文件**: <mcfile name="kv_pool_analysis.md" path="D:\lzy\code\test\analysis\structure_analysis\kv_pool_analysis.md"></mcfile>
+**文件**: "analysis\structure_analysis\kv_pool_analysis.md"
 
 **内容**:
 - 概述与目录结构
@@ -47,7 +47,7 @@
 
 ### 3. 类关系图文档
 
-**文件**: <mcfile name="kv_pool_class_relationships.md" path="D:\lzy\code\test\analysis\structure_analysis\kv_pool_class_relationships.md"></mcfile>
+**文件**: "analysis\structure_analysis\kv_pool_class_relationships.md"
 
 **内容**:
 - 继承关系
@@ -64,7 +64,7 @@
 
 ### 4. API参考文档
 
-**文件**: <mcfile name="kv_pool_api_reference.md" path="D:\lzy\code\test\analysis\structure_analysis\kv_pool_api_reference.md"></mcfile>
+**文件**: "analysis\structure_analysis\kv_pool_api_reference.md"
 
 **内容**:
 - 连接器API

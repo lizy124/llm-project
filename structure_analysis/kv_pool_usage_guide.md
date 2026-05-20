@@ -22,7 +22,7 @@
 
 ### 1.1 KVTransferConfig配置类
 
-池化功能通过 <mcfile name="kv_transfer.py" path="D:\lzy\code\test\vllm\vllm\config\kv_transfer.py"></mcfile> 中的 `KVTransferConfig` 进行配置：
+池化功能通过 "vllm\vllm\config\kv_transfer.py" 中的 `KVTransferConfig` 进行配置：
 
 ```python
 @config
@@ -114,7 +114,7 @@ def is_kv_consumer(self) -> bool:
 
 #### 步骤1: EngineCore创建Scheduler
 
-**文件**: <mcfile name="core.py" path="D:\lzy\code\test\vllm\vllm\v1\engine\core.py"></mcfile> (第89-250行)
+**文件**: "vllm\vllm\v1\engine\core.py" (第89-250行)
 
 ```python
 class EngineCore:
@@ -175,7 +175,7 @@ class EngineCore:
 
 #### 步骤2: Scheduler创建KVConnector
 
-**文件**: <mcfile name="scheduler.py" path="D:\lzy\code\test\vllm\vllm\v1\core\sched\scheduler.py"></mcfile> (第123-136行)
+**文件**: "vllm\vllm\v1\core\sched\scheduler.py" (第123-136行)
 
 ```python
 class Scheduler(SchedulerInterface):
@@ -226,7 +226,7 @@ class Scheduler(SchedulerInterface):
 
 #### 步骤1: GPUWorker初始化KVConnector
 
-**文件**: <mcfile name="gpu_worker.py" path="D:\lzy\code\test\vllm\vllm\v1\worker\gpu_worker.py"></mcfile> (第520-550行)
+**文件**: "vllm\vllm\v1\worker\gpu_worker.py" (第520-550行)
 
 ```python
 class GPUWorker:
@@ -250,7 +250,7 @@ class GPUWorker:
 
 #### 步骤2: 全局KVConnector初始化
 
-**文件**: <mcfile name="kv_transfer_state.py" path="D:\lzy\code\test\vllm\vllm\distributed\kv_transfer\kv_transfer_state.py"></mcfile> (第60-72行)
+**文件**: "vllm\vllm\distributed\kv_transfer\kv_transfer_state.py" (第60-72行)
 
 ```python
 # 全局KV连接器代理
@@ -306,7 +306,7 @@ def ensure_kv_transfer_shutdown() -> None:
 
 ### 2.3 ModelRunner获取连接器
 
-**文件**: <mcfile name="kv_connector.py" path="D:\lzy\code\test\vllm\vllm\v1\worker\gpu\kv_connector.py"></mcfile> (第68-132行)
+**文件**: "vllm\vllm\v1\worker\gpu\kv_connector.py" (第68-132行)
 
 ```python
 class ActiveKVConnector(KVConnector):
@@ -534,7 +534,7 @@ decode_config = KVTransferConfig(
 
 ### 3.2 vllm-ascend的连接器注册
 
-**文件**: <mcfile name="__init__.py" path="D:\lzy\code\test\vllm-ascend\vllm_ascend\distributed\kv_transfer\__init__.py"></mcfile>
+**文件**: "vllm-ascend\vllm_ascend\distributed\kv_transfer\__init__.py"
 
 ```python
 from vllm.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
@@ -992,10 +992,10 @@ kv_transfer_config = KVTransferConfig(
 
 ## 参考资料
 
-- <mcfile name="kv_pool_quick_overview.md" path="D:\lzy\code\test\analysis\llm-project\structure_analysis\kv_pool_quick_overview.md"></mcfile>
-- <mcfile name="kv_pool_analysis.md" path="D:\lzy\code\test\analysis\llm-project\structure_analysis\kv_pool_analysis.md"></mcfile>
-- <mcfile name="kv_pool_api_reference.md" path="D:\lzy\code\test\analysis\llm-project\structure_analysis\kv_pool_api_reference.md"></mcfile>
-- <mcfile name="kv_pool_class_relationships.md" path="D:\lzy\code\test\analysis\llm-project\structure_analysis\kv_pool_class_relationships.md"></mcfile>
+- "analysis\llm-project\structure_analysis\kv_pool_quick_overview.md"
+- "analysis\llm-project\structure_analysis\kv_pool_analysis.md"
+- "analysis\llm-project\structure_analysis\kv_pool_api_reference.md"
+- "analysis\llm-project\structure_analysis\kv_pool_class_relationships.md"
 
 ---
 
