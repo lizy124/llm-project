@@ -252,24 +252,20 @@ $$
 [\alpha;\beta] = Softmax([A + bias_A; B + bias_B])
 $$
 
-然后：
+然后第 `i` 个 compressed entry 可以写成：
 
 $$
-Comp_i
-=
-\sum_{j=i\tau}^{(i+1)\tau-1} \alpha_{i,j} \odot U_j
-+
-\sum_{j=(i-1)\tau}^{i\tau-1} \beta_{i,j} \odot V_j
+\operatorname{Comp}_i = \sum_{j=i\tau}^{(i+1)\tau-1} \alpha_{i,j} \odot U_j + \sum_{j=(i-1)\tau}^{i\tau-1} \beta_{i,j} \odot V_j
 $$
 
-其中：
+这里的 `j` 范围是：
 
-- 第一项的 `j` 范围是当前 block：`j = iτ, ..., (i+1)τ-1`；
-- 第二项的 `j` 范围是前一个 block：`j = (i-1)τ, ..., iτ-1`；
-- 两项合起来覆盖 `2τ` 个候选 KV entries；
+- 第一项：`j` 从 `iτ` 到 `(i+1)τ-1`，也就是当前 block 的 `τ` 个 token；
+- 第二项：`j` 从 `(i-1)τ` 到 `iτ-1`，也就是前一个 block 的 `τ` 个 token；
+- 两项合起来一共覆盖 `2τ` 个候选 KV entries；
 - 当 `i = 0` 时，前一个 block 不存在，论文中对应位置会用负无穷 logits 和 0 entries 做 padding；
 - `⊙` 是 Hadamard product，也就是逐元素乘法；
-- softmax 在 `2τ` 个候选位置上归一化；
+- softmax 在这 `2τ` 个候选位置上归一化；
 - bias 是可学习的位置偏置；
 - `α_{i,j}` 和 `β_{i,j}` 决定第 `j` 个 token 对第 `i` 个 compressed entry 的贡献。
 
