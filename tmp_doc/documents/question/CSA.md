@@ -16,21 +16,21 @@ DeepSeek-V4 的 CSA 可以概括为：
 
 普通 dense attention 中，每个 query token 都需要 attend 到大量历史 KV：
 
-\[
+$$
 Attention(Q,K,V)=softmax\left(\frac{QK^T}{\sqrt{d}}\right)V
-\]
+$$
 
 如果序列长度是 `L`，标准 attention 的训练复杂度大致是：
 
-\[
+$$
 O(L^2)
-\]
+$$
 
 推理时，单个新 token 也要和历史全部 KV cache 交互，单 token attention 成本大致随上下文长度线性增长：
 
-\[
+$$
 O(L)
-\]
+$$
 
 当 `L = 1,000,000` 时，这个成本非常高。
 
@@ -149,9 +149,9 @@ CSA 主要包含以下几个部分：
 
 假设输入 hidden states 为：
 
-\[
+$$
 H \in \mathbb{R}^{L \times d}
-\]
+$$
 
 其中：
 
@@ -160,29 +160,29 @@ H \in \mathbb{R}^{L \times d}
 
 普通 attention 一般会为每个 token 生成 key 和 value：
 
-\[
+$$
 K,V \in \mathbb{R}^{L \times d_h}
-\]
+$$
 
 而 CSA 不直接让长程 attention 使用完整 per-token KV，而是先生成两组待压缩 KV-like entries，以及对应的 compression weights。
 
 为了便于理解，可以用简化符号表示论文中的公式：
 
-\[
+$$
 U = H W_U
-\]
+$$
 
-\[
+$$
 V = H W_V
-\]
+$$
 
-\[
+$$
 A = H W_A
-\]
+$$
 
-\[
+$$
 B = H W_B
-\]
+$$
 
 其中：
 
@@ -195,9 +195,9 @@ B = H W_B
 
 如果原始长度是 `L`，压缩后长度大约是：
 
-\[
+$$
 \frac{L}{\tau}
-\]
+$$
 
 例如：
 
@@ -215,9 +215,9 @@ B = H W_B
 
 CSA 不是简单地做：
 
-\[
+$$
 Comp_i = mean(K_{i\tau:(i+1)\tau})
-\]
+$$
 
 它使用的是 **带可学习权重的 token-level compression**。
 
@@ -248,15 +248,15 @@ Comp_2 继续向后滑动，同样存在重叠
 
 论文里的计算大致可以理解为：
 
-\[
+$$
 [\alpha;\beta] = Softmax([A + bias_A; B + bias_B])
-\]
+$$
 
 然后：
 
-\[
+$$
 Comp_i = \sum_j \alpha_j \odot U_j + \sum_j \beta_j \odot V_j
-\]
+$$
 
 其中：
 
@@ -277,9 +277,9 @@ Comp_i = \sum_j \alpha_j \odot U_j + \sum_j \beta_j \odot V_j
 
 压缩后，CSA 得到：
 
-\[
+$$
 Comp \in \mathbb{R}^{\frac{L}{\tau} \times d_h}
-\]
+$$
 
 如果上下文是 1M，压缩率 `τ = 64`，compressed entries 仍然有 15,625 个。
 
@@ -301,9 +301,9 @@ Lightning Indexer
 
 CSA 会用和 compressed KV 类似的压缩方式，额外生成一组 compressed indexer keys：
 
-\[
+$$
 IComp \in \mathbb{R}^{\frac{L}{\tau} \times d_i}
-\]
+$$
 
 其中 `d_i` 是 indexer head dimension，通常比核心 attention 的维度更小。
 
@@ -322,21 +322,21 @@ IComp ：给 Lightning Indexer 检索和打分用的轻量索引
 
 对于当前 query token 的 hidden state：
 
-\[
+$$
 h_t \in \mathbb{R}^{d}
-\]
+$$
 
 CSA 先把它投影成一个低维 latent vector：
 
-\[
+$$
 c_t = h_t W_D
-\]
+$$
 
 然后再从这个 latent vector 生成多个 indexer query heads：
 
-\[
+$$
 [q^I_{t,1}, q^I_{t,2}, ..., q^I_{t,n_I}] = c_t W_U^I
-\]
+$$
 
 这里有两个重点。
 
@@ -367,15 +367,15 @@ h_t → low-rank latent c_t → multiple indexer query heads
 
 对于 query token `t` 和某个 preceding compressed block `j`，CSA 会计算一个 index score：
 
-\[
+$$
 s_{t,j}
-\]
+$$
 
 论文里的形式大致可以理解为：
 
-\[
+$$
 s_{t,j} = \sum_{r=1}^{n_I} w_{t,r} \cdot ReLU(q^I_{t,r} \cdot IComp_j)
-\]
+$$
 
 其中：
 
@@ -403,29 +403,29 @@ s_{t,j} = \sum_{r=1}^{n_I} w_{t,r} \cdot ReLU(q^I_{t,r} \cdot IComp_j)
 
 有了所有 index scores 后，CSA 对 compressed KV entries 做 top-k：
 
-\[
+$$
 Selected_t = TopK(s_{t,:})
-\]
+$$
 
 然后：
 
-\[
+$$
 CSprsComp_t = \{Comp_j \mid j \in TopK(s_{t,:})\}
-\]
+$$
 
 也就是说，每个 query token 只会选择少量 `k` 个 compressed KV entries 进入核心 attention。
 
 这一步把远程 attention 的 key/value 数量从：
 
-\[
+$$
 \frac{L}{\tau}
-\]
+$$
 
 进一步降到：
 
-\[
+$$
 k
-\]
+$$
 
 例如：
 
@@ -454,25 +454,25 @@ Shared Key-Value Multi-Query Attention, MQA
 
 也就是说：
 
-\[
+$$
 key = CSprsComp_t
-\]
+$$
 
-\[
+$$
 value = CSprsComp_t
-\]
+$$
 
 这和普通 attention 不一样。
 
 普通 attention 通常有两套不同向量：
 
-\[
+$$
 K = H W_K
-\]
+$$
 
-\[
+$$
 V = H W_V
-\]
+$$
 
 而 CSA 的核心 attention 中，compressed entry 同时承担 key 和 value：
 
@@ -488,15 +488,15 @@ V = H W_V
 
 对于 query token `t`，CSA 会从前面的 latent vector `c_t` 生成多个 attention query heads：
 
-\[
+$$
 [q_{t,1}, q_{t,2}, ..., q_{t,n_H}] = c_t W_Q
-\]
+$$
 
 然后每个 query head 都对相同的 selected compressed KV entries 做 attention：
 
-\[
+$$
 o_{t,r}=CoreAttn(query=q_{t,r}, key=CSprsComp_t, value=CSprsComp_t)
-\]
+$$
 
 这就是 MQA 的思想：
 
@@ -513,13 +513,13 @@ CSA 的 query heads 数量较大。如果直接把所有 attention head 的输�
 
 普通做法类似：
 
-\[
+$$
 O_t = [o_{t,1}; o_{t,2}; ...; o_{t,n_H}]
-\]
+$$
 
-\[
+$$
 \hat{o}_t = O_t W_O
-\]
+$$
 
 如果 `n_H` 很大，那么输出投影矩阵 `W_O` 的成本也会很高。
 
@@ -575,9 +575,9 @@ Additional Branch of Sliding Window Attention
 
 每个 query token 额外生成最近 `w_win` 个 token 的未压缩 KV entries：
 
-\[
+$$
 KV_{window} = KV_{t-w_{win}:t}
-\]
+$$
 
 然后在 core attention 中，把 sliding window KV 和 selected compressed KV 一起使用：
 
@@ -614,15 +614,15 @@ final KV = selected compressed KV + recent uncompressed sliding window KV
 
 可以写成：
 
-\[
+$$
 AttentionSet_t = TopKCompressedKV_t \cup WindowKV_t \cup Sink
-\]
+$$
 
 最终 attention 是：
 
-\[
+$$
 o_t = Attention(q_t, AttentionSet_t)
-\]
+$$
 
 这是 DeepSeek-V4 CSA 的核心设计取舍：
 
@@ -661,47 +661,47 @@ CSA：先把 KV 压缩，再在压缩 KV 上做 DSA
 
 普通 dense attention 中，每个 query token 要看所有历史 token：
 
-\[
+$$
 O(L)
-\]
+$$
 
 整个序列训练时大致是：
 
-\[
+$$
 O(L^2)
-\]
+$$
 
 CSA 中，每个 query 主要包含三部分成本：
 
 1. Lightning Indexer 扫描 compressed indexer keys：
 
-\[
+$$
 O\left(\frac{L}{\tau}\right)
-\]
+$$
 
 2. Core attention 看 top-k selected compressed KV：
 
-\[
+$$
 O(k)
-\]
+$$
 
 3. Sliding window 看最近未压缩 KV：
 
-\[
+$$
 O(w_{win})
-\]
+$$
 
 所以单 query 的粗略成本可以理解为：
 
-\[
+$$
 O\left(\frac{L}{\tau} + k + w_{win}\right)
-\]
+$$
 
 相比 dense attention 的：
 
-\[
+$$
 O(L)
-\]
+$$
 
 当 `τ` 较大、`k` 和 `w_win` 固定时，成本会显著下降。
 
@@ -749,9 +749,9 @@ CSA 的长程 KV cache 变成：
 
 所以长程部分的 KV cache 序列长度变成原来的：
 
-\[
+$$
 \frac{1}{\tau}
-\]
+$$
 
 同时 key/value 共享表示，进一步减少存储。
 
@@ -814,15 +814,15 @@ CSA/HCA 中还使用了 attention sink。
 
 普通 softmax attention 的权重和为 1：
 
-\[
+$$
 \sum_j a_j = 1
-\]
+$$
 
 attention sink 会在 softmax 分母中加入一个可学习的 sink logit：
 
-\[
+$$
 a_{i,j} = \frac{e^{l_{i,j}}}{\sum_j e^{l_{i,j}} + e^{s}}
-\]
+$$
 
 这样真正分配给 token/KV entries 的 attention mass 可以小于 1，甚至接近 0。
 
@@ -911,9 +911,9 @@ CSA 类似于：
 
 CSA 通过以下路径缩小长程 attention 的候选空间：
 
-\[
+$$
 L \rightarrow \frac{L}{\tau} \rightarrow k
-\]
+$$
 
 先压缩，再 top-k 选择。
 
