@@ -255,7 +255,7 @@ $$
 然后第 `i` 个 compressed entry 可以写成：
 
 $$
-\operatorname{Comp}_i = \sum_{j=i\tau}^{(i+1)\tau-1} \alpha_{i,j} \odot U_j + \sum_{j=(i-1)\tau}^{i\tau-1} \beta_{i,j} \odot V_j
+Comp_i = \sum_{j=i\tau}^{(i+1)\tau-1} \alpha_{i,j} \odot U_j + \sum_{j=(i-1)\tau}^{i\tau-1} \beta_{i,j} \odot V_j
 $$
 
 这里的 `j` 范围是：
