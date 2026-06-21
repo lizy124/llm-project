@@ -22,6 +22,7 @@
 │   ├── FullAttention KV
 │   ├── Sliding Window KV
 │   ├── Hybrid KV Cache
+│   ├── KV Cache Group / Layer 映射
 │   ├── MLA / Latent KV
 │   ├── KV Cache Block
 │   └── 压缩 KV / c1 / c4 / c128

@@ -12,6 +12,7 @@
 
 - [hybrid KV cache 是什么？它是一种 KV cache 吗？](03_kv_cache/hybrid-kv-cache.md) — hybrid KV cache 是多种 KV cache 规格混合存在时的分组管理模式。
 - [DeepSeek V4 里的 c4 / c128 到底是什么意思？](03_kv_cache/deepseek-v4-c4-c128-kv-cache.md) — 解释 c4/c128 作为 KV cache group 序列长度压缩倍率的含义。
+- [KV cache group 和 layer 是什么关系？为什么 hybrid 模型里 layerwise 需要区分 group？](03_kv_cache/kv-cache-group-and-layer.md) — 说明 KV cache group 是缓存管理维度，layer 是模型结构维度，hybrid + layerwise 需要同时处理 group 和 layer。
 
 ## 06 Scheduler 调度
 
