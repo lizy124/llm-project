@@ -8,7 +8,7 @@
 
 ## 1. 一句话回答
 
-Scheduler 不是通过一个单独字段回答这个问题，而是通过“四类容器 + Request.status”共同回答：
+Scheduler 不是通过一个单独字段回答这个问题，而是通过“保存请求集合的实例属性 + Request.status”共同回答：
 
 ```text
 self.requests         保存 Scheduler 仍然持有的请求全集
@@ -25,6 +25,54 @@ Request.status        标识请求当前语义状态
 正常等待的请求 = self.waiting
 阻塞/跳过的请求 = self.skipped_waiting
 所有未彻底释放的请求 = self.requests
+```
+
+这里的 `self.requests` 可以理解为 Scheduler 持有的请求全集索引。正常情况下：
+
+```text
+self.requests ⊇ self.running
+self.requests ⊇ self.waiting
+self.requests ⊇ self.skipped_waiting
+```
+
+合起来就是：
+
+```text
+self.requests ⊇ (self.running ∪ self.waiting ∪ self.skipped_waiting)
+```
+
+也就是说，`running`、`waiting`、`skipped_waiting` 里的请求通常都能在 `self.requests` 中找到。
+
+但反过来不一定成立。`self.requests` 里可能存在已经不在三个调度队列中的请求：
+
+```text
+self.requests - (self.running ∪ self.waiting ∪ self.skipped_waiting)
+```
+
+这部分通常表示：
+
+```text
+已经 finished，或者已经移出调度队列，但资源清理尚未完成的请求。
+```
+
+常见原因是 KV Connector 还在异步发送 / 保存 KV，或者 async / pipeline 场景下需要延迟释放 block，避免 block 被过早复用。只有真正执行 `_free_blocks()` 后，请求才会从 `self.requests` 中删除。
+
+另外，`self.running`、`self.waiting`、`self.skipped_waiting` 这三者正常情况下是平级且互斥的调度集合，不存在包含关系：
+
+```text
+self.running ∩ self.waiting = ∅
+self.running ∩ self.skipped_waiting = ∅
+self.waiting ∩ self.skipped_waiting = ∅
+```
+
+一个请求同一时刻正常只会处在这三个队列之一。典型迁移是：
+
+```text
+waiting → running
+running → waiting          # 被抢占
+waiting → skipped_waiting  # 等远端 KV / grammar / streaming / 临时跳过
+skipped_waiting → waiting 或 running
+running → finished → 从 running 移除
 ```
 
 但要特别注意：`self.skipped_waiting` 不完全等于“阻塞请求”，它还包含一些只是本轮因为调度约束被临时跳过的请求。
