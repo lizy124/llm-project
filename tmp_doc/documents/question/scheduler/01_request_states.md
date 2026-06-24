@@ -345,6 +345,33 @@ if request.num_output_placeholders > 0 and ... >= request.num_prompt_tokens + re
 
 这是 async scheduling 下避免多调度一步。
 
+async scheduling 中，Scheduler 可能在上一轮 Worker 结果还没返回时，就提前开始下一轮调度。`num_output_placeholders > 0` 表示已经有输出 token 被调度出去了，但 sampled token 还没真正返回并写入 request。
+
+这时如果根据 `num_computed_tokens` 和 `num_output_placeholders` 能判断：上一轮在路上的输出回来后，请求已经会达到 `prompt_len + max_tokens`，那么当前这次 `schedule()` 就不能再给它追加调度下一步 decode。否则可能出现：最后一个允许生成的 token 已经在路上，Scheduler 又额外调度了一个 token，导致多跑一次 forward。
+
+注意，这个判断不是在取消已经发出去的那一步 forward，而是在阻止当前这次 `schedule()` 再发出下一步 forward。时间线上是：
+
+```text
+T0: 第 N 次 schedule 发出 decode forward，num_output_placeholders > 0
+T1: 第 N 步 Worker 结果还没回来，Scheduler 已经进入第 N+1 次 schedule
+T1: Scheduler 看到 placeholder，知道已有 token 在路上
+T1: 如果这个 token 回来后已经达到 max_tokens，就跳过该请求，不再发第 N+1 步 decode
+```
+
+所以这里说“避免多调度一步”，避免的是异步场景下的下一步重复调度，而不是当前已经在路上的那一步。
+
+公式可以按源码注释拆成：
+
+```text
+(num_computed_tokens + 1) - (num_output_placeholders - 1)
+```
+
+其中 `num_computed_tokens + 1` 里的 `+1`，表示把已经在路上的 forward 将要产出的那个 target-sampled token 算进去；`num_output_placeholders - 1` 则是在 speculative decoding 场景中，排除那些可能被拒绝的 draft token 占位。这样就能保守判断：即使 draft token 全部被拒绝，只算那个相对确定的 target-sampled token，请求是否也已经达到 `max_tokens`。如果确认达到，就跳过该 running 请求。
+
+投机解码场景下，`num_output_placeholders` 可能大于 1。例如有 4 个 draft token 时，一次 speculative step 通常最多可能让输出前进 5 个位置：4 个被接受的 draft token，加上 1 个 target model 自己采样出来的 token。目标模型通常是一次 forward 验证整串 draft token，然后从左到右决定接受多少个 draft。
+
+需要注意术语：无论 draft token 接受多少，通常至少会有 1 个 target model 自己采样出来的 token。如果某个 draft 被拒绝，这个 token 是在拒绝位置重新采样出来的 replacement / normal sampled token；如果所有 draft 都被接受，它才是最后额外产生的 bonus token。因此，公式中的 `num_output_placeholders - 1` 可以理解为把那些可能被拒绝的 draft 占位排除掉，只保留那个相对确定的 target-sampled token，用更保守的方式判断是否已经到达 `max_tokens`。
+
 ### 5.2 Pipeline Parallel / async cadence 限制
 
 ```python
@@ -712,6 +739,9 @@ if finished:
 ```
 
 位置：`scheduler.py:1656`
+这个 stop 是否代表整个请求真的结束？
+还是只是 resumable/streaming 请求暂时停下等下一段输入？
+如果请求真的结束，就通知 connector、释放 encoder cache、记录 finished id，并释放或延迟释放 KV blocks。
 
 之后从 running 中批量删除：
 

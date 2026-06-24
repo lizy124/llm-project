@@ -4,6 +4,8 @@
 
 本问题关注：Scheduler 每一轮 `schedule()` 到底能安排多少 token，哪些配置会限制本轮调度量，token budget 是如何被 running / waiting 请求共同消耗的，以及为什么有些请求明明在队列里却不能被本轮调度。
 
+这里的“每一轮”指的是一次 `schedule()` 调用，也就是一个 scheduler step。它不等于“一次 decode”：一轮 `schedule()` 会做一次全局批处理决策，可能同时包含多个请求；每个请求可能是在 decode、prefill、chunked prefill、spec decode，或者只是发起远端 KV async load。对单个普通 decode 请求来说，一轮通常是 decode 一个 token；但对整个 Scheduler 来说，一轮是生成一个 `SchedulerOutput`，决定本次所有请求合计要执行多少 token。
+
 ---
 
 ## 1. 一句话回答
