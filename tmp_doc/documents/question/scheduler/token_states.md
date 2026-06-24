@@ -616,10 +616,16 @@ num_new_tokens = (
 )
 ```
 
+这里的“调度 token”不是指“生成多少 output token”，而是指：
+
+```text
+本轮要安排给 Worker / 主模型 forward 处理多少个 token 位置。
+```
+
 这个公式回答的是：
 
 ```text
-这个 running 请求，本轮还需要再调度多少 token？
+这个 running 请求，本轮还需要让主模型继续计算多少 token 位置？
 ```
 
 可以理解成：
@@ -640,6 +646,19 @@ num_new_tokens = 目标应该计算到的位置 - Scheduler 已经认为计算�
 request.num_tokens_with_spec + request.num_output_placeholders
 ```
 
+这里有两个容易混淆的点：
+
+```text
+当前新 draft token：
+  draft model 已经生成了 token id，
+  但主模型还没有 forward 验证它们，
+  所以仍然要计入本轮主模型需要计算的位置。
+
+num_output_placeholders：
+  表示之前已经调度出去、但还没写回 request 的输出位置；
+  async scheduling 为了继续流水线，需要把这些在路上的位置也算进目标长度。
+```
+
 已计算到的位置是：
 
 ```text
@@ -651,7 +670,7 @@ request.num_computed_tokens
 ```text
 num_new_tokens
 = (真实 token + 当前新 draft token + 已经在路上的输出占位)
-  - 已经安排计算过的 token
+  - Scheduler 已经认为安排计算过的位置
 ```
 
 ---
