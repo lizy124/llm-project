@@ -251,6 +251,122 @@ self.engine_core.post_step(model_executed=model_executed)
 
 位置：`vllm/vllm/v1/engine/core_client.py:289` 到 `vllm/vllm/v1/engine/core_client.py:291`
 
+这里的两个返回值来自 `EngineCore.step()` 或 `EngineCore.step_with_batch_queue()`。
+
+普通 `step()` 的返回类型是：
+
+```python
+def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
+```
+
+位置：`vllm/vllm/v1/engine/core.py:479`
+
+所以：
+
+```text
+outputs：
+  dict[int, EngineCoreOutputs]
+
+  key 是 client_index；
+  value 是这个 client 本轮要收到的 EngineCoreOutputs。
+
+  在 in-process 模式下，通常只有 client_index = 0，
+  所以 InprocClient 最后会返回 outputs.get(0)。
+
+model_executed：
+  bool
+
+  表示这一轮 step 是否真的执行了模型 token 计算。
+  普通 step 中它来自：
+
+    scheduler_output.total_num_scheduled_tokens > 0
+
+  如果本轮没有任何请求，step 返回 ({}, False)。
+  如果本轮只有清理 / stats / connector 等工作，但没有实际 token，
+  model_executed 也可能是 False。
+```
+
+普通 `step()` 结尾是：
+
+```python
+return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
+```
+
+位置：`vllm/vllm/v1/engine/core.py:508`
+
+`InprocClient.get_output()` 会把 dict 里的 client 0 输出取出来：
+
+```python
+return outputs and outputs.get(0) or EngineCoreOutputs()
+```
+
+位置：`vllm/vllm/v1/engine/core_client.py:292`
+
+所以 in-process 拉输出可以理解为：
+
+```text
+EngineCore.step_fn()
+  → dict[client_index, EngineCoreOutputs], model_executed
+  → post_step(model_executed)
+  → 取 client 0 的 EngineCoreOutputs
+  → 返回给 LLMEngine.step()
+```
+
+`post_step(model_executed=...)` 是 step 后置钩子，主要用于 speculative decoding / diffusion 场景下同步 draft token ids。
+
+源码是：
+
+```python
+def post_step(self, model_executed: bool) -> None:
+    # When using async scheduling we can't get draft token ids in advance,
+    # so we update draft token ids in the worker process and don't
+    # need to update draft token ids here.
+    if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
+        draft_token_ids = self.model_executor.take_draft_token_ids()
+        if draft_token_ids is not None:
+            self.scheduler.update_draft_token_ids(draft_token_ids)
+```
+
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:517`
+
+它做的事情是：
+
+```text
+如果当前模型需要检查 draft tokens，
+并且不是 async scheduling，
+并且本轮确实执行了模型，
+那么从 model_executor / Worker 取出本轮产生的 draft_token_ids，
+再交给 Scheduler.update_draft_token_ids() 写回对应 Request。
+```
+
+这里的 draft token ids 主要用于下一轮 speculative decoding。
+
+也就是说：
+
+```text
+step()：
+  完成本轮 schedule → execute → update → output。
+
+post_step()：
+  在本轮结束后，把 Worker 侧新产生的 draft tokens 同步回 Scheduler，
+  供下一轮 schedule() 使用。
+```
+
+为什么要用 `model_executed` 判断？
+
+```text
+如果本轮没有实际模型执行，就不可能产生新的 draft tokens；
+这时不需要调用 take_draft_token_ids()。
+```
+
+为什么 async scheduling 不在这里处理？
+
+```text
+源码注释说明：async scheduling 时无法提前拿 draft token ids，
+所以 draft token ids 会在 Worker 进程中更新，
+不需要在 EngineCore.post_step() 里再更新。
+```
+
 添加请求时：
 
 ```python
