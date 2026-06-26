@@ -132,6 +132,8 @@ if self._pause_state == PauseState.PAUSED_NEW:
     return len(self.running)
 ```
 
+这里的 `return 0` 不是表示请求真的完成或释放了，而是暂停态下对外报告“当前没有需要继续推进的 unfinished requests”，让外层停止继续调度和 forward。请求本身仍保留在 Scheduler 的队列 / 状态里，后续恢复后还可以继续推进。
+
 位置：`scheduler.py:2106`
 
 ### 4.2 为什么 `PAUSED_NEW` 不直接把 token_budget 设为 0
@@ -277,7 +279,7 @@ if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
 ```python
 num_new_tokens = min(num_new_tokens, token_budget)
 ```
-
+num_new_tokens 是针对当前正在遍历的单个 request 而言，不是所有请求的总和。
 位置：`scheduler.py:469`
 
 这是最直接的预算限制。
@@ -313,7 +315,15 @@ self.num_sampled_tokens_per_step = 1
 
 ### 7.4 encoder input 限制
 
-如果请求有 encoder input：
+如果请求有 encoder input，Scheduler 会先单独检查 encoder 预算：
+
+```python
+encoder_compute_budget = self.max_num_encoder_input_tokens
+```
+
+位置：`scheduler.py:414`
+
+然后调用：
 
 ```python
 encoder_inputs_to_schedule, num_new_tokens, new_encoder_compute_budget, ... = self._try_schedule_encoder_inputs(...)
@@ -321,8 +331,7 @@ encoder_inputs_to_schedule, num_new_tokens, new_encoder_compute_budget, ... = se
 
 位置：`scheduler.py:484`
 
-`_try_schedule_encoder_inputs()` 可能会缩短 `num_new_tokens`，因为本轮 decoder token 范围内如果遇到一个必须先处理的多模态输入，但 encoder budget 或 encoder cache 不够，就只能调度到那个输入之前。
-
+这里的 `encoder_compute_budget` 是单独分配、单独扣减的，不是 `token_budget`。`_try_schedule_encoder_inputs()` 会检查当前 encoder input 需要的 embedding 数是否超过剩余 budget；如果 budget 或 encoder cache 不够，就不能跳过它，只能把 `num_new_tokens` 截断到这个 encoder input 之前。
 ### 7.5 Mamba block 对齐限制
 
 ```python
@@ -332,7 +341,11 @@ if self.need_mamba_block_aligned_split:
 
 位置：`scheduler.py:498`
 
-Mamba state cache 对 chunk 边界敏感，某些情况下 `num_new_tokens` 会被裁剪到 block 对齐长度。
+普通 attention 的 KV cache 本来就是按 block 管理的；这里的限制是给 Mamba state cache 用的。
+
+当模型有 Mamba 层，并且 `mamba_cache_mode == "align"` 时，vLLM 希望 Mamba state 的缓存点也落在 KV block 边界上。因此 chunked prefill 不能随便停在任意 token 位置，`num_new_tokens` 可能会被裁剪到 `block_size` 的整数倍。
+
+例如 `block_size = 16`，本轮原本要算 50 个 token，最后会停在半个 block 上；为了让 Mamba state cache 对齐，可能会裁剪成 48。
 
 如果裁剪后为 0，则本轮跳过该 running 请求。
 
