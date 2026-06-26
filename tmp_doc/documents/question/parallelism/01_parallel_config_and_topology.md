@@ -178,13 +178,18 @@ data_parallel_size：
   data parallel groups 数量；MoE layers 会按 TP x DP 的乘积做 expert shard。
 
 data_parallel_size_local：
-  本地 data parallel groups 数量；0 是 engine args 层使用的 sentinel。
+  本机上的 DP replica 数量。
+  默认是 1；如果为 0，并不表示真的没有本地 DP，
+  而是一个“哨兵值 / 标记值”，表示 DP 配置由外部参数层指定，
+  需要在 ParallelConfig.__post_init__() 中继续推导或覆盖。
 
 data_parallel_rank：
-  当前 data parallel rank。
+  当前进程在所有 DP replica 中的全局 DP rank。
 
 data_parallel_rank_local：
-  SPMD / 本地 DP 模式下的 local DP rank。
+  当前进程在本机内部的 DP rank。
+  它区别于跨所有节点的 data_parallel_rank，
+  主要用于本机多 DP replica 时计算 local_rank / GPU 绑定。
 ```
 
 这几个字段决定最基本的并行空间。
@@ -218,8 +223,16 @@ all2all_backend：
 EP 的重要特点：
 
 ```text
-EP group 不是直接乘进 ParallelConfig.world_size 的新维度；
-它由 initialize_model_parallel() 根据 DP / PP / PCP / TP rank mesh 重新组织 group。
+EP group 不是新增 worker 维度，而是在已有模型执行拓扑上重组出来的 MoE 通信组。
+
+原因是 MoE expert 属于具体 transformer layer：
+  PP 决定这个 layer 在哪个 stage；
+  TP / PCP 决定该 stage 内有哪些 rank 共同参与计算；
+  DP 在 MoE + EP 下也可以参与 expert sharding。
+
+因此开启 EP 后，vLLM 不会因为 EP 额外启动一组 worker；
+它会在同一个 PP stage 内，把 DP x PCP x TP 这些已有 rank 组成 EP group，
+用于 expert 权重分布和 token all-to-all dispatch。
 ```
 
 ### 4.3 Decode Context Parallel
@@ -646,9 +659,22 @@ data_parallel_size
 含义：
 
 ```text
-EP 会跨 DP、PCP、TP 组织 expert parallel group；
-PP 维度被排除在单个 EP group 外，也就是每个 PP stage 内部自己组织 EP。
+EP group 是同一个 PP stage 内的 MoE expert 分布和 token dispatch group。
+
+它会跨 DP、PCP、TP 组织 expert parallel group：
+  DP：MoE + EP 下，DP rank 也可以参与 expert sharding；
+  PCP：prefill context parallel rank 也参与同一模型位置的计算；
+  TP：同一 layer 内的 TP rank 本来就在共同处理该层。
+
+PP 维度被排除在单个 EP group 外：
+  因为 PP 切的是 layers；
+  MoE expert 属于具体 transformer layer；
+  每个 PP stage 只负责自己 stage 内的 MoE layers；
+  所以每个 PP stage 内部各自组织 EP group，而不是跨 stage 混在一起。
 ```
+
+换句话说，EP 不是新增一批 expert-only workers，而是在已有模型 worker 上重新分配 experts。
+这样 token 可以在持有相关 MoE layer 的 rank 之间通过 all-to-all dispatch 到目标 expert，expert 计算完成后再 combine 回原 token 路径。
 
 如果 `enable_eplb=True`，还会用同样的 ranks 创建独立的 EPLB group，避免 EPLB 通信和 MoE forward collectives 互相死锁。
 
