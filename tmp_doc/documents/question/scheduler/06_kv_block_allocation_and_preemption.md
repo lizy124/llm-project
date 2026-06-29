@@ -875,6 +875,21 @@ PREEMPTED / waiting
   → RUNNING
 ```
 
+如果外部 KV 命中需要异步加载，恢复会多一个中间状态：
+
+```text
+PREEMPTED / waiting
+  → get_num_new_matched_tokens 命中远端 KV
+  → load_kv_async=True
+  → allocate_slots(delay_cache_blocks=True)
+  → WAITING_FOR_REMOTE_KVS
+  → Worker finished_recving
+  → PREEMPTED / waiting
+  → 再次调度进入 RUNNING
+```
+
+也就是说，被抢占请求本地 blocks 被释放后，如果已计算 KV 被外部 KV 池保存，重新进入 running 前可以先从远端加载回来；未命中的部分才需要重新 prefill。
+
 ---
 
 ## 22. 抢占当前 request 时，说明无法调度它

@@ -330,6 +330,18 @@ self.kv_cache_manager.prefix_cache_stats.record(
 
 `preempted` 很重要，因为被抢占请求重新调度时，可能通过 prefix cache 复用之前已经计算并缓存的 blocks。
 
+如果启用了 KV Connector，并且之前算完的 KV 已经被外部 KV 池 / 远端 KV 系统保存，PREEMPTED 请求重新进入 waiting 调度时也会继续走 `get_num_new_matched_tokens()`。这时 connector 可以返回 `num_external_computed_tokens`，必要时触发 `load_kv_async=True`，先把远端 KV 加载回本地 blocks，再恢复调度。
+
+因此抢占后的恢复不是只能重算：
+
+```text
+PREEMPTED / num_computed_tokens = 0
+  → 查询本地 prefix cache
+  → 查询外部 KV Connector
+  → 命中则复用或异步加载 KV
+  → 未命中部分再重新 prefill
+```
+
 ---
 
 ## 8. Hybrid + Mamba + Connector 的特殊本地命中路径

@@ -347,30 +347,86 @@ if request.num_output_placeholders > 0 and ... >= request.num_prompt_tokens + re
 
 async scheduling 中，Scheduler 可能在上一轮 Worker 结果还没返回时，就提前开始下一轮调度。`num_output_placeholders > 0` 表示已经有输出 token 被调度出去了，但 sampled token 还没真正返回并写入 request。
 
-这时如果根据 `num_computed_tokens` 和 `num_output_placeholders` 能判断：上一轮在路上的输出回来后，请求已经会达到 `prompt_len + max_tokens`，那么当前这次 `schedule()` 就不能再给它追加调度下一步 decode。否则可能出现：最后一个允许生成的 token 已经在路上，Scheduler 又额外调度了一个 token，导致多跑一次 forward。
+这时如果根据 `num_computed_tokens` 和 `num_output_placeholders` 能判断：在路上的输出回来后，请求已经会达到 `prompt_len + max_tokens`，那么当前这次 `schedule()` 就不能再给它追加调度下一步 decode。否则可能出现：最后一个允许生成的 token 已经在路上，Scheduler 又额外调度了一个 token，导致多跑一次 forward。
 
 注意，这个判断不是在取消已经发出去的那一步 forward，而是在阻止当前这次 `schedule()` 再发出下一步 forward。时间线上是：
 
 ```text
-T0: 第 N 次 schedule 发出 decode forward，num_output_placeholders > 0
+T0: 第 N 次 schedule 发出 decode / spec decode forward
+T0: _update_after_schedule() 先把 num_computed_tokens 乐观推进
+T0: AsyncScheduler 再增加 num_output_placeholders
 T1: 第 N 步 Worker 结果还没回来，Scheduler 已经进入第 N+1 次 schedule
-T1: Scheduler 看到 placeholder，知道已有 token 在路上
-T1: 如果这个 token 回来后已经达到 max_tokens，就跳过该请求，不再发第 N+1 步 decode
+T1: Scheduler 看到 num_output_placeholders > 0，知道已有输出占位在路上
+T1: 如果这批输出回来后已经达到 max_tokens，就跳过该请求，不再发第 N+1 步 decode
 ```
 
 所以这里说“避免多调度一步”，避免的是异步场景下的下一步重复调度，而不是当前已经在路上的那一步。
 
-公式可以按源码注释拆成：
+源码判断是：
+
+```python
+request.num_computed_tokens + 2 - request.num_output_placeholders
+```
+
+源码注释把它写成：
 
 ```text
 (num_computed_tokens + 1) - (num_output_placeholders - 1)
 ```
 
-其中 `num_computed_tokens + 1` 里的 `+1`，表示把已经在路上的 forward 将要产出的那个 target-sampled token 算进去；`num_output_placeholders - 1` 则是在 speculative decoding 场景中，排除那些可能被拒绝的 draft token 占位。这样就能保守判断：即使 draft token 全部被拒绝，只算那个相对确定的 target-sampled token，请求是否也已经达到 `max_tokens`。如果确认达到，就跳过该 running 请求。
+更直观的理解是：在 `num_output_placeholders > 0` 的判断点，`num_computed_tokens` 已经被 async schedule 乐观推进过了，里面包含了在路上的 output placeholders 对应的计算进度。因此先看：
 
-投机解码场景下，`num_output_placeholders` 可能大于 1。例如有 4 个 draft token 时，一次 speculative step 通常最多可能让输出前进 5 个位置：4 个被接受的 draft token，加上 1 个 target model 自己采样出来的 token。目标模型通常是一次 forward 验证整串 draft token，然后从左到右决定接受多少个 draft。
+```text
+num_computed_tokens - num_output_placeholders
+```
 
-需要注意术语：无论 draft token 接受多少，通常至少会有 1 个 target model 自己采样出来的 token。如果某个 draft 被拒绝，这个 token 是在拒绝位置重新采样出来的 replacement / normal sampled token；如果所有 draft 都被接受，它才是最后额外产生的 bonus token。因此，公式中的 `num_output_placeholders - 1` 可以理解为把那些可能被拒绝的 draft 占位排除掉，只保留那个相对确定的 target-sampled token，用更保守的方式判断是否已经到达 `max_tokens`。
+这会退回到“已确认输出对应的已计算输入位置”。对普通自回归 decode 来说，这个位置比当前已确认序列长度少 1，因为最后一个已确认 token 被 forward 后才会产生下一个 token。
+
+所以需要再加 2：
+
+```text
++1：从已计算输入位置回到当前已确认序列长度
++1：这次 in-flight target forward 至少会产生 1 个 sampled token
+```
+
+因此：
+
+```text
+num_computed_tokens + 2 - num_output_placeholders
+= (num_computed_tokens - num_output_placeholders) + 2
+```
+
+表示“即使 speculative draft token 全部被拒绝，这个在路上的 target forward 返回后，请求至少会达到的序列长度”。如果这个长度已经达到 `num_prompt_tokens + max_tokens`，就不应该再调度下一步。
+
+以 `num_spec_tokens = 2` 为例，当前已确认序列长度为 `H`，draft 为 `A, B`。上一轮 schedule 前大致是：
+
+```text
+num_tokens = H
+spec_token_ids = [A, B]
+num_computed_tokens = H - 1
+num_output_placeholders = 0
+```
+
+上一轮调度会 forward 3 个位置：
+
+```text
+last_token, A, B
+```
+
+调度后、Worker 输出回来前：
+
+```text
+num_computed_tokens = H + 2
+num_output_placeholders = 3
+```
+
+当前这次 schedule 判断：
+
+```text
+H + 2 + 2 - 3 = H + 1
+```
+
+这正好表示：即使 `A, B` 都被拒绝，target model 也至少会产生一个 replacement / sampled token，使序列从 `H` 前进到 `H + 1`。
 
 ### 5.2 Pipeline Parallel / async cadence 限制
 
@@ -473,7 +529,7 @@ self.running / RUNNING
   → self.waiting / PREEMPTED
 ```
 
-注意：抢占会重置 `num_computed_tokens = 0`。后续重新调度时，会重新走 prefix cache / external KV cache 查询，尽可能复用已缓存的 KV。
+注意：抢占会重置 `num_computed_tokens = 0`。后续重新调度时，会重新走 prefix cache / external KV cache 查询，尽可能复用已缓存的 KV。如果启用了 KV Connector，且已计算 KV 已被外部 KV 池保存，恢复调度时可以命中远端 KV；必要时请求会先进入 `WAITING_FOR_REMOTE_KVS` 等 Worker 加载完成，再回到 `PREEMPTED` / `WAITING` 继续进入 running。
 
 ---
 

@@ -230,40 +230,40 @@ if (
 时间线可以理解为：
 
 ```text
-T0: 第 N 轮 schedule 已经发出一个 decode step
+T0: 第 N 轮 schedule 已经发出 decode / spec decode forward
+T0: _update_after_schedule() 先把 num_computed_tokens 乐观推进
+T0: AsyncScheduler 再增加 num_output_placeholders
 T1: Worker 结果还没回来，Scheduler 进入第 N+1 轮
-T1: request.num_output_placeholders > 0，表示已经有 token 在路上
-T1: 如果这个在路上的 token 回来后已经达到 max_tokens，本轮就不能再调度该请求
+T1: request.num_output_placeholders > 0，表示已有输出占位在路上
+T1: 如果这批输出回来后已经达到 max_tokens，本轮就不能再调度该请求
 ```
 
 所以这个判断不是取消已经发出去的 forward，而是避免当前这轮再多发一步 forward。
 
 ### 5.2 为什么公式里有 `+ 2 - num_output_placeholders`
 
-源码注释说：
-
-```python
-# This is (num_computed_tokens + 1) - (num_output_placeholders - 1).
-```
-
-位置：`scheduler.py:436`
-
-展开后就是：
+源码判断是：
 
 ```text
 num_computed_tokens + 2 - num_output_placeholders
 ```
 
-它的含义是：
+在这个判断点，`num_computed_tokens` 已经被 async schedule 乐观推进过，包含了在路上的 output placeholders 对应的计算进度。因此：
 
 ```text
-把已经在路上的 target-sampled token 算进去，
-同时把 speculative draft token placeholders 中可能被拒绝的部分排除掉。
+num_computed_tokens - num_output_placeholders
 ```
 
-因为 draft token 可能全部被拒绝，Scheduler 不能乐观地认为所有 placeholder 都会变成有效输出。它只保守地确认：即使 draft token 被拒绝，那个 target model 自己采样出来的 token 是否已经足够让请求达到 `max_tokens`。
+会退回到“已确认输出对应的已计算输入位置”。对自回归 decode 来说，这个位置比当前已确认序列长度少 1，因为最后一个已确认 token 被 forward 后才会产生下一个 token。
 
-如果已经足够，就跳过该 running 请求。
+所以需要再加 2：
+
+```text
++1：从已计算输入位置回到当前已确认序列长度
++1：这次 in-flight target forward 至少会产生 1 个 sampled token
+```
+
+因此该公式表示：即使 speculative draft token 全部被拒绝，这个在路上的 target forward 返回后，请求至少会达到的序列长度。如果这个长度已经达到 `num_prompt_tokens + max_tokens`，就跳过该 running 请求。
 
 ### 5.3 这个跳过不会移出 running
 

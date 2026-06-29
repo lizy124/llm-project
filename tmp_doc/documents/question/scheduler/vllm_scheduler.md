@@ -487,7 +487,7 @@ self._try_promote_blocked_waiting_request(request)
 
 源码位置：`scheduler.py:639`
 
-比如远端 KV load 完成后，`WAITING_FOR_REMOTE_KVS` 可以恢复成 `WAITING` 或 `PREEMPTED`。
+比如远端 KV load 完成后，`WAITING_FOR_REMOTE_KVS` 可以恢复成 `WAITING` 或 `PREEMPTED`。这也覆盖被抢占请求的恢复：PREEMPTED 请求重新调度时会重新查本地 prefix cache 和外部 KV Connector；如果已计算 KV 已在远端 KV 池中，Scheduler 可以先触发 async load，等 Worker 加载完成后再继续进入 running。
 
 ### 7.3 LoRA 限制
 
