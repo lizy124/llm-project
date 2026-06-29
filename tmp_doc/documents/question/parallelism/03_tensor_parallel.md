@@ -276,6 +276,10 @@ def initialize_model_parallel(
 ```
 
 位置：`vllm/vllm/distributed/parallel_state.py:1694` 到 `vllm/vllm/distributed/parallel_state.py:1700`
+核心区别可以这么记：
+TP / PP / PCP / DCP：模型内部执行拓扑，调用方显式传入 initialize_model_parallel()
+DP：外层副本/请求并行维度，来自 VllmConfig.parallel_config.data_parallel_size
+SP：vLLM 这里没有作为独立 group 入参；相关语义更多由 PCP/DCP 表达
 
 注释给了一个例子：
 

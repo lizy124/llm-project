@@ -276,13 +276,33 @@ DCP 不改变 world size；
 
 `rank` 是当前 worker 在 torch distributed global world 中的编号。
 
-来源可能是：
+`rank` 的具体来源取决于当前执行后端：
 
 ```text
-MultiprocExecutor 创建 WorkerProc 时传入；
-RayExecutor 构造 worker kwargs 时传入；
-external launcher 从环境变量或 torchrun 获得。
+UniProcExecutor：
+  单 worker，rank 通常为 0。
+
+MultiprocExecutor：
+  主进程创建 WorkerProc 时为每个 worker 分配 rank。
+
+RayExecutor：
+  构造 Ray worker 参数时传入 rank。
+
+external launcher / torchrun：
+  由外部启动器通过环境变量或 torch distributed 进程上下文提供 rank。
 ```
+
+这些路径是互斥的：一次运行会选择一种 executor / launcher 后端，对应一种 rank 分配方式。
+
+换句话说：
+
+```text
+rank 这个值在不同部署后端下由不同组件提供；
+但在某一次实际运行中，它必须有且只有一个确定来源；
+并且所有 worker 的 rank 必须和 world_size / process group 拓扑一致。
+```
+
+不能理解为同一个 worker 的 rank 可以任选来自 Multiproc、Ray 或 external launcher。
 
 Multiproc 中创建 worker 的位置：`vllm/v1/executor/multiproc_executor.py:176`
 
