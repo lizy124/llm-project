@@ -302,7 +302,7 @@ PP groups:
 ```python
 # the layout order is: ExternalDP x DP x PP x TP
 ```
-
+注释滞后/简写了
 实际 reshape 包含 PCP：
 
 ```python
