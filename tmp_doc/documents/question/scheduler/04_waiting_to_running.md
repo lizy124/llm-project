@@ -1496,6 +1496,18 @@ scheduled_resumed_reqs.append(request)
 
 这类请求之前运行过，因为 KV block 不够等原因被抢占，后来重新进入 running。
 
+它和普通 running 请求的关键区别是：抢占时旧 KV blocks 已经释放，甚至可能被其它请求复用；Worker 侧虽然可能还保留 request state，但旧 block table 不能继续使用。
+
+```text
+scheduled_running_reqs:
+  旧 block table 有效，新 blocks 追加。
+
+scheduled_resumed_reqs:
+  旧 block table 失效，新 blocks 替换。
+```
+
+因此旧 model runner 会通过 `scheduled_cached_reqs.resumed_req_ids` 标记恢复请求，让 Worker 复用仍有效的 request state，同时替换 KV block table。
+
 ### 33.3 输出构造差异
 
 构造 `SchedulerOutput` 时，普通新请求进入：

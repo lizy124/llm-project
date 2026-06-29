@@ -635,6 +635,23 @@ elif request.status == RequestStatus.PREEMPTED:
 
 位置：`scheduler.py:944`
 
+这三类 scheduled 列表的核心区别是：
+
+```text
+scheduled_new_reqs:
+  第一次进入调度，Worker 侧需要创建新的 request state。
+
+scheduled_running_reqs:
+  已在 running 中连续推进，Worker 侧已有 request state，旧 KV block table 仍有效，本轮 blocks 可以追加。
+
+scheduled_resumed_reqs:
+  之前运行过但被抢占，Worker 侧 request state 可能还在，但旧 KV blocks 已被释放或复用，旧 block table 失效。
+```
+
+因此旧 model runner 路径下，`scheduled_resumed_reqs` 会进入 `scheduled_cached_reqs.resumed_req_ids`，表达“这是已有请求，但 block ids 要替换，不是追加”。这样可以复用 prompt、output tokens、sampling/spec/grammar 等仍有效的 request state，只重建 KV cache 相关状态。
+
+V2 model runner 路径不同：Scheduler 会把 `scheduled_resumed_reqs` 合并进 `scheduled_new_reqs`，相当于重新下发完整 request 数据，由 V2 runner 按新请求路径处理。
+
 最后设置为 running：
 
 ```python

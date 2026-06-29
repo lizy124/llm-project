@@ -800,6 +800,8 @@ cached_reqs_data = self._make_cached_request_data(...)
 - `num_output_tokens`：已有输出 token 数；
 - `resumed_req_ids`：本轮恢复的请求。
 
+`resumed_req_ids` 的作用是区分“已有 request state，但旧 KV block table 已失效”的恢复请求。旧 model runner 看到这些请求时会用新的 `block_ids` 替换旧 block table，而不是像普通 running 请求一样追加；这样可以复用 prompt、output tokens、sampling/spec/grammar 等仍有效的 request state，只重建 KV cache 相关状态。V2 model runner 路径下，resumed 请求会合并进 `scheduled_new_reqs`，按重新下发完整 request 数据处理。
+
 这里有一个细节：
 
 ```python

@@ -1046,6 +1046,24 @@ request.num_computed_tokens = num_computed_tokens
 
 这里记录的是请求当前完整 block 列表，因为它是新进入模型执行流的请求，需要给 Worker 足够的初始化信息。
 
+### 26.3 为什么 resumed 请求不能当普通 running 请求追加 blocks
+
+被抢占请求在 `_preempt_request()` 中会释放 KV blocks，并把 `num_computed_tokens` 重置为 0。之后这些旧 blocks 可能已经被其它请求复用。
+
+所以 resumed 请求重新调度时，Worker 侧虽然可能还保留 request state，但旧 block table 已经失效：
+
+```text
+普通 running 请求：
+  旧 blocks 仍属于该请求，新 blocks 可以 append。
+
+resumed 请求：
+  旧 blocks 已释放或复用，新 blocks 必须 replace 旧 block table。
+```
+
+旧 model runner 通过 `scheduled_cached_reqs.resumed_req_ids` 表达这个差异；Worker 看到请求在 `resumed_req_ids` 中，就用新的 `block_ids` 替换旧值，而不是追加。这样可以复用仍有效的 request state，只重建 KV cache 相关状态。
+
+V2 model runner 路径下，Scheduler 会把 `scheduled_resumed_reqs` 合并进 `scheduled_new_reqs`，相当于重新下发完整 request 数据，由 V2 runner 按新请求路径处理。
+
 ---
 
 ## 27. 请求结束后如何释放 blocks
