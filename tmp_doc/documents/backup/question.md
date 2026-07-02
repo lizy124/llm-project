@@ -534,3 +534,31 @@ vLLM V1 中 Scheduler 和 Worker 的通信远超池化功能，主要分三类�
 `num_computed_tokens` 是普通字段，调度时手动赋值。
 
 **永远差一个身位**：`num_tokens` 先跑，`num_computed_tokens` 下一轮调度再追。差值 = 本轮要算的 token 数。
+
+---
+
+## Q21: `_model_forward()` 之后是不是会把 KV cache 保存到池化池子里？
+
+**简要回答**：
+不一定，触发条件不是 `is_pooling_model`，而是是否启用了 **KV Connector / KV Transfer**。
+
+在 `D:\lzy\project\kv_pool\code\vllm-ascend\vllm_ascend\worker\model_runner_v1.py` 中，`_model_forward()` 被包在：
+
+```python
+with self.maybe_get_kv_connector_output(scheduler_output, defer_finalize=...) as kv_connector_output:
+    hidden_states = self._model_forward(...)
+```
+
+如果存在 `has_kv_transfer_group()`，这个 context 会绑定 Scheduler 传来的 KV connector metadata，并在 forward 期间配合 attention/KV connector 执行 KV load/save/transfer。退出 context 时会 `wait_for_save()`，并生成 `KVConnectorOutput` 回传给 Scheduler。
+
+`is_pooling_model` 分支只是后处理：
+
+```python
+output = self._pool(hidden_states, ..., kv_connector_output)
+output.kv_connector_output = kv_connector_output
+```
+
+`_pool()` 只根据 `hidden_states` 计算 pooling output，不负责保存 KV cache。
+
+一句话总结：
+**如果说的是 embedding/pooling 模型的 pooling，不会因为开启 pooling 就保存 KV；如果说的是 KV Pool / KV Transfer，保存动作由 KV connector context 控制，和 `is_pooling_model` 不是同一个概念。**
