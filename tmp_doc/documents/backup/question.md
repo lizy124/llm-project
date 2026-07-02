@@ -551,6 +551,28 @@ with self.maybe_get_kv_connector_output(scheduler_output, defer_finalize=...) as
 
 如果存在 `has_kv_transfer_group()`，这个 context 会绑定 Scheduler 传来的 KV connector metadata，并在 forward 期间配合 attention/KV connector 执行 KV load/save/transfer。退出 context 时会 `wait_for_save()`，并生成 `KVConnectorOutput` 回传给 Scheduler。
 
+简化链路是：
+
+```text
+NPUModelRunner.execute_model()
+  → with maybe_get_kv_connector_output(...)
+      → bind_connector_metadata(...)
+      → start_load_kv(...)
+      → _model_forward(...)
+          → attention layer
+              → wait_for_kv_layer_from_connector(...)
+              → attention computes / updates local KV cache
+              → maybe_save_kv_layer_to_connector(...)
+      → context exit
+          → wait_for_save()
+          → build KVConnectorOutput
+```
+
+关键位置：
+- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`：`maybe_get_kv_connector_output()` / `bind_connector_metadata()` / `start_load_kv()` / `wait_for_save()`。
+- `D:\lzy\project\kv_pool\code\vllm-ascend\vllm_ascend\attention\utils.py`：`wait_for_kv_layer_from_connector()` / `maybe_save_kv_layer_to_connector()`。
+- `D:\lzy\project\kv_pool\code\vllm-ascend\vllm_ascend\distributed\kv_transfer\kv_pool\ascend_store\ascend_store_connector.py` 和 `pool_worker.py`：具体执行 KV pool 的 load/save。
+
 `is_pooling_model` 分支只是后处理：
 
 ```python
