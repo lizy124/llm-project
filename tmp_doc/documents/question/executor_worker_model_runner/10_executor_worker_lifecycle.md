@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\abstract.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\uniproc_executor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\multiproc_executor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\worker_base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
+- `code/vllm/vllm\v1\executor\abstract.py`
+- `code/vllm/vllm\v1\executor\uniproc_executor.py`
+- `code/vllm/vllm\v1\executor\multiproc_executor.py`
+- `code/vllm/vllm\v1\worker\gpu_worker.py`
+- `code/vllm/vllm\v1\worker\worker_base.py`
+- `code/vllm/vllm\v1\engine\core.py`
 
 本问题关注：Executor / Worker / ModelRunner 从初始化、KV cache 构建、模型 warmup、profile、sleep / wake_up，到 shutdown、异常监控和恢复，是如何组织成完整生命周期闭环的。
 

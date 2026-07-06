@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\block_pool.py`
+- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
+- `code/vllm/vllm\v1\worker\kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm\v1\worker\gpu_worker.py`
+- `code/vllm/vllm\v1\core\kv_cache_manager.py`
+- `code/vllm/vllm\v1\core\block_pool.py`
 
 本问题关注：Scheduler 已经把请求调度好并分配了 KV block 后，Worker / ModelRunner 如何真正使用这些 KV cache；block table 如何映射到请求；slot mapping 如何写入 attention kernel；prefix cache / external KV / lookahead / encoder cache 对 KV 使用有什么影响；KV connector 如何把远端 KV 的 load/save、finished_recving、finished_sending 穿过执行链路。
 
