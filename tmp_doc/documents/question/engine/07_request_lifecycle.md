@@ -1479,7 +1479,7 @@ if not cancelled:
 
 位置：`vllm/vllm/v1/engine/async_llm.py:490` 到 `vllm/vllm/v1/engine/async_llm.py:495`
 
-final_req 用来告诉输出侧和内层：输入已经结束。
+final_req 用来告诉输出侧和内层：输入已经结束。这里的 final_req 是带 dummy token 的结束信号请求，OutputProcessor 侧不会把这个 dummy token 当作真实 streaming chunk 追加。
 
 ### 14.5 Scheduler 内部状态
 

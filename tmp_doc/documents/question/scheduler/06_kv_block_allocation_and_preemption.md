@@ -1,6 +1,6 @@
 # 06. KV Cache block 是否够用，不够时是否需要抢占？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在调度 running / waiting 请求时，如何向 `KVCacheManager` 申请 KV Cache block；申请失败时，哪些场景会触发抢占；被抢占请求如何回到 waiting；请求结束后 block 又如何释放或延迟释放。
 
@@ -716,7 +716,7 @@ self.running.remove(preempted_req)
 可以理解为：
 
 ```text
-低优先级 / 更晚到达的请求更可能被抢占。
+数值更大的 `priority`（调度优先级更低）/ 更晚 `arrival_time` 的请求更可能被抢占。
 ```
 
 具体优先级大小与队列比较实现有关，但核心语义是：
@@ -1140,7 +1140,7 @@ _free_blocks() 才真正释放 KV blocks 并从 self.requests 删除。
 ```text
 finished 请求可能已经不在 running / waiting 中，
 但仍然留在 self.requests，
-因为 KV Connector 还没完成异步发送或 block 释放被延迟。
+通常是因为 KV Connector 还没完成异步发送，导致 `_free_request()` 暂时不能调用 `_free_blocks()`。deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 删除。
 ```
 
 ---

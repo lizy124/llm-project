@@ -115,7 +115,7 @@ self._process_aborts_queue()
 每个请求原本调度了多少 token；
 哪些 spec decode tokens 被送去执行；
 哪些 encoder inputs 被处理；
-是否有 KV / EC connector metadata；
+是否有 KV connector metadata / EC metadata；
 哪些请求是本轮通知 Worker 清理的 finished request。
 ```
 

@@ -2,9 +2,9 @@
 
 源码相关位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\async_scheduler.py`
+- `vllm/vllm/v1/request.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/v1/core/sched/async_scheduler.py`
 
 这份文档专门解释 speculative decoding / async scheduling 里容易混淆的几个概念：
 
@@ -221,7 +221,7 @@ d1~d4 当前挂在 request 上，下一轮调度时要考虑进去。
 scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-位置：`scheduler.py:581`
+位置：`scheduler.py:593`
 
 随后：
 
@@ -549,19 +549,19 @@ num_new_tokens = 1000 + 0 - 600 = 400
 spec_token_ids = [d1, d2, d3, d4]
 num_tokens_with_spec = 100 + 4 = 104
 num_output_placeholders = 0
-num_computed_tokens = 100
+num_computed_tokens = 99
 ```
 
 代入：
 
 ```text
-num_new_tokens = 104 + 0 - 100 = 4
+num_new_tokens = 104 + 0 - 99 = 5
 ```
 
 含义：
 
 ```text
-本轮需要把这 4 个 draft token 调度给 target model 验证。
+这 5 个位置对应最后一个已确认 token + 4 个 draft，用于得到 4 个 draft 的验证结果和 1 个 target-sampled / replacement 位置。
 ```
 
 所以 `num_tokens_with_spec` 的作用是：

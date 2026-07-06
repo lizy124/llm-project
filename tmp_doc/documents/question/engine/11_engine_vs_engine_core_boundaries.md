@@ -643,9 +643,7 @@ reset_prefix_cache / reset_encoder_cache / sleep
 ```text
 EngineCore
   → model_executor.execute_model()
-  → Executor.collective_rpc("execute_model")
-  → Worker.execute_model()
-  → ModelRunner.execute_model()
+  → Executor 实现分发到 Worker / ModelRunner
   → model forward / sample
 ```
 
@@ -907,7 +905,8 @@ LLMEngine.add_request()
 ```text
 LLMEngine.step()
   → EngineCoreClient.get_output()
-  → EngineCore.step_fn()
+      → InprocClient: EngineCore.step_fn()
+      → SyncMPClient: outputs_queue.get()
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()
   → RequestOutput / PoolingRequestOutput
@@ -1139,7 +1138,7 @@ EngineCore
   → step()
       → Scheduler.schedule()
       → model_executor.execute_model()
-      → model_executor.sample_tokens()
+      → 如果 execute_model 返回 None，则 model_executor.sample_tokens(grammar_output)
       → Scheduler.update_from_output()
       → EngineCoreOutputs
 ```

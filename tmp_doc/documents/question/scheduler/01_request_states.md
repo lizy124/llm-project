@@ -1,6 +1,6 @@
 # 01. 当前有哪些请求在等待、运行、阻塞？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 如何知道当前系统里有哪些请求、哪些请求正在运行、哪些请求还在等待、哪些请求暂时阻塞，以及这些状态如何迁移。
 
@@ -55,7 +55,7 @@ self.requests - (self.running ∪ self.waiting ∪ self.skipped_waiting)
 已经 finished，或者已经移出调度队列，但资源清理尚未完成的请求。
 ```
 
-常见原因是 KV Connector 还在异步发送 / 保存 KV，或者 async / pipeline 场景下需要延迟释放 block，避免 block 被过早复用。只有真正执行 `_free_blocks()` 后，请求才会从 `self.requests` 中删除。
+常见原因是 KV Connector 还在异步发送 / 保存 KV，导致 `_free_request()` 暂时不能调用 `_free_blocks()`。需要区分的是，deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 中删除。
 
 另外，`self.running`、`self.waiting`、`self.skipped_waiting` 这三者正常情况下是平级且互斥的调度集合，不存在包含关系：
 
@@ -106,7 +106,7 @@ Scheduler 当前还需要记住的所有请求
 3. running 请求；
 4. 已经 finished 但还不能完全删除的请求。
 
-第 4 种容易被忽略：如果 KV Connector 还在异步发送 KV，或者请求结束但 block 释放被延迟，那么请求可能已经不在 `running` / `waiting` 队列里，但仍保留在 `self.requests` 中，直到 connector 通知可以释放。
+第 4 种容易被忽略：如果 KV Connector 还在异步发送 KV，那么请求可能已经不在 `running` / `waiting` 队列里，但仍保留在 `self.requests` 中，直到 connector 通知可以释放。deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 删除。
 
 因此：
 
@@ -562,7 +562,7 @@ def _select_waiting_queue_for_scheduling(self) -> RequestQueue | None:
 
 解释：
 
-- FCFS：优先处理 `skipped_waiting`，避免之前被跳过的请求长期饥饿；
+- FCFS：优先重试 `skipped_waiting`，降低被普通 `waiting` 请求持续插队的概率；
 - PRIORITY：比较两个队列头部请求的优先级；
 - 只有一个队列非空时，就选那个。
 
@@ -622,6 +622,8 @@ if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
 ```text
 WAITING_FOR_REMOTE_KVS → WAITING / PREEMPTED
 ```
+
+这里恢复的是 `request.status`；队列位置不一定立即搬回 `self.waiting`，可能仍从 `skipped_waiting` 队头继续尝试调度。
 
 ### 8.2 结构化输出 grammar 阻塞恢复
 

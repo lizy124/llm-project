@@ -1,6 +1,6 @@
 # vLLM V1 Scheduler 逻辑梳理
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本文按“由浅入深”的方式梳理 `Scheduler` 的职责、核心状态、主调度循环、输出回收、KV Connector、Encoder Cache、Spec Decode 等逻辑。
 
@@ -961,7 +961,7 @@ running 请求如果带有 `request.spec_token_ids`，会把本轮实际调度�
 scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-源码位置：`scheduler.py:581`
+源码位置：`scheduler.py:593`
 
 ### 18.2 输出阶段
 
@@ -1571,9 +1571,9 @@ Scheduler 操作的核心对象。重要字段包括：
 
 ### 29.2 SchedulerOutput
 
-Scheduler 发给 Worker / ModelRunner 的一轮执行计划。
+Scheduler 发给 Worker / ModelRunner 的一轮执行计划，同时也是 `Scheduler.update_from_output()` 回收阶段的对账凭证。
 
-它不是最终输出，而是“本轮该怎么跑”。
+它不是最终输出，而是“本轮该怎么跑，以及回收时如何对账”。
 
 ### 29.3 ModelRunnerOutput
 

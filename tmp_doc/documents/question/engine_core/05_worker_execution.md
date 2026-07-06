@@ -33,15 +33,16 @@ if model_output is None:
 ```text
 EngineCore.step()
   → model_executor.execute_model(scheduler_output)
-  → Executor.collective_rpc("execute_model")
-  → Worker.execute_model(scheduler_output)
+  → Executor 实现分发到 Worker / ModelRunner
   → ModelRunner.execute_model(scheduler_output)
   → 模型 forward / pooling / logits
-  → sample_tokens() 采样
+  → sample_tokens() 采样（generation 常见路径）
   → ModelRunnerOutput
   → EngineCore
   → Scheduler.update_from_output()
 ```
+
+pooling / encoder-only / PP 中间 stage / 0-token 或 KV connector-only 场景可能直接返回其他输出或 None。
 
 一句话：
 
@@ -240,7 +241,7 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:835` 到 `vllm/vllm/v1/worker/gpu_worker.py:838`
+位置：`vllm/vllm/v1/worker/gpu_worker.py` 中的 `sample_tokens()` / `execute_model()`
 
 它会先判断本轮是否有真实 forward：
 
@@ -267,7 +268,7 @@ output = self.model_runner.execute_model(
 处理 pipeline parallel 的中间 tensor 收发；
 处理 profiler annotation；
 调用 model_runner.execute_model()；
-必要时调用 pooling；
+V1 pooling 通常在 ModelRunner 内返回，V2 特定路径下 Worker 可能再调用 pool()；
 把 ModelRunnerOutput / AsyncModelRunnerOutput / None 返回给 Executor。
 ```
 
@@ -532,7 +533,7 @@ ModelRunner 的 `sample_tokens()` 会：
 更新 Worker 侧 batch 状态；
 处理 speculative decoding draft tokens；
 收集 logprobs / prompt_logprobs；
-收集 KV / EC connector output；
+收集 KV connector output / EC connector output；
 构造 ModelRunnerOutput。
 ```
 
@@ -816,8 +817,7 @@ EngineCore.step()
   → scheduler.schedule()
   → SchedulerOutput
   → model_executor.execute_model(scheduler_output)
-  → Executor.collective_rpc("execute_model")
-  → Worker.execute_model(scheduler_output)
+  → Executor 实现分发到 Worker / ModelRunner
   → ModelRunner.execute_model(scheduler_output)
   → _update_states()
   → _prepare_inputs() / _build_attention_metadata() / _preprocess()

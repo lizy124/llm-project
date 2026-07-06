@@ -2,9 +2,9 @@
 
 源码相关位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\async_scheduler.py`
+- `vllm/vllm/v1/request.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/v1/core/sched/async_scheduler.py`
 
 本文不只解释 speculative decoding，而是从头梳理 vLLM Scheduler 里 token 的完整状态。重点解释这些字段为什么同时存在、各自代表什么、什么时候增长、什么时候回退。
 
@@ -742,19 +742,19 @@ num_new_tokens = 1000 + 0 - 600 = 400
 spec_token_ids = [d1, d2, d3, d4]
 num_tokens_with_spec = 104
 num_output_placeholders = 0
-num_computed_tokens = 100
+num_computed_tokens = 99
 ```
 
 代入：
 
 ```text
-num_new_tokens = 104 + 0 - 100 = 4
+num_new_tokens = 104 + 0 - 99 = 5
 ```
 
 含义：
 
 ```text
-本轮需要把 4 个 draft token 调度给 target model 验证。
+这 5 个位置对应最后一个已确认 token + 4 个 draft，用于得到 4 个 draft 的验证结果和 1 个 target-sampled / replacement 位置。
 ```
 
 ---
@@ -939,7 +939,7 @@ num_output_placeholders -= 5 → 0
 d1 d2 x  # 3 个真实输出 token
 ```
 
-那么先按真实返回减 3，另外 rejected draft 的逻辑还会回退相应计数，最终让状态和真实输出对齐。
+那么 spec reject 逻辑会先扣 rejected draft 数；随后 `AsyncScheduler._update_request_with_output()` 再按真实 append 的 `new_token_ids` 数量扣减。总扣减量仍是 rejected + returned tokens，最终让状态和真实输出对齐。
 
 ---
 

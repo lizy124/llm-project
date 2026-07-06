@@ -6,7 +6,8 @@
 
 - `vllm/vllm/v1/engine/core_client.py`
 - `vllm/vllm/v1/engine/core.py`
-- `vllm/vllm/v1/engine/processor.py`
+- `vllm/vllm/v1/engine/input_processor.py`
+- `vllm/vllm/v1/engine/output_processor.py`
 - `vllm/vllm/v1/engine/__init__.py`
 
 本问题关注：异步接口里的 `AsyncLLM` 如何作为外层 Engine，异步地提交请求、消费输出，并对外提供 async generator 风格的结果。
@@ -974,7 +975,7 @@ finally:
 
 位置：`vllm/vllm/v1/engine/async_llm.py:490` 到 `vllm/vllm/v1/engine/async_llm.py:495`
 
-这表示输入流结束后，会发送一个空的 final request，告诉 EngineCore 输入已经结束。
+这表示输入流结束后，会发送一个带 dummy token 的 final request / 结束信号 request，告诉 EngineCore 输入已经结束。这个 dummy token 不作为真实输入 chunk 追加。
 
 ### 9.5 streaming input 链路
 

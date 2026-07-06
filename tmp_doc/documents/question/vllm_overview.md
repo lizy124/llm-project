@@ -1,6 +1,6 @@
 # vLLM 仓库概念总览：从用户入口到核心执行引擎
 
-源码根目录：`E:/lizy/code/vllm-project/vllm`
+源码根目录：以本仓库根目录下的 `vllm/` Python 包为主，底层实现还涉及 `csrc/`、`rust/`、`tests/`、`benchmarks/`、`docs/` 等目录。
 
 本文基于 `vllm` 仓库源码进行梳理，目标是从浅入深解释 vLLM 的主要模块、它们之间的关系、一次请求如何流动，以及各模块在代码中的证据位置。
 
@@ -66,6 +66,8 @@ multi-LoRA；
 ## 2. 仓库整体分层
 
 从源码包 `vllm/` 看，可以把仓库分成这些层：
+
+注意：这里的 `v1/core/` 主要放 Scheduler、KV cache、block pool 等核心调度 / 缓存组件；`EngineCore` 本体在 `v1/engine/core.py`。
 
 ```text
 用户入口层
@@ -1923,22 +1925,22 @@ vLLM 的高性能不仅来自调度，
 Benchmark 代码在：
 
 ```text
-vllm/benchmarks/
+benchmarks/
 ```
 
 代码证据：
 
 ```text
-vllm/benchmarks/throughput.py:47
+benchmarks/throughput.py:47
   run_vllm
 
-vllm/benchmarks/serve.py:763
+benchmarks/serve.py:763
   benchmark
 
-vllm/benchmarks/latency.py:79
+benchmarks/latency.py:79
   main
 
-vllm/benchmarks/sweep/param_sweep.py:8
+benchmarks/sweep/param_sweep.py:8
   ParameterSweep
 ```
 

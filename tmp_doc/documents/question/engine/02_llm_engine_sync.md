@@ -595,7 +595,7 @@ self.input_processor.assign_request_id(request)
 
 位置：`vllm/vllm/v1/engine/llm_engine.py:263`
 
-`assign_request_id()` 的逻辑是：
+`assign_request_id()` 的默认逻辑是：
 
 ```python
 request.external_req_id = request.request_id
@@ -605,15 +605,7 @@ request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
 
 位置：`vllm/vllm/v1/engine/input_processor.py:232` 到 `vllm/vllm/v1/engine/input_processor.py:240`
 
-它的注释说明：
-
-```python
-"""Replace the externally supplied request ID with an internal request ID
-that adds 8 random characters in order to ensure uniqueness.
-"""
-```
-
-位置：`vllm/vllm/v1/engine/input_processor.py:223` 到 `vllm/vllm/v1/engine/input_processor.py:226`
+它的注释说明默认会给内部 request id 增加 8 位随机后缀，以保证内部唯一性；如果设置了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，则不会追加随机后缀。
 
 所以同步路径中有两个 id：
 
@@ -622,7 +614,7 @@ external_req_id：
   用户传入的 request_id，用于输出给用户，也用于外部 abort。
 
 request_id：
-  vLLM 内部随机化后的 request id，用于 EngineCore / Scheduler 内部状态。
+  vLLM 内部 request id，默认会追加随机后缀，用于 EngineCore / Scheduler 内部状态。
 ```
 
 `EngineCoreRequest` 里也有对应注释：
@@ -1579,7 +1571,7 @@ LLMEngine.add_request(request_id, prompt, params)
   │
   ├─ InputProcessor.assign_request_id()
   │    ├─ external_req_id = 用户 request_id
-  │    └─ request_id = external_req_id + random suffix
+  │    └─ 默认 request_id = external_req_id + random suffix
   │
   ├─ n == 1 ?
   │    ├─ OutputProcessor.add_request()
@@ -1764,7 +1756,7 @@ stats
 
 为了内部唯一性。
 
-`assign_request_id()` 会：
+`assign_request_id()` 默认会：
 
 ```text
 external_req_id = 用户传入 id
@@ -1773,7 +1765,7 @@ request_id = external_req_id + 8 位随机后缀
 
 位置：`vllm/vllm/v1/engine/input_processor.py:232` 到 `vllm/vllm/v1/engine/input_processor.py:240`
 
-这样即使用户重复传入同一个 id，内部请求也更不容易冲突。
+这样即使用户重复传入同一个 id，内部请求也更不容易冲突；如果设置了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，则不会追加随机后缀。
 
 ### 32.5 LLMEngine.step() 是否每次都会执行模型？
 

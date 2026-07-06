@@ -1,6 +1,6 @@
 # 03. 哪些 running 请求继续 decode / prefill？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 每轮进入 `schedule()` 后，已经在 `self.running` 里的请求，哪些会继续推进 decode / prefill，哪些虽然仍然处于 running 但本轮会被跳过，以及 running 请求本轮具体会被安排多少 token。
 
@@ -803,7 +803,7 @@ self.running.remove(preempted_req)
 注意：这里用 `max` 是因为在该实现中，排序键更大的请求表示更应该被抢占：
 
 ```text
-priority 更低 / arrival_time 更晚的请求更可能被抢占。
+数值更大的 `priority`（调度优先级更低）/ 更晚 `arrival_time` 的请求更可能被抢占。
 ```
 
 ### 16.2 非 PRIORITY 策略下抢占谁

@@ -1238,7 +1238,8 @@ LLMEngine.add_request()
 
 LLMEngine.step()
   → EngineCoreClient.get_output()
-  → EngineCore.step_fn()
+      → InprocClient: EngineCore.step_fn()
+      → SyncMPClient: outputs_queue.get()
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()
   → RequestOutput / PoolingRequestOutput

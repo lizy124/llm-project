@@ -1,6 +1,6 @@
 # 02. 本轮最多能调度多少 token？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 每一轮 `schedule()` 到底能安排多少 token，哪些配置会限制本轮调度量，token budget 是如何被 running / waiting 请求共同消耗的，以及为什么有些请求明明在队列里却不能被本轮调度。
 

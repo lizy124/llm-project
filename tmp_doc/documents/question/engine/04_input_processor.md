@@ -1898,7 +1898,7 @@ tokenizer 相关 EOS / stop 信息；
 PoolingParams.task 默认值。
 ```
 
-clone 后可以避免直接修改调用方传入的原始对象。
+SamplingParams 的后续补全会在 clone 上进行；PoolingParams 也会 clone 后进入 EngineCoreRequest。但要注意，PoolingParams.task 的默认值是在校验阶段、clone 之前填充的，因此这一步会修改原始 params。
 
 ### 31.5 InputProcessor 是否负责 stop string？
 

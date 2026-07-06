@@ -801,7 +801,7 @@ outputs = await self.outputs_queue.get()
 5. 把 EngineCoreRequest 转成 Request；
 6. 把 Request 加入 Scheduler；
 7. 每轮 step 调 Scheduler.schedule()；
-8. 调 model_executor.execute_model() / sample_tokens()；
+8. 调 model_executor.execute_model()，必要时再调用 sample_tokens()；
 9. 调 Scheduler.update_from_output()；
 10. 返回 EngineCoreOutputs；
 11. 协调 Scheduler / executor 的 profile、reset、sleep、wake_up、LoRA 等内部控制能力。
@@ -1018,7 +1018,7 @@ finished / free。
 EngineCore.step()
   → Scheduler.schedule()
   → model_executor.execute_model()
-  → model_executor.sample_tokens()
+  → 如果 execute_model 返回 None，则 model_executor.sample_tokens(grammar_output)
   → Scheduler.update_from_output()
   → dict[client_index, EngineCoreOutputs]
 ```

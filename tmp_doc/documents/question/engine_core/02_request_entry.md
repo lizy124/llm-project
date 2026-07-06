@@ -77,6 +77,8 @@ priority: int = 0
 trace_headers: Mapping[str, str] | None = None
 resumable: bool = False
 external_req_id: str | None = None
+reasoning_ended: bool | None = None
+reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 

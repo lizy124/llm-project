@@ -94,6 +94,8 @@ class SchedulerOutput:
 SchedulerOutput = Scheduler 发给 Worker 的一轮 batch 执行描述。
 ```
 
+其中部分字段也供 EngineCore 和 Scheduler 回收阶段使用，例如 structured output / deferred sampling 相关字段。
+
 注意，`Scheduler.schedule()` 生成 `SchedulerOutput` 后，Scheduler 内部通常已经做了乐观状态更新。
 
 例如它会认为：
@@ -209,6 +211,9 @@ class NewRequestData:
     block_ids: tuple[list[int], ...]
     num_computed_tokens: int
     lora_request: LoRARequest | None
+    prompt_embeds: torch.Tensor | None = None
+    prompt_is_token_ids: list[bool] | None = None
+    prefill_token_ids: list[int] | None = None
 ```
 
 位置：`vllm/vllm/v1/core/sched/output.py:30` 到 `vllm/vllm/v1/core/sched/output.py:40`

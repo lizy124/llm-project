@@ -1,6 +1,6 @@
 # 07. 多模态 encoder 输入、结构化输出、投机解码等附加能力如何同步调度？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：除了最基本的 running / waiting 调度、token budget、prefix cache、KV block 分配之外，Scheduler 还要同时处理多模态 encoder input、结构化输出 grammar、投机解码、LoRA、Mamba、DP prefill balancing、pause state、KV / EC Connector metadata 等附加能力。这些能力不是独立的一套调度器，而是嵌入在 `schedule()` 主流程的不同检查点。
 

@@ -1,6 +1,6 @@
 # 04. 哪些 waiting 请求可以进入运行态？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在处理完 `self.running` 后，如何从 `self.waiting` / `self.skipped_waiting` 中选择请求，判断它是否可以进入 `self.running`，以及哪些条件会导致 waiting 请求本轮不能进入运行态。
 
@@ -267,13 +267,13 @@ self.skipped_waiting or self.waiting or None
 
 位置：`scheduler.py:1819`
 
-也就是说，如果 `skipped_waiting` 非空，会优先尝试之前被跳过的请求。
+也就是说，如果 `skipped_waiting` 非空，会优先重试被跳过的请求。
 
-这样可以避免：
+这样可以降低：
 
 ```text
 某个请求因为一轮 LoRA / KV Connector / encoder cache 等条件被跳过后，
-长期被新来的 waiting 请求插队。
+持续被普通 waiting 请求插队的概率。
 ```
 
 ### 6.2 PRIORITY 策略
@@ -395,6 +395,8 @@ WAITING_FOR_REMOTE_KVS
   → _update_waiting_for_remote_kv()
   → WAITING 或 PREEMPTED
 ```
+
+这里恢复的是 `request.status`；队列位置不一定立即搬回 `self.waiting`，可能仍从 `skipped_waiting` 队头继续尝试调度。
 
 ### 8.2 `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR`
 

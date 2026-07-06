@@ -1557,7 +1557,7 @@ else:
   input_chunk_queue = None，等待后续输入。
 
 如果 final request 到达且 engine 已结束：
-  _finish_request() 并向 queue put STREAM_FINISHED。
+  _finish_request() 并向 queue put STREAM_FINISHED sentinel，用来解除 generate loop；它不是普通用户输出。
 ```
 
 相关位置：`vllm/vllm/v1/engine/output_processor.py:543` 到 `vllm/vllm/v1/engine/output_processor.py:560`，`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:675`

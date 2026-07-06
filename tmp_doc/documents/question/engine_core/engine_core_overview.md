@@ -1080,8 +1080,7 @@ EngineCore.step()
 
 ```text
 model_executor.execute_model()
-  → Executor.collective_rpc("execute_model")
-  → Worker.execute_model()
+  → Executor 实现分发到 Worker / ModelRunner
   → ModelRunner.execute_model()
   → _update_states(scheduler_output)
   → _prepare_inputs()

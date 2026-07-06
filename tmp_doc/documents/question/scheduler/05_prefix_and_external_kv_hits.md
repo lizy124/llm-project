@@ -1,6 +1,6 @@
 # 05. prefix cache / 外部 KV cache 命中了多少 token？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在把 waiting 请求调度进 running 之前，如何判断本地 prefix cache 命中了多少 token、外部 KV cache 又额外命中了多少 token，以及这些命中结果如何影响本轮要计算的 `num_new_tokens`、KV block 分配和 KV Connector metadata。
 
@@ -831,7 +831,7 @@ WAITING
   → skipped_waiting
 ```
 
-Worker 完成加载后，会在后续输出中报告 `finished_recving`，Scheduler 再把请求恢复成 `WAITING` 或 `PREEMPTED`。
+Worker 完成加载后，会在后续输出中报告 `finished_recving`，Scheduler 再把请求状态恢复成 `WAITING` 或 `PREEMPTED`。这里恢复的是 `request.status`；队列位置不一定立即搬回 `self.waiting`，可能仍从 `skipped_waiting` 队头继续尝试调度。
 
 ---
 

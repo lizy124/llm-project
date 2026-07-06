@@ -1,6 +1,6 @@
 # 08. Worker 执行完后，如何更新请求状态、释放 block、返回输出？
 
-源码位置：`D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 发出 `SchedulerOutput` 后，Worker / ModelRunner 执行完返回 `ModelRunnerOutput`，Scheduler 如何处理 sampled token、logprobs、pooling output、spec decode 接受/拒绝、structured output grammar、KV Connector output、请求停止、资源释放，并最终返回 `EngineCoreOutputs`。
 
@@ -792,7 +792,7 @@ def _free_blocks(self, request: Request):
 请求可能已经 finished，
 也已经从 running / waiting 队列移除，
 但仍然保留在 self.requests 中，
-等待 KV Connector finished_sending 或 deferred free 完成。
+通常是在等待 KV Connector finished_sending，使 `_free_request()` 暂时不能调用 `_free_blocks()`。deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 删除。
 ```
 
 这和 `01_request_states.md` 中的结论一致：

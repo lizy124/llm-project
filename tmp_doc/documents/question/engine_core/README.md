@@ -167,8 +167,7 @@ Worker 异常如何处理？
 ```text
 EngineCore
   → model_executor.execute_model(scheduler_output)
-  → Executor.collective_rpc("execute_model")
-  → Worker.execute_model()
+  → Executor 实现分发到 Worker / ModelRunner
   → ModelRunner.execute_model()
   → forward / logits / pooling
   → sample_tokens(grammar_output)

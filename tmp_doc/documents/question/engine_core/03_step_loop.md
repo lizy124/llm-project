@@ -178,7 +178,7 @@ Scheduler 会决定：
 是否发生抢占；
 有哪些 encoder input；
 有哪些 spec decode tokens；
-需要哪些 KV / EC connector metadata。
+需要哪些 KV connector metadata / EC metadata。
 ```
 
 返回的 `SchedulerOutput` 是本轮执行计划。
@@ -1029,7 +1029,7 @@ scheduler_output = self.scheduler.schedule(...)
 本轮执行计划。
 ```
 
-包含：
+核心字段包括：
 
 ```text
 scheduled_new_reqs
@@ -1041,6 +1041,8 @@ kv_connector_metadata
 ec_connector_metadata
 finished_req_ids
 ```
+
+实际结构还包含 async scheduling、structured output、v2 runner、dynamic spec decode 等相关字段。
 
 ### 17.2 ModelRunnerOutput
 

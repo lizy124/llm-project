@@ -93,7 +93,9 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
 6. 分布式通信层
 7. C++ / CUDA / Rust 底层加速层
 
-在此基础上，为了补齐全仓库视角，还可以继续补充 4 个专题：
+当前 `question/` 目录还进一步拆出了 Engine、EngineCore、Scheduler、Executor / Worker / ModelRunner、KV cache transfer、Attention、Parallelism、Sampling、Spec Decode、Quantization 等更细专题。
+
+在当前专题体系基础上，还可以把全仓库视角继续归纳为以下补充专题：
 
 8. 配置与模型加载层：`config_and_model_loading`
    - 覆盖 `EngineArgs`、`VllmConfig`、`ModelConfig`、`CacheConfig`、`ParallelConfig`、`SchedulerConfig`、`LoadConfig`。
