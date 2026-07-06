@@ -2,10 +2,10 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
+- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm\v1\worker\gpu\model_runner.py`
+- `code/vllm/vllm\v1\worker\gpu_worker.py`
+- `code/vllm/vllm\forward_context.py`
 
 本问题关注：`SchedulerOutput` 已经同步到 `InputBatch`，输入和 attention metadata 也准备好之后，模型真正在哪里 forward；forward 外层的 `set_forward_context()` 提供了什么；generation 模型的 logits 在哪里产生；pooling / embedding 类模型如何直接产生 pooling 输出；Pipeline Parallel 下为什么有些 rank 返回 `IntermediateTensors` 而不是 logits。
 

@@ -2,11 +2,11 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\sampler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\structured_output\utils.py`
+- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm\v1\worker\gpu\model_runner.py`
+- `code/vllm/vllm\v1\sample\sampler.py`
+- `code/vllm/vllm\v1\outputs.py`
+- `code/vllm/vllm\v1\structured_output\utils.py`
 
 本问题关注：`execute_model()` 已经完成 forward 和 logits 计算后，`sample_tokens()` 如何把 logits 变成真正的 sampled token、logprobs、prompt logprobs、routed experts、KV connector output、EC connector output，并最终构造 `ModelRunnerOutput`。同时也要解释异步输出包装 `AsyncGPUModelRunnerOutput` 如何把 GPU 张量复制到 CPU 并返回最终结果。
 

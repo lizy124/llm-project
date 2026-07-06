@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\attn_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\block_table.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
+- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
+- `code/vllm/vllm\v1\worker\gpu\attn_utils.py`
+- `code/vllm/vllm\v1\worker\gpu\block_table.py`
+- `code/vllm/vllm\forward_context.py`
+- `code/vllm/vllm\v1\attention\backend.py`
 
 本问题关注：`SchedulerOutput` 进入 `GPUModelRunner.execute_model()` 之后，`ModelRunner` 如何把请求级状态变成本轮 forward 需要的张量和 metadata，具体包括 `input_ids / inputs_embeds / positions / slot_mapping / block_table / attention metadata / spec decode metadata / multimodal metadata` 等；这些数据分别从哪里来、在哪一层组装、哪些字段只为某些模型或 attention backend 服务。
 

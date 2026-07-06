@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\abstract.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\uniproc_executor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\multiproc_executor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\executor\ray_executor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\worker_base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm\v1\engine\core.py`
+- `code/vllm/vllm\v1\executor\abstract.py`
+- `code/vllm/vllm\v1\executor\uniproc_executor.py`
+- `code/vllm/vllm\v1\executor\multiproc_executor.py`
+- `code/vllm/vllm\v1\executor\ray_executor.py`
+- `code/vllm/vllm\v1\worker\worker_base.py`
+- `code/vllm/vllm\v1\worker\gpu_worker.py`
+- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
 
 本问题关注：`Scheduler.schedule()` 生成 `SchedulerOutput` 后，`EngineCore` 如何把它交给执行层；`Executor` 如何按单进程 / 多进程 / Ray 后端分发；`Worker` 如何接住请求；`GPUModelRunner.execute_model()` 如何真正完成输入准备、attention metadata、forward、logits / pooling，并在必要时把采样拆到 `sample_tokens()` 阶段。
 
