@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\block_pool.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_coordinator.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\single_type_kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/kv_cache_utils.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：`BlockPool` 到底管理什么；KV block 如何从空闲池进入请求；prefix cache 命中时 block 如何复用；full block 什么时候写入 prefix cache；请求结束、抢占、KV transfer、deferred free 会如何影响 block 释放；以及 Scheduler、KVCacheManager、coordinator、BlockPool、Worker 之间的职责边界。
 

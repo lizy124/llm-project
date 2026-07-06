@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\utils.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py`
 
 本文用于从 KVPool / 外部 KV Cache 视角串起完整端到端链路：查询命中、分配 block、load KV、执行 forward、save KV、完成通知、失败回退和资源释放。
 
@@ -144,7 +144,7 @@ BlockPool / KVCacheManager 负责的是：
 
 KV connector 在 Scheduler 和 Worker 两侧都有角色。
 
-Scheduler 侧主要接口：
+Scheduler 侧基础接口：
 
 ```text
 get_num_new_matched_tokens()
@@ -152,9 +152,10 @@ update_state_after_alloc()
 build_connector_meta()
 request_finished() / request_finished_all_groups()
 update_connector_output()
-reset_cache()
 has_pending_push_work()
 ```
+
+部分 connector 还会提供 `reset_cache()` 这类可选方法，Scheduler 侧控制接口会按需动态调用。
 
 Worker 侧主要接口：
 

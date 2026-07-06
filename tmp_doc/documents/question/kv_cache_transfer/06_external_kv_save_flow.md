@@ -2,20 +2,20 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\lmcache_connector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\connector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\base_scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\push_scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\push_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\offloading\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\offloading\worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\kv_transfer_utils.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
+- `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
 
 本文梳理请求结束时 external KV save 的完整路径：Scheduler 如何在释放请求前调用 connector，connector 如何决定是否延迟释放 blocks，Worker 侧如何执行 KV 保存 / 发送，以及 `finished_sending` 如何让 Scheduler 最终释放 KV blocks。
 
@@ -1299,8 +1299,8 @@ connector 类型和策略；
 不是。
 
 ```text
-True 表示 connector 接管 blocks，需要异步保存/发送；
-完成信号是后续 Worker 返回 finished_sending。
+True 表示 connector 请求 Scheduler 延迟释放 blocks，等待异步保存/发送完成；
+request 和 blocks 仍由 Scheduler 持有，完成信号是后续 Worker 返回 finished_sending。
 ```
 
 ### 18.3 `finished_sending` 和 `finished_recving` 有什么区别？
@@ -1397,5 +1397,5 @@ finished_sending 是 delayed-free 请求最终释放 blocks 的信号。
 如果只记一句话：
 
 ```text
-external KV save 是一套跨 Scheduler 和 Worker 的延迟释放协议：请求结束时 connector 可以接管 KV blocks，Scheduler 暂不释放，Worker 完成 save/send 后用 finished_sending 通知 Scheduler 归还 blocks。
+external KV save 是一套跨 Scheduler 和 Worker 的延迟释放协议：请求结束时 connector 可以请求延迟释放 KV blocks，Scheduler 暂不释放，Worker 完成 save/send 后用 finished_sending 通知 Scheduler 归还 blocks。
 ```

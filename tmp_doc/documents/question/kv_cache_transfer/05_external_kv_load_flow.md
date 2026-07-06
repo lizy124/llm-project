@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\single_type_kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\connector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\pull_scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\pull_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\offloading\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\offloading\worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/outputs.py`
 
 本问题关注：外部 KV Cache 命中后，Scheduler 如何把“远端已有 KV”转成本地 block 分配和 load 计划；`load_kv_async=True` 为什么会让本轮不 forward；`delay_cache_blocks=True` 为什么必须存在；Worker / ModelRunner 如何发起 load；`finished_recving` 如何回到 Scheduler 并让 `WAITING_FOR_REMOTE_KVS` 请求恢复调度；以及 load 失败时如何进入 invalid blocks / recompute 链路。
 

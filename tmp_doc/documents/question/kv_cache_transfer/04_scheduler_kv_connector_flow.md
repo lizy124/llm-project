@@ -2,11 +2,11 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\factory.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\mooncake\store\scheduler.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/factory.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py`
 
 本问题关注：Scheduler 侧 KV Connector 在 vLLM V1 中如何接入调度流程。重点回答：Scheduler 什么时候创建 connector，waiting 请求如何查询外部 KV 命中，外部命中如何和本地 prefix cache 命中合并，`allocate_slots()` 后为什么要调用 `update_state_after_alloc()`，`build_connector_meta()` 如何进入 `SchedulerOutput`，以及 Worker 回传的 KV transfer 完成状态如何回到 Scheduler。
 

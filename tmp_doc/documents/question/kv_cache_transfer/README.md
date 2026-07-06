@@ -2,13 +2,13 @@
 
 源码位置：
 
-- `vllm/vllm/v1/core/kv_cache_manager.py`
-- `vllm/vllm/v1/core/block_pool.py`
-- `vllm/vllm/v1/core/sched/scheduler.py`
-- `vllm/vllm/v1/core/sched/output.py`
-- `vllm/vllm/distributed/kv_transfer/`
-- `vllm/vllm/distributed/ec_transfer/`
-- `vllm/vllm/v1/worker/`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/distributed/kv_transfer/`
+- `code/vllm/vllm/distributed/ec_transfer/`
+- `code/vllm/vllm/v1/worker/`
 
 这个目录按问题拆解 vLLM V1 中 KV Cache、Prefix Cache、KV Connector、外部 KV Cache / KVPool、KV load / save、invalid blocks、deferred free 等链路。重点回答：KV block 如何分配和复用，Scheduler 如何查询本地 / 外部 KV 命中，KV Connector metadata 如何从 Scheduler 传到 Worker，Worker 如何执行 KV load / save，以及请求结束后 KV 资源如何释放或延迟释放。
 

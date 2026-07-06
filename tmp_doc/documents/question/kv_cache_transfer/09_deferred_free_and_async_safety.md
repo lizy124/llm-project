@@ -2,16 +2,16 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\vllm.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_coordinator.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\single_type_kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\block_pool.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\offloading\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\push_scheduler.py`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py`
 
 本文梳理 vLLM V1 中 deferred free 的安全语义：为什么异步调度 / pipeline parallel / KV consumer 场景下不能立即把 KV block 还给 `BlockPool`，`last_sched_seq / processed_step_seq / deferred_frees` 如何构成 step fence，以及它和 KV connector delayed-free、offloading flush 的区别。
 

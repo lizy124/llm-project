@@ -1248,8 +1248,8 @@ Worker / ModelRunner
   → execute_model(scheduler_output)
   → bind_connector_metadata(store metadata)
   → start_load_kv(forward_context) 可能 no-op
-  → attention layer forward
-      → save_kv_layer(layer_name, kv_cache, attn_metadata)
+  → 部分 connector 在 attention layer forward 后通过 save_kv_layer(layer_name, kv_cache, attn_metadata) 保存
+  → NIXL push 等 connector 也可能通过 metadata / no-forward step / writer thread 推进保存
   → wait_for_save()
   → get_finished(finished_req_ids)
   → kv_connector_output.finished_sending

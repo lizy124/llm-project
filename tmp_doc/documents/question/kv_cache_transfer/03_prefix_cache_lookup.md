@@ -2,15 +2,15 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_coordinator.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\single_type_kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\block_pool.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/request.py`
+- `code/vllm/vllm/v1/core/kv_cache_utils.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
 
 本文梳理 vLLM V1 中本地 prefix cache 的命中链路：`Request.block_hashes` 如何生成，Scheduler 什么时候调用 `KVCacheManager.get_computed_blocks()`，命中结果如何变成 `num_computed_tokens`，以及为什么 prompt 全命中时仍然要重算最后一个 token。
 

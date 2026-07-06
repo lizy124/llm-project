@@ -2,10 +2,10 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\block_pool.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\kv_cache_interface.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/kv_cache_interface.py`
 
 本问题关注：`KVCacheManager` 在 vLLM V1 里到底处于哪一层、负责什么、不负责什么；它如何配合 Scheduler 查询 prefix cache、分配 KV blocks、释放 block、记录 KV cache events；它和 `BlockPool`、KV cache coordinator、Worker / ModelRunner 侧物理 KV cache tensor 的职责边界是什么。
 

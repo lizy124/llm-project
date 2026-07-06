@@ -2,17 +2,17 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\connector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\nixl\base_worker.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\lmcache_connector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\kv_transfer.py`
-- `D:\lzy\project\kv_pool\code\vllm\tests\v1\kv_connector\unit\test_kv_load_failure_recovery.py`
-- `D:\lzy\project\kv_pool\code\vllm\tests\v1\kv_connector\unit\test_error_propagation.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py`
+- `code/vllm/vllm/config/kv_transfer.py`
+- `code/vllm/tests/v1/kv_connector/unit/test_kv_load_failure_recovery.py`
+- `code/vllm/tests/v1/kv_connector/unit/test_error_propagation.py`
 
 本问题关注：外部 KV load 失败时，Worker connector 如何把失败 block ids 回传给 Scheduler；Scheduler 如何区分 async load 和 sync load；如何根据 block id 找到受影响请求和 token 位置；`num_computed_tokens` 为什么可以回退到第一个失败 block 之前；`kv_load_failure_policy=recompute/fail` 如何影响后续请求状态；以及为什么 async load 失败仍要等 `finished_recving` 才做最终提交。
 
