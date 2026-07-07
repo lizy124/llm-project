@@ -261,17 +261,26 @@ backend_class.validate_configuration(...)
 
 位置：`code/vllm/vllm/v1/attention/backends/registry.py:34`
 
-典型映射：
+典型映射示例包括：
 
 ```text
-FLASH_ATTN      → vllm.v1.attention.backends.flash_attn.FlashAttentionBackend
-FLASHINFER      → vllm.v1.attention.backends.flashinfer.FlashInferBackend
-TRITON_ATTN     → vllm.v1.attention.backends.triton_attn.TritonAttentionBackend
-FLASHMLA        → vllm.v1.attention.backends.mla.flashmla.FlashMLABackend
-TRITON_MLA      → vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend
-CPU_ATTN        → vllm.v1.attention.backends.cpu_attn.CPUAttentionBackend
-FLEX_ATTENTION  → vllm.v1.attention.backends.flex_attention.FlexAttentionBackend
+FLASH_ATTN          → vllm.v1.attention.backends.flash_attn.FlashAttentionBackend
+FLASH_ATTN_DIFFKV   → vllm.v1.attention.backends.flash_attn_diff_kv.FlashAttentionDiffKVBackend
+FLASHINFER          → vllm.v1.attention.backends.flashinfer.FlashInferBackend
+TRITON_ATTN         → vllm.v1.attention.backends.triton_attn.TritonAttentionBackend
+TRITON_ATTN_DIFFKV  → vllm.v1.attention.backends.triton_attn_diff_kv.TritonAttentionDiffKVBackend
+FLEX_ATTENTION      → vllm.v1.attention.backends.flex_attention.FlexAttentionBackend
+FLASHMLA            → vllm.v1.attention.backends.mla.flashmla.FlashMLABackend
+FLASH_ATTN_MLA      → vllm.v1.attention.backends.mla.flashattn_mla.FlashAttentionMLABackend
+FLASHINFER_MLA      → vllm.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend
+TRITON_MLA          → vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend
+TOKENSPEED_MLA      → vllm.v1.attention.backends.mla.tokenspeed_mla.TokenSpeedMLABackend
+CPU_ATTN            → vllm.v1.attention.backends.cpu_attn.CPUAttentionBackend
+TURBOQUANT          → vllm.v1.attention.backends.turbo_attn.TurboAttentionBackend
+CUSTOM              → 运行时注册的自定义 backend
 ```
+
+该列表用于说明 registry 的映射方式，不是完整枚举；源码中还包含 ROCm AITER、sparse MLA 等平台或模型专用 backend。
 
 `AttentionBackendEnum.get_class()` 会通过 `resolve_obj_by_qualname()` 懒加载真实类。
 
@@ -588,13 +597,14 @@ Blackwell / SM 10.x：
 
 位置：`code/vllm/vllm/platforms/cuda.py:124`
 
-这里要注意：
+这里要注意两点：
 
 ```text
-MLA 的 prefill backend 和 decode backend 是两套选择。
+1. MLA 的 prefill backend 和 decode backend 是两套选择。
+2. priority list 可能同时包含 sparse / non-sparse 候选，最终由 validate_configuration() 按 use_sparse == backend.is_sparse() 过滤另一类。
 ```
 
-`AttentionConfig.backend` / `--attention-backend` 主要决定 MLA decode backend；MLA prefill backend 由 `mla_prefill_backend` 或自动逻辑决定，入口在 `get_mla_prefill_backend(vllm_config)`。
+`AttentionConfig.backend` / `--attention-backend` 传给 `get_attn_backend(use_mla=True)`，主要决定 MLA attention backend / decode 主路径；MLA prefill backend 由 `mla_prefill_backend` 或自动逻辑决定，入口在 `get_mla_prefill_backend(vllm_config)`。因此 `--attention-backend FLASHMLA` 不等价于 prefill 也走 FlashMLA。
 
 位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:472`
 
@@ -1015,7 +1025,8 @@ mm_req_doc_ranges
 
 ```text
 FlashAttention builder 关心 varlen / cu_seqlens / block table / cascade 等；
-Triton builder 关心 Triton kernel 需要的 decode / prefill 切分；
+Triton builder 主要准备 Triton kernel 所需的统一 paged attention metadata 和 scratch / segment buffer，不像 FlashInfer / MLA 那样显式拆出 prefill / decode 子对象；
+FlashInfer builder 会显式构造 prefill / decode wrapper metadata；
 MLA builder 会额外拆 num_decodes / num_prefills / chunked_context / prefill_backend；
 Flex builder 会构造更灵活的 block mask / prefix mask。
 ```

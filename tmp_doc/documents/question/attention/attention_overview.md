@@ -230,7 +230,7 @@ AttentionBackend 说明“这个 backend 能不能用、KV cache 长什么样、
 query_start_loc：每个 request 的 query token 起止边界；
 seq_lens：每个 request 当前序列长度；
 num_reqs：当前 request 数；
-num_actual_tokens：未 padding 的真实 token 数；
+num_actual_tokens：metadata 当前携带的 token 数；普通路径等于真实 token 数，但 FULL CUDA graph / padding 路径可能包含 padded token；
 max_query_len：本轮单 request 最大 query 长度；
 max_seq_len：当前最大上下文长度；
 block_table_tensor：request → KV blocks；
@@ -333,7 +333,7 @@ AttentionImplBase / AttentionImpl 负责“真正调 kernel 算 attention”。
 ```text
 - 在初始化时选择 backend；
 - 创建 backend impl；
-- 注册到 static_forward_context；
+- 注册到 `compilation_config.static_forward_context`，forward 时经 `ForwardContext.no_compile_layers` 访问；
 - forward 时从 ForwardContext 取当前层的 metadata / KV cache / slot mapping；
 - 必要时先写 KV cache；
 - 调用 backend impl forward；
@@ -357,7 +357,7 @@ Attention layer 是“模型层里调用 attention backend 的统一入口”。
 ```text
 attn_metadata：按 layer name 组织的 attention metadata；
 slot_mapping：按 layer name 组织的 slot mapping；
-static_forward_context：模型构建阶段注册的 attention layer / KV cache 等静态对象；
+no_compile_layers：forward 期间可直接访问的静态 layer 对象映射，来源于 compilation_config.static_forward_context；
 cudagraph_runtime_mode：当前是 FULL / PIECEWISE / NONE；
 batch_descriptor：CUDA graph dispatch 需要的 batch 描述；
 ubatch_slices：microbatch 切片；
@@ -434,12 +434,17 @@ FLASHINFER
 TRITON_ATTN
 FLEX_ATTENTION
 FLASHMLA
+FLASH_ATTN_MLA
 CUTLASS_MLA
 FLASHINFER_MLA
-AITERTION_MLA
+TOKENSPEED_MLA
+ROCM_AITER_MLA
+ROCM_AITER_TRITON_MLA
+ROCM_AITER_UNIFIED_ATTN
 CPU_ATTN
 ROCM_ATTN
-XPU_MLA_SPARSE
+TURBOQUANT
+CUSTOM
 ```
 
 registry 还支持自定义 backend 注册。
@@ -494,8 +499,9 @@ validate_head_size() / validate_dtype() / validate_kv_cache_dtype() / validate_b
 FlashAttentionBackend
   → FlashAttentionMetadataBuilder
   → FlashAttentionMetadata
-  → FlashAttentionImpl
-  → flash_attn_varlen_func / cascade_attention / reshape_and_cache_flash
+  → Attention.forward() 先调用 do_kv_cache_update()
+  → FlashAttentionImpl.forward()
+  → flash_attn_varlen_func / cascade_attention
 ```
 
 ---
@@ -914,9 +920,9 @@ key tensor / value tensor
   + kv_cache_dtype / scale
 ```
 
-有些 backend 在 forward 内部完成 KV 写入；有些路径会先通过 unified KV cache update 写入，再调用 backend forward。
+多数 V1 attention backend（如 FlashAttention、FlashInfer、Triton、Flex、CPU、ROCm 等）声明 `forward_includes_kv_cache_update=False`，因此 `Attention.forward()` 会先通过 `unified_kv_cache_update()` 写 KV cache，再调用 backend forward。如果某个 backend 声明 `forward_includes_kv_cache_update=True`，KV 写入才会留在 impl forward 内部完成。
 
-FlashAttention 示例中，`do_kv_cache_update()` 会调用 `reshape_and_cache_flash()`，按照 `slot_mapping` 写 KV cache。
+FlashAttention 的 `do_kv_cache_update()` 会调用 `reshape_and_cache_flash()`，按照 `slot_mapping` 写 KV cache。
 
 源码位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:927`
 
@@ -990,9 +996,10 @@ Worker 初始化 KV cache 时，不是创建一个完全 backend 无关的 tenso
 ```text
 - 启用 KV transfer group；
 - connector 偏好 cross-layer blocks；
-- KV cache group / attention group 结构足够简单；
-- backend 支持 indexes_kv_by_block_stride()；
-- KV cache layout 能支持跨层连续组织。
+- 只有一个 KV cache group，且其中只有一个 attention group；
+- KV cache spec 是 AttentionSpec；
+- backend 的 get_kv_cache_stride_order(include_num_layers_dimension=True) 能表达额外 layer 维度；
+- 返回的 stride order 不是 identity 布局，能支持跨层连续组织。
 ```
 
 源码位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:115`
@@ -1053,6 +1060,8 @@ backend builder 是否支持 cascade
 
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2519`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2557`
+
+这里得到的是 cascade attention 可用的 common prefix length，不一定等于请求真实共享 prefix。它还会被 `min(num_computed_tokens)` 截断，并按 block size 向下取整；如果 ubatching 已启用、builder 判断当前 batch 不适合 cascade，或 backend 不支持该路径，最终会退化为 0。
 
 ### 10.4 cascade 会影响 metadata 和 CUDA graph
 
@@ -1382,7 +1391,7 @@ forward 生命周期内的隐式参数区。
 ```text
 per-layer attn_metadata
 per-layer slot_mapping
-static_forward_context
+no_compile_layers / static_forward_context 中注册的静态对象
 cudagraph_runtime_mode
 batch_descriptor
 ubatch_slices

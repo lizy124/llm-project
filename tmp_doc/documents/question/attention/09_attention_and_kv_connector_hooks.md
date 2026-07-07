@@ -923,7 +923,7 @@ Attention.forward()
 
 ### 14.1 backend forward 内更新 KV cache
 
-多数 backend：
+抽象基类默认：
 
 ```text
 forward_includes_kv_cache_update=True
@@ -937,9 +937,11 @@ impl.forward()
 
 `save_kv_layer()` 在 `impl.forward()` 之后调用，因此能看到更新后的 KV cache。
 
+但当前很多 V1 backend 会显式覆盖为 `False`，例如 FlashAttention、FlashInfer、Triton、Flex、CPU、ROCm、TurboQuant 等。追踪这些 backend 时，应按 separate KV update 路径理解。
+
 ### 14.2 separate KV update backend
 
-某些 backend，例如 Triton：
+常见 V1 backend：
 
 ```text
 forward_includes_kv_cache_update=False

@@ -122,6 +122,8 @@ EngineCore.step()
 ```text
 GPUModelRunner._update_states()
   → GPUModelRunner._prepare_inputs()
+  → GPUModelRunner._compute_cascade_attn_prefix_lens()
+  → GPUModelRunner._determine_batch_execution_and_padding()
   → GPUModelRunner._get_slot_mappings()
   → GPUModelRunner._build_attention_metadata()
   → GPUModelRunner._preprocess()
@@ -635,8 +637,10 @@ get_required_kv_cache_layout()
 - head_size 不支持 → 不能选该 backend；
 - KV cache dtype 不支持 → 不能选该 backend；
 - attn_type 不是 decoder 而 backend 不支持 → 不能选；
-- 启用了 KV connector 但 backend 不支持 → 不能选；
+- 启用了 KV connector 但 backend 覆盖声明不支持 → 不能选；
 - backend 要求特定 KV cache layout → selector 会设置 layout。
+
+注意：`supports_kv_connector()` 在 `AttentionBackend` 默认返回 `True`；只有 backend 显式覆盖为 `False` 时，启用 KV connector 才会排除该 backend。
 ```
 
 `get_attn_backend()` 中还会处理 required layout：
@@ -760,11 +764,9 @@ builder_cls.get_cudagraph_support(...)
 
 位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6898`
 
-所以 Attention 子系统还会影响：
+所以 Attention 子系统会先在初始化阶段约束这个模型可用的 CUDA graph 模式和 capture sizes。
 
-```text
-这一轮或这个模型能不能用 FULL / PIECEWISE / NONE CUDA graph。
-```
+每轮真正选择 FULL / PIECEWISE / NONE，则发生在 `_determine_batch_execution_and_padding()`：它会结合当前 batch 是否 uniform decode、是否有 encoder input、是否有 cascade attention、padding / ubatch / DP 等 runtime 条件做最终 dispatch。
 
 ---
 
@@ -994,11 +996,14 @@ value = value.view(-1, self.num_kv_heads, self.head_size_v)
 KV cache update 分支：
 
 ```python
-if not self.attn_backend.forward_includes_kv_cache_update:
+if (not self.attn_backend.forward_includes_kv_cache_update
+        and self.kv_sharing_target_layer_name is None):
     kv_cache_dummy_dep = unified_kv_cache_update(...)
 ```
 
 位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:491`
+
+如果当前层是 cross-layer KV sharing 的消费者层，`kv_sharing_target_layer_name is not None`，则会跳过本层自己的 KV cache update，因为它复用 target layer 的 KV cache。
 
 attention 调用：
 
@@ -1077,7 +1082,7 @@ ForwardContext
 
 attention 的一个关键副作用是写 KV cache。
 
-`AttentionBackend` 有一个字段：
+`AttentionBackend` 抽象基类有一个字段：
 
 ```python
 forward_includes_kv_cache_update: bool = True
@@ -1091,7 +1096,9 @@ forward_includes_kv_cache_update: bool = True
 这个 backend 的 attention forward 是否已经包含 KV cache update。
 ```
 
-如果不包含，`Attention.forward()` 会显式调用：
+注意这是抽象默认值；当前很多 V1 backend 会显式覆盖为 `False`，例如 FlashAttention、FlashInfer、Triton、Flex、CPU、ROCm、TurboQuant 等。对这些 backend，`Attention.forward()` 会先显式调用 KV cache update，再调用 attention forward。
+
+如果不包含，且当前层不是 KV sharing 的消费者层，`Attention.forward()` 会显式调用：
 
 ```python
 unified_kv_cache_update(key, value, self.layer_name)
@@ -1470,7 +1477,7 @@ Attention 子系统负责：
 
 8. Attention.forward()
    → reshape Q/K/V；
-   → 如果 backend 不含 KV update，先 unified_kv_cache_update()；
+   → 对 `forward_includes_kv_cache_update=False` 的 backend，先 unified_kv_cache_update()；
    → unified_attention_with_output()。
 
 9. unified_attention_with_output()
@@ -1633,6 +1640,8 @@ Scheduler 决定本轮哪些请求跑、跑多少 token，并通过 KVCacheManag
   ├─ GPUModelRunner.execute_model()
   │    ├─ _update_states()
   │    ├─ _prepare_inputs()
+  │    ├─ _compute_cascade_attn_prefix_lens()
+  │    ├─ _determine_batch_execution_and_padding()
   │    ├─ _get_slot_mappings()
   │    ├─ _build_attention_metadata()
   │    │    ├─ CommonAttentionMetadata

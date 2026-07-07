@@ -501,10 +501,10 @@ num_actual_tokens
 其中：
 
 ```text
-num_actual_tokens = 本轮真实 token 总数
+num_actual_tokens = metadata 当前携带的 token 数；普通路径等于本轮真实 token 总数，FULL CUDA graph / padding 路径可能包含 padded token
 ```
 
-如果 CUDA graph padding 后，`num_actual_tokens` 的命名略有历史包袱；源码里也有 TODO 说明它可能包含 padding。
+`num_actual_tokens` 名称有历史包袱；普通路径等于真实 token 数，FULL CUDA graph / padding 路径可能等于 padded token 数。backend 应结合 `query_start_loc`、`num_reqs`、padding slot `-1`、block table padding 行等，避免把 padding 当真实 token。
 
 位置：`code/vllm/vllm/v1/attention/backend.py:377` 到 `code/vllm/vllm/v1/attention/backend.py:381`
 
@@ -986,6 +986,8 @@ CommonAttentionMetadata
   → mixed batch 在一个 FlashInferMetadata 中同时携带 prefill 和 decode 子 metadata
 ```
 
+例外是 cascade attention：当 `common_prefix_len > 0` 且外部条件允许时，FlashInfer metadata 会设置 `use_cascade=True` 并使用 `cascade_wrapper`，此时 prefill / decode 子 metadata 不再按普通路径填充。
+
 ---
 
 ## 16. MLA 风格：prefill / decode 是两套计算路径
@@ -1130,6 +1132,9 @@ num_sampled_tokens = num_draft_tokens + 1
 SpecDecodeMetadata
   主要服务 sampler：draft token、bonus token、target logits、采样位置、rejection。
 
+spec_decode_common_attn_metadata
+  主要服务 speculative drafter / proposer 复用或改写 common attention layout，必要时提供 unpadded 后的 request/token 视图。
+
 CommonAttentionMetadata / AttentionMetadata
   主要服务 attention backend：query 怎么 attend、KV 怎么读写、backend kernel 怎么切分。
 ```
@@ -1148,7 +1153,7 @@ spec_decode_common_attn_metadata
 
 位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2451` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2480`
 
-它用于 speculative proposer / drafter 需要复用或改写 common attention layout 的场景。
+它用于 speculative proposer / drafter 需要复用或改写 common attention layout 的场景，而不是普通 sampler 的核心输入。
 
 如果当前 metadata 做了 padding，还会 unpad：
 
@@ -1250,7 +1255,7 @@ num_reqs_padded = num_reqs_padded or num_reqs
 block_table 使用 NULL_BLOCK_ID 填充；
 is_prefilling[num_reqs:] = False；
 query_start_loc 保持非递减；
-slot_mapping padded 区域通常填安全值或 -1。
+当 `pad_attn` 或存在 `forward_includes_kv_cache_update=False` 的 backend 导致 slot mapping 使用 padded token 维度时，`num_tokens_unpadded:num_tokens_padded` 区间填 `-1`。
 ```
 
 这对 prefill / decode 判断的影响是：

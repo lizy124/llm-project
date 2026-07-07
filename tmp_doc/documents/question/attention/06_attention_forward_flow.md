@@ -433,9 +433,9 @@ KV cache update 有两种模式，由 backend class 的字段决定：
 AttentionBackend.forward_includes_kv_cache_update
 ```
 
-### 8.1 默认：backend forward 内部更新 KV cache
+### 8.1 抽象默认：backend forward 内部更新 KV cache
 
-多数 backend 默认：
+`AttentionBackend` 抽象基类默认：
 
 ```text
 forward_includes_kv_cache_update = True
@@ -451,7 +451,7 @@ Attention.forward()
       → backend 内部执行 attention
 ```
 
-这种路径下，KV cache update 和 attention kernel 可能融合，也可能在 impl.forward 内部按 backend 方式顺序执行。
+不过当前很多 V1 backend 会显式覆盖为 `False`，例如 FlashAttention、FlashInfer、Triton、Flex、CPU、ROCm、TurboQuant 等。因此实际追踪这些 backend 时，通常会先看到 separate KV update，再看到 attention forward。
 
 ### 8.2 separate KV update：先写 KV cache，再 attention
 
@@ -1252,14 +1252,14 @@ CUDA graph：可能启用。
 6. Attention.forward(query, key, value)
    reshape Q/K/V。
 
-7. FlashAttentionBackend.forward_includes_kv_cache_update=True
-   所以不单独调用 unified_kv_cache_update。
+7. FlashAttentionBackend.forward_includes_kv_cache_update=False
+   所以先调用 unified_kv_cache_update()，由 FlashAttentionImpl.do_kv_cache_update() 按 slot_mapping 写入当前 token K/V。
 
 8. unified_attention_with_output(...)
    取当前 layer 的 metadata、kv_cache。
 
 9. FlashAttentionImpl.forward(...)
-   写入当前 token K/V，并对 paged KV cache 执行 attention。
+   对已经写入的 paged KV cache 执行 attention。
 
 10. Attention.forward() 返回 attention output。
 ```

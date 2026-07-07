@@ -365,6 +365,11 @@ is_prefilling
 encoder_seq_lens
 dcp_local_seq_lens
 mm_req_doc_ranges
+```
+
+当启用 KV sharing fast prefill 且存在 logits indices 时，`cm_base` 还会额外填充：
+
+```text
 logits_indices_padded
 num_logits_indices
 ```
@@ -528,7 +533,7 @@ max_query_len > 1
   可能是 prefill、chunked prefill、spec decode 或 mixed batch。
 ```
 
-`num_actual_tokens` 表示当前真实 token 数，区别于 CUDA graph padding 后的 token 数。
+`num_actual_tokens` 名称有历史包袱：普通路径下它等于当前真实 token 数；FULL CUDA graph / padding 路径下，它可能等于 padded token 数。需要未 padding 的视图时，应结合调用处的 `num_tokens` / `num_reqs`，或使用 `CommonAttentionMetadata.unpadded(...)`。
 
 ### 6.2 sequence 布局字段
 
@@ -766,7 +771,7 @@ encoder-only attention。
 spec_decode_common_attn_metadata
 ```
 
-这是因为 speculative decoding 的采样 / rejection 后处理有时还需要知道本轮 draft / target token 对应的 attention common layout。
+这是因为 speculative drafter / proposer 有时需要复用或改写目标模型本轮的 common attention layout，必要时还会按 KV cache group 提供 block table / slot mapping，或在 padding 后通过 `unpadded(...)` 恢复真实 request/token 视图。
 
 也就是说 spec decode 不只影响 sampler 的 logits index，也会影响 attention metadata 中 query length、accepted token、draft token 边界等信息。
 
@@ -987,7 +992,7 @@ num_par_softmax_segments
 5. CUDA graph capture 时会构造更保守的 seq_lens，避免 full graph capture 过慢。
 ```
 
-这类 builder 的重点不是只打包 varlen 参数，还要帮自有 Triton kernel 准备执行计划和 workspace。
+Triton metadata 不像 FlashInfer 那样显式持有 `prefill` / `decode` 子 metadata，更多是统一 paged attention 参数加 Triton kernel workspace。这类 builder 的重点不是只打包 varlen 参数，还要帮自有 Triton kernel 准备执行计划和 workspace。
 
 ### 9.3 FlashInferMetadataBuilder
 
@@ -1038,7 +1043,7 @@ FlashInfer builder 的特点：
 2. 同一个 batch 内 prefill 和 decode 可能分别选择 FlashInfer native 或 TRT-LLM kernel；
 3. TRTLLM path 会尽量使用 GPU tensor，减少 CPU sync；
 4. reorder_batch_threshold 通常较激进，让 decode / prefill 更容易分段；
-5. 当前 cascade attention 路径通常禁用。
+5. 也有 cascade 路径：当 `common_prefix_len > 0` 时，会构造 `cascade_wrapper`，把 shared prefix 和 suffix paged KV metadata 交给 `MultiLevelCascadeAttentionWrapper.plan(...)`；是否能走到该路径仍取决于 ModelRunner 计算出的 cascade prefix、backend 支持、ubatching / CUDA graph 等外部条件。
 ```
 
 ### 9.4 FlexAttentionMetadataBuilder
@@ -1451,7 +1456,7 @@ query / KV 形态是否满足 backend 要求。
 
 ```text
 FlashAttention：典型支持；
-FlashInfer：当前通常禁用；
+FlashInfer：也有 cascade wrapper 路径，`common_prefix_len > 0` 时可构造 `MultiLevelCascadeAttentionWrapper`；
 FlexAttention：通常不启用；
 Triton：dataclass 可能有字段，但普通 builder 不主动启用；
 MLA / Mamba / GDN：按各自实现能力处理。
