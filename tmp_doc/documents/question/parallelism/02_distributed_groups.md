@@ -102,7 +102,7 @@ get_ep_group()
 get_eplb_group()
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1252` 起。
+位置：`get_world_group()` 在 `vllm/vllm/distributed/parallel_state.py:1242` 附近，`get_tp_group()` / `get_dcp_group()` / `get_pp_group()` 等 getter 从 `vllm/vllm/distributed/parallel_state.py:1334` 附近开始。
 
 ---
 
@@ -791,7 +791,7 @@ get_tp_group().xxx(...)
 在当前 rank 所属 TP group 上做 all_reduce。
 ```
 
-sequence parallel 也不单独创建新的 process group；它通常复用 TP group，在序列维度上配合 `reduce_scatter` / `all_gather` 做切分和恢复。
+sequence parallel 也不单独创建新的 process group；在 PP residual 等路径中常复用 TP group 做 `all_gather`，在 MoE all2all 路径中则通过 `is_sequence_parallel` 参数改变 dispatch / combine 使用的通信语义。
 
 ---
 

@@ -281,7 +281,7 @@ def initialize_model_parallel(
 ```text
 TP / PP / PCP / DCP：模型内部执行拓扑，调用方显式传入 initialize_model_parallel()
 DP：外层副本/请求并行维度，来自 VllmConfig.parallel_config.data_parallel_size
-SP：这里没有作为独立 group 入参；sequence-parallel 路径通常复用 TP group 做 reduce-scatter / all-gather
+SP：这里没有作为独立 group 入参；sequence-parallel 路径通常复用已有 TP / DP / EP 通信域，在 PP residual 或 MoE dispatch/combine 中改变 token/activation 布局
 ```
 
 注释给了一个例子：
