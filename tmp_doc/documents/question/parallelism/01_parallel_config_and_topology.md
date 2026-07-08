@@ -43,6 +43,8 @@ EP group
 PCP group
 DCP group
 EPLB group
+
+SP 不单独创建 group，而是复用已有 TP / DP / EP 等 group 上的通信路径。
 ```
 
 所以可以把主链路概括为：
@@ -56,7 +58,7 @@ ParallelConfig
   → init_distributed_environment()
   → ensure_model_parallel_initialized()
   → initialize_model_parallel()
-  → 创建 TP / PP / DP / EP / PCP / DCP groups
+  → 创建 TP / DCP / PCP / PP / DP / EP / EPLB groups
 ```
 
 ---
@@ -68,7 +70,7 @@ ParallelConfig 里有哪些并行相关字段？
 world_size 和 world_size_across_dp 分别表示什么？
 TP / PP / DP / PCP / DCP / EP 是否都是独立乘到 world_size 里？
 global rank / local rank / rank_in_group 有什么区别？
-一个 rank 如何同时属于 TP / PP / DP / EP / CP group？
+一个 rank 如何同时属于 TP / PP / DP / EP / CP group，并在 TP group 内参与 sequence-parallel 通信？
 Worker 初始化时如何使用 parallel_config 设置 device 和 distributed？
 Multiproc / Ray / external launcher 下 rank 如何分配？
 并行拓扑如何影响模型加载、KV cache、attention、sampling？
@@ -168,7 +170,7 @@ self.world_size *= self.data_parallel_size
 pipeline_parallel_size：
   pipeline parallel groups 数量，也就是模型 layer 被切成多少 stage。
 
- tensor_parallel_size：
+tensor_parallel_size：
   tensor parallel groups 数量，也就是单层内部 tensor 被多少 rank 合作计算。
 
 prefill_context_parallel_size：

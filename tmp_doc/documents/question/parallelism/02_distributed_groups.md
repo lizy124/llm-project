@@ -45,7 +45,7 @@ vLLM 的并行策略不是散落在各个 layer 里，而是先在 parallel_stat
 ```text
 vLLM 维护哪些 process group？
 每类 group 的 rank 成员如何计算？
-TP / PP / DP / EP / DCP / PCP group 分别给谁使用？
+TP / PP / DP / EP / DCP / PCP group 分别给谁使用，sequence parallel 为什么复用 TP group？
 get_tp_group() 这类 helper 返回什么？
 GroupCoordinator 封装了哪些通信能力？
 CPU group / device group / device communicator 有什么区别？
@@ -305,7 +305,7 @@ world_size = parallel_config.world_size_across_dp
 parallel_config.world_size * data_parallel_size
 ```
 
-其中 `parallel_config.world_size` 主要是 TP × PP 这类 worker 并行大小。
+其中 `parallel_config.world_size` 主要是 TP × PP × PCP 这类 worker 并行大小。
 
 ### 6.2 split_group 路径
 
@@ -790,6 +790,8 @@ get_tp_group().xxx(...)
 ```text
 在当前 rank 所属 TP group 上做 all_reduce。
 ```
+
+sequence parallel 也不单独创建新的 process group；它通常复用 TP group，在序列维度上配合 `reduce_scatter` / `all_gather` 做切分和恢复。
 
 ---
 

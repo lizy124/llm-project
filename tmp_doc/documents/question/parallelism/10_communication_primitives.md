@@ -680,7 +680,7 @@ partial softmax LSE
 
 ```text
 如果 dcp_size > 1：
-  attention impl 必须 need_to_return_lse_for_decode。
+  attention impl 必须能返回 decode softmax LSE。
 
 如果 pcp_size > 1：
   attention impl 必须 supports_pcp。
@@ -987,9 +987,11 @@ barrier 更偏生命周期 / 阶段同步，
   DP group
 
 主要通信：
-  控制面 collective_rpc 分发 execute_model；
   DP sync 小 tensor all-reduce；
   MoE + EP 场景下可能参与 expert sharding / token dispatch。
+
+相关控制面：
+  Executor.collective_rpc 会把 execute_model 分发给本 replica 内 worker，但它不是 DP group 的 tensor collective。
 
 典型用途：
   多 replica 执行协调；

@@ -5,10 +5,9 @@
 - `vllm/vllm/config/parallel.py`
 - `vllm/vllm/distributed/parallel_state.py`
 - `vllm/vllm/v1/worker/cp_utils.py`
-- `vllm/vllm/v1/worker/gpu/cp_utils.py`
-- `vllm/vllm/v1/worker/gpu/model_runner.py`
-- `vllm/vllm/v1/worker/gpu/block_table.py`
-- `vllm/vllm/v1/worker/gpu/attn_utils.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/worker/block_table.py`
+- `vllm/vllm/v1/worker/attn_utils.py`
 - `vllm/vllm/v1/core/kv_cache_utils.py`
 - `vllm/vllm/v1/core/sched/scheduler.py`
 - `vllm/vllm/v1/attention/backend.py`
@@ -27,8 +26,8 @@
 Context Parallel 是 attention / context 维度的并行：
 
 ```text
-把同一个请求的上下文 KV 分散到多个 rank；
-每个 rank 只持有和计算自己那部分 KV；
+把同一个请求的上下文 KV 按 CP 规则映射到多个 rank；
+每个 rank 主要读写和计算自己负责的本地 KV 分片；
 attention backend 计算局部 attention output + 局部 softmax LSE；
 最后用 LSE 语义正确地合并 partial attention states。
 ```

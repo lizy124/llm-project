@@ -249,7 +249,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 真正执行普通 attention forward 的接口。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:812`
+位置：`code/vllm/vllm/v1/attention/backend.py:780`
 
 第三层是 `AttentionMetadataBuilder`：
 
@@ -257,7 +257,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 把 CommonAttentionMetadata 转成 backend 自己要的 metadata。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:73`
+位置：`code/vllm/vllm/v1/attention/backend.py:533`
 
 对于 MLA，还有单独的 `MLAAttentionImpl`：
 
@@ -266,7 +266,7 @@ forward_mha：prefill / compute-friendly 路径。
 forward_mqa：decode / memory-friendly 路径。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:895`
+位置：`code/vllm/vllm/v1/attention/backend.py:863`
 
 ---
 
@@ -580,7 +580,7 @@ forward_mqa：
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:895`
+- `code/vllm/vllm/v1/attention/backend.py:863`
 - `code/vllm/vllm/v1/attention/backend.py:924`
 - `code/vllm/vllm/v1/attention/backend.py:939`
 
@@ -691,7 +691,7 @@ ModelRunner 先根据 Scheduler 分配的 block ids 更新 `InputBatch.block_tab
 
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2118`：`compute_slot_mapping()` 调用附近。
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2330`：`CommonAttentionMetadata` 填充 block table / slot mapping 附近。
-- `code/vllm/vllm/v1/attention/backend.py:393`：`CommonAttentionMetadata` 定义附近。
+- `code/vllm/vllm/v1/attention/backend.py:361`：`CommonAttentionMetadata` 定义附近。
 
 可以这样记：
 

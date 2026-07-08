@@ -529,9 +529,9 @@ softmax(Q [K_0, K_1, ...]^T) [V_0, V_1, ...]
 `AttentionImplBase` 中的标记是：
 
 ```python
-need_to_return_lse_for_decode = (
-    self.dcp_world_size > 1 and self.can_return_lse_for_decode
-)
+need_to_return_lse_for_decode = self.dcp_world_size > 1
+
+随后兼容性检查会要求 backend 具备返回 decode LSE 的能力。
 ```
 
 位置：`vllm/vllm/v1/attention/backend.py:803`
@@ -817,7 +817,7 @@ Pipeline parallel 会把 transformer layers 切到不同 PP ranks。
 `ModelConfig.get_layers_start_end_indices()` 根据：
 
 ```text
-pp_rank = (rank // tensor_parallel_size) % pipeline_parallel_size
+pp_rank = (rank // (tensor_parallel_size * prefill_context_parallel_size)) % pipeline_parallel_size
 ```
 
 计算当前 rank 负责的 layer 范围。

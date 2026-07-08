@@ -1138,7 +1138,7 @@ islice(self.layers, self.start_layer, self.end_layer)
 
 | 阶段 | 关键代码 | 核心产物 | 作用 |
 |---|---|---|---|
-| 初始化并行组 | `initialize_model_parallel()` | TP / PP / DP groups | 建立 rank mesh 和 PP 通信组 |
+| 初始化并行组 | `initialize_model_parallel()` | TP / DCP / PCP / PP / DP / EP / EPLB groups | 建立 rank mesh 和 PP 通信组 |
 | 计算 layer 区间 | `get_pp_indices()` | `start_layer / end_layer` | 决定当前 PP rank 负责哪些层 |
 | 创建模型层 | `make_layers()` | `ModuleList` + `PPMissingLayer` | 只创建本 stage 真实 layers，其他位置占位 |
 | 加载权重 | `is_pp_missing_parameter()` | 跳过 missing 参数 | 避免当前 stage 加载不属于自己的权重 |

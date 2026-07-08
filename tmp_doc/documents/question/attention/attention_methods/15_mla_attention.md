@@ -978,7 +978,7 @@ is_mla() = True
 MLA not supported
 ```
 
-对应代码：`vllm/vllm/v1/attention/backend.py:338` 到 `vllm/vllm/v1/attention/backend.py:342`
+对应代码：`vllm/vllm/v1/attention/backend.py:306` 到 `vllm/vllm/v1/attention/backend.py:310`
 
 backend registry 中注册了多种 MLA backend：
 

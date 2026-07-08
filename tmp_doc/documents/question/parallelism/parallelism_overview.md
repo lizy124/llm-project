@@ -24,7 +24,7 @@
 ```text
 1. vLLM 里有哪些并行维度？每个维度到底切什么？
 2. ParallelConfig 如何决定 world size、rank mesh 和 group？
-3. Worker 初始化时如何建立 TP / PP / DP / EP / PCP / DCP group？
+3. Worker 初始化时如何建立 TP / PP / DP / EP / PCP / DCP group，SP 为什么不是独立 group？
 4. 一次 SchedulerOutput 进入执行层后，会经过哪些 rank？
 5. 模型权重、layers、attention heads、experts、KV cache 分别归谁？
 6. forward 中哪些地方触发 all-reduce / all-gather / all-to-all / send-recv？
@@ -61,6 +61,7 @@ parallelism_overview.md
   → 04_pipeline_parallel.md
   → 05_data_parallel.md
   → 06_expert_parallel.md
+  → 07_sequence_parallel.md
   → 07_context_parallel.md
   → 08_kv_cache_and_parallelism.md
   → 09_attention_and_parallelism.md
@@ -97,8 +98,9 @@ ParallelConfig 定义并行规模，parallel_state 建立通信 group，模型�
 其中最重要的区分是：
 
 ```text
-TP / PP / PCP / DCP / EP：主要回答“一个模型副本内部如何合作完成一次 forward”。
-DP：主要回答“不同请求如何分配给不同模型副本”。
+TP / PP / PCP / DCP：主要回答“一个 DP replica 内部如何合作完成一次 forward”。
+EP：主要回答“MoE layer 内 experts 如何在同一 PP stage 的 DP / PCP / TP ranks 上分布和通信”。
+DP：主要回答“不同请求如何分配给不同模型副本”，但 MoE + EP 下 DP ranks 也可能参与 expert group。
 ```
 
 ---
@@ -944,6 +946,9 @@ global world
 
 06_expert_parallel.md
   解释 MoE router、expert placement、all-to-all dispatch / combine。
+
+07_sequence_parallel.md
+  解释 sequence parallel 在 vLLM 中主要作为 TP 内部的序列维优化路径，以及它和 CP 的边界。
 
 07_context_parallel.md
   解释 PCP / DCP、partial attention output、softmax LSE merge。

@@ -265,18 +265,18 @@ backend_class.validate_configuration(...)
 
 ```text
 FLASH_ATTN          → vllm.v1.attention.backends.flash_attn.FlashAttentionBackend
-FLASH_ATTN_DIFFKV   → vllm.v1.attention.backends.flash_attn_diff_kv.FlashAttentionDiffKVBackend
+FLASH_ATTN_DIFFKV   → vllm.v1.attention.backends.flash_attn_diffkv.FlashAttentionDiffKVBackend
 FLASHINFER          → vllm.v1.attention.backends.flashinfer.FlashInferBackend
 TRITON_ATTN         → vllm.v1.attention.backends.triton_attn.TritonAttentionBackend
-TRITON_ATTN_DIFFKV  → vllm.v1.attention.backends.triton_attn_diff_kv.TritonAttentionDiffKVBackend
+TRITON_ATTN_DIFFKV  → vllm.v1.attention.backends.triton_attn_diffkv.TritonAttentionDiffKVBackend
 FLEX_ATTENTION      → vllm.v1.attention.backends.flex_attention.FlexAttentionBackend
 FLASHMLA            → vllm.v1.attention.backends.mla.flashmla.FlashMLABackend
-FLASH_ATTN_MLA      → vllm.v1.attention.backends.mla.flashattn_mla.FlashAttentionMLABackend
+FLASH_ATTN_MLA      → vllm.v1.attention.backends.mla.flashattn_mla.FlashAttnMLABackend
 FLASHINFER_MLA      → vllm.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend
 TRITON_MLA          → vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend
-TOKENSPEED_MLA      → vllm.v1.attention.backends.mla.tokenspeed_mla.TokenSpeedMLABackend
+TOKENSPEED_MLA      → vllm.v1.attention.backends.mla.tokenspeed_mla.TokenspeedMLABackend
 CPU_ATTN            → vllm.v1.attention.backends.cpu_attn.CPUAttentionBackend
-TURBOQUANT          → vllm.v1.attention.backends.turbo_attn.TurboAttentionBackend
+TURBOQUANT          → vllm.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend
 CUSTOM              → 运行时注册的自定义 backend
 ```
 

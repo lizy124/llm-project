@@ -382,7 +382,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(...)
 
 位置：`code/vllm/vllm/v1/worker/gpu_worker.py:889`
 
-classic `GPUModelRunner` 中也有同步 send：
+`GPUModelRunner` 中也有同步 send：
 
 ```text
 get_pp_group().send_tensor_dict(...)
@@ -687,7 +687,7 @@ PP group：同一个 TP lane 上纵向串 stage。
 `ModelConfig.get_layers_start_end_indices()` 用 PP rank 决定本 rank 持有哪些层：
 
 ```text
-pp_rank = (parallel_config.rank // tensor_parallel_size) % pipeline_parallel_size
+pp_rank = (parallel_config.rank // (tensor_parallel_size * prefill_context_parallel_size)) % pipeline_parallel_size
 start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 ```
 
@@ -930,8 +930,8 @@ slot_ids = local ? slot_id : PAD_SLOT_ID
 
 相关逻辑在：
 
-- classic block table：`code/vllm/vllm/v1/worker/block_table.py:357`
-- modular GPU block table：`code/vllm/vllm/v1/worker/gpu/block_table.py:283`
+- block table：`code/vllm/vllm/v1/worker/block_table.py:357`
+- GPUModelRunner block table 使用路径：`code/vllm/vllm/v1/worker/block_table.py:283`
 
 所以 CP 的核心影响是：
 

@@ -12,7 +12,7 @@
 - `vllm/vllm/v1/core/kv_cache_manager.py`
 - `vllm/vllm/v1/worker/gpu_input_batch.py`
 - `vllm/vllm/v1/worker/gpu_model_runner.py`
-- `vllm/vllm/v1/worker/gpu/block_table.py`
+- `vllm/vllm/v1/worker/block_table.py`
 - `vllm/vllm/v1/worker/utils.py`
 - `vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `vllm/vllm/v1/attention/backend.py`
@@ -180,7 +180,7 @@ KVCacheConfig：当前 worker/rank 的全部 KV cache group 配置。
 
 Worker 初始化时会拿到已经规划好的 KV cache tensor，然后 reshape 成 backend 需要的形状。
 
-关键路径在旧 GPUModelRunner 中很清楚：
+关键路径在 GPUModelRunner 中很清楚：
 
 ```text
 _raw tensor
@@ -214,7 +214,7 @@ request row → block ids
 BlockTables.block_tables[group_id][req_index, block_index] = block_id
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:17`
+位置：`vllm/vllm/v1/worker/block_table.py:17`
 
 它不直接告诉某个 token 写哪个 slot，而是告诉：
 
@@ -239,7 +239,7 @@ block_number = block_table[request, block_index]
 slot_id      = block_number * block_size + block_offset
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:283`
+位置：`vllm/vllm/v1/worker/block_table.py:283`
 
 attention update 时通常只消费 slot mapping，不再重新理解 request 的 block 表。
 
@@ -745,7 +745,7 @@ block_offset = position % block_size
 slot_id      = block_number * block_size + block_offset
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:283`
+位置：`vllm/vllm/v1/worker/block_table.py:283`
 
 ### 11.2 CP 下 slot mapping 会判断 token 属不属于当前 rank
 
@@ -769,7 +769,7 @@ slot_id      = block_number * block_size + local_offset
 slot_id = PAD_SLOT_ID
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:289`
+位置：`vllm/vllm/v1/worker/block_table.py:289`
 
 这就是 CP 对 KV cache 写入最直接的影响：
 
@@ -1114,7 +1114,7 @@ num_kv_cache_groups x [max_num_reqs, max_num_blocks]
 slot_mappings[num_kv_cache_groups, max_num_batched_tokens]
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:47`、`vllm/vllm/v1/worker/gpu/block_table.py:73`
+位置：`vllm/vllm/v1/worker/block_table.py:47`、`vllm/vllm/v1/worker/block_table.py:73`
 
 这说明：
 
@@ -1550,7 +1550,7 @@ CUDA graph 要求很多 tensor shape 稳定，因此 KV cache 映射也要支持
 PAD_SLOT_ID
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/block_table.py:261`
+位置：`vllm/vllm/v1/worker/block_table.py:261`
 
 这很重要：
 

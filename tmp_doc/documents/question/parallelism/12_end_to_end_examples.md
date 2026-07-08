@@ -880,7 +880,7 @@ TP 和 EP 是不同层级的并行：
 ```text
 dense attention / dense MLP：主要走 TP group；
 MoE expert dispatch / combine：走 EP group；
-MoE 内部专家权重本身是否还切 TP，取决于具体 MoE runner / expert 实现。
+启用 EP 的 MoE 层里，expert 权重通常按 rank 分配为完整 experts 的子集，而不是继续把单个 expert 矩阵按 TP 切。
 ```
 
 心智模型：
@@ -1257,7 +1257,7 @@ PP stage 1
 | TP=2, PP=2 | stage 内 TP，stage 间 PP | layers 按 PP 切，每 stage 内再 TP 切 | 每 stage 只持有本 stage layers 的 KV | TP 通信 + PP send/recv | last PP stage 的 TP rank0 |
 | DP=2, TP=2 | 每个 DP replica 独立处理请求 | 每个 replica 一份模型，内部 TP 切 | replica-local | replica 内 TP，必要 DP 协调 | 每个 replica 的输出 rank |
 | MoE + EP | token 按 expert 跨 EP rank | dense 走 TP，experts 按 EP/runner 分布 | attention KV 仍按 layer/head/rank | EP all-to-all + TP 通信 | 不变，仍看 PP/TP |
-| DCP + attention | decode context 在 DCP group 分担 | 不改变权重分布 | KV 仍在 TP rank，本轮 context 被分担读取 | DCP AG+RS 或 A2A + LSE merge | 不变，仍看 PP/TP |
+| DCP + attention | decode context 在 DCP group 分担 | 不改变权重分布 | CP-aware slot mapping 让每个 rank 只读写本地 context KV 分片 | DCP AG+RS 或 A2A + LSE merge | 不变，仍看 PP/TP |
 | PP + KV cache | layers 按 stage 分段 | 每 stage 只持有部分 layers | 每 stage 只缓存本 stage attention layers | PP intermediate + token 状态同步 | last PP stage |
 
 ---

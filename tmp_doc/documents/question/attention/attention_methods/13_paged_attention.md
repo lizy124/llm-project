@@ -17,6 +17,8 @@
 
 本文用于梳理 PagedAttention 的核心思想：KV cache 分块、block table、slot mapping、非连续 KV 存储，以及 attention backend 如何读取 paged KV cache。
 
+注意：`code/vllm/docs/design/paged_attention.md` 明确标注为历史文档，不再描述当前 vLLM 代码。本文只把它作为概念背景；当前实现以 V1 的 KV cache manager、block table、attention backend 和各 backend kernel 路径为准。
+
 ---
 
 ## 1. 本文要回答的问题
@@ -595,7 +597,7 @@ CommonAttentionMetadata(
 )
 ```
 
-对应定义在：`vllm/vllm/v1/attention/backend.py:393`
+对应定义在：`vllm/vllm/v1/attention/backend.py:361`
 
 这些字段分别解决：
 
@@ -614,7 +616,7 @@ is_prefilling：请求是否仍在 prefill 阶段。
 
 `AttentionMetadataBuilder` 是抽象基类。
 
-位置：`vllm/vllm/v1/attention/backend.py:565`
+位置：`vllm/vllm/v1/attention/backend.py:533`
 
 每种 attention backend 会把 `CommonAttentionMetadata` 转成自己的 metadata。
 

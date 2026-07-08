@@ -53,7 +53,7 @@ hidden states
 一句话记忆：
 
 ```text
-EP 是“token 按 router 结果流向 expert 所在 rank”，不是“每个 expert 再做 tensor parallel”。
+EP 是“token 按 router 结果流向 expert 所在 rank”；启用 EP 的 MoE 层里，每个 rank 通常持有完整 experts 的子集，而不是继续把单个 expert 矩阵按 TP 切分。
 ```
 
 ---
@@ -81,7 +81,7 @@ EP 是“token 按 router 结果流向 expert 所在 rank”，不是“每个 e
 ```text
 1. 分布式初始化
    initialize_model_parallel()
-     → 创建 TP / PP / DP / PCP / EP / EPLB groups
+     → 创建 TP / DCP / PCP / PP / DP / EP / EPLB groups
 
 2. MoE 层构造
    FusedMoE(...)

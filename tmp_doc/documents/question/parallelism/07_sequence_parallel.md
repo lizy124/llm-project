@@ -1,4 +1,4 @@
-# 07_2. Sequence Parallel 在 vLLM 中切的是什么？
+# 07. Sequence Parallel 在 vLLM 中切的是什么？
 
 源码位置：
 
@@ -94,10 +94,10 @@ SP 通常不触碰这些 attention 语义。
 
 ## 4. vLLM 里的 SP 通常不是独立 world-size 维度
 
-在 vLLM 的并行拓扑里，常见独立维度包括：
+在 vLLM 的并行拓扑里，常见显式或可查询的并行维度包括：
 
 ```text
-DP / PP / TP / EP / PCP
+DP / PP / TP / EP / PCP / DCP
 ```
 
 DCP 比较特殊：

@@ -1023,7 +1023,7 @@ external_launcher + data_parallel_size > 1 + num_scheduled_tokens == 0
 dp_local_rank = data_parallel_rank_local
              or data_parallel_index
 
-tp_pp_world_size = pipeline_parallel_size * tensor_parallel_size
+tp_pp_world_size = pipeline_parallel_size * tensor_parallel_size * prefill_context_parallel_size
 
 self.local_rank += dp_local_rank * tp_pp_world_size
 ```
@@ -1033,9 +1033,9 @@ self.local_rank += dp_local_rank * tp_pp_world_size
 这表示单机多 DP 时，设备布局大致是：
 
 ```text
-DP0 使用 local ranks: 0..TP*PP-1
-DP1 使用 local ranks: TP*PP..2*TP*PP-1
-DP2 使用 local ranks: 2*TP*PP..3*TP*PP-1
+DP0 使用 local ranks: 0..TP*PP*PCP-1
+DP1 使用 local ranks: TP*PP*PCP..2*TP*PP*PCP-1
+DP2 使用 local ranks: 2*TP*PP*PCP..3*TP*PP*PCP-1
 ```
 
 ### 13.2 CoreEngineProcManager 也会按 DP rank 设置物理 GPU 映射
@@ -1367,7 +1367,7 @@ MoE / EP collective 需要 DP ranks 以一致节奏进入某些通信路径。
 | Executor | replica 内 worker 分发 | `Executor.execute_model()` |
 | Worker | 设备初始化和 local rank 偏移 | `GPUWorker.init_device()` |
 | ModelRunner | DP batch padding / cudagraph / ubatch 同步 | `coordinate_batch_across_dp()` |
-| distributed groups | 构造 TP/PP/DP/EP/EPLB groups | `initialize_model_parallel()` |
+| distributed groups | 构造 TP/DCP/PCP/PP/DP/EP/EPLB groups | `initialize_model_parallel()` |
 
 ---
 

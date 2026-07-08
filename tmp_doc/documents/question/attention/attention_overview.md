@@ -220,7 +220,7 @@ AttentionBackend 说明“这个 backend 能不能用、KV cache 长什么样、
 
 ### 3.2 `CommonAttentionMetadata`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:393`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:361`
 
 `CommonAttentionMetadata` 是所有 backend 共享的 batch 级 attention 描述。
 
@@ -251,7 +251,7 @@ CommonAttentionMetadata 是“所有 backend 都能看懂的公共 batch 描述�
 
 ### 3.3 `AttentionMetadataBuilder`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:565`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:533`
 
 `AttentionMetadataBuilder` 负责把 `CommonAttentionMetadata` 转换成某个 backend 私有的 metadata。
 
@@ -288,8 +288,8 @@ AttentionMetadataBuilder 负责“把公共 metadata 翻译成某个 backend 能
 
 源码位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:734`
-- `code/vllm/vllm/v1/attention/backend.py:812`
+- `code/vllm/vllm/v1/attention/backend.py:702`
+- `code/vllm/vllm/v1/attention/backend.py:780`
 
 `AttentionImplBase` 是具体 attention 执行实现的基类，保存通用属性：
 

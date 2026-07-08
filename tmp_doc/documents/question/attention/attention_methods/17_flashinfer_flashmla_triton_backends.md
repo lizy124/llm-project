@@ -1033,7 +1033,7 @@ can_return_lse_for_decode = True
 
 `CommonAttentionMetadata` 是所有 backend 的公共输入，但不是最终 kernel 参数。
 
-源码位置：`vllm/vllm/v1/attention/backend.py:393`
+源码位置：`vllm/vllm/v1/attention/backend.py:361`
 
 公共字段包括：
 

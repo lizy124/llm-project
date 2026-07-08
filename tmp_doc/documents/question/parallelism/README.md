@@ -13,7 +13,7 @@
 - `vllm/vllm/v1/worker/`
 - `vllm/vllm/v1/attention/`
 
-这个目录按问题拆解 vLLM V1 的并行体系，重点回答：vLLM 里有哪些并行策略，它们分别切分什么，如何建立 rank / group 拓扑，forward 中如何通信，KV cache / attention / scheduler / sampling 如何受并行影响，以及 TP / PP / DP / EP / CP 等策略如何组合。
+这个目录按问题拆解 vLLM V1 的并行体系，重点回答：vLLM 里有哪些并行策略，它们分别切分什么，如何建立 rank / group 拓扑，forward 中如何通信，KV cache / attention / scheduler / sampling 如何受并行影响，以及 TP / PP / DP / EP / SP / CP 等策略如何组合。
 
 ---
 
@@ -29,7 +29,7 @@
 ParallelConfig
   → distributed init
   → world / rank / local_rank
-  → TP / PP / DP / EP / CP groups
+  → TP / PP / DP / EP / PCP / DCP / EPLB groups
   → model loading / layer partition
   → ModelRunner forward
   → communication primitives
@@ -49,7 +49,7 @@ ParallelConfig
 
 ```text
 parallel size 从哪里来？
-world_size 如何拆成 TP / PP / DP / EP / CP？
+world_size、world_size_across_dp 如何对应 TP / PP / PCP / DP，DCP / EP 为什么不额外乘进去？
 rank / local_rank / group rank 分别是什么？
 配置如何影响 Worker、模型加载和执行？
 ```
@@ -62,7 +62,7 @@ rank / local_rank / group rank 分别是什么？
 
 ```text
 parallel_state.py 维护哪些 group？
-TP / PP / DP / EP / CP group 如何初始化？
+TP / PP / DP / EP / PCP / DCP / EPLB group 如何初始化？
 每个 group 在 forward 中服务什么通信？
 ```
 
@@ -121,12 +121,14 @@ EP 如何和 TP / DP 组合？
 ### 07. Context Parallel
 
 - [Context Parallel / DCP / PCP 如何切分上下文？](07_context_parallel.md)
+- [Sequence Parallel 在 vLLM 中指什么？](07_sequence_parallel.md)
 
 回答：
 
 ```text
 CP 切 sequence / context / KV 的哪一维？
 DCP 和 PCP 分别服务 decode / prefill 的什么瓶颈？
+SP 和 CP/DCP/PCP 是什么关系？
 attention partial output 为什么需要 LSE merge？
 哪些 attention backend 支持 CP？
 ```

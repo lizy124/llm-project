@@ -277,9 +277,12 @@ def initialize_model_parallel(
 
 位置：`vllm/vllm/distributed/parallel_state.py:1694` 到 `vllm/vllm/distributed/parallel_state.py:1700`
 核心区别可以这么记：
+
+```text
 TP / PP / PCP / DCP：模型内部执行拓扑，调用方显式传入 initialize_model_parallel()
 DP：外层副本/请求并行维度，来自 VllmConfig.parallel_config.data_parallel_size
-SP：vLLM 这里没有作为独立 group 入参；相关语义更多由 PCP/DCP 表达
+SP：这里没有作为独立 group 入参；sequence-parallel 路径通常复用 TP group 做 reduce-scatter / all-gather
+```
 
 注释给了一个例子：
 
@@ -1338,7 +1341,7 @@ lm_head 也是按 vocab 切的。
 num_attention_heads 必须能被 TP size 整除；
 某些 MLP intermediate_size / fused output_sizes 要能被 TP size 整除；
 vocab padded 后按 TP size 切；
-DCP size 必须整除 TP size；
+TP size 必须能被 DCP size 整除；
 GQA/MQA + DCP 有额外整除关系。
 ```
 
