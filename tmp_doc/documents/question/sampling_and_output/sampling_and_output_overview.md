@@ -34,7 +34,7 @@
 
 本文按“先定边界，再走主链路，再拆关键阶段，最后总结接口和数据结构”的方式，梳理 vLLM V1 中 sampling 与 output 的关系。
 
-它接在 `executor_worker_model_runner` 的 `07_model_forward_and_logits.md`、`08_sampling_and_model_runner_output.md` 后面，专门展开模型 forward 之后的后半段：
+它接在 `executor_worker_model_runner` 的 `07_model_forward_and_logits.md`、`08_sampling_and_model_runner_output.md` 后面，专门展开模型 forward 之后的采样与输出后半段：
 
 ```text
 hidden states / logits

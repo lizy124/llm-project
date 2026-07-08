@@ -748,10 +748,9 @@ return logits.scatter_(dim=-1, index=logits_idx, src=logits_sort)
 `apply_top_k_top_p()` 会根据平台和 batch size 选择实现：
 
 ```text
-CPU + Triton：Triton 实现；
-CPU 无 Triton：PyTorch 实现；
-GPU 且 batch >= 8 且有 Triton：Triton 实现；
-小 batch：PyTorch sort 实现。
+可用 Triton 且 batch 较大：Triton 实现；
+不适合 Triton 或小 batch：PyTorch sort 实现；
+不同平台会按当前能力和 batch size 选择实现。
 ```
 
 位置：`vllm/vllm/v1/sample/ops/topk_topp_sampler.py:345` 到 `vllm/vllm/v1/sample/ops/topk_topp_sampler.py:360`

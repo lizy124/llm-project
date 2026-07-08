@@ -645,7 +645,7 @@ Executor 处理的是一个 replica 内部的 TP / PP worker 分发。
 
 ### 10.1 coordinator 的职责
 
-`DPCoordinator` 的 docstring 已经说明了三个职责。
+`DPCoordinator` 的 docstring 已经说明了几个核心职责。
 
 位置：`vllm/vllm/v1/engine/coordinator.py:23`
 

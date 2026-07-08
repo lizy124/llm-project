@@ -326,7 +326,7 @@ sample_tokens() 负责“消费这些上下文并构造 ModelRunnerOutput”。
 11. async scheduling 下包装为 AsyncGPUModelRunnerOutput。
 ```
 
-### 4.4 V2 GPU ModelRunner 的差异
+### 4.4 新 GPU ModelRunner 的差异
 
 较新的 `code/vllm/vllm/v1/worker/gpu/model_runner.py` 也有类似边界，但组织方式略不同：
 

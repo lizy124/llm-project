@@ -1060,7 +1060,7 @@ FLASHINFER / TRITON_MLA + prefix caching + batch invariance 时禁用 prefix cac
 
 不是。
 
-DCP 复用 TP group 内的 GPU，但它切的是 context / attention 计算，不是模型权重矩阵本身。
+DCP 复用 TP 相关 rank，但它切的是 context / attention 计算，不是模型权重矩阵本身。
 
 ### 22.4 DCP 输出能不能直接 all_reduce？
 

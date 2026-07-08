@@ -104,8 +104,8 @@ DCP 比较特殊：
 
 ```text
 DCP 不增加 global world size；
-它复用 TP group 内的 GPU，
-把一个 TP group reshape / 拆成多个 DCP groups。
+它复用 TP 相关 rank，
+按 decode_context_parallel_size 在现有 rank mesh 上组织 DCP groups。
 ```
 
 而 SP 更特殊：

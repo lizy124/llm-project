@@ -443,8 +443,8 @@ tensor_parallel_size % decode_context_parallel_size == 0
 原因是：
 
 ```text
-DCP 不额外扩大 world size，而是复用 TP group 内的 GPU，
-把一个 TP group 再切成若干 DCP group。
+DCP 不额外扩大 world size，而是复用 TP 相关 rank，
+按 decode_context_parallel_size 在现有 rank mesh 上组织 DCP group。
 ```
 
 DCP 主要给 decode attention 使用，例如 attention backend 中需要：
@@ -1004,7 +1004,7 @@ MoE layers will be sharded according to the product of tensor parallel size and 
 
 位置：`vllm/vllm/config/parallel.py:126`
 
-所以 EP 往往不是单独一维，而是和 DP / TP 组合起来决定 expert 分布。
+所以 EP 往往不是单独一维，而是和 DP / PCP / TP 等已有维度组合起来决定 expert 分布；具体以 `initialize_model_parallel()` 构造出的 EP group 为准。
 
 ### 15.3 EPLB 为什么单独建 group
 

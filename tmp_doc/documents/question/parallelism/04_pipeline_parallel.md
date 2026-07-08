@@ -901,7 +901,7 @@ block_table 是什么；
 
 所以所有 PP stage 都会执行 `_update_states()` 和 attention metadata 准备。
 
-### 14.3 KV connector 输出需要穿过 PP 边界
+### 14.3 KV connector 输出需要随 PP 输出路径保留
 
 非 last rank 如果 forward 后拿到 `kv_connector_output`，会先存在：
 

@@ -168,16 +168,16 @@ self.world_size *= self.data_parallel_size
 
 ```text
 pipeline_parallel_size：
-  pipeline parallel groups 数量，也就是模型 layer 被切成多少 stage。
+  pipeline parallel size，也就是模型 layer 被切成多少 stage。
 
 tensor_parallel_size：
-  tensor parallel groups 数量，也就是单层内部 tensor 被多少 rank 合作计算。
+  tensor parallel size，也就是单层内部 tensor 被多少 rank 合作计算。
 
 prefill_context_parallel_size：
-  prefill context parallel groups 数量，用于 prefill 上下文并行。
+  prefill context parallel size，用于 prefill 上下文并行。
 
 data_parallel_size：
-  data parallel groups 数量；MoE layers 会按 TP x DP 的乘积做 expert shard。
+  data parallel size；MoE + EP 下 expert group 会把 DP / PCP / TP 这些已有 rank 组织起来。
 
 data_parallel_size_local：
   本机上的 DP replica 数量。

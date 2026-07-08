@@ -58,7 +58,7 @@
 如果压缩成一句话：
 
 ```text
-SamplingParams 是 request 级配置，SamplingMetadata 是 batch 级执行视图，sampler 只消费后者。
+SamplingParams 是 request 级配置，SamplingMetadata 是旧 sampler 路径的 batch 级执行视图；新 GPU sampler 则把同类信息维护在 stateful sampler / InputBatch 状态中。
 ```
 
 ---

@@ -172,7 +172,7 @@ if self.tensor_parallel_size % self.decode_context_parallel_size != 0:
 
 位置：`vllm/vllm/config/parallel.py:500` 到 `vllm/vllm/config/parallel.py:507`
 
-这说明 DCP 是在 TP group 内继续切分的一种并行，不会增加总 worker 数。
+这说明 DCP 复用 TP 相关 rank 来组织 decode context parallel，不会增加总 worker 数。
 
 ---
 
@@ -976,7 +976,7 @@ else:
 ```text
 每个 TP rank 只算自己 vocab shard 的 logits；
 采样前需要把各 rank 的 vocab logits 拼起来；
-默认可能只 gather 到 rank 0，某些平台使用 all-gather 让每个 rank 都拿到完整 logits。
+默认可能只 gather 到 rank 0，某些配置或执行路径会使用 all-gather 让每个 rank 都拿到完整 logits。
 ```
 
 ### 14.4 局部 argmax 优化

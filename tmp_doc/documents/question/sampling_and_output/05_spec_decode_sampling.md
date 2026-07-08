@@ -1125,7 +1125,7 @@ spec decode 下 `valid_sampled_token_ids` 已经经过：
 RejectionSampler.parse_output()
 ```
 
-过滤掉 `-1` placeholder和无效 token。
+过滤掉 `-1` placeholder 和无效 token。
 
 ### 17.2 update_from_output 取出本 request 的生成 tokens
 

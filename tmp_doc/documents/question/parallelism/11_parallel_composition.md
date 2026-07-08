@@ -36,7 +36,7 @@
 
 ```text
 DP replica 内部是一套模型并行拓扑：PP x PCP x TP。
-DCP 不增加 world size，而是在 TP group 内再切 context parallel group。
+DCP 不增加 world size，而是复用 TP 相关 rank 组织 context parallel group。
 EP 也不额外增加 worker，而是在 MoE layer 所在 PP stage 内用 DP x PCP x TP rank 组成 expert group。
 ```
 
@@ -453,7 +453,7 @@ group_ranks = all_ranks.reshape(-1, decode_context_model_parallel_size)
 
 位置：`code/vllm/vllm/distributed/parallel_state.py:1774`
 
-因为 TP 是最后一维，而 DCP 直接 reshape 成 `decode_context_model_parallel_size`，所以 DCP 本质上是在 TP 维度内部再切连续小组。
+因为 TP 是最后一维，而 DCP 直接 reshape 成 `decode_context_model_parallel_size`，所以 DCP 复用 TP 相关 rank，在现有 rank mesh 上按 DCP size 成组。
 
 这也是为什么配置校验要求：
 
@@ -961,7 +961,7 @@ PCP：prefill context parallel；
      乘进 world_size，增加 DP replica 内 worker 数。
 
 DCP：decode context parallel；
-     不乘进 world_size，复用 TP ranks，在 TP group 内切小组。
+     不乘进 world_size，复用 TP 相关 rank 组织 DCP group。
 ```
 
 配置字段：
@@ -1951,7 +1951,7 @@ code/vllm/vllm/model_executor/layers/logits_processor.py:75
 | TP | 是 | 固定 DP/PP/PCP，沿 TP 维度 | tensor、heads、vocab shard | linear、attention、logits |
 | PP | 是 | 固定 DP/PCP/TP，沿 PP 维度 | transformer layers | worker send/recv、model runner |
 | PCP | 是 | 固定 DP/PP/TP，沿 PCP 维度 | prefill context | attention backend |
-| DCP | 否 | TP group 内按 DCP size 切 | decode context | attention / MLA backend |
+| DCP | 否 | 复用 TP 相关 rank 按 DCP size 成组 | decode context | attention / MLA backend |
 | DP | 是 | 固定 PP/PCP/TP，沿 DP 维度 | request replica | scheduler、dp_utils、MoE EP |
 | EP | 否 | 固定 PP，合并 DP x PCP x TP | MoE experts | fused_moe all-to-all |
 | EPLB | 否 | 与 EP ranks 相同但独立 group | expert 负载平衡 | eplb |

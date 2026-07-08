@@ -1008,7 +1008,7 @@ barrier 更偏生命周期 / 阶段同步，
   dispatch_router_logits
   dispatch
   combine
-  all-to-all 或 allgather + reducescatter
+  all-to-all 或 all-gather + reduce-scatter
 
 典型用途：
   MoE token routing；
@@ -1095,7 +1095,7 @@ barrier 更偏生命周期 / 阶段同步，
 
 6. DCP / CP attention 通信不能简单相加 partial output，必须携带 softmax LSE，并通过 LSE merge 保证数值正确。
 
-7. DP 通信既有控制面请求分发，也有小 tensor all-reduce 同步 padding、ubatch、cudagraph mode 等执行状态。
+7. DP 相关链路既有控制面请求路由，也有小 tensor all-reduce 同步 padding、ubatch、cudagraph mode 等执行状态。
 
 8. collective_rpc 是控制面，torch collective / GroupCoordinator 是数据面；混淆这两层会导致对 vLLM 并行执行链路的理解错误。
 ```

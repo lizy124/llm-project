@@ -443,7 +443,7 @@ if num_logprobs is not None or sampling_metadata.logprob_token_ids:
   if logprobs_mode == "raw_logprobs":
     raw_logprobs = logits.log_softmax(...)
   elif logprobs_mode == "raw_logits":
-    raw_logprobs = logits.clone() / logits.to(float32)
+    raw_logprobs = logits.clone().to(float32)
 ```
 
 对应位置：`vllm/v1/sample/sampler.py:84` 到 `vllm/v1/sample/sampler.py:94`。

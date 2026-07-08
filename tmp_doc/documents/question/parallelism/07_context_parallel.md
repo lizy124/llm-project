@@ -27,7 +27,7 @@ Context Parallel 是 attention / context 维度的并行：
 
 ```text
 把同一个请求的上下文 KV 按 CP 规则映射到多个 rank；
-每个 rank 主要读写和计算自己负责的本地 KV 分片；
+每个 rank 主要读写自己负责的本地历史 KV 分片，并参与对应 attention 计算；
 attention backend 计算局部 attention output + 局部 softmax LSE；
 最后用 LSE 语义正确地合并 partial attention states。
 ```
@@ -214,8 +214,8 @@ ExternalDP x DP x PP x PCP x TP
 DCP group 的构建方式：
 
 ```text
-把 TP 维度 reshape 成 decode_context_parallel_size 一组；
-也就是把一个 TP group 拆成多个 DCP groups。
+在现有 rank mesh 上按 decode_context_parallel_size reshape 成组；
+DCP 复用 TP 相关 rank，但不额外增加 world size。
 ```
 
 源码注释强调：

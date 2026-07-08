@@ -458,7 +458,7 @@ reduce-scatter：
   在 sequence parallel 或优化路径里边 reduce 边切分。
 
 gather：
-  某些只需要目标 rank 收完整结果的路径。
+  某些只需要目标 rank 收完整分片结果的辅助路径。
 ```
 
 需要避免的误解：
@@ -863,7 +863,7 @@ TP 常用：
   all-reduce / all-gather / reduce-scatter。
 
 PP 常用：
-  send / recv / broadcast intermediate tensors 或 token 状态。
+  send / recv intermediate tensors；部分路径还会配合 broadcast 等控制通信。
 
 EP 常用：
   all-to-all dispatch / combine routed tokens。

@@ -29,7 +29,8 @@
 ParallelConfig
   → distributed init
   → world / rank / local_rank
-  → TP / PP / DP / EP / PCP / DCP / EPLB groups
+  → TP / PP / DP / EP / PCP / DCP groups
+  → EPLB 等辅助均衡机制
   → model loading / layer partition
   → ModelRunner forward
   → communication primitives
@@ -247,8 +248,8 @@ README.md：
 parallelism_overview.md：
   并行体系总览，先建立完整心智模型。
 
-01-12：
-  按问题拆开的专题文档，后续逐篇补源码细节。
+编号专题：
+  按问题拆开的专题文档，其中 Context Parallel 和 Sequence Parallel 分别成篇。
 ```
 
 ---

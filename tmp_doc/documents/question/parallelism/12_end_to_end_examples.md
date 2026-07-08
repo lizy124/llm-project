@@ -183,7 +183,7 @@ all_ranks[external_dp, dp, pp, pcp, tp]
 
 ```text
 TP group  ：固定 external_dp / dp / pp / pcp，沿 tp 维取 rank
-DCP group ：在 TP group 内按 decode_context_parallel_size 切分
+DCP group ：复用 TP 相关 rank 按 decode_context_parallel_size 成组
 PCP group ：固定 external_dp / dp / pp / tp，沿 pcp 维取 rank
 PP group  ：固定 external_dp / dp / pcp / tp，沿 pp 维取 rank
 DP group  ：固定 external_dp / pp / pcp / tp，沿 dp 维取 rank
@@ -966,7 +966,7 @@ DCP groups 可以理解为：
 
 ```text
 TP 决定 head / tensor 分片；
-DCP 在 TP ranks 内进一步让 decode attention 的 context 计算分摊；
+DCP 复用 TP 相关 rank，让 decode attention 的 context 计算分摊；
 world_size 仍然是 TP * PP * PCP，不乘 DCP。
 ```
 
@@ -1281,7 +1281,7 @@ PP stage 只持有自己 layers 的 KV cache；
 ### 11.3 不要以为 DCP 会增加 worker 数
 
 ```text
-DCP 复用 TP rank；
+DCP 复用 TP 相关 rank；
 DCP size 不能超过 TP size；
 它改变的是 decode attention context 计算方式，不是模型层数或权重切分方式。
 ```

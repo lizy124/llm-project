@@ -685,7 +685,7 @@ tensor_parallel_size % decode_context_parallel_size == 0
 
 ```text
 TP 决定已有 rank 如何切权重 / heads；
-DCP 在 TP group 内再组织 context-parallel 通信域。
+DCP 复用 TP 相关 rank，在现有 rank mesh 上组织 context-parallel 通信域。
 ```
 
 ### 10.3 PCP 与 DCP 共同组成 total CP rank

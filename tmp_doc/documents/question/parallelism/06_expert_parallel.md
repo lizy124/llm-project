@@ -34,7 +34,7 @@ Expert Parallel 是 MoE 层内部的 expert 级并行方式：
   把同一个 dense / expert 矩阵切到多个 rank 上算。
 
 Expert Parallel：
-  把不同 experts 分给不同 rank；每个 expert 在自己的 rank 上完整保存和计算。
+  把不同 experts 分给不同 rank；典型 EP 路径中每个 rank 保存并计算完整 experts 的子集。
 ```
 
 对一次 MoE forward，可以记成：
