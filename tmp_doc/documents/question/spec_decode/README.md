@@ -63,5 +63,5 @@ spec_decode_overview.md：
   总览主文档，建立 speculative decoding 的完整闭环。
 
 01-10：
-  按问题拆开的专题文档，后续逐篇补源码细节。
+  按问题拆开的专题文档，用于逐篇核对源码细节和 spec decode 状态边界。
 ```

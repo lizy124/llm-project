@@ -2,13 +2,13 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\core\sched\scheduler.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\core\sched\output.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\core\sched\utils.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\outputs.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\engine\core.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\engine\__init__.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\request.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/v1/core/sched/output.py`
+- `vllm/vllm/v1/core/sched/utils.py`
+- `vllm/vllm/v1/outputs.py`
+- `vllm/vllm/v1/engine/core.py`
+- `vllm/vllm/v1/engine/__init__.py`
+- `vllm/vllm/v1/request.py`
 
 本问题关注：`Scheduler.update_from_output()` 如何把 `ModelRunnerOutput` 中的 sampled token、logprobs、pooling output、KV connector output、routed experts、cudagraph stats 等执行层结果，消化回 Scheduler 的 request 状态机，并构造 `EngineCoreOutputs` 返回给 Engine / OutputProcessor。
 

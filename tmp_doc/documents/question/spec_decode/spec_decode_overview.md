@@ -2,20 +2,20 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\speculative.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\spec_decode\metadata.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\rejection_sampler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\sampler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\structured_output\__init__.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\structured_output\utils.py`
+- `code/vllm/vllm/config/speculative.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/request.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/spec_decode/metadata.py`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py`
+- `code/vllm/vllm/v1/sample/sampler.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/structured_output/__init__.py`
+- `code/vllm/vllm/v1/structured_output/utils.py`
 
 本文按“先定边界，再走主链路，再拆关键阶段，最后总结接口和状态修正”的方式，梳理 vLLM V1 speculative decoding 的完整机制。
 

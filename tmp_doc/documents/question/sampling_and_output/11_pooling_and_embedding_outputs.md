@@ -100,7 +100,7 @@ embed&token_classify：
   同时需要 embedding 和 token classification 的复合任务。
 ```
 
-score / rerank 语义上也走 pooling，只是上层 API 进一步解释输出。
+score / rerank 语义上通常也走 pooling / classify，只是上层 API 进一步解释输出。
 
 源码中还定义了 score task 到架构语义的映射：
 

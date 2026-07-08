@@ -1335,9 +1335,9 @@ forward 已经完成，但需要 sample_tokens() 继续构造输出。
 
 `SamplerOutput` 是 sampler 的 GPU 结果；`ModelRunnerOutput` 是 worker 返回 Scheduler 的跨进程结果。
 
-### 20.4 AsyncModelRunnerOutput 不能跨进程长期传输
+### 20.4 AsyncModelRunnerOutput 不能直接跨进程序列化
 
-它持有 CUDA event / stream / tensor，Executor 会在合适边界调用 `get_output()`，把它变成普通 `ModelRunnerOutput`。
+它持有 CUDA event / stream / tensor，Executor 会在跨进程边界前调用 `get_output()`，把它变成普通 `ModelRunnerOutput`。
 
 ### 20.5 prompt logprobs 和 sample logprobs 不在同一个字段
 

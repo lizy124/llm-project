@@ -22,7 +22,7 @@
 
 ## 1. 一句话回答
 
-`OutputProcessor` 是 vLLM v1 中 **EngineCore 内部输出到用户可见输出对象的转换层**。
+`OutputProcessor` 是 vLLM V1 中 **EngineCore 内部输出到用户可见输出对象的转换层**。
 
 核心链路是：
 

@@ -750,7 +750,7 @@ vLLM 里有两条相关路径：
 GPUModelRunner 路径：
   vllm/vllm/v1/structured_output/utils.py::apply_grammar_bitmask
 
-V2 GPU runner 路径：
+新 GPU runner 路径：
   vllm/vllm/v1/worker/gpu/structured_outputs.py::StructuredOutputsWorker
 ```
 
@@ -847,7 +847,7 @@ CPU 情况也会调用 xgrammar 的 CPU mask 逻辑，只是必要时把 logits 
 
 ---
 
-## 17. V2 GPU runner 路径：StructuredOutputsWorker
+## 17. 新 GPU runner 路径：StructuredOutputsWorker
 
 `StructuredOutputsWorker` 定义在：
 
@@ -865,7 +865,7 @@ copy_stream
 
 对应代码：`vllm/vllm/v1/worker/gpu/structured_outputs.py:12` 到 `vllm/vllm/v1/worker/gpu/structured_outputs.py:21`
 
-V2 GPU runner 在 sample 中调用：
+新 GPU runner 在 sample 中调用：
 
 ```text
 self.structured_outputs_worker.apply_grammar_bitmask(

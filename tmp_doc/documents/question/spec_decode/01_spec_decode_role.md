@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\speculative.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\spec_decode\metadata.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\rejection_sampler.py`
+- `code/vllm/vllm/config/speculative.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/spec_decode/metadata.py`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py`
 
 本问题关注：`Speculative Decoding` 在 vLLM V1 中到底是一条怎样的跨层链路；它如何从配置开启，如何影响 Scheduler 的 token / KV block 调度，如何把 draft tokens 放进 `SchedulerOutput`，如何在 `GPUModelRunner` 中构造 drafter 和 rejection sampler，如何准备 spec decode metadata，如何执行 target model 验证和 rejection sampling，以及最终如何把下一轮 draft tokens 回传给 Scheduler。
 

@@ -285,8 +285,8 @@ CompletionOutput.logprobs：本轮新增 logprobs
 
 ```text
 text = 当前完整 output_text
- token_ids = detokenizer.output_token_ids
- logprobs = logprobs_processor.logprobs
+token_ids = detokenizer.output_token_ids
+logprobs = logprobs_processor.logprobs
 ```
 
 源码位置：
