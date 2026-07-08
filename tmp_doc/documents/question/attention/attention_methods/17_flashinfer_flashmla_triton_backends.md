@@ -481,7 +481,7 @@ builder 会先用 `split_decodes_and_prefills()` 把 batch 切成 decode 段和 
 
 ```text
 cascade attention？
-  走 MultiLevelCascadeAttentionWrapper。
+  代码中保留 MultiLevelCascadeAttentionWrapper 路径，但当前 `use_cascade_attention()` 返回 `False`，常规调度不会自动启用。
 
 prefill 部分：
   如果满足 TRTLLM 条件，构造 TRTLLMPrefill；
@@ -512,7 +512,7 @@ decode TRTLLM：
   trtllm_batch_decode_with_kv_cache(...)
 
 cascade：
-  MultiLevelCascadeAttentionWrapper.run(...)
+  MultiLevelCascadeAttentionWrapper.run(...)  # 代码路径存在，但当前常规调度不自动启用
 ```
 
 源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1436`
@@ -522,6 +522,7 @@ cascade：
 ```text
 1. forward 前会按 num_actual_tokens 去掉 CUDA graph padding。
 2. KV cache update 不在 FlashInfer forward 内完成，而是由 do_kv_cache_update() 单独调用 reshape_and_cache_flash。
+3. FP8 / NVFP4 路径下 query quantization 不是无条件启用，受 TRTLLM 可用性和 disable_flashinfer_q_quantization 控制；否则 query dtype 会回落到模型 dtype。
 ```
 
 源码位置：
@@ -767,7 +768,7 @@ DeepSeek V4：
 - 支持 attention sink；
 - 支持 batch invariant；
 - 支持 FP32 dtype；
-- compute capability 返回 True，平台约束相对少。
+- compute capability 返回 True，平台约束相对少；但具体 dtype 仍可能在 impl 初始化时报硬件限制，例如 CUDA 上 FP8 KV cache 需要 SM89+、BF16 KV cache 需要 SM80+。
 ```
 
 源码位置：
@@ -1022,7 +1023,7 @@ can_return_lse_for_decode = True
 | dtype | fp16 / bf16 | fp16 / bf16；sparse 常 bf16 | fp16 / bf16 / fp32（普通 Triton） |
 | quant KV | fp8 / nvfp4 等较丰富 | fp8 / fp8_ds_mla 等 MLA 特化 | fp8 / per-token-head quant 等普通 Triton 支持较多 |
 | attention type | FlashInferImpl 只实现 decoder | decoder only | 普通 Triton 支持 decoder / encoder / encoder_only / encoder_decoder |
-| non-causal | backend 声明支持，但路径有限制 | 不支持 | 普通 Triton 支持 |
+| non-causal | 当前不声明支持；`use_non_causal=True` 时 selector 会排除 `FLASHINFER` | 不支持 | 普通 Triton 支持 |
 | cudagraph | 取决于 TRTLLM decode 支持，可能是 uniform batch 或 single-token decode | dense MLA 是 uniform batch | 普通 Triton 是 always；MLA 是 uniform batch |
 | 外部依赖 | flashinfer / TRTLLM kernels | FlashMLA ops / flashinfer MLA variants | vLLM Triton kernels |
 

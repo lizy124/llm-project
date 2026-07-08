@@ -986,7 +986,7 @@ CommonAttentionMetadata
   → mixed batch 在一个 FlashInferMetadata 中同时携带 prefill 和 decode 子 metadata
 ```
 
-例外是 cascade attention：当 `common_prefix_len > 0` 且外部条件允许时，FlashInfer metadata 会设置 `use_cascade=True` 并使用 `cascade_wrapper`，此时 prefill / decode 子 metadata 不再按普通路径填充。
+例外是 cascade attention 的保留代码路径：若 `common_prefix_len > 0`，FlashInfer metadata 会设置 `use_cascade=True` 并使用 `cascade_wrapper`，此时 prefill / decode 子 metadata 不再按普通路径填充。但当前 `FlashInferMetadataBuilder.use_cascade_attention()` 返回 `False`，所以常规调度不会自动启用 FlashInfer cascade。
 
 ---
 

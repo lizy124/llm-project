@@ -340,6 +340,8 @@ Blackwell / SM100:
   FLASHMLA_SPARSE
 ```
 
+SM100 sparse MLA 的 `FLASHINFER_MLA_SPARSE` / `FLASHMLA_SPARSE` 顺序不是固定的：量化 KV cache 或 BF16 且本地 head 数较少时优先 FlashInfer sparse；BF16 且 head 数较多时优先 FlashMLA sparse。
+
 对应位置：`vllm/platforms/cuda.py:92` 到 `vllm/platforms/cuda.py:136`。
 
 ### 5.5 显式配置可以覆盖自动选择
@@ -376,7 +378,7 @@ FA4 availability: vllm.vllm_flash_attn.cute.interface
 FA3 scheduler: get_scheduler_metadata()
 ```
 
-代码中明确说明 vLLM 主要关心 `flash_attn_varlen_func` 和 KV cache 相关路径，见 `vllm/vllm_flash_attn/flash_attn_interface.py:111`。
+代码注释说明 vLLM 主要关心 `flash_attn_varlen_func` 和 KV cache 相关路径，见 `vllm/vllm_flash_attn/flash_attn_interface.py:111`。当前 V1 ordinary FlashAttention 主链路实际调用的是 `flash_attn_varlen_func()`；注释中提到的 `flash_attn_with_kvcache` 更像历史/扩展说明，不应作为本文主链路。
 
 `flash_attn_varlen_func()` 接收的核心参数包括：
 
@@ -416,7 +418,7 @@ supported_dtypes:
 
 supported_kv_cache_dtypes:
   auto / float16 / bfloat16
-  fp8 / fp8_e4m3 在特定平台和 FA3 + SM90 下支持
+  fp8 / fp8_e4m3 在 CUDA 上需要特定平台和 FA3 + SM90；XPU 路径另行支持
 
 block_size:
   MultipleOf(16)
@@ -850,7 +852,7 @@ flash_attn_varlen_func(
 ```text
 block_size 固定 64；
 支持 SM90 / SM100；
-有 dense / sparse 分支；
+在 vLLM registry 中，dense backend `FLASHMLA` 和 sparse backend `FLASHMLA_SPARSE` 是不同 backend；不要把 sparse 能力理解为 dense `FLASHMLA` 的普通运行分支；
 BF16/FP16 调 flash_mla_with_kvcache；
 FP8 调 flash_mla_with_kvcache_fp8；
 不支持 ALiBi / sliding_window / logits_soft_cap；
@@ -911,6 +913,8 @@ MLA:
   TRITON_MLA
   ROCM_AITER_TRITON_MLA
 ```
+
+AITER MLA / FA / Unified 是否进入候选取决于 AITER 是否可用或启用；如果 AITER MLA 未启用，ROCm MLA 通常只返回 `TRITON_MLA`。另外启用 KV connector 时，ROCm 普通 attention 会跳过 layout 不兼容的 `ROCM_ATTN`。
 
 其中：
 
@@ -1079,7 +1083,7 @@ FLASH_ATTN_MLA:
   FA3 + SM90；不支持 FP8 KV；适合部分 MLA decode。
 
 FLASHMLA:
-  MLA 专用 kernel；SM90/SM100；block_size 固定 64；支持 dense/sparse 分支。
+  MLA 专用 dense kernel；SM90/SM100；block_size 固定 64。Sparse MLA 在 vLLM 中是独立 backend `FLASHMLA_SPARSE`。
 
 FLASHINFER_MLA:
   Blackwell 上优先级高；调用 TRTLLM MLA decode kernel；强制 HND layout。

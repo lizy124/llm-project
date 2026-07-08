@@ -189,6 +189,8 @@ else:
 | 全层 sliding window | `CacheConfig.sliding_window` | `Attention` 默认读取 `cache_config.sliding_window` |
 | interleaved / per-layer sliding | 模型层自己判断 | `per_layer_sliding_window=...` |
 
+如果 hybrid manager 被禁用，per-layer sliding / local spec 可能被转换成 `FullAttentionSpec(sliding_window=...)` 或 `FullAttentionSpec(attention_chunk_size=...)`；但 attention compute 的窗口仍来自 layer impl 的 `sliding_window` / `attention_chunk_size`，不是全局 `CacheConfig.sliding_window`。
+
 ### 3.3 Attention 层如何确定本层 sliding_window
 
 `Attention.__init__()` 的优先级是：
@@ -737,7 +739,7 @@ sliding_window_k=self.sliding_window[1]
 
 ### 7.4 FlashInfer 的窗口限制
 
-FlashInfer metadata builder 会检查所有层的窗口左边界是否一致。
+FlashInfer native / 非全 TRTLLM 路径会检查所有层的窗口左边界等全局超参是否一致。
 
 位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1018`
 
@@ -751,8 +753,9 @@ One potential fix is to set disable_sliding_window=True
 这类约束通常出现在：
 
 ```text
-不同层 window_left 不同、backend 需要全局统一 hyperparameters、
+不同层 window_left / logits_soft_cap / sm_scale 等超参不同、backend 需要全局统一 hyperparameters、
 或者特定 wrapper 不支持 interleaved window 参数。
+如果所有 prefill / decode 都走 TRTLLM path，则不会走这段 native wrapper 的相同超参检查。
 ```
 
 ### 7.5 cascade_attention 函数本身也拒绝 sliding window

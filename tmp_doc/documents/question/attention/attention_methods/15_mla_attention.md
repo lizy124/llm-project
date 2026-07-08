@@ -316,7 +316,7 @@ block_size * num_kv_heads * (head_size + head_size_v) * dtype_size
 
 ### 7.2 MLA 的 cache 是单向量
 
-`MLAAttention.get_kv_cache_spec()` 返回的是 `MLAAttentionSpec`：
+普通 `MLAAttention.get_kv_cache_spec()` 返回的是 `MLAAttentionSpec`：
 
 ```text
 MLAAttentionSpec(
@@ -338,7 +338,7 @@ MLAAttentionSpec(
 
 对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1201` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1208`
 
-也就是说 MLA cache 的形状可以理解为：
+DeepSeek V4、sliding-window MLA、sparse MLA 等模型或 backend 可能使用 `SlidingWindowMLASpec` 或 model-specific spec / layout，不能把所有 MLA cache 都简化为同一种 spec。也就是说普通 MLA cache 的形状可以理解为：
 
 ```text
 [num_blocks, block_size, kv_lora_rank + qk_rope_head_dim]
@@ -880,7 +880,7 @@ get_builder_cls() = FlashInferMLAMetadataBuilder
 
 对应代码：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:38` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:107`
 
-FlashInferMLA 有一个额外点：
+FlashInferMLA 当前只支持 SM100 / Blackwell，非 SM100 CUDA 默认不会选它。它还有一个额外点：
 
 ```text
 get_required_kv_cache_layout() = HND
@@ -1222,13 +1222,13 @@ KV sharing is not supported for MLA
 
 ```text
 如果 enable_prefix_caching 且 VLLM_BATCH_INVARIANT，
-并且 backend 是 TRITON_MLA / FLASHINFER，
+当前源码检查 backend 名称是否是 TRITON_MLA 或字符串 FLASHINFER，
 则禁用 prefix caching。
 ```
 
 对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:426` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:440`
 
-这说明 MLA 的 prefix caching 不是完全不可用，但会受到 backend 和 batch invariance 约束。
+这说明 MLA 的 prefix caching 不是完全不可用，但会受到 backend 和 batch invariance 约束。需要注意一个命名细节：MLA decode backend 名称是 `FLASHINFER_MLA`，而源码里这个保护分支检查的是字符串 `FLASHINFER`；因此不要把它写成已明确覆盖 `FLASHINFER_MLA`，更准确地说这是当前实现中的命名 / 逻辑疑点。
 
 ---
 

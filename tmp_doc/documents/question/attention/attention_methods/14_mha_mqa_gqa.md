@@ -58,7 +58,7 @@ HF config
 如果只记住一句话：
 
 ```text
-MHA / MQA / GQA 不主要决定“用哪个 attention backend”，而是决定 Q heads 和 KV heads 的数量关系；这个关系直接影响 QKV 投影大小、KV cache 大小、backend kernel 的 head 映射，以及 TP 下 KV head 是切分还是复制。
+MHA / MQA / GQA 不是 selector 的独立 backend 类型，但会通过 `num_heads / num_kv_heads` 间接影响部分 backend 能力，例如 FlashInfer TRTLLM large page GQA/MQA 路径、FlashDecoding 形态、DCP 可用性等；它们最直接决定 Q heads 和 KV heads 的数量关系，并影响 QKV 投影大小、KV cache 大小、backend kernel 的 head 映射，以及 TP 下 KV head 是切分还是复制。
 ```
 
 ---
@@ -555,6 +555,8 @@ head_size：每个 head 的维度
 dtype_size：每个元素占多少字节
 ```
 
+这里假设 K/V head dim 相同。对于 DiffKV 或 `head_size_v != head_size` 的路径，应使用 `block_size * num_kv_heads * (head_size + head_size_v) * dtype_size`，而不是固定写成 `2 * ... * head_size`。
+
 因此：
 
 ```text
@@ -849,7 +851,7 @@ num_queries_per_kv = num_query_heads // num_kv_heads
 
 位置：`vllm/vllm/v1/attention/ops/triton_unified_attention.py:853` 到 `vllm/vllm/v1/attention/ops/triton_unified_attention.py:858`
 
-这个 `num_queries_per_kv` 就是 GQA / MQA 的关键参数。
+这里的 `num_kv_heads = k.shape[2]` 是 Triton unified attention 内部对传入 `key_cache` 逻辑视图的读取，不是所有 backend 原始 KV tensor 的统一维度约定。这个 `num_queries_per_kv` 就是 GQA / MQA 的关键参数。
 
 ```text
 MHA：num_queries_per_kv = 1

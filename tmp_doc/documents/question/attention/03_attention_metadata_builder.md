@@ -1043,7 +1043,7 @@ FlashInfer builder 的特点：
 2. 同一个 batch 内 prefill 和 decode 可能分别选择 FlashInfer native 或 TRT-LLM kernel；
 3. TRTLLM path 会尽量使用 GPU tensor，减少 CPU sync；
 4. reorder_batch_threshold 通常较激进，让 decode / prefill 更容易分段；
-5. 也有 cascade 路径：当 `common_prefix_len > 0` 时，会构造 `cascade_wrapper`，把 shared prefix 和 suffix paged KV metadata 交给 `MultiLevelCascadeAttentionWrapper.plan(...)`；是否能走到该路径仍取决于 ModelRunner 计算出的 cascade prefix、backend 支持、ubatching / CUDA graph 等外部条件。
+5. 代码中保留 cascade wrapper / metadata 路径：若 `common_prefix_len > 0` 会构造 `cascade_wrapper`，把 shared prefix 和 suffix paged KV metadata 交给 `MultiLevelCascadeAttentionWrapper.plan(...)`；但当前 `use_cascade_attention()` 明确返回 `False`，常规调度不会自动启用 FlashInfer cascade。
 ```
 
 ### 9.4 FlexAttentionMetadataBuilder
@@ -1456,7 +1456,7 @@ query / KV 形态是否满足 backend 要求。
 
 ```text
 FlashAttention：典型支持；
-FlashInfer：也有 cascade wrapper 路径，`common_prefix_len > 0` 时可构造 `MultiLevelCascadeAttentionWrapper`；
+FlashInfer：代码中有 cascade wrapper 路径，但当前 `use_cascade_attention()` 返回 `False`，常规调度不会自动启用；
 FlexAttention：通常不启用；
 Triton：dataclass 可能有字段，但普通 builder 不主动启用；
 MLA / Mamba / GDN：按各自实现能力处理。

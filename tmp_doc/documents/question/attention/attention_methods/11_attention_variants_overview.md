@@ -28,6 +28,8 @@
 
 本文用于给 FlashAttention、PagedAttention、MHA / MQA / GQA、MLA、Sliding Window、FlashInfer、FlashMLA、Triton、FlexAttention、cascade attention、chunked prefill、HMA / hybrid KV cache 等名词建立分类框架，避免把模型结构、KV cache 管理、kernel backend 和调度优化混在一起。
 
+本文中的 `code/vllm/...` 是当前项目里的源码外层路径；如果从 vLLM 源码仓库根目录阅读，可对应理解为 `vllm/...`。
+
 ---
 
 ## 0. 梳理规划
@@ -344,6 +346,8 @@ Sparse MLA / model-specific backend：
   DeepSeek V4 sparse MLA variants
   MiniMax M3 sparse backend
 ```
+
+这只是常见 attention backend 的分类示例，完整枚举以 `AttentionBackendEnum` 为准；当前源码还包含 ROCm / XPU / model-specific / no-attention / custom 等后端，例如 `ROCM_AITER_MLA_SPARSE`、`ROCM_AITER_TRITON_MLA`、`XPU_MLA_SPARSE`、`NO_ATTENTION`、`CUSTOM`。
 
 这里要注意：
 
@@ -1194,7 +1198,7 @@ prefix / suffix KV lens
 
 ### 13.3 FlashInfer 中的 cascade
 
-FlashInfer metadata 也包含 cascade wrapper，但当前源码中可以看到启发式 cascade 有禁用 / 约束逻辑。
+FlashInfer metadata 中保留了 cascade wrapper / metadata 路径，但当前 `FlashInferMetadataBuilder.use_cascade_attention()` 明确返回 `False`，因此常规调度不会自动选择 FlashInfer cascade；不要把它理解成和 FlashAttention cascade 同等启用的路径。
 
 位置：
 

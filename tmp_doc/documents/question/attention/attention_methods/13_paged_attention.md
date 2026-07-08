@@ -3,6 +3,7 @@
 源码位置：
 
 - `vllm/vllm/v1/core/kv_cache_manager.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
 - `vllm/vllm/v1/core/block_pool.py`
 - `vllm/vllm/v1/core/kv_cache_coordinator.py`
 - `vllm/vllm/v1/core/single_type_kv_cache_manager.py`
@@ -470,7 +471,7 @@ request 1: [4, 8, 0, 0, 0, ...]
 request 2: [5, 6, 3, 1, 0, ...]
 ```
 
-其中 block 0 在 vLLM 里还常作为 null / padding block 使用。
+在当前 `BlockPool` 初始化中，第一个 block 会被取作 `null_block` 并标记为占位，用于 sliding/local 等场景；但不要把普通 block table 中出现的 0 一律解释为无效 block，具体语义取决于该位置是否确实填入了 null block。
 
 ---
 
@@ -802,7 +803,7 @@ block_table_stride=processed_block_table.stride(0),
 
 位置：`vllm/vllm/v1/attention/ops/chunked_prefill_paged_decode.py:442`
 
-### 13.3 paged_attn.py 是最小写入封装
+### 13.3 paged_attn.py 是简化 helper，不是所有 backend 的统一入口
 
 `PagedAttention.write_to_paged_cache()` 做的事情很直接：
 
@@ -827,6 +828,8 @@ ops.reshape_and_cache(
 写入靠 slot_mapping；
 读取靠 block_table + seq_lens。
 ```
+
+但在 V1 主路径中，FlashAttention / Triton / FlashInfer 等通常由各自 backend 的 `do_kv_cache_update()` 调用对应 cache update op，例如 `reshape_and_cache_flash` 或 Triton cache op；不要把 `paged_attn.py` 理解为所有 backend 的统一入口。
 
 ---
 

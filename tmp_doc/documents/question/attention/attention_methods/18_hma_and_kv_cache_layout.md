@@ -38,7 +38,7 @@ HMA、packed layout、cross-layer layout 是不是一回事？
 
 ## 2. 一句话回答
 
-HMA 可以理解为 vLLM v1 的 **hybrid KV cache manager / hybrid memory allocator**：
+本文沿用 HMA 作为 hybrid KV cache manager 相关机制的简称；源码中的核心名称是 `disable_hybrid_kv_cache_manager`、`HybridKVCacheCoordinator`、`KVCacheGroupSpec` 等。HMA 可以理解为 vLLM v1 的 **hybrid KV cache manager 相关 KV cache 分组与内存组织机制**：
 
 ```text
 它不是一种 attention 算法，
@@ -464,15 +464,11 @@ kv_cache_tensors = []
 每个 layer 一个 tensor，大小按该 layer 的 page_size_bytes * num_blocks 计算。
 ```
 
-### 11.3 packed layout
+### 11.3 DeepSeek V4 / 多 UniformTypeKVCacheSpecs 的 page-size bucket
 
-如果启用 packed HMA layout，或者特殊模型需要 packed layout，会走：
+当前源码没有 `VLLM_USE_PACKED_HMA_KV_CACHE` 或 `_get_kv_cache_config_packed()` 这类显式 packed HMA 入口。对于 DeepSeek V4 或多个 `UniformTypeKVCacheSpecs` 这类特殊形态，物理布局更接近按 page size bucket 生成若干 `KVCacheTensor(size, shared_by)`：page size 相同或可统一的一组 layer 共享同类 tensor 描述。
 
-```python
-_get_kv_cache_config_packed(...)
-```
-
-这会生成带 `offset` / `block_stride` 的 `KVCacheTensor`，用于更紧凑地打包不同 page size 的 layer。
+也就是说，当前实现不是通过 `KVCacheTensor.offset` / `block_stride` 表达 packed 子区域，而是通过生成多个 `KVCacheTensor`、page-size bucket 和 `shared_by` 关系描述物理分配。
 
 ### 11.4 通用 multi-group layout
 
@@ -622,8 +618,7 @@ get_new_blocks()：从 free queue 分配新 block；
 touch()：prefix cache 命中时增加 ref_cnt；
 free_blocks()：释放请求持有的 block；
 evict_blocks()：从 prefix cache hash 中驱逐；
-cache_full_blocks()：把 full block 加入 prefix cache；
-cache_partial_block()：注册 partial prefix cache entry。
+cache_full_blocks()：把 full block 加入 prefix cache。
 ```
 
 HMA 并不绕开 BlockPool。HMA 只是让上层有多个 KV cache group / manager 视图，最终 block 的生命周期仍落到 BlockPool。
@@ -1095,13 +1090,16 @@ KVConnectorModelRunnerMixin.allocate_uniform_kv_caches()
 这样 connector 可以一次传输一个 block 对应的所有 layers KV。
 ```
 
-它启用需要三个条件：
+它启用需要更具体的条件：
 
 ```text
-1. KV cache config 只有一个 group，且所有 layers page size 相同；
-2. 配置了 KV connector，并且 connector prefer_cross_layer_blocks=True；
-3. attention backend 的 KV layout 支持按 block stride 索引，
-   也就是 num_blocks 是最外层物理维度。
+1. KV cache config 只有一个 KV cache group，且其中只有一个 attention group；
+2. KV cache spec 必须是 AttentionSpec；
+3. 配置了 KV connector，并且 connector prefer_cross_layer_blocks=True；
+4. attention backend 的 get_kv_cache_stride_order(include_num_layers_dimension=True)
+   必须能表达额外 num_layers 维；
+5. 返回的 stride order 不能是 identity / num_layers-first layout，
+   否则无法形成 connector 需要的跨层连续组织。
 ```
 
 注意第一条：
@@ -1116,52 +1114,44 @@ HMA 通常是多个 group。
 | 概念 | 解决什么问题 | 典型场景 |
 |---|---|---|
 | HMA / hybrid KV cache manager | 多种 KV cache spec 如何分组管理 | full + SWA、attention + Mamba |
-| packed HMA layout | 多 group / 多 page size 如何更紧凑地打包物理 tensor | DeepSeek V4、显式 packed HMA |
+| page-size bucket / shared tensor layout | 多 group / 多 page size 如何生成物理 KV tensor 描述 | DeepSeek V4、多 `UniformTypeKVCacheSpecs`、通用 multi-group |
 | cross-layer uniform layout | 单 group 下同 block 的所有层 KV 如何连续，便于 connector 传输 | connector prefer cross-layer blocks |
 
 ---
 
-## 27. HMA 与 packed layout
+## 27. HMA 与 KVCacheTensor / 物理 tensor 描述
 
-`KVCacheTensor` 有这些字段：
+当前源码中的 `KVCacheTensor` 只有：
 
 ```python
 size: int
 shared_by: list[str]
-offset: int = 0
-block_stride: int = 0
 ```
 
-普通 layout 下主要用：
+含义是：
 
 ```text
-size
-shared_by
+size：这个物理 KV tensor 需要分配的字节数；
+shared_by：哪些 layer 共享这块物理 tensor 描述。
 ```
 
-packed layout 下还会用：
+因此，当前实现不通过 `offset` / `block_stride` 字段表达 packed 子区域，也没有 `VLLM_USE_PACKED_HMA_KV_CACHE` / `_get_kv_cache_config_packed()` 这类显式 packed HMA 开关。
+
+更准确的物理布局心智模型是：
 
 ```text
-offset
-block_stride
+1. 单 group + UniformTypeKVCacheSpecs：
+   每层可以生成独立 KVCacheTensor(size, shared_by)。
+
+2. DeepSeek V4 / 多个 UniformTypeKVCacheSpecs：
+   按 page size bucket 生成一组 KVCacheTensor。
+
+3. 通用 multi-group：
+   不同 group 中相同 slot index 的 layer 共享同一个 KVCacheTensor，
+   但各 group 仍有独立 block table / slot mapping。
 ```
 
-含义：
-
-```text
-多个 layer / group 的 KV 可能被放进同一个更大的 packed tensor；
-每个 layer 通过 offset 找到自己的区域；
-block_stride 表示一个 packed block 的总跨度。
-```
-
-`_use_packed_kv_cache_groups()` 会在特定条件下启用 packed HMA KV cache，例如：
-
-```text
-DeepSeek V4 特殊布局；
-或者设置 VLLM_USE_PACKED_HMA_KV_CACHE。
-```
-
-packed layout 是物理 tensor 布局优化；HMA 是逻辑 group 管理机制。packed layout 可以服务 HMA，但不等于 HMA。
+所以这里讨论的是“KV cache 物理 tensor 如何由 group/spec 生成”，不是旧式 offset/stride packed layout。
 
 ---
 
@@ -1196,7 +1186,7 @@ KVConnectorBase_V1.get_required_kvcache_layout()
 
 ```text
 逻辑 layout：KV cache groups / block tables / slot mappings；
-物理 tensor layout：KVCacheTensor.shared_by / offset / block_stride；
+物理 tensor layout：KVCacheTensor.size / shared_by、page-size bucket、group slot sharing；
 kernel layout：attention backend 的 KV cache shape / stride order。
 ```
 
