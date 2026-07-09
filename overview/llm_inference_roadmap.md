@@ -1,6 +1,6 @@
-# 大模型推理方向四个月面试准备大纲
+# 大模型推理方向四个月技术路线图
 
-本文用于 4 个月系统准备大模型推理方向面试，目标不是泛泛学习 LLM，而是围绕「推理系统工程师 / vLLM / CUDA Kernel / 分布式推理 / KV Cache / 性能优化」建立可面试、可落地、可表达的知识体系。
+本文用于 4 个月系统梳理大模型推理方向，目标不是泛泛学习 LLM，而是围绕「推理系统工程师 / vLLM / CUDA Kernel / 分布式推理 / KV Cache / 性能优化」建立可落地、可验证、可表达的知识体系。
 
 结合当前 `llm-project` 已有材料，重点参考：
 
@@ -16,11 +16,11 @@
 
 ---
 
-## 0. 总目标与面试定位
+## 0. 总目标与方向定位
 
-### 目标岗位画像
+### 目标能力画像
 
-你要准备的是偏系统工程的大模型推理岗位，面试重点通常不是训练算法，而是：
+本路线图面向偏系统工程的大模型推理方向，重点通常不是训练算法，而是：
 
 1. 能不能讲清一个请求从 HTTP 入口到 GPU kernel 执行再到 token 输出的完整链路。
 2. 能不能解释 vLLM / TensorRT-LLM / SGLang / llama.cpp 等推理框架的核心设计取舍。
@@ -41,14 +41,14 @@
 - 一份「分布式推理并行策略」专题讲稿。
 - 一份「CUDA / Attention Kernel 性能优化」专题讲稿。
 - 一个可展示的项目：例如基于 vLLM 的 KV Cache 池化、PD 分离、调度策略改造、性能 profiling 或 kernel 分析。
-- 80 到 120 道高频面试题的答案库。
-- 5 到 8 个能在面试中展开 10 分钟以上的深度问题。
+- 80 到 120 道高频技术题的答案库。
+- 5 到 8 个能展开 10 分钟以上的深度专题。
 
 ---
 
 ## 1. 技术点优先级总览
 
-### S 级：必须掌握，面试主战场
+### S 级：必须掌握，核心主线
 
 这些内容决定你是否像一个真正做过推理系统的人。
 
@@ -102,7 +102,7 @@
    - 显存瓶颈、算力瓶颈、带宽瓶颈、通信瓶颈、CPU 调度瓶颈如何区分。
    - 如何做 profiling：Nsight Systems、Nsight Compute、torch profiler、vLLM metrics。
 
-### A 级：强相关重点，决定面试深度
+### A 级：强相关重点，决定技术深度
 
 1. Attention 优化
    - FlashAttention 原理：tiling、online softmax、减少 HBM 读写。
@@ -219,7 +219,7 @@
 - cancellation：用户断开连接后如何取消正在运行的 request。
 - request id、prompt tokenization、sampling params。
 
-面试能讲清：
+需要能讲清：
 
 - 一个 ChatCompletion 请求进入 vLLM 后经历哪些对象。
 - API 层和 Engine 层边界是什么。
@@ -244,7 +244,7 @@
 - step loop：每轮调度、执行、返回输出。
 - V0 / V1 架构差异。
 
-面试能讲清：
+需要能讲清：
 
 - 为什么推理引擎一般是一个持续运行的主循环。
 - 每个 step 为什么可能同时处理多个请求的不同 token 数。
@@ -271,7 +271,7 @@
 - preemption：资源不足时暂停或重算。
 - priority scheduling、fairness、latency-throughput tradeoff。
 
-面试能讲清：
+需要能讲清：
 
 - vLLM 为什么吞吐高。
 - chunked prefill 解决什么问题，又带来什么副作用。
@@ -299,7 +299,7 @@
 - KV Cache fragmentation 与复用。
 - KV offload / transfer / pooling。
 
-面试能讲清：
+需要能讲清：
 
 - PagedAttention 类比操作系统分页为什么合理。
 - Prefix Cache 为什么对 system prompt / RAG / agent 有价值。
@@ -328,7 +328,7 @@
 - attention metadata、block table、slot mapping。
 - logits processor、sampler、output processor。
 
-面试能讲清：
+需要能讲清：
 
 - Scheduler output 进入 Worker 后如何被转成模型输入。
 - 为什么 ModelRunner 是调度层和模型层的关键边界。
@@ -357,7 +357,7 @@
 - backend 选择：FlashAttention、FlashInfer、Triton、XFormers、native。
 - CUDA extension 从 Python 到 C++/CUDA 的调用路径。
 
-面试能讲清：
+需要能讲清：
 
 - FlashAttention 主要优化了什么。
 - 为什么 decode attention 往往是 memory bandwidth bound。
@@ -386,7 +386,7 @@
 - 通信和计算 overlap。
 - 多节点部署时的 rank、world size、local rank、node rank。
 
-面试能讲清：
+需要能讲清：
 
 - TP 中为什么需要 AllReduce。
 - PP 为什么有 bubble，推理中是否总是适合 PP。
@@ -414,7 +414,7 @@
 - push / pull / layerwise push。
 - decode 端完成后如何通知 prefill 端释放资源。
 
-面试能讲清：
+需要能讲清：
 
 - PD 分离和普通 DP serving 的区别。
 - KV transfer 为什么比重新 prefill 更划算，但也有网络与一致性代价。
@@ -441,7 +441,7 @@
 - MoE serving：router、expert dispatch、load balance、EP。
 - 多模态：encoder、image token、encoder cache、prefill 压力。
 
-面试能讲清：
+需要能讲清：
 
 - weight-only quantization 为什么常用于 LLM serving。
 - FP8 相比 INT4/INT8 的工程取舍。
@@ -467,7 +467,7 @@
 - 稳定性：OOM、timeout、request cancellation、worker crash、model loading failure。
 - benchmark 方法：固定模型、固定输入输出长度、控制并发、区分 warmup。
 
-面试能讲清：
+需要能讲清：
 
 - 如何设计一个公平的 vLLM benchmark。
 - TTFT 高、TPOT 高、吞吐低分别如何排查。
@@ -545,7 +545,7 @@
 - 阅读 native_acceleration_layer。
 - 补 CUDA 基础：thread/block/warp、shared memory、tensor core、memory coalescing。
 - 理解 vLLM csrc 调用地图。
-- 输出物：一份「CUDA kernel 面试基础 + vLLM 调用链」笔记。
+- 输出物：一份「CUDA kernel 基础 + vLLM 调用链」笔记。
 
 月末验收：
 
@@ -575,7 +575,7 @@
 - 整理 AWQ/GPTQ/SmoothQuant/FP8/INT4。
 - 理解 multi-LoRA serving。
 - 理解 MoE 推理瓶颈。
-- 输出物：一份「量化和 MoE 推理」面试笔记。
+- 输出物：一份「量化和 MoE 推理」技术笔记。
 
 第 12 周：性能分析和 benchmark
 
@@ -591,9 +591,9 @@
 - 能讲清量化对显存、吞吐、精度的影响。
 - 能给出一套线上性能问题排查流程。
 
-### 第 4 个月：项目沉淀、面试表达和查漏补缺
+### 第 4 个月：项目沉淀、技术表达和查漏补缺
 
-目标：把知识变成面试中可证明的能力。
+目标：把知识变成可证明、可复盘、可迁移的能力。
 
 第 13 周：项目主线整理
 
@@ -605,9 +605,9 @@
 
 - 整理 80 到 120 道题。
 - 每题答案控制在 1 到 3 分钟。
-- 输出物：面试问答库。
+- 输出物：技术问答库。
 
-第 15 周：模拟面试与白板表达
+第 15 周：模拟讲解与白板表达
 
 - 每天抽 3 个深度题白板讲解。
 - 重点练链路题和 tradeoff 题。
@@ -619,7 +619,7 @@
 - 如果偏框架：加强 vLLM / SGLang / TensorRT-LLM 对比。
 - 如果偏 kernel：加强 CUDA / Triton / CUTLASS。
 - 如果偏平台：加强 serving、K8s、监控、稳定性。
-- 输出物：最终面试速查手册。
+- 输出物：最终技术速查手册。
 
 月末验收：
 
@@ -630,7 +630,7 @@
 
 ---
 
-## 4. 面试题分层清单
+## 4. 技术题分层清单
 
 ### S 级高频题
 
@@ -774,7 +774,7 @@
 1. 先读 README 或总览。
 2. 再读端到端链路。
 3. 最后读关键模块细节。
-4. 每读完一篇，用 5 句话写总结：职责、输入、输出、关键数据结构、面试价值。
+4. 每读完一篇，用 5 句话写总结：职责、输入、输出、关键数据结构、技术价值。
 
 ### 白板
 
@@ -830,7 +830,7 @@
 - 能说清为什么需要这个机制。
 - 能说出常见参数和限制。
 
-### 能讲 tradeoff：面试可用
+### 能讲 tradeoff：实践可用
 
 表现：
 
@@ -884,7 +884,7 @@
 - Prometheus metrics。
 - Docker / CUDA runtime / driver 兼容。
 
-### 面试表达短板
+### 技术表达短板
 
 - 概念题要压缩到 1 分钟。
 - 机制题要画图讲 3 到 5 分钟。
@@ -923,9 +923,9 @@
 
 ---
 
-## 11. 最终面试速查版
+## 11. 最终技术速查版
 
-如果只剩最后两周，优先背熟这些主线：
+如果只剩最后两周，优先掌握这些主线：
 
 1. vLLM 请求主链路。
 2. Scheduler / Continuous Batching。

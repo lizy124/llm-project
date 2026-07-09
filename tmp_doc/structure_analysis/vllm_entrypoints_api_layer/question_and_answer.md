@@ -1486,7 +1486,7 @@ HTTP / Python / gRPC / CLI
   -> EngineCore / Scheduler / Executor / Worker
 ```
 
-## 26. 高频面试总结题
+## 26. 高频技术总结题
 
 ### Q161：一句话总结 vLLM 入口层的核心职责。
 

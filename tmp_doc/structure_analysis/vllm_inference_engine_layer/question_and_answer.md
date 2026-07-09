@@ -1,6 +1,6 @@
 # vLLM 推理引擎层技术点问答整理
 
-本文基于本目录已有的 vLLM 推理引擎层结构分析文档，整理适合技术考察、代码阅读复盘、面试提问的技术点，并给出可直接回答的参考答案。
+本文基于本目录已有的 vLLM 推理引擎层结构分析文档，整理适合技术考察、代码阅读复盘、源码提问的技术点，并给出可直接回答的参考答案。
 
 ## 一、整体架构与主链路
 
@@ -1648,7 +1648,7 @@ OutputProcessor
 7. 在 PP 场景下误以为每个 rank 都会 sample。
 8. 忽略 execute_model 返回 None 是正常生成路径的一部分。
 
-### 120. 面试中如何用一句话总结 vLLM 推理引擎？
+### 120. 技术复盘中如何用一句话总结 vLLM 推理引擎？
 
 vLLM 推理引擎的核心是用 Scheduler 在每个 step 中统一调度 request、token 和 KV block，用 paged KV cache 管理历史上下文，通过 Executor/Worker/GPUModelRunner 把调度结果转换成 attention metadata 和 slot mapping，最终由 attention backend 和 CUDA kernel 高效完成模型 forward 与采样输出。
 
