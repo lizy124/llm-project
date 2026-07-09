@@ -163,13 +163,14 @@ execute_dummy_batch
 add_lora / remove_lora / list_loras / pin_lora
 save_sharded_state
 collective_rpc
+pause_scheduler_async / resume_scheduler_async / is_scheduler_paused_async
 dp_engines_running
 scale_elastic_ep
 ```
 
 相关接口位置：`vllm/vllm/v1/engine/core_client.py:140` 到 `vllm/vllm/v1/engine/core_client.py:273`
 
-这些方法在同进程模式下通常直接转发给 `EngineCore`；在多进程模式下则通过 `UTILITY` 消息发给后台 `EngineCoreProc`。
+大多数管理方法在同进程模式下直接转发给 `EngineCore`，在多进程模式下通过 `UTILITY` 消息发给后台 `EngineCoreProc`。但也有 client 本地状态和 DP 特例：`dp_engines_running()` 在 `InprocClient` 固定返回 `False`，在 `MPClient` 返回 `self.engines_running`；`scale_elastic_ep()` 只在 `DPLBAsyncMPClient` 中实现，用 client 侧流程编排 scale up / down，不是简单 UTILITY 转发。
 
 ---
 
@@ -266,13 +267,15 @@ self.engine_core.abort_requests(request_ids)
 
 位置：`vllm/vllm/v1/engine/llm_engine.py:215` 到 `vllm/vllm/v1/engine/llm_engine.py:216`
 
-所以同步 `LLMEngine` 只依赖三个动作：
+所以同步生成主路径依赖三个动作：
 
 ```text
 add_request()
 get_output()
 abort_requests()
 ```
+
+但 `LLMEngine` 还会通过 `EngineCoreClient` 调用 `get_supported_tasks`、profile、cache reset、sleep / wake_up、LoRA、`collective_rpc`、`execute_dummy_batch` 等管理接口。
 
 至于底层是同进程直接调用，还是 ZMQ 多进程通信，由 `EngineCoreClient` 屏蔽。
 
@@ -640,18 +643,18 @@ class EngineCoreRequestType(enum.Enum):
     WAKEUP = b"\x05"
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:251` 到 `vllm/vllm/v1/engine/__init__.py:264`
+位置：`vllm/vllm/v1/engine/__init__.py:249` 到 `vllm/vllm/v1/engine/__init__.py:262`
 
-常见消息是：
+消息来源和含义是：
 
 | 类型 | 含义 |
 |---|---|
-| `ADD` | 新请求进入 EngineCore |
-| `ABORT` | 取消请求 |
-| `UTILITY` | 调用 EngineCore 管理方法 |
-| `START_DP_WAVE` | DP wave 协调 |
-| `EXECUTOR_FAILED` | 执行器失败信号 |
-| `WAKEUP` | shutdown / 队列唤醒哨兵 |
+| `ADD` | 前端发送的新请求进入 EngineCore |
+| `ABORT` | 前端发送的取消请求 |
+| `UTILITY` | 前端发送的 EngineCore 管理方法调用 |
+| `START_DP_WAVE` | `DPCoordinator` 广播的 DP wave 协调消息 |
+| `EXECUTOR_FAILED` | `EngineCoreProc.input_queue` 内部执行器失败 sentinel |
+| `WAKEUP` | `EngineCoreProc.input_queue` 内部 shutdown / 队列唤醒 sentinel |
 
 ---
 
@@ -963,7 +966,7 @@ if outputs.outputs or outputs.scheduler_stats:
 
 位置：`vllm/vllm/v1/engine/core_client.py:1005` 到 `vllm/vllm/v1/engine/core_client.py:1043`
 
-这说明异步 client 会在后台 task 中持续接收 EngineCoreProc 输出，并放入 asyncio queue。
+这说明异步 client 会在后台 task 中持续接收 EngineCoreProc 输出：收到 `utility_output` 时解析对应 Future；子类可以先通过 `process_engine_outputs` 处理 DP / LB 元数据；只有 `outputs.outputs` 或 `outputs.scheduler_stats` 非空时才放入 asyncio queue。
 
 ---
 
@@ -1193,7 +1196,7 @@ if request_type == EngineCoreRequestType.ABORT:
 self.input_queue.put_nowait((request_type, request))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1584` 到 `vllm/vllm/v1/engine/core.py:1585`
+位置：`vllm/vllm/v1/engine/core.py:1582` 到 `vllm/vllm/v1/engine/core.py:1583`
 
 ---
 
@@ -1289,7 +1292,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1628` 到 `vllm/vllm/v1/engine/core.py:1646`
+位置：`vllm/vllm/v1/engine/core.py:1626` 到 `vllm/vllm/v1/engine/core.py:1647`
 
 这说明多 client 场景下：
 
@@ -1306,7 +1309,7 @@ if client_index == -1:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1631` 到 `vllm/vllm/v1/engine/core.py:1636`
+位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
 
 ---
 

@@ -104,9 +104,11 @@ self.output_processor = OutputProcessor(
 
 ```text
 LLMEngine / AsyncLLM
-  → OutputProcessor
-  → EngineCoreClient
-  → EngineCore
+  ├─ OutputProcessor
+  └─ EngineCoreClient → EngineCore
+
+add_request 路径：OutputProcessor.add_request(...) → EngineCoreClient.add_request(...)
+output 路径：EngineCoreClient.get_output*() → OutputProcessor.process_outputs(...)
 ```
 
 而不是：
@@ -134,7 +136,7 @@ class EngineCoreOutput(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:205`
+位置：`vllm/vllm/v1/engine/__init__.py:173` 到 `vllm/vllm/v1/engine/__init__.py:203`
 
 `EngineCoreOutputs` 定义在：
 
@@ -147,7 +149,7 @@ class EngineCoreOutputs(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:248`
+位置：`vllm/vllm/v1/engine/__init__.py:218` 到 `vllm/vllm/v1/engine/__init__.py:247`
 
 这些对象还不是最终用户输出。
 
@@ -183,9 +185,8 @@ RequestOutput / PoolingRequestOutput：
 
 ```text
 ModelRunnerOutput
-  → Scheduler.update_from_output()
-  → EngineCoreOutput
-  → EngineCoreOutputs
+  → Scheduler.update_from_output(scheduler_output, model_output)
+  → dict[int, EngineCoreOutputs]
   → EngineCoreClient.get_output() / get_output_async()
   → OutputProcessor.process_outputs()
   → CompletionOutput / PoolingOutput
@@ -486,7 +487,7 @@ self.ready.set()
 
 位置：`vllm/vllm/v1/engine/output_processor.py:64` 到 `vllm/vllm/v1/engine/output_processor.py:66`
 
-如果已经有一个 `RequestOutput`，新来的也是 `RequestOutput`，会合并：
+如果缓存和新输出都是 `RequestOutput`，会调用：
 
 ```python
 self.output.add(output, aggregate=self.aggregate)
@@ -494,11 +495,20 @@ self.output.add(output, aggregate=self.aggregate)
 
 位置：`vllm/vllm/v1/engine/output_processor.py:67` 到 `vllm/vllm/v1/engine/output_processor.py:72`
 
-这避免了：
+其中 `self.aggregate` 只在 `output_kind == DELTA` 时为 `True`：
 
 ```text
-output_handler 生成太快，generate() 消费太慢，导致队列里堆积大量小 delta。
+DELTA：
+  拼接同 index completion 的 text / token_ids / logprobs。
+
+非 DELTA：
+  用新 completion 替换同 index completion。
+
+PoolingRequestOutput：
+  直接用新输出替换缓存输出。
 ```
+
+这避免了 output_handler 生成太快、generate() 消费太慢时堆积大量小 delta，同时保留非 DELTA 输出的替换语义。
 
 ### 5.3 get() / get_nowait()
 
@@ -1116,8 +1126,10 @@ if req_state.streaming_input:
 含义：
 
 ```text
-对于 streaming input，请求的一个 input chunk 完成，不代表整个用户请求完成；
-因此对外不能立即标记 finished=True。
+streaming input 只有在 req_state.streaming_input 当前仍为 True 时，
+才会把本次 request_output.finished 强制改为 False。
+如果 final request 已经把 req_state.streaming_input 置为 False，
+当前 chunk 的完成输出可以保持 finished=True。
 ```
 
 ### 9.9 同步与异步输出分发
@@ -1154,7 +1166,7 @@ if finish_reason is not None:
 
 位置：`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:669`
 
-如果是 streaming input，会尝试应用下一段 input：
+当 `finish_reason is not None` 时，streaming input 会按当前状态分支处理：
 
 ```python
 if req_state.streaming_input:
@@ -1167,7 +1179,15 @@ if req_state.streaming_input:
 
 位置：`vllm/vllm/v1/engine/output_processor.py:670` 到 `vllm/vllm/v1/engine/output_processor.py:675`
 
-如果不是 streaming input，则清理请求：
+```text
+req_state.streaming_input 为 True：
+  应用队列中的下一段 StreamingUpdate；没有下一段则将 input_chunk_queue 置为 None，等待后续输入或 final request。
+
+req_state.streaming_input 为 False：
+  调用 _finish_request(req_state)，最终输出可以保持 finished=True。
+```
+
+非 streaming 或 final request 已结束 streaming 状态时会清理请求：
 
 ```python
 else:
@@ -1574,8 +1594,12 @@ AsyncLLM.output_handler
   → 按 chunk 切分 outputs.outputs
   → OutputProcessor.process_outputs()
   → RequestOutputCollector.put(request_output)
-  → generate() / encode() 从 collector 取输出
-  → engine_core.abort_requests_async(reqs_to_abort)
+  → 如果 processed_outputs.reqs_to_abort 非空，立即 await engine_core.abort_requests_async(...)
+  → 更新 scheduler stats / logging
+
+AsyncLLM.generate() / encode()
+  → 并发地从 RequestOutputCollector 执行 q.get_nowait() or await q.get()
+  → yield 输出
 ```
 
 异步路径的特点：
@@ -2034,9 +2058,8 @@ pooling 请求没有 detokenizer / logprobs_processor，直接把 `pooling_outpu
 ```text
 Worker / ModelRunner
   → ModelRunnerOutput
-  → Scheduler.update_from_output()
-  → EngineCoreOutput
-  → EngineCoreOutputs
+  → Scheduler.update_from_output(scheduler_output, model_output)
+  → dict[int, EngineCoreOutputs]
   → EngineCoreClient.get_output() / get_output_async()
   → OutputProcessor.process_outputs()
   → RequestOutput / PoolingRequestOutput
@@ -2084,10 +2107,11 @@ AsyncLLM.output_handler
   → EngineCoreOutputs
   → output_processor.process_outputs()
   → RequestOutputCollector.put(output)
-  → await engine_core.abort_requests_async(reqs_to_abort)
+  → 如果有 reqs_to_abort，立即 await engine_core.abort_requests_async(...)
+  → update scheduler stats / logging
 
 AsyncLLM.generate()
-  → q.get_nowait() or await q.get()
+  → 并发地 q.get_nowait() or await q.get()
   → yield RequestOutput
 ```
 

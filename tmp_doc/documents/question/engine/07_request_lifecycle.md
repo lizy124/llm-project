@@ -92,13 +92,11 @@ AsyncLLM.encode()
 这一层接收的是用户侧输入：
 
 ```text
-request_id；
-prompt / EngineInput；
-SamplingParams / PoolingParams；
-LoRARequest；
-trace headers；
-priority；
-data_parallel_rank；
+同步 LLMEngine.add_request()：
+  request_id、prompt、params、arrival_time、lora_request、tokenization_kwargs、trace_headers、priority、prompt_text。
+
+异步 AsyncLLM.add_request() / generate()：
+  还接收 data_parallel_rank、reasoning_ended、reasoning_parser_kwargs。
 ```
 
 ### 2.2 输入处理
@@ -422,7 +420,7 @@ class EngineCoreRequest(...):
     abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:88` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:144`
 
 它可以理解为：
 
@@ -660,26 +658,16 @@ LLMEngine.add_request()
 
 异步路径通常从 `AsyncLLM.generate()` 进入。
 
-`generate()` 注释说得很清楚：
+当前实现中，`generate()` 的主线是：
 
-```python
-"""
-Main function called by the API server to kick off a request
-    * 1) Making an AsyncStream corresponding to the Request.
-    * 2) Processing the Input.
-    * 3) Adding the Request to the Detokenizer.
-    * 4) Adding the Request to the EngineCore (separate process).
-
-A separate output_handler loop runs in a background AsyncIO task,
-pulling outputs from EngineCore and putting them into the
-per-request AsyncStream.
-
-The caller of generate() iterates the returned AsyncGenerator,
-returning the RequestOutput back to the caller.
-"""
+```text
+generate() awaits add_request()，add_request() 返回 RequestOutputCollector。
+后台 output_handler 拉取 EngineCoreOutputs，调用 OutputProcessor.process_outputs()。
+OutputProcessor 把 RequestOutput 放入对应 collector。
+generate() 再执行 q.get_nowait() / await q.get()，持续 yield RequestOutput 直到 finished。
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:541` 到 `vllm/vllm/v1/engine/async_llm.py:554`
+关键位置：`vllm/vllm/v1/engine/async_llm.py:557` 到 `vllm/vllm/v1/engine/async_llm.py:586`、`vllm/vllm/v1/engine/output_processor.py:45` 到 `vllm/vllm/v1/engine/output_processor.py:86`
 
 ### 7.1 generate() 调用 add_request()
 
@@ -700,7 +688,7 @@ q = await self.add_request(
 RequestOutputCollector
 ```
 
-它是异步输出队列，后续 `generate()` 从它里面取 `RequestOutput` 并 yield。
+它保存待消费的 `RequestOutput` / `PoolingRequestOutput`，并在 `DELTA` 模式下把生产端领先消费者的 `RequestOutput` 合并；后续 `generate()` 从它里面取 `RequestOutput` 并 yield。
 
 ### 7.2 AsyncLLM.add_request() 入口
 
@@ -1019,7 +1007,7 @@ self._send_input(EngineCoreRequestType.ADD, request)
 
 位置：`vllm/vllm/v1/engine/core_client.py:886` 到 `vllm/vllm/v1/engine/core_client.py:889`
 
-多进程路径中，前端不直接调用 `EngineCore.preprocess_add_request()`；后台 EngineCoreProc 输入线程 / 队列会处理。
+多进程路径中，前端不直接调用 `EngineCore.preprocess_add_request()`；后台 `EngineCoreProc.process_input_sockets()` 会先 decode `EngineCoreRequest`，调用 `EngineCore.preprocess_add_request()`，再把 `(ADD, (Request, request_wave))` 放入 `input_queue`，最后由 `_handle_client_request()` 调用 `EngineCore.add_request(Request, request_wave)`。
 
 ### 9.3 AsyncMPClient：异步多进程路径
 
@@ -1389,13 +1377,17 @@ if request.abort_immediately:
 
 ### 13.5 Scheduler 接管后的状态
 
-进入 Scheduler 后，请求通常会进入：
+进入 Scheduler 后，新请求会先进入 Scheduler 的等待侧状态：
 
 ```text
-waiting；
-skipped_waiting；
-running；
-requests dict。
+Scheduler.add_request()：
+  对新请求设置 streaming_queue（仅 resumable）；
+  调用 _enqueue_waiting_request() 将其放入 waiting；
+  如果状态是 WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR / WAITING_FOR_REMOTE_KVS / WAITING_FOR_STREAMING_REQ，则放入 skipped_waiting；
+  随后记录到 requests。
+
+Scheduler.schedule()：
+  后续被选中执行时，才追加到 running 并把 status 设为 RUNNING。
 ```
 
 这些由 Scheduler 管理，不再属于外层 Engine 的职责。
@@ -1812,7 +1804,12 @@ LLMEngine.add_request()
           → EngineCore.add_request()
       → SyncMPClient:
           → ZMQ ADD
-          → EngineCoreProc input_queue
+          → EngineCoreProc.process_input_sockets()
+          → decode EngineCoreRequest
+          → EngineCore.preprocess_add_request()
+          → input_queue.put((ADD, (Request, request_wave)))
+          → EngineCoreProc._handle_client_request()
+          → EngineCore.add_request(Request, request_wave)
   → Scheduler.add_request()
 ```
 
@@ -1830,8 +1827,12 @@ AsyncLLM.generate()
   → AsyncMPClient.add_request_async()
       → request.client_index = client_index
       → ZMQ ADD
-      → EngineCoreProc input_queue
-  → EngineCore.add_request()
+      → EngineCoreProc.process_input_sockets()
+      → decode EngineCoreRequest
+      → EngineCore.preprocess_add_request()
+      → input_queue.put((ADD, (Request, request_wave)))
+      → EngineCoreProc._handle_client_request()
+      → EngineCore.add_request(Request, request_wave)
   → Scheduler.add_request()
 ```
 

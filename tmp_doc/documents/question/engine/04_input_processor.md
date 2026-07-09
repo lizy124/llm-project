@@ -672,7 +672,7 @@ if prompt_len > max_prompt_len:
 
 位置：`vllm/vllm/v1/engine/input_processor.py:398` 到 `vllm/vllm/v1/engine/input_processor.py:422`
 
-对于 decoder generation 请求，如果 prompt 刚好等于 `max_model_len`，也会报错：
+对 generate runner，如果任一输入的 `prompt_len` 刚好等于该输入类型的上限，也会报错：decoder 上限是 `model_config.max_model_len`，encoder 上限是 `mm_encoder_cache_size`。
 
 ```python
 elif prompt_len == max_prompt_len and model_config.runner_type == "generate":
@@ -684,7 +684,7 @@ elif prompt_len == max_prompt_len and model_config.runner_type == "generate":
 原因是 generation 至少还要生成一个 token：
 
 ```text
-decoder prompt length == max_model_len
+prompt length == 当前输入类型上限
   → 没有空间生成 output token
   → 对 generate runner 不合法
 ```
@@ -709,7 +709,7 @@ if prompt_input["type"] == "multimodal":
 
 ### 11.3 token id 是否越界
 
-如果输入包含 token ids，并且 tokenizer 存在：
+对非 embeds 输入，如果 `prompt_ids` 非空且 tokenizer 存在，会校验 token id 是否越界；embeds / mixed-mode 输入中附带的 `prompt_token_ids` 不走这段 vocab range 校验。
 
 ```python
 if prompt_ids and tokenizer is not None:
@@ -719,7 +719,7 @@ if prompt_ids and tokenizer is not None:
         raise ValueError(f"Token id {max_input_id} is out of vocabulary")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:469` 到 `vllm/vllm/v1/engine/input_processor.py:484`
+位置：`vllm/vllm/v1/engine/input_processor.py:442`、`vllm/vllm/v1/engine/input_processor.py:469` 到 `vllm/vllm/v1/engine/input_processor.py:484`
 
 这里使用的是：
 
@@ -1257,9 +1257,9 @@ if isinstance(prompt, AsyncGenerator):
 
 位置：`vllm/vllm/v1/engine/async_llm.py:316` 到 `vllm/vllm/v1/engine/async_llm.py:331`
 
-### 20.1 先创建 final request
+### 20.1 用 dummy token 创建校验 request / finished signal
 
-`_add_streaming_input_request()` 会先创建一个 final request，用于输入流结束信号：
+`_add_streaming_input_request()` 先用 dummy token `[0]` 创建一个 request 做校验；这个 same request 在输入流关闭后作为 finished signal 发送：
 
 ```python
 final_req = self.input_processor.process_inputs(
@@ -1274,7 +1274,7 @@ internal_req_id = final_req.request_id
 
 位置：`vllm/vllm/v1/engine/async_llm.py:447` 到 `vllm/vllm/v1/engine/async_llm.py:454`
 
-这一步得到一个内部 request id，用于整个 streaming session。
+这一步得到一个内部 request id，用于整个 streaming session；后续 chunk 使用 `request_id=internal_req_id`，流结束时发送的 `final_req` 也保留同一个 internal request id。
 
 ### 20.2 每个 input chunk 都重新 process_inputs
 
@@ -1313,9 +1313,9 @@ if req.prompt_embeds is not None:
 
 位置：`vllm/vllm/v1/engine/async_llm.py:476` 到 `vllm/vllm/v1/engine/async_llm.py:479`
 
-### 20.3 输入流结束时发送 final request
+### 20.3 输入流结束时发送 finished signal
 
-输入流结束时：
+输入流结束时发送这个 non-resumable `final_req`：
 
 ```python
 await self._add_request(final_req, None, None, 0, queue)
@@ -1323,11 +1323,13 @@ await self._add_request(final_req, None, None, 0, queue)
 
 位置：`vllm/vllm/v1/engine/async_llm.py:491` 到 `vllm/vllm/v1/engine/async_llm.py:495`
 
+`Scheduler.add_request()` 发现同 request id 已存在且 `StreamingUpdate.from_request(final_req)` 为 `None`，于是将 streaming-input session 标记结束，而不是把它当成新的真实 prompt chunk。
+
 所以 streaming input 的主线是：
 
 ```text
 AsyncGenerator input
-  → final_req = process_inputs(dummy token)
+  → final_req = process_inputs(dummy token [0])
   → assign_request_id(final_req)
   → internal_req_id
   → 每个 chunk:
@@ -1335,7 +1337,8 @@ AsyncGenerator input
        req.external_req_id = 用户 request_id
        EngineCoreClient.add_request_async(req)
   → 输入结束:
-       发送 final_req
+       发送保留同一个 internal_req_id 的 non-resumable final_req
+       Scheduler 将 streaming-input session 标记结束
 ```
 
 ---
