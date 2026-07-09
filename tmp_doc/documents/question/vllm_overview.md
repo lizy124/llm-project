@@ -108,13 +108,16 @@ V1 核心运行时
 分布式与平台层
   distributed/
   platforms/
-  ray/
+  v1/executor/ray_executor.py
+  v1/executor/ray_executor_v2.py
+  v1/executor/ray_utils.py
 
 高性能底层
   v1/attention/
+  v1/attention/ops/
   compilation/
-  kernels/
-  triton_utils/
+  model_executor/kernels/
+  model_executor/layers/
   vllm_flash_attn/
   _custom_ops.py
   _aiter_ops.py
@@ -383,8 +386,10 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
 scheduler.has_requests()
   → scheduler.schedule()
   → SchedulerOutput
-  → model_executor.execute_model(scheduler_output)
-  → model_executor.sample_tokens(grammar_output)  # 如果需要
+  → model_executor.execute_model(scheduler_output, non_block=True)
+  → scheduler.get_grammar_bitmask(...)
+  → future.result()
+  → model_executor.sample_tokens(grammar_output)  # 当 execute_model 未直接返回 model_output 时
   → scheduler.update_from_output(scheduler_output, model_output)
   → EngineCoreOutputs
 ```
@@ -522,7 +527,7 @@ CLI / Python API 的很多配置最终会进入 `EngineArgs`。
 代码证据：
 
 ```text
-vllm/engine/arg_utils.py:414
+vllm/engine/arg_utils.py:412
   EngineArgs
 ```
 
@@ -539,7 +544,7 @@ VllmConfig
 代码证据：
 
 ```text
-vllm/config/vllm.py:290
+vllm/config/vllm.py:297
   VllmConfig
 ```
 
@@ -552,17 +557,24 @@ ParallelConfig
 SchedulerConfig
 DeviceConfig
 LoadConfig
+OffloadConfig
+AttentionConfig
+MambaConfig
+KernelConfig
 LoRAConfig
-MultiModalConfig
 SpeculativeConfig
-CompilationConfig
+DiffusionConfig
 StructuredOutputsConfig
 ObservabilityConfig
-KVTransferConfig
-ECTransferConfig
-PoolerConfig
-ProfilerConfig
 QuantizationConfig
+CompilationConfig
+ProfilerConfig
+KVTransferConfig
+KVEventsConfig
+ECTransferConfig
+ReasoningConfig
+WeightTransferConfig
+OptimizationLevel / performance_mode
 ```
 
 这些配置分散在：
@@ -574,17 +586,23 @@ vllm/config/parallel.py
 vllm/config/scheduler.py
 vllm/config/device.py
 vllm/config/load.py
+vllm/config/offload.py
+vllm/config/attention.py
+vllm/config/mamba.py
+vllm/config/kernel.py
 vllm/config/lora.py
-vllm/config/multimodal.py
 vllm/config/speculative.py
-vllm/config/compilation.py
+vllm/config/diffusion.py
 vllm/config/structured_outputs.py
 vllm/config/observability.py
-vllm/config/kv_transfer.py
-vllm/config/ec_transfer.py
-vllm/config/pooler.py
-vllm/config/profiler.py
 vllm/config/quantization.py
+vllm/config/compilation.py
+vllm/config/profiler.py
+vllm/config/kv_transfer.py
+vllm/config/kv_events.py
+vllm/config/ec_transfer.py
+vllm/config/reasoning.py
+vllm/config/weight_transfer.py
 ```
 
 代码证据示例：
@@ -749,7 +767,7 @@ vllm/v1/attention/
 vllm/v1/core/kv_cache_manager.py:110
   KVCacheManager
 
-vllm/v1/core/block_pool.py:144
+vllm/v1/core/block_pool.py:130
   BlockPool
 
 vllm/v1/core/encoder_cache_manager.py:17
@@ -920,13 +938,16 @@ vllm/v1/worker/gpu_worker.py:117
 vllm/v1/worker/gpu_worker.py:377
   Worker.load_model
 
-vllm/v1/worker/gpu_worker.py:836
+vllm/v1/worker/gpu_worker.py:808
   Worker.execute_model
 
 vllm/v1/worker/gpu_input_batch.py:92
   InputBatch
 
-vllm/v1/worker/gpu_model_runner.py:4047
+vllm/v1/worker/gpu_model_runner.py:418
+  GPUModelRunner
+
+vllm/v1/worker/gpu_model_runner.py:4044
   GPUModelRunner.execute_model
 ```
 
@@ -1253,9 +1274,10 @@ penalties；
 min tokens；
 logprobs；
 greedy / random sampling；
-structured output grammar mask；
-speculative decoding 的 accepted / rejected 逻辑。
+structured output grammar mask。
 ```
+
+Speculative decoding 的 accepted / rejected 统计和 `num_computed_tokens` 修正在 `Scheduler.update_from_output()` 中根据 `scheduled_spec_decode_tokens` 和本轮生成 token 数处理，不属于 `Sampler` 的职责。
 
 ---
 
@@ -1886,8 +1908,10 @@ Compilation / CUDA Graph 优化“怎么跑得更快”。
 底层性能模块包括：
 
 ```text
-vllm/kernels/
-vllm/triton_utils/
+vllm/model_executor/kernels/
+vllm/model_executor/layers/
+vllm/v1/attention/ops/
+vllm/v1/attention/backends/
 vllm/vllm_flash_attn/
 vllm/_custom_ops.py
 vllm/_aiter_ops.py
@@ -1900,7 +1924,7 @@ rust/
 
 ```text
 自定义 CUDA / HIP / XPU op 绑定；
-Triton kernel；
+Triton kernel 和 attention ops；
 FlashAttention 相关实现；
 MoE kernel；
 量化 kernel；
@@ -2109,8 +2133,8 @@ vllm/platforms/
 | 对象 | 所在位置 | 作用 |
 |---|---|---|
 | `LLM` | `vllm/entrypoints/llm.py` | Python offline API 入口 |
-| `EngineArgs` | `vllm/engine/arg_utils.py:414` | 用户参数聚合 |
-| `VllmConfig` | `vllm/config/vllm.py:290` | 全局配置对象 |
+| `EngineArgs` | `vllm/engine/arg_utils.py:412` | 用户参数聚合 |
+| `VllmConfig` | `vllm/config/vllm.py:297` | 全局配置对象 |
 | `LLMEngine` | `vllm/v1/engine/llm_engine.py:48` | 同步外层 Engine |
 | `AsyncLLM` | `vllm/v1/engine/async_llm.py:70` | 异步外层 Engine |
 | `EngineCoreClient` | `vllm/v1/engine/core_client.py:71` | 外层访问 EngineCore 的客户端抽象 |
@@ -2123,7 +2147,7 @@ vllm/platforms/
 | `Worker` | `vllm/v1/worker/gpu_worker.py:117` | 设备侧执行实体 |
 | `GPUModelRunner` | `vllm/v1/worker/gpu_model_runner.py` | 准备输入并执行模型 |
 | `ModelRunnerOutput` | `vllm/v1/outputs.py:234` | Worker 返回的内部执行结果 |
-| `EngineCoreOutputs` | `vllm/v1/engine/__init__.py:220` | EngineCore 返回给外层的内部输出 |
+| `EngineCoreOutputs` | `vllm/v1/engine/__init__.py:218` | EngineCore 返回给外层的内部输出 |
 | `RequestOutput` | `vllm/outputs.py:85` | 用户可见请求输出 |
 | `SamplingParams` | `vllm/sampling_params.py` | 用户采样参数 |
 | `Sampler` | `vllm/v1/sample/sampler.py:20` | logits 到 token 的采样器 |

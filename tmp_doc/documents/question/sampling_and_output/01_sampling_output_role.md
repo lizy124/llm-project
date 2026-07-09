@@ -158,7 +158,7 @@ ModelRunner 负责“把模型数值输出变成 Scheduler 能消费的内部结
 
 `Scheduler.update_from_output()` 是 Worker 输出进入请求状态机的入口。
 
-源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1464`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
 
 它负责：
 
@@ -421,7 +421,7 @@ Sampler 的核心流程是：
 - `code/vllm/vllm/v1/sample/sampler.py:129`
 - `code/vllm/vllm/v1/sample/sampler.py:142`
 
-V2 optimized GPU sampler 在：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:30`
+新 GPU sampler 在：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:30`
 
 它更贴近 GPU input batch，减少 Python 侧 metadata 构造，但职责仍然是：
 
@@ -751,7 +751,7 @@ model_runner_output：
   Worker 实际执行结果。
 ```
 
-源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1464`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
 
 它会逐个 request 对账：
 

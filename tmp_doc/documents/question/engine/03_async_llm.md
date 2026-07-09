@@ -666,28 +666,16 @@ EngineCoreClient.add_request_async()：
 
 `generate()` 是 API server 常用的入口。
 
-源码注释非常清楚：
+当前实现中，`generate()` 的实际职责可以概括为：
 
-```python
-"""
-Main function called by the API server to kick off a request
-    * 1) Making an AsyncStream corresponding to the Request.
-    * 2) Processing the Input.
-    * 3) Adding the Request to the Detokenizer.
-    * 4) Adding the Request to the EngineCore (separate process).
-
-A separate output_handler loop runs in a background AsyncIO task,
-pulling outputs from EngineCore and putting them into the
-per-request AsyncStream.
-
-The caller of generate() iterates the returned AsyncGenerator,
-returning the RequestOutput back to the caller.
-"""
+```text
+generate() 实际先调用 add_request() 创建 RequestOutputCollector；
+_add_request() 先注册到 OutputProcessor，再 await engine_core.add_request_async(request)；
+后台 output_handler 把处理后的 RequestOutput 放入 collector；
+generate() 从 collector 中取出并 yield RequestOutput。
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:541` 到 `vllm/vllm/v1/engine/async_llm.py:554`
-
-这段注释基本就是 `AsyncLLM` 的完整职责说明。
+关键位置：`vllm/vllm/v1/engine/async_llm.py:557`、`vllm/vllm/v1/engine/async_llm.py:375`、`vllm/vllm/v1/engine/async_llm.py:409`
 
 ### 7.1 generate() 先调用 add_request()
 
@@ -1769,10 +1757,17 @@ InprocClient：同进程 EngineCore；
 SyncMPClient：多进程 EngineCore。
 ```
 
-异步 `AsyncLLM` 使用：
+异步 `AsyncLLM` 通过 `EngineCoreClient.make_async_mp_client()` 创建异步 client：
 
 ```text
-AsyncMPClient：asyncio + ZMQ + 后台 EngineCoreProc。
+DP=1：
+  AsyncMPClient。
+
+data_parallel_external_lb=True：
+  DPAsyncMPClient。
+
+其它 DP>1 场景：
+  DPLBAsyncMPClient。
 ```
 
 因此异步路径天然更偏：
@@ -1921,7 +1916,9 @@ AsyncLLM.generate()
 ### 18.3 输出返回
 
 ```text
-EngineCore.step()
+EngineCoreProc._process_engine_step()
+  → self.step_fn()
+      → EngineCore.step() 或 EngineCore.step_with_batch_queue()
   → Scheduler.update_from_output()
   → EngineCoreOutputs
   → EngineCoreProc output socket

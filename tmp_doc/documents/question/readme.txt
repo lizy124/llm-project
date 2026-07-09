@@ -12,10 +12,10 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
 
 - `vllm/entrypoints/`：OpenAI API、CLI、服务入口
 - `vllm/engine/`：推理引擎
-- `vllm/v1/`：新版 V1 架构，包括 scheduler、worker、KV cache、executor 等
+- `vllm/v1/`：新版 V1 架构，包括 engine、scheduler、executor、worker、KV cache、spec decode、structured output 等
 - `vllm/model_executor/`：模型加载与执行
 - `vllm/config/`：配置系统
-- `vllm/distributed/`：分布式执行
+- `vllm/distributed/`：分布式执行、KV transfer / EC transfer、通信状态管理
 - `vllm/attention/`：attention 后端抽象
 - `vllm/compilation/`：编译优化、CUDA graph、torch.compile 相关
 
@@ -69,13 +69,13 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
   vllm/engine/ 或 vllm/v1/engine/
     ↓
 调度层
-  scheduler / request / sequence / block manager
+  scheduler / request / KVCacheManager / encoder cache
     ↓
 执行层
   executor / worker / model_runner
     ↓
 模型层
-  model_executor / attention / distributed
+  model_executor / attention / distributed / spec_decode
     ↓
 底层算子层
   csrc/ + CUDA/CPU kernels
@@ -93,9 +93,9 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
 6. 分布式通信层
 7. C++ / CUDA / Rust 底层加速层
 
-当前 `question/` 目录还进一步拆出了 Engine、EngineCore、Scheduler、Executor / Worker / ModelRunner、KV cache transfer、Attention、Parallelism、Sampling、Spec Decode、Quantization 等更细专题。
+当前 `question/` 目录还进一步拆出了 Engine、EngineCore、Scheduler、Executor / Worker / ModelRunner、KV cache transfer、Attention、Parallelism、Sampling、Spec Decode、Quantization、配置与模型加载、模型结构、多模态、LoRA / adapters、编译与 CUDA graph、算子层等更细专题。
 
-在当前专题体系基础上，还可以把全仓库视角继续归纳为以下补充专题：
+在当前专题体系基础上，可以把全仓库视角继续归纳为以下补充专题：
 
 8. 配置与模型加载层：`config_and_model_loading`
    - 覆盖 `EngineArgs`、`VllmConfig`、`ModelConfig`、`CacheConfig`、`ParallelConfig`、`SchedulerConfig`、`LoadConfig`。
@@ -114,8 +114,18 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
     - 覆盖多模态请求如何进入 scheduler、worker、model runner。
     - 重点回答“多模态输入如何被预处理、缓存、调度并送入模型”。
 
-11. 可观测性、服务运维与测试调试层：`observability_tests_debugging`
-    - 覆盖 metrics、logging、tracing、profiler、health check、server lifecycle、failure handling。
-    - 覆盖 sleep/wake、reset prefix cache、utility RPC 等运维接口。
-    - 覆盖 tests 目录结构、关键测试、benchmark/profiling 脚本和修改不同模块后的验证路径。
-    - 重点回答“线上服务如何观测、排障，以及修改代码后如何验证”。
+11. 模型结构层：`model_architectures`
+    - 覆盖模型注册、架构解析、模型类构造、forward 接口、embedding / LM head、MoE、多模态模型和权重映射。
+    - 重点回答“一个模型架构如何被 vLLM 识别、实例化、执行并接入加载、量化、LoRA、并行等机制”。
+
+12. LoRA 与 adapters 层：`lora_and_adapters`
+    - 覆盖 LoRARequest、LoRA manager/cache、层注入、batch mixed LoRA、权重映射、量化和并行交互。
+    - 重点回答“一个请求如何携带 LoRA，并在 worker/model runner/layer 侧动态生效”。
+
+13. 编译与 CUDA graph 层：`compilation_and_cuda_graph`
+    - 覆盖 torch.compile、CUDA graph capture/replay、attention metadata、sampler/output 与并行交互。
+    - 重点回答“vLLM 如何在保持动态调度的同时利用编译和 CUDA graph 降低开销”。
+
+14. 算子层：`operators`
+    - 覆盖 Python custom op 封装、C++/CUDA/CPU kernel、attention 和 cache 相关底层算子。
+    - 重点回答“高层 model runner 和 attention backend 最终如何落到底层算子实现”。

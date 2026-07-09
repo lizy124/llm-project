@@ -274,7 +274,7 @@ else:
     self.dp_group = None
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:80` 到 `vllm/vllm/v1/engine/llm_engine.py:88`
+位置：`vllm/vllm/v1/engine/llm_engine.py:81` 到 `vllm/vllm/v1/engine/llm_engine.py:88`
 
 注释强调：
 
@@ -288,10 +288,13 @@ else:
 含义是：
 
 ```text
-同进程 EngineCore：
-  LLMEngine 负责在创建 EngineCoreClient 前准备 DP group。
+非 multiprocess 且 data_parallel_size > 1 且不是 external_launcher_dp：
+  LLMEngine 在创建 EngineCoreClient 前调用 parallel_config.stateless_init_dp_group()。
 
-多进程 / decoupled EngineCore：
+external_launcher_dp：
+  LLMEngine 在创建 EngineCoreClient 后复用 get_dp_group().cpu_group。
+
+multiprocess / decoupled EngineCore：
   EngineCoreProc 自己处理 DP 初始化。
 ```
 
@@ -521,7 +524,7 @@ return EngineCoreRequest(
 class EngineCoreRequest(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:88` 到 `vllm/vllm/v1/engine/__init__.py:93`
+位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:91`
 
 它的主要字段包括：
 
@@ -548,7 +551,7 @@ reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:94` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/vllm/v1/engine/__init__.py:92` 到 `vllm/vllm/v1/engine/__init__.py:135`
 
 可以理解为：
 
@@ -627,7 +630,7 @@ request_id：
 external_req_id: str | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:124` 到 `vllm/vllm/v1/engine/__init__.py:128`
+位置：`vllm/vllm/v1/engine/__init__.py:122` 到 `vllm/vllm/v1/engine/__init__.py:126`
 
 这解释了一个常见疑问：
 
@@ -1186,7 +1189,7 @@ if not engine_core_output.finished:
     reqs_to_abort.append(req_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:677` 到 `vllm/vllm/v1/engine/output_processor.py:681`
+位置：`vllm/vllm/v1/engine/output_processor.py:678` 到 `vllm/vllm/v1/engine/output_processor.py:681`
 
 为什么需要这样？
 

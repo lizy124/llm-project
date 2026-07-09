@@ -522,7 +522,7 @@ class EngineCoreRequest(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:88` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:143`
 
 之后由 EngineCore 转成 Scheduler 内部的 `Request`：
 
@@ -620,7 +620,7 @@ class EngineCoreOutput(...):
     finish_reason: FinishReason | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:205`
+位置：`vllm/vllm/v1/engine/__init__.py:173` 到 `vllm/vllm/v1/engine/__init__.py:204`
 
 `EngineCoreOutputs` 是一批内部输出：
 
@@ -633,7 +633,7 @@ class EngineCoreOutputs(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:248`
+位置：`vllm/vllm/v1/engine/__init__.py:218` 到 `vllm/vllm/v1/engine/__init__.py:247`
 
 它们还不是用户最终看到的 `RequestOutput`。
 
@@ -690,6 +690,11 @@ SyncMPClient：
 
 AsyncMPClient：
   AsyncLLM 通过 asyncio + ZMQ 和后台 EngineCoreProc 通信。
+
+DPAsyncMPClient / DPLBAsyncMPClient：
+  异步 data-parallel 场景使用的多进程 client。
+  make_async_mp_client() 会在 data_parallel_size > 1 时按配置返回
+  DPAsyncMPClient 或 DPLBAsyncMPClient，否则返回 AsyncMPClient。
 ```
 
 ### 6.1 make_client 决定使用哪种 client
@@ -697,6 +702,9 @@ AsyncMPClient：
 `EngineCoreClient.make_client()` 根据 `multiprocess_mode` 和 `asyncio_mode` 决定返回什么：
 
 ```python
+if asyncio_mode and not multiprocess_mode:
+    raise NotImplementedError
+
 if multiprocess_mode and asyncio_mode:
     return EngineCoreClient.make_async_mp_client(...)
 
@@ -808,7 +816,16 @@ class EngineCoreProc(EngineCore):
 LLMEngine / AsyncLLM
   → SyncMPClient / AsyncMPClient
   → ZMQ input_socket
-  → EngineCoreProc input_queue
+  → EngineCoreProc.process_input_sockets()
+  → ADD 请求解码为 EngineCoreRequest
+  → EngineCore.preprocess_add_request()
+  → input_queue.put_nowait((ADD, (Request, request_wave)))
+  → run_busy_loop()
+  → _process_input_queue()
+  → _handle_client_request()
+  → EngineCore.add_request()
+  → Scheduler.add_request()
+  → _process_engine_step()
   → EngineCore.step_fn()
   → output_queue
   → ZMQ output_socket
@@ -978,7 +995,10 @@ RequestOutput / PoolingRequestOutput
 add_request / add_request_async
 get_output / get_output_async
 abort_requests / abort_requests_async
-profile / sleep / wake_up / reset / LoRA / collective_rpc
+profile / sleep / wake_up
+reset_mm_cache / reset_prefix_cache / reset_encoder_cache
+add_lora / remove_lora / list_loras / pin_lora
+save_sharded_state / collective_rpc
 ```
 
 这些由 `EngineCoreClient` 转发到真正的 EngineCore / EngineCoreProc。
@@ -1017,7 +1037,7 @@ sleep / wake_up 控制接口转发。
 7. 调用 model_executor.execute_model()；
 8. 调用 Scheduler.update_from_output()；
 9. 返回 EngineCoreOutputs；
-10. 转发部分 profile / reset / sleep / wake_up / LoRA / collective_rpc 到 Scheduler 或 model_executor。
+10. 转发部分 profile / reset_mm_cache / reset_prefix_cache / reset_encoder_cache / sleep / wake_up / LoRA / save_sharded_state / collective_rpc 到 Scheduler 或 model_executor。
 ```
 
 从执行主线看，EngineCore 是：

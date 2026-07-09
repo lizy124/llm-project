@@ -385,7 +385,7 @@ OutputProcessor 更靠近 frontend，它持有 tokenizer 和 frontend RequestSta
 
 ### 5.1 SamplingParams 是用户采样参数的源头
 
-`SamplingParams` 定义在：`vllm/vllm/sampling_params.py:224`
+`SamplingParams` 定义在：`vllm/vllm/sampling_params.py:199`
 
 核心字段包括：
 
@@ -1009,7 +1009,7 @@ AsyncOutput 不是新的语义层，它只是让 GPU→CPU 输出拷贝和后续
 
 `Scheduler.update_from_output()` 是 worker 输出进入 request 状态机的入口。
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1464`
+源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1463`
 
 输入：
 

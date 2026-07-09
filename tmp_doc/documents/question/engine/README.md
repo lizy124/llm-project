@@ -38,9 +38,10 @@
   → EngineCore.step()
   → Scheduler.schedule()
   → SchedulerOutput
-  → model_executor.execute_model(scheduler_output)
-  → Worker / ModelRunner forward / sample
-  → ModelRunnerOutput
+  → model_executor.execute_model(scheduler_output, non_block=True)
+  → Scheduler.get_grammar_bitmask(...)
+  → Worker / ModelRunner forward
+  → ModelRunnerOutput 或 model_executor.sample_tokens(grammar_output)
   → Scheduler.update_from_output(scheduler_output, model_output)
   → EngineCoreOutputs
   → EngineCoreClient.get_output() / get_output_async()
