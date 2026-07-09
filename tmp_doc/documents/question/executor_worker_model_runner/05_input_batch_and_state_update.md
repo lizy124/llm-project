@@ -2,9 +2,9 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
-- `code/vllm/vllm\v1\core\sched\output.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
 
 本问题关注：`SchedulerOutput` 进入 Worker / ModelRunner 后，Worker 侧如何缓存请求状态、维护持久 batch、增删请求、更新 token / block / sampling / LoRA / pooling / spec decode 状态，并为后续 `_prepare_inputs()`、attention metadata 构造和模型 forward 提供稳定输入。
 

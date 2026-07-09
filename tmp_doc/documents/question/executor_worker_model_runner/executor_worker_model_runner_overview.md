@@ -188,8 +188,10 @@ EngineCore.step()
   → GPUModelRunner.execute_model()
   → _update_states()
   → _prepare_inputs()
+  → _get_slot_mappings()
   → _build_attention_metadata()
   → _preprocess()
+  → set_forward_context(...)
   → _model_forward()
   → logits / pooling / IntermediateTensors
   → sample_tokens()
@@ -289,9 +291,13 @@ Scheduler 生成的不是最终结果，而是执行计划 `SchedulerOutput`。
 - num_common_prefix_blocks
 - finished_req_ids
 - free_encoder_mm_hashes
+- preempted_req_ids（新 GPU runner 使用）
+- has_structured_output_requests / pending_structured_output_tokens
+- num_invalid_spec_tokens
 - kv_connector_metadata
 - ec_connector_metadata
 - new_block_ids_to_zero
+- num_spec_tokens_to_schedule
 ```
 
 EngineCore 在每轮 `step()` 里会：
@@ -438,7 +444,8 @@ load_model()
   → setup wrappers / offloader / transfer engines
 initialize_from_config()
   → allocate KV cache
-  → warmup / compile
+compile_or_warm_up_model()
+  → warmup / compile / CUDA graph capture
 ```
 
 ### 6.4 sleep / wake_up / profile / shutdown
@@ -565,12 +572,12 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 它会构造：
 
 ```text
-- CommonAttentionMetadata
-- 每个 KV cache group 的具体 metadata
-- block table / slot mapping
+- CommonAttentionMetadata 基础模板
+- 每个 KV cache group / attention group 的具体 metadata
+- 每个 group 对应的 block table / slot mapping
 - seq_lens / max_seq_len / is_prefilling
 - cascade attention prefix lengths
-- speculative decoding 所需的额外字段
+- speculative decoding / Mamba/GDN builder 所需的额外字段
 ```
 
 这一层是“模型执行”真正开始前最重的准备工作之一。
@@ -746,21 +753,25 @@ multimodal encoder、encoder-decoder encoder_outputs、prompt embeds 等都挂�
 
 ### 12.2 `CachedRequestData`
 
-缓存请求在 worker 侧的增量状态，减少每轮重复传输。
+`SchedulerOutput.scheduled_cached_reqs` 使用的增量数据结构，表示已经在 worker 侧缓存过的请求本轮有哪些 block / token / resume 变化，减少每轮重复传输。
 
-### 12.3 `InputBatch`
+### 12.3 `CachedRequestState`
+
+Worker / ModelRunner 侧缓存的单请求状态，保存 prompt、输出 token、block ids、num_computed_tokens、LoRA、多模态、pooling 等执行期信息。
+
+### 12.4 `InputBatch`
 
 worker 侧的批处理总状态，负责把 request state 映射成模型前向输入。
 
-### 12.4 `ExecuteModelState`
+### 12.5 `ExecuteModelState`
 
 `execute_model()` 到 `sample_tokens()` 的临时桥梁。
 
-### 12.5 `ModelRunnerOutput`
+### 12.6 `ModelRunnerOutput`
 
 worker 返回 scheduler 的执行结果。
 
-### 12.6 `EngineCoreOutputs`
+### 12.7 `EngineCoreOutputs`
 
 Scheduler 消化 `ModelRunnerOutput` 后，返回给上层客户端的最终输出。
 

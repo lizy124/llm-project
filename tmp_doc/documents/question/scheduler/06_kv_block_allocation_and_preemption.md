@@ -213,7 +213,7 @@ lookahead：
   num_lookahead_tokens，spec decode 预留 token。
 ```
 
-所以一次 block 分配可能同时处理三类东西：
+所以一次 block 分配可能同时处理四类东西：
 
 ```text
 1. 已经存在且可复用的本地 prefix cache blocks；

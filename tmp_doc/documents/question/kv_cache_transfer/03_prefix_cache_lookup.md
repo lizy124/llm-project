@@ -12,20 +12,20 @@
 - `code/vllm/vllm/v1/core/sched/scheduler.py`
 - `code/vllm/vllm/v1/core/sched/output.py`
 
-本文梳理 vLLM V1 中本地 prefix cache 的命中链路：`Request.block_hashes` 如何生成，Scheduler 什么时候调用 `KVCacheManager.get_computed_blocks()`，命中结果如何变成 `num_computed_tokens`，以及为什么 prompt 全命中时仍然要重算最后一个 token。
+本文梳理 vLLM V1 中本地 prefix cache 的命中链路：`Request.block_hashes` 如何生成，Scheduler 什么时候调用 `KVCacheManager.get_computed_blocks()`，命中结果如何变成 `num_computed_tokens`，以及为什么 prompt 全命中时仍然要保留最后 token 的 forward。
 
 ---
 
 ## 1. 一句话回答
 
-本地 prefix cache 命中发生在 Scheduler 把 `WAITING` 请求首次调度进 `RUNNING` 队列之前。
+本地 prefix cache 命中发生在 Scheduler 为 `WAITING` 请求首次安排本地 prefill 之前；如果 connector 选择异步加载远端 KV，这次调度会先分配/登记 blocks 并把请求放到 `WAITING_FOR_REMOTE_KVS`，收包完成后在后续调度收尾逻辑中回到 `WAITING` 继续。
 
 核心链路是：
 
 ```text
 EngineCore 初始化 request_block_hasher
   → Request 创建时生成 full-block block_hashes
-  → 已完成 KV block 被 cache 到 BlockPool 的 hash 表
+  → 可复用的 full KV block 被登记到 BlockPool 的 hash 表
   → Scheduler.schedule() 调度 WAITING 请求
   → KVCacheManager.get_computed_blocks(request)
   → KVCacheCoordinator.find_longest_cache_hit(...)
@@ -75,6 +75,7 @@ Request.block_hashes
   → Scheduler 计算 num_computed_tokens
   → num_new_tokens = request.num_tokens - num_computed_tokens
   → KVCacheManager.allocate_slots(...)
+  → request.status 更新
   → request.num_computed_tokens = num_computed_tokens
   → SchedulerOutput.scheduled_new_reqs / scheduled_cached_reqs
 ```
@@ -264,9 +265,11 @@ self.cached_block_hash_to_block: BlockHashToBlockMap = BlockHashToBlockMap()
 
 位置：`code/vllm/vllm/v1/core/block_pool.py:170` 到 `code/vllm/vllm/v1/core/block_pool.py:171`
 
-当某个请求的 KV blocks 已经完成计算，并且这些 blocks 是 full blocks 时，会调用 `cache_full_blocks()` 把 block hash 写到 block 元数据和 hash 表中。
+当 `KVCacheManager.allocate_slots()` 或 connector 收包完成后调用 `cache_blocks()` 时，会把当前请求中已经拥有 KV、可复用的 full blocks 继续下钻到 `BlockPool.cache_full_blocks()`，由它把 block hash 写到 block 元数据和 hash 表中。
 
-入口：`code/vllm/vllm/v1/core/block_pool.py:211`
+入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:442` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:456`
+
+下钻入口：`code/vllm/vllm/v1/core/block_pool.py:211`
 
 核心代码：
 
@@ -280,24 +283,25 @@ self.cached_block_hash_to_block.insert(block_hash_with_group_id, blk)
 
 位置：`code/vllm/vllm/v1/core/block_pool.py:276` 到 `code/vllm/vllm/v1/core/block_pool.py:281`
 
-这里有两个关键点：
+这里有几个关键点：
 
 ```text
-1. 只有 full block 会被 cache；
-2. cache key 不是单纯 block_hash，而是 block_hash + kv_cache_group_id。
+1. 只有 full block 会被登记到本地 prefix cache；
+2. null block 或被 block_mask 标记为不可命中的 block 会跳过；
+3. cache key 不是单纯 block_hash，而是 block_hash + kv_cache_group_id。
 ```
 
-也就是说，不同 KV cache group 即使 token hash 相同，也会分开查找。
+也就是说，不同 KV cache group 即使 token hash 相同，也会分开查找；SWA、Mamba 等稀疏/混合场景也可能只登记某些可作为 replay 边界的 blocks。
 
 ---
 
 ## 7. Scheduler 什么时候查本地 prefix cache
 
-### 7.1 只在 WAITING 请求进入 RUNNING 前查
+### 7.1 WAITING 请求首次本地计算前查
 
 Scheduler 的 `schedule()` 先调度已经在 `running` 队列里的请求，再调度 `waiting / skipped_waiting` 请求。
 
-本地 prefix cache 查询发生在调度 WAITING 请求这一段：
+本地 prefix cache 查询发生在调度 WAITING 请求这一段；多数情况下它会把请求推进到 `RUNNING`，但如果 connector 选择异步加载远端 KV，请求会先进入 `WAITING_FOR_REMOTE_KVS`，完成收包后仍在这一轮收尾逻辑中回到 `WAITING`，下一轮再继续调度：
 
 ```python
 # Get already-cached tokens.
@@ -308,14 +312,14 @@ if request.num_computed_tokens == 0:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:711`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:775`
 
 这说明：
 
 ```text
 只有 request.num_computed_tokens == 0 时才查本地 prefix cache；
-典型场景是新请求第一次从 waiting 进入 running；
-如果请求已经跑过一部分 prefill，Scheduler 不会每轮重复查本地 prefix cache。
+典型场景是新请求第一次从 waiting 开始本地 prefill；
+如果请求已经跑过一部分 prefill，或者 async remote KV load 完成后已经带着 num_computed_tokens 回到 WAITING，Scheduler 会走 `request.num_computed_tokens > 0` 分支，不会再次调用 `get_computed_blocks()`。
 ```
 
 ### 7.2 running 请求不会走 get_computed_blocks
@@ -414,7 +418,13 @@ return False
 
 位置：`code/vllm/vllm/v1/request.py:266` 到 `code/vllm/vllm/v1/request.py:277`
 
-### 8.2 full hit 也最多命中到 request.num_tokens - 1
+默认值在参数校验阶段设置：generation 请求带 `prompt_logprobs` 时会默认跳过读取 prefix cache，pooling 的 `token_embed` / `token_classify` 也会默认跳过；普通 generation / pooling 请求通常不跳过。
+
+位置：`code/vllm/vllm/sampling_params.py:481` 到 `code/vllm/vllm/sampling_params.py:485`
+
+位置：`code/vllm/vllm/pooling_params.py:124` 到 `code/vllm/vllm/pooling_params.py:131`
+
+### 8.2 full hit 也最多按 request.num_tokens - 1 查
 
 `get_computed_blocks()` 最重要的一行是：
 
@@ -434,7 +444,7 @@ When all tokens hit the cache, we must recompute the last token to obtain logits
 
 ```text
 即使 prompt 的所有 full blocks 都在本地 cache 里，Scheduler 也不能把全部 prompt token 都当作已完成；
-生成模型至少需要对最后一个 prompt token 做一次 forward，才能得到 next-token logits。
+对于 generation 请求，至少要保留最后一个 prompt token 参与一次 forward，才能得到 next-token logits。
 ```
 
 更细一点：
@@ -442,10 +452,10 @@ When all tokens hit the cache, we must recompute the last token to obtain logits
 ```text
 max_cache_hit_length = prompt_length - 1；
 命中 token 数还必须按 block size / scheduler alignment 对齐；
-因此可能不只是重算最后 1 个 token，而是重算最后一个 block。
+因此可能不只是保留最后 1 个 token forward，而是保留最后一个 block 参与 forward。
 ```
 
-这就是文档标题里“full hit 为什么仍可能需要重算最后一个 token”的答案。
+这就是文档标题里“full hit 为什么仍可能需要保留最后 token 对应区间 forward”的答案。
 
 ### 8.3 调用 coordinator 查最长命中
 
@@ -501,6 +511,7 @@ Hybrid KV cache groups
 EAGLE / MTP 需要额外 drop 的场景
 不同 block_size / hash_block_size 的转换
 scheduler_block_size 对齐
+num_uncached_common_prefix_tokens 统计
 ```
 
 它采用迭代收敛逻辑：
@@ -650,7 +661,11 @@ external KV connector 再基于“本地已经命中的 token 数”继续判断
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:790` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:795`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:781` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:795`
+
+如果是 async remote KV load，则这一步 `num_new_tokens = 0`，只先为外部 computed tokens 分配/登记 slots，等待 connector 收包完成后再继续本地计算。
+
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:781` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:785`
 
 于是：
 
@@ -708,7 +723,7 @@ num_new_tokens = 10000 - 9984 = 16
 
 ```text
 看起来 full hit；
-但为了最后 token logits，仍重算最后一个 block。
+但为了最后 token logits，仍保留最后一个 block 做 forward。
 ```
 
 ---
@@ -783,11 +798,16 @@ self.coordinator.allocate_new_computed_blocks(
 
 位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:422` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:433`
 
+`allocate_new_computed_blocks()` 内部会先对所有 group 的本地命中 blocks 执行 `add_local_computed_blocks()`，再为 external computed tokens 分配 blocks，避免某个 group 的 external allocation 先发生时把另一个 group 尚未 touch 的命中 block 驱逐。
+
+位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:186` 到 `code/vllm/vllm/v1/core/kv_cache_coordinator.py:230`
+
 含义：
 
 ```text
 本地命中的 blocks 不需要重新分配和重算；
 但要加入当前 request 的 block table / req_to_blocks；
+加入前会 touch 命中的 blocks，更新引用和 LRU 访问状态，避免仍被当前请求使用时被回收；
 这样 Worker 后续 attention 能直接引用这些已有 KV blocks。
 ```
 
@@ -812,6 +832,12 @@ external KV 对应的 blocks；
 本轮新分配、需要 forward 写入的 blocks；
 可能还有 lookahead blocks。
 ```
+
+随后如果 `enable_caching` 开启且不是 `delay_cache_blocks`，`allocate_slots()` 会把 `total_computed_tokens + num_new_tokens`（再按 `request.num_tokens` 截断）范围内的 full blocks 写入本地 prefix cache；async remote KV load 场景则延迟到收包完成后再 cache。
+
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:442` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:456`
+
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2350` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2380`
 
 ---
 
@@ -982,7 +1008,7 @@ external hits 只统计本地之后补上的 token。
 
 ---
 
-## 15. 为什么 full hit 仍然需要重算最后 token
+## 15. 为什么 full hit 仍然需要保留最后 token 的 forward
 
 这是 prefix cache 里最容易误解的点。
 
@@ -1000,9 +1026,9 @@ external hits 只统计本地之后补上的 token。
 
 位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:221` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:227`
 
-### 15.2 为什么可能重算整个 block
+### 15.2 为什么可能让整个 block 参与 forward
 
-虽然语义上只需要重算最后一个 token，但源码注释也说：
+虽然语义上只需要保留最后一个 token 做 forward，但源码注释也说：
 
 ```text
 This can trigger recomputation of an entire block, rather than just the single last token,
@@ -1023,7 +1049,7 @@ num_computed_tokens 需要满足 block-size / scheduler alignment；
 
 ```text
 full prompt cached ≠ 本轮 0 token forward；
-更准确是：最多复用到最后一个需要 logits 的 token 之前的完整 block 边界。
+更准确是：最多复用到最后一个需要 logits 的 token 之前、且满足 block / scheduler 对齐的边界。
 ```
 
 ---
@@ -1105,7 +1131,7 @@ max_cache_hit_length = 9999
 
 ```text
 num_new_tokens = 16
-重算最后一个 block，用来得到 next-token logits。
+最后一个 block 参与本轮 forward，用来得到 next-token logits。
 ```
 
 ---
@@ -1173,7 +1199,7 @@ request.num_computed_tokens：Scheduler 维护的请求当前已计算进度。
 ```text
 token_budget / chunked prefill；
 block-size 对齐；
-full hit 重算最后 block；
+full hit 保留最后 block forward；
 sliding window / mamba / hybrid attention 约束；
 external KV load 是否异步；
 KV block 分配是否有足够空间。
@@ -1204,7 +1230,7 @@ Request.block_hashes
 Scheduler 只在 waiting 请求初次调度或 preempted 后恢复时查；
 命中结果先影响 Scheduler 的 token 预算和 KV block 分配；
 Worker 不再查 cache，只消费 SchedulerOutput 中的 block table 和 computed token 数；
-即使 full hit，也要保留最后 token 的 forward 来生成 logits，实际常表现为重算最后一个 block。
+即使 full hit，也要保留最后 token 的 forward 来生成 logits，实际常表现为最后一个 block 参与本轮 forward。
 ```
 
 如果只记一句话：

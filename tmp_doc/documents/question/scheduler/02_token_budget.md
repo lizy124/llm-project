@@ -16,7 +16,7 @@ Scheduler 每轮最多能调度的 token 数由 `self.max_num_scheduled_tokens` 
 token_budget = self.max_num_scheduled_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:407`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:407`
 
 之后：
 
@@ -109,7 +109,7 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:408`
+位置：`scheduler.py:407` 到 `scheduler.py:409`
 
 这意味着本轮不调度任何 token。
 
@@ -134,7 +134,7 @@ if self._pause_state == PauseState.PAUSED_NEW:
 
 这里的 `return 0` 不是表示请求真的完成或释放了，而是暂停态下对外报告“当前没有需要继续推进的 unfinished requests”，让外层停止继续调度和 forward。请求本身仍保留在 Scheduler 的队列 / 状态里，后续恢复后还可以继续推进。
 
-位置：`scheduler.py:2106`
+位置：`scheduler.py:2106` 到 `scheduler.py:2116`
 
 ### 4.2 为什么 `PAUSED_NEW` 不直接把 token_budget 设为 0
 
@@ -374,7 +374,14 @@ if load_kv_async:
 没有本地计算 token。
 ```
 
-但会占用 KV block。
+但会占用 KV block，并且当前源码会在异步 load 时考虑其他 in-flight prefill 的保留 blocks，避免远端 load 和本地 forward 互相造成资源死锁：
+
+```python
+if load_kv_async:
+    reserved_blocks = self._inflight_prefill_reserved_blocks()
+```
+
+位置：`scheduler.py:865` 到 `scheduler.py:871`
 
 ### 8.2 普通 waiting 请求：剩余未计算 token
 
@@ -620,15 +627,22 @@ KV block 分配是另一种资源约束。
 ```python
 total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
 assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
+
 assert token_budget >= 0
+assert len(self.running) <= self.max_num_running_reqs
+assert len(scheduled_new_reqs) + len(scheduled_resumed_reqs) + len(
+    scheduled_running_reqs
+) <= len(self.running)
 ```
 
-位置：`scheduler.py:988`
+位置：`scheduler.py:988` 到 `scheduler.py:999`
 
-这两个 assert 保证：
+这些 assert 保证：
 
 1. 记录下来的总调度 token 没超过配置上限；
-2. 局部剩余预算没有被扣成负数。
+2. 局部剩余预算没有被扣成负数；
+3. running 请求数量没有超过 `max_num_running_reqs`；
+4. 本轮 scheduled 请求数不超过当前 running 队列中的请求数。
 
 最终 `SchedulerOutput` 中会带上：
 
@@ -637,7 +651,9 @@ num_scheduled_tokens=num_scheduled_tokens
 total_num_scheduled_tokens=total_num_scheduled_tokens
 ```
 
-位置：`scheduler.py:1060`
+位置：`scheduler.py:1057` 到 `scheduler.py:1074`
+
+同一段还会写入 `scheduled_spec_decode_tokens`、`scheduled_encoder_inputs`、`new_block_ids_to_zero` 和 `num_spec_tokens_to_schedule` 等字段；后面如果有 KV / EC connector，还会继续补充 connector metadata。
 
 这就是 ModelRunner 后续知道本轮每个请求该处理多少 token 的依据。
 

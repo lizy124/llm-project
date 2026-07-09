@@ -350,6 +350,17 @@ tracker = sockets[client_index].send_multipart(
 
 所以多进程场景中，`client_index` 是路由输出的关键字段。
 
+另外，`client_index == -1` 是发给 DP coordinator 的特殊分支，不走普通前端 client socket：
+
+```python
+if client_index == -1:
+    assert coord_socket is not None
+    coord_socket.send_multipart(encoder.encode(outputs))
+    continue
+```
+
+位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
+
 ---
 
 ## 5. EngineCoreOutputs 如何回到同步 LLMEngine
@@ -495,6 +506,8 @@ else:
 
 位置：`vllm/vllm/v1/engine/core_client.py:824` 到 `vllm/vllm/v1/engine/core_client.py:830`
 
+也就是说，普通请求输出进入 `outputs_queue`，utility 输出则用于完成等待中的 utility future。
+
 同步 `get_output()` 再从队列里取：
 
 ```python
@@ -515,7 +528,7 @@ outputs: EngineCoreOutputs = decoder.decode(frames)
 
 位置：`vllm/vllm/v1/engine/core_client.py:1005` 到 `vllm/vllm/v1/engine/core_client.py:1010`
 
-然后只把真正需要上层处理的输出放入队列：
+然后只把真正需要 `AsyncLLM.output_handler()` 处理的请求输出或 scheduler stats 放入队列：
 
 ```python
 if outputs.outputs or outputs.scheduler_stats:
@@ -523,6 +536,17 @@ if outputs.outputs or outputs.scheduler_stats:
 ```
 
 位置：`vllm/vllm/v1/engine/core_client.py:1042` 到 `vllm/vllm/v1/engine/core_client.py:1043`
+
+utility 输出不会进这个队列，而是在 socket 任务里通过 `_process_utility_output()` 唤醒对应 future：
+
+```python
+if outputs.utility_output:
+    ...
+    _process_utility_output(outputs.utility_output, utility_results)
+    continue
+```
+
+位置：`vllm/vllm/v1/engine/core_client.py:1011` 到 `vllm/vllm/v1/engine/core_client.py:1032`
 
 这说明：
 

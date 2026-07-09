@@ -60,7 +60,8 @@
 6. 在请求结束、抢占、reset 时释放或弹出 block；
 7. 在 prefix caching 开启时把完整 block 写入 prefix cache；
 8. 提供 block ids 给 SchedulerOutput / KV Connector / Worker；
-9. 提供 KV cache usage、prefix cache stats、KV cache events。
+9. 通过 `take_new_block_ids()` 把新分配的 attention block ids 暴露给 Scheduler，供 Worker 在使用前清零；
+10. 提供 KV cache usage、prefix cache stats、KV cache events。
 ```
 
 它不负责：
@@ -1063,6 +1064,8 @@ req_to_new_blocks[request_id] = self.kv_cache_manager.get_blocks(
 
 位置：`code/vllm/vllm/v1/core/sched/scheduler.py:953`
 
+这里特意使用 `get_blocks(request_id)` 取请求当前完整 block 布局，而不是只使用 `allocate_slots()` 返回的新 blocks；因为首次进入 running 的请求需要把 prefix hit、external hit 和本轮新分配 block 的完整布局一起发给 Worker。
+
 这些 blocks 后续会用于构造：
 
 ```text
@@ -1187,7 +1190,7 @@ self.coordinator.remove_skipped_blocks(
 
 ---
 
-## 18. reset_prefix_cache / evict_blocks / take_events
+## 18. reset_prefix_cache / evict_blocks / take_new_block_ids / take_events
 
 ### 18.1 reset_prefix_cache
 
@@ -1224,7 +1227,21 @@ def evict_blocks(self, block_ids: set[int]) -> None:
 
 这个接口常用于外部 KV load 失败或 connector 报告 invalid blocks 时，从 prefix cache hash table 中移除对应 block。
 
-### 18.3 take_events
+### 18.3 take_new_block_ids
+
+```python
+def take_new_block_ids(self) -> list[int]:
+    ids: list[int] = []
+    for mgr in self.coordinator.single_type_managers:
+        ids.extend(mgr.take_new_block_ids())
+    return ids
+```
+
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:605`
+
+Scheduler 在构造 `SchedulerOutput` 前会调用它，把新分配、需要 zero 的 attention block ids 放入 `SchedulerOutput.new_block_ids_to_zero`。Worker / ModelRunner 在 `_update_states()` 里真正执行设备侧清零。
+
+### 18.4 take_events
 
 ```python
 def take_events(self) -> list[KVCacheEvent]:

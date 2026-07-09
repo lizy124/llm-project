@@ -335,10 +335,17 @@ class SchedulerOutput:
     num_common_prefix_blocks: list[int]
     finished_req_ids: set[str]
     free_encoder_mm_hashes: list[str]
-    ...
+    preempted_req_ids: set[str] | None = None
+    has_structured_output_requests: bool = False
+    pending_structured_output_tokens: bool = False
+    num_invalid_spec_tokens: dict[str, int] | None = None
+    kv_connector_metadata: KVConnectorMetadata | None = None
+    ec_connector_metadata: ECConnectorMetadata | None = None
+    new_block_ids_to_zero: list[int] | None = None
+    num_spec_tokens_to_schedule: int = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:180`
+位置：`vllm/vllm/v1/core/sched/output.py:180` 到 `vllm/vllm/v1/core/sched/output.py:245`
 
 它的作用可以分成两层：
 
@@ -414,7 +421,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:895` 到 `vllm/vllm/v1/worker/gpu_worker.py:898`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:867` 到 `vllm/vllm/v1/worker/gpu_worker.py:870`
 
 GPU ModelRunner 里才是真正的模型输入准备和 forward：
 
@@ -441,7 +448,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4323` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4329`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4320` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4326`
 
 对于 generation 模型，`execute_model()` 可能只完成 forward / logits，然后返回 `None`。
 
@@ -520,7 +527,8 @@ append sampled token；
 处理 spec decode 接受 / 拒绝；
 处理 logprobs / prompt logprobs；
 处理 pooling output；
-处理 KV connector output；
+处理 routed experts；
+处理 KV connector output / KV stats / KV events；
 释放 finished request 资源；
 构造 EngineCoreOutput；
 按 client_index 组装 EngineCoreOutputs。
@@ -779,6 +787,18 @@ schedule → execute → result → update_from_output
 
 这让调度和模型执行可以更好地 overlap，尤其用于 pipeline parallel 减少 pipeline bubble。
 
+如果本轮存在 `pending_structured_output_tokens`，当前源码会把 sampling 延后，等前一个 batch 的输出处理完成后，再计算 grammar bitmask 并调用 `sample_tokens()`：
+
+```python
+if not scheduler_output.pending_structured_output_tokens:
+    grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+    future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+else:
+    deferred_scheduler_output = scheduler_output
+```
+
+位置：`vllm/vllm/v1/engine/core.py:559` 到 `vllm/vllm/v1/engine/core.py:572`
+
 核心区别：
 
 ```text
@@ -883,14 +903,19 @@ model_executor.sleep(level)
 
 位置：`vllm/vllm/v1/engine/core.py:774` 到 `vllm/vllm/v1/engine/core.py:784`
 
-`wake_up()` 先唤醒 executor，再恢复 Scheduler：
+`wake_up()` 会先剔除只用于恢复调度的 `"scheduling"` tag，再按需唤醒 executor，最后恢复 Scheduler：
 
 ```python
-self.model_executor.wake_up(tags)
+if tags is not None and "scheduling" in tags:
+    tags = [t for t in tags if t != "scheduling"]
+
+if tags is None or tags:
+    self.model_executor.wake_up(tags)
+
 self.resume_scheduler()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:809` 到 `vllm/vllm/v1/engine/core.py:813`
+位置：`vllm/vllm/v1/engine/core.py:799` 到 `vllm/vllm/v1/engine/core.py:813`
 
 ### 11.4 shutdown
 

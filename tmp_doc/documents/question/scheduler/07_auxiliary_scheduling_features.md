@@ -354,6 +354,8 @@ if self.ec_connector is not None and self.ec_connector.has_cache_item(
 而是可以从外部 encoder cache 加载。
 ```
 
+注意这里仍会累加 `num_embeds_to_schedule`，用于同一轮 encoder cache 容量 / 已安排 embedding 数量核算；区别是它不加入 `encoder_inputs_to_schedule`，也不扣 `encoder_compute_budget`。
+
 调度成功后，Scheduler 仍然要为它分配 encoder cache 槽位，并通知 ECConnector：
 
 ```python
@@ -544,7 +546,41 @@ if new_token_ids and self.structured_output_manager.should_advance(request):
 
 ---
 
-## 14. Speculative decoding 初始化：lookahead tokens
+## 14. Streaming request：等待后续输入时会停在 skipped_waiting
+
+blocked waiting status 还包括：
+
+```python
+RequestStatus.WAITING_FOR_STREAMING_REQ
+```
+
+位置：`scheduler.py:1808`
+
+它通常来自可续写的 streaming/session 请求：当前输出停止但请求仍 `resumable`，且暂时没有下一段输入时，`_handle_stopped_request()` 会把状态设为 `WAITING_FOR_STREAMING_REQ`，并通过 `_enqueue_waiting_request()` 放入 `skipped_waiting`。
+
+```python
+request.status = RequestStatus.WAITING_FOR_STREAMING_REQ
+self.num_waiting_for_streaming_input += 1
+self._enqueue_waiting_request(request)
+```
+
+位置：`scheduler.py:1842`
+
+waiting 调度遇到它时不会自行恢复：
+
+```python
+if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
+    assert not request.streaming_queue
+    return False
+```
+
+位置：`scheduler.py:2408`
+
+只有后续 `add_request()` 收到同 request id 的新输入，并通过 `_update_request_as_session()` 把状态改回 `WAITING` 后，它才会重新参与调度。
+
+---
+
+## 15. Speculative decoding 初始化：lookahead tokens
 
 Scheduler 初始化时会根据 speculative config 设置：
 
@@ -591,7 +627,7 @@ num_lookahead_tokens 越大，allocate_slots() 需要预留的 KV slots 越多�
 
 ---
 
-## 15. Spec decode 如何影响 running 请求 token 数
+## 16. Spec decode 如何影响 running 请求 token 数
 
 running 请求计算本轮 token 数时使用：
 
@@ -632,7 +668,7 @@ num_new_tokens = 109 - 104 = 5
 
 ---
 
-## 16. Spec decode 如何影响 KV block 分配
+## 17. Spec decode 如何影响 KV block 分配
 
 running 阶段分配 block 时：
 
@@ -684,7 +720,7 @@ effective_lookahead_tokens = (
 
 ---
 
-## 17. Spec decode 如何进入 SchedulerOutput
+## 18. Spec decode 如何进入 SchedulerOutput
 
 running 阶段中，如果请求有 `spec_token_ids`：
 
@@ -744,7 +780,7 @@ if self.dynamic_sd_lookup is not None and len(num_scheduled_tokens) > 0:
 
 ---
 
-## 18. Spec token 被拒绝后如何回退
+## 19. Spec token 被拒绝后如何回退
 
 Worker 返回后，在 `update_from_output()` 中会根据实际接受的 draft token 数修正状态：
 
@@ -784,7 +820,7 @@ Worker 返回后再根据接受 / 拒绝情况修正 num_computed_tokens。
 
 ---
 
-## 19. LoRA max_loras 如何限制 waiting 请求
+## 20. LoRA max_loras 如何限制 waiting 请求
 
 LoRA 限制主要发生在 waiting 阶段。
 
@@ -831,7 +867,7 @@ if (
 
 ---
 
-## 20. Mamba block alignment 如何裁剪 token 数
+## 21. Mamba block alignment 如何裁剪 token 数
 
 如果模型含 Mamba 层，并且 cache 模式是 align：
 
@@ -879,7 +915,7 @@ waiting 阶段：break，停止 waiting 调度。
 
 ---
 
-## 21. DP prefill balancing 如何延后 prefill
+## 22. DP prefill balancing 如何延后 prefill
 
 `schedule()` 支持参数：
 
@@ -934,7 +970,7 @@ async KV load 可以启动，因为它不提交本地 prefill compute；
 
 ---
 
-## 22. Pause state 如何影响 running / waiting
+## 23. Pause state 如何影响 running / waiting
 
 Scheduler 有三种 pause 状态：
 
@@ -970,7 +1006,7 @@ PAUSED_ALL：token_budget 清零，running / waiting 都不会调度。
 
 ---
 
-## 23. KV Connector metadata 如何同步给 Worker
+## 24. KV Connector metadata 如何同步给 Worker
 
 KV Connector 的调度插入点主要有三个：
 
@@ -1015,7 +1051,7 @@ Worker 执行后，会通过 `KVConnectorOutput.finished_recving` / `finished_se
 
 ---
 
-## 24. ECConnector metadata 如何同步给 Worker
+## 25. ECConnector metadata 如何同步给 Worker
 
 ECConnector 类似，但处理的是 encoder cache。
 
@@ -1051,7 +1087,7 @@ ec_connector_metadata：
 
 ---
 
-## 25. SchedulerOutput 中和附加能力相关的字段
+## 26. SchedulerOutput 中和附加能力相关的字段
 
 构造 `SchedulerOutput` 时，附加能力相关字段包括：
 
@@ -1092,7 +1128,7 @@ Worker 拿到的不只是“请求和 token 数”，
 
 ---
 
-## 26. 一个完整例子：多模态 waiting 请求进入 running
+## 27. 一个完整例子：多模态 waiting 请求进入 running
 
 假设：
 
@@ -1133,7 +1169,7 @@ Worker 因此知道：
 
 ---
 
-## 27. 一个完整例子：结构化输出 grammar 未就绪
+## 28. 一个完整例子：结构化输出 grammar 未就绪
 
 假设：
 
@@ -1172,7 +1208,7 @@ WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 
 ---
 
-## 28. 一个完整例子：spec decode running 请求
+## 29. 一个完整例子：spec decode running 请求
 
 假设：
 
@@ -1210,7 +1246,7 @@ request.num_computed_tokens -= 2
 
 ---
 
-## 29. 一个完整例子：LoRA 限制导致 waiting 跳过
+## 30. 一个完整例子：LoRA 限制导致 waiting 跳过
 
 假设：
 
@@ -1245,7 +1281,7 @@ req-d 不是 blocked status；
 
 ---
 
-## 30. 容易疑惑的点
+## 31. 容易疑惑的点
 
 ### 30.1 encoder input 会消耗 token_budget 吗？
 
@@ -1297,7 +1333,7 @@ running 阶段会跳过该请求；waiting 阶段会停止 waiting 调度。
 
 ---
 
-## 31. 从“回答问题”的角度总结
+## 32. 从“回答问题”的角度总结
 
 如果要问：
 
@@ -1320,7 +1356,7 @@ LoRA、Mamba、DP prefill balancing、pause state 则分别在 waiting 接纳、
 
 ---
 
-## 32. 最关键的插入点总图
+## 33. 最关键的插入点总图
 
 ```text
 schedule()
@@ -1366,7 +1402,7 @@ schedule()
 
 ---
 
-## 33. 最关键的判断公式
+## 34. 最关键的判断公式
 
 ```text
 encoder input：
@@ -1418,7 +1454,7 @@ connector metadata：
 
 ---
 
-## 34. 和前后问题的关系
+## 35. 和前后问题的关系
 
 前几篇已经拆开了 Scheduler 的主流程：
 

@@ -568,6 +568,8 @@ num_output_placeholders 是“过去已经发出去但还没回来”的。
 下一批 draft token 又挂到 request 上 → num_tokens_with_spec 包含新的 spec_token_ids
 ```
 
+在 `AsyncScheduler` 中，这里的下一批 `spec_token_ids` 可能先是 `[-1]` placeholder：`_update_after_schedule()` 会根据 `scheduler_output.num_spec_tokens_to_schedule` 设置占位，真实 draft token id 后续由 Worker 侧更新。它仍然会计入 `num_tokens_with_spec`，用于让 Scheduler 继续预留下一轮验证范围。
+
 这不是重复，而是两批不同阶段的 token。
 
 ---
@@ -820,10 +822,11 @@ num_new_tokens = 100 + 1 - 100 = 1
 num_output_placeholders = 5
 ```
 
-同时下一批 draft token 又已经挂到 request 上：
+同时下一批 draft token 或 async spec placeholder 又已经挂到 request 上：
 
 ```text
 新 spec_token_ids = [e1, e2, e3, e4]
+# 或 AsyncScheduler 先设置的 [-1, -1, -1, -1]
 num_tokens_with_spec = 当前真实 token 数 + 4
 ```
 
@@ -834,7 +837,7 @@ num_output_placeholders
   表示上一批已经调度出去、还没返回的输出占位。
 
 num_tokens_with_spec
-  表示当前新挂上、准备参与下一次调度的 draft token。
+  表示当前新挂上、准备参与下一次调度的 draft token / spec placeholder。
 ```
 
 它们可能都和 spec decode 有关，但不是同一批东西：

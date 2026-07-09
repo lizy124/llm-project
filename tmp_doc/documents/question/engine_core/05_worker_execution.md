@@ -307,7 +307,7 @@ forward_pass = scheduler_output.total_num_scheduled_tokens > 0
 num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:845` 到 `vllm/vllm/v1/worker/gpu_worker.py:847`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:817` 到 `vllm/vllm/v1/worker/gpu_worker.py:819`
 
 然后调用 ModelRunner：
 
@@ -317,7 +317,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:895` 到 `vllm/vllm/v1/worker/gpu_worker.py:898`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:867` 到 `vllm/vllm/v1/worker/gpu_worker.py:870`
 
 所以 Worker 在这里主要做几类事情：
 
@@ -336,7 +336,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(...)
 return None
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:917` 到 `vllm/vllm/v1/worker/gpu_worker.py:924`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:889` 到 `vllm/vllm/v1/worker/gpu_worker.py:896`
 
 这说明：
 
@@ -359,7 +359,7 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | IntermediateTensors | None:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4047` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4051`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4043` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4048`
 
 这里才是真正执行模型前后处理的核心路径。
 
@@ -371,7 +371,7 @@ ModelRunner 首先会根据 `SchedulerOutput` 更新持久 batch 状态：
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4088` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4089`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4080` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4087`
 
 这一步会把 Scheduler 本轮发来的计划合并到 Worker 本地状态中，例如：
 
@@ -393,7 +393,7 @@ ModelRunner 会取出本轮 token 总数：
 num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4083`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4080`
 
 如果没有任何 token 要执行：
 
@@ -405,7 +405,7 @@ if not num_scheduled_tokens:
     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4099` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4115`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4096` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4112`
 
 这对应 EngineCore 文档里的空调度情况：
 
@@ -429,7 +429,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4131` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4134`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4131`
 
 以及构造 attention metadata：
 
@@ -439,7 +439,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4258` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4272`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4255` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4269`
 
 再执行通用预处理：
 
@@ -456,7 +456,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4274` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4283`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4271` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4280`
 
 可以理解为：
 
@@ -479,7 +479,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4323` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4329`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4320` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4326`
 
 forward 外层会设置 forward context：
 
@@ -493,7 +493,7 @@ set_forward_context(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4305` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4316`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4302` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4318`
 
 这说明模型 forward 需要的不只是 token ids，还包括：
 
@@ -517,7 +517,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4357` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4358`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4354` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4355`
 
 然后 ModelRunner 会保存一份临时状态：
 
@@ -527,7 +527,7 @@ self.kv_connector_output = kv_connector_output
 return None
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4389` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4408`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4386` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4405`
 
 这解释了 EngineCore 中为什么有：
 
@@ -579,7 +579,7 @@ def sample_tokens(
     return self.model_runner.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:829` 到 `vllm/vllm/v1/worker/gpu_worker.py:833`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:801` 到 `vllm/vllm/v1/worker/gpu_worker.py:805`
 
 ModelRunner 的 `sample_tokens()` 会：
 
@@ -603,7 +603,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4455` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4456`
 
 采样发生在：
 
@@ -611,7 +611,7 @@ if grammar_output is not None:
 sampler_output = self._sample(logits, spec_decode_metadata)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4461` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4462`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4458` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4459`
 
 最后构造 `ModelRunnerOutput`：
 
@@ -630,7 +630,7 @@ output = ModelRunnerOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4612` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4626`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4609` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4623`
 
 所以 generation 模型的常见路径其实是：
 
@@ -741,7 +741,7 @@ if self.is_pooling_model:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4348` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4355`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4345` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4352`
 
 这种情况下输出会体现在：
 
@@ -758,7 +758,7 @@ self._execute_mm_encoder(scheduler_output)
 return make_empty_encoder_model_runner_output(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4091` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4097`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4088` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4094`
 
 所以 Worker 执行阶段不只服务于文本生成，还覆盖：
 
@@ -841,7 +841,7 @@ if self.execute_model_state is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4052` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4056`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4049` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4053`
 
 这说明 `execute_model()` 和 `sample_tokens()` 有严格配对关系：
 

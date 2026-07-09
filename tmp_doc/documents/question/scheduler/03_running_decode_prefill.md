@@ -14,7 +14,7 @@
 # num_tokens_with_spec.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:389`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:389`
 
 也就是说：
 
@@ -674,6 +674,19 @@ num_new_tokens = num_new_tokens // block_size * block_size
 
 所以 Mamba 对齐不是简单地永远向下取整，而是结合当前是否还处于 prefill、是否跨过最后 cache position、是否 Eagle 模式等条件决定。
 
+当前源码还包含 Marconi cache admission 优化：如果未缓存公共前缀长度足够长，并且本轮 token 数超过该公共前缀，会把 `num_new_tokens` 截到公共前缀长度再按 block 对齐：
+
+```python
+if (
+    num_uncached_common_prefix_tokens >= block_size
+    and num_new_tokens > num_uncached_common_prefix_tokens
+):
+    num_new_tokens = num_uncached_common_prefix_tokens
+    num_new_tokens = num_new_tokens // block_size * block_size
+```
+
+位置：`scheduler.py:376` 到 `scheduler.py:384`
+
 对于 running 调度来说，结论是：
 
 ```text
@@ -1244,7 +1257,24 @@ if defer_prefills and request.is_prefill_chunk:
 
 位置：`scheduler.py:456`
 
-### 23.2 从 `_inflight_prefills` 移除
+### 23.2 routed experts 的 block 快照
+
+如果开启返回 routed experts，Scheduler 会在 forward 开始前保存本轮调度请求的 block ids。这样即使 async scheduling 后续抢占并释放了请求 block，`update_from_output()` 仍然能按本轮执行时的 block 布局读取 routed experts：
+
+```python
+if self.enable_return_routed_experts:
+    gid = self.routed_experts_mgr.attn_gid
+    self._re_block_ids.update(
+        {
+            rid: self.kv_cache_manager.get_blocks(rid).get_block_ids()[gid]
+            for rid in num_scheduled_tokens
+        }
+    )
+```
+
+位置：`scheduler.py:1155` 到 `scheduler.py:1169`
+
+### 23.3 从 `_inflight_prefills` 移除
 
 如果请求已经不是 prefill chunk：
 
@@ -1322,7 +1352,7 @@ for request in self.running while token_budget > 0:
         adjust num_new_tokens by encoder budget/cache constraints
 
     if need_mamba_block_aligned_split:
-        adjust num_new_tokens by Mamba block alignment
+        adjust num_new_tokens by Mamba block alignment / common-prefix admission
 
     if num_new_tokens == 0:
         skip this request

@@ -2,11 +2,14 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\v1\core\sched\output.py`
-- `code/vllm/vllm\v1\outputs.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/outputs.py`
+
+本文主线以 V1 `GPUModelRunner` 为主；`Worker` 在 `use_v2_model_runner=True` 时会改用 `worker/gpu/model_runner.py` 中的 V2 runner。
 
 本问题关注：`ModelRunner` 在 vLLM V1 执行层中的定位，它如何消费 `SchedulerOutput`，如何维护 worker 侧请求状态和 `InputBatch`，如何准备模型输入、attention metadata、KV cache slot mapping，如何执行 forward / logits / pooling / sampling，以及它和 `Worker`、`Scheduler`、`Executor` 的职责边界。
 

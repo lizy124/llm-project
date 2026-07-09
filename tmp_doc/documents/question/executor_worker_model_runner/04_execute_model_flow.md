@@ -2,14 +2,15 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\engine\core.py`
-- `code/vllm/vllm\v1\executor\abstract.py`
-- `code/vllm/vllm\v1\executor\uniproc_executor.py`
-- `code/vllm/vllm\v1\executor\multiproc_executor.py`
-- `code/vllm/vllm\v1\executor\ray_executor.py`
-- `code/vllm/vllm\v1\worker\worker_base.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/executor/abstract.py`
+- `code/vllm/vllm/v1/executor/uniproc_executor.py`
+- `code/vllm/vllm/v1/executor/multiproc_executor.py`
+- `code/vllm/vllm/v1/executor/ray_executor.py`
+- `code/vllm/vllm/v1/worker/worker_base.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
 
 本问题关注：`Scheduler.schedule()` 生成 `SchedulerOutput` 后，`EngineCore` 如何把它交给执行层；`Executor` 如何按单进程 / 多进程 / Ray 后端分发；`Worker` 如何接住请求；`GPUModelRunner.execute_model()` 如何真正完成输入准备、attention metadata、forward、logits / pooling，并在必要时把采样拆到 `sample_tokens()` 阶段。
 
@@ -61,6 +62,7 @@ scheduler.schedule()
   → scheduler.get_grammar_bitmask(scheduler_output)
   → future.result()
   → 如果 model_output is None，则 model_executor.sample_tokens(grammar_output)
+  → _process_aborts_queue()
   → scheduler.update_from_output(scheduler_output, model_output)
 ```
 
@@ -73,7 +75,8 @@ scheduler.schedule()
 2. Executor 先启动 execute_model；
 3. Scheduler 同时准备 grammar bitmask；
 4. 如果 execute_model 没直接返回 ModelRunnerOutput，就用 sample_tokens 补齐；
-5. 最后 Scheduler.update_from_output() 对账并生成 EngineCoreOutputs。
+5. 在回收 Worker 输出前处理执行期间到达的 abort 请求；
+6. 最后 Scheduler.update_from_output() 对账并生成 EngineCoreOutputs。
 ```
 
 这个设计把一轮执行拆成三段：

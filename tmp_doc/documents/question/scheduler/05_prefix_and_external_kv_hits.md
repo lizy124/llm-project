@@ -33,7 +33,7 @@ prefix cache / 外部 KV cache 命中逻辑发生在 waiting 请求调度阶段�
 if request.num_computed_tokens == 0:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:672`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:672`
 
 也就是说，只有请求还没有任何已计算进度时，Scheduler 才会执行这一轮本地 prefix cache 和外部 KV cache 查询。
 
@@ -150,7 +150,7 @@ new_computed_blocks, num_new_local_computed_tokens = (
 def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:202`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:202`
 
 它返回两个东西：
 
@@ -930,7 +930,7 @@ def allocate_new_computed_blocks(
 ) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:186`
+位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:186`
 
 这个函数会先处理本地 cache-hit blocks：
 
@@ -976,7 +976,7 @@ def add_local_computed_blocks(
 ) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:182`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:182`
 
 它会做几件事：
 
@@ -1053,6 +1053,19 @@ req_blocks.extend(allocated_blocks)
 这些 blocks 后续由 connector / worker load KV，或者在同步路径中变成可用 KV。
 ```
 
+对于 FullAttention / MLA 等 KV cache spec，外部分配出来的新 block id 还会记录到 `new_block_ids`，后续可用于需要 zeroing 的新 block 处理：
+
+```python
+if type(self.kv_cache_spec) in (
+    FullAttentionSpec,
+    TQFullAttentionSpec,
+    MLAAttentionSpec,
+):
+    self.new_block_ids.extend(b.block_id for b in allocated_blocks)
+```
+
+位置：`single_type_kv_cache_manager.py:270` 到 `single_type_kv_cache_manager.py:275`
+
 ---
 
 ## 25. 分配后为什么要调用 `connector.update_state_after_alloc()`
@@ -1116,7 +1129,7 @@ def get_num_new_matched_tokens(
 ) -> tuple[int | None, bool]:
 ```
 
-位置：`code/vllm/vllm/v1/simple_kv_offload/manager.py:228`
+位置：`vllm/vllm/v1/simple_kv_offload/manager.py:228`
 
 它会根据本地已经 computed 的 token 数跳过前面的 hashes：
 
@@ -1200,13 +1213,16 @@ req_status.num_locally_computed_tokens = num_computed_tokens
 
 位置：`offloading/scheduler.py:651`
 
-然后查询外部命中：
+然后查询外部命中；如果请求被标记为 `skip_reading_prefix_cache`，则直接视为 0 命中：
 
 ```python
-num_hit_tokens = self._lookup(req_status)
+if request.skip_reading_prefix_cache:
+    num_hit_tokens = 0
+else:
+    num_hit_tokens = self._lookup(req_status)
 ```
 
-位置：`offloading/scheduler.py:657`
+位置：`offloading/scheduler.py:653` 到 `offloading/scheduler.py:657`
 
 最后返回：
 

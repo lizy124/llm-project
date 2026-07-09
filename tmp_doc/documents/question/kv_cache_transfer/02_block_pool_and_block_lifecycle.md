@@ -23,9 +23,9 @@
 KVCacheBlock 元数据：
   block_id
   ref_cnt
-  block_hash
-  free list 链表指针
-  null block 标记
+  _block_hash / block_hash
+  prev_free_block / next_free_block
+  is_null
 ```
 
 它不直接管理的是：
@@ -95,8 +95,8 @@ Engine 初始化
 ```text
 block_id        物理 KV cache block 编号
 ref_cnt         当前被多少请求引用
-block_hash      full block 被 prefix cache 记录后的 hash key
-prev/next       free_block_queue 双向链表指针
+_block_hash / block_hash  full block 被 prefix cache 记录后的 hash key
+prev_free_block / next_free_block  free_block_queue 双向链表指针
 is_null         是否是 null block
 ```
 
@@ -766,7 +766,7 @@ _handle_stopped_request()
 _free_request()
 ```
 
-位置：`scheduler.py:1655` 到 `scheduler.py:1663`
+位置：`scheduler.py:1655` 到 `scheduler.py:1663`（调用点），`_handle_stopped_request()` 定义在 `scheduler.py:1830`
 
 `_free_request()` 做：
 
@@ -1032,6 +1032,8 @@ new_block_ids_to_zero = (
 single_type_kv_cache_manager.py:302 到 single_type_kv_cache_manager.py:307
 ```
 
+也就是说，`new_block_ids_to_zero` 是面向需要 zero 的 attention KV blocks 的列表，不是所有 KV cache spec 分配都会进入这个列表。
+
 Worker 侧再根据 `scheduler_output.new_block_ids_to_zero` 真正清 GPU KV cache。原因是：
 
 ```text
@@ -1126,8 +1128,10 @@ _update_from_kv_xfer_finished()
 `defer_block_free` 是另一种延迟释放机制，主要用于：
 
 ```text
-KV consumer + overlapping batches / async scheduling / pipeline parallel 等多 in-flight batch 场景。
+KV consumer + max_concurrent_batches > 1 的 overlapping batches 场景。
 ```
+
+`async scheduling`、pipeline parallel 等能力可能造成多批次重叠，但当前源码里的启用条件是 `multiple_inflight_batches = max_concurrent_batches > 1` 且 `kv_transfer_config.is_kv_consumer`。
 
 Scheduler 初始化时，如果：
 

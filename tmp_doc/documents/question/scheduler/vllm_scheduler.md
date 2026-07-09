@@ -317,7 +317,7 @@ num_new_tokens = (
 
 - `num_tokens_with_spec`：prompt + output + speculative tokens；
 - `num_output_placeholders`：异步调度 / PP 场景中预留但还没返回的输出 token；
-- `num_computed_tokens`：该请求已经被模型计算过的 token 数。
+- `num_computed_tokens`：Scheduler 认为该请求已经安排 / 计算到的 token 位置；async / PP 下可能先于 Worker 真实返回。
 
 差值就是本轮还需要补算的 token。
 
@@ -1468,7 +1468,7 @@ update_from_output()
           ├─ 通知 connector
           ├─ 释放 encoder cache
           ├─ 释放或延迟释放 KV blocks
-          └─ 从 self.requests 删除
+          └─ 从 self.requests 删除，或等待 connector async send 完成后删除
 ```
 
 如果是异步外部 KV load 请求，中间会多一段：

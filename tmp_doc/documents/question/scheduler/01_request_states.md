@@ -89,7 +89,7 @@ running → finished → 从 running 移除
 self.requests: dict[str, Request] = {}
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:171`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:171`
 
 `self.requests` 是 `request_id -> Request` 的字典。
 
@@ -288,13 +288,24 @@ existing = self.requests.get(request.request_id)
 
 这一般表示 streaming input 的后续 chunk。
 
-如果已有请求正在等输入，则：
+如果已有请求还没进入 `WAITING_FOR_STREAMING_REQ`，新的 streaming chunk 会先进入 `streaming_queue`：
 
 ```python
-self._update_request_as_session(existing, update)
+if existing.status != RequestStatus.WAITING_FOR_STREAMING_REQ:
+    assert existing.streaming_queue is not None, "duplicate request id"
+    existing.streaming_queue.append(update)
 ```
 
-位置：`scheduler.py:1968`
+位置：`scheduler.py:1961` 到 `scheduler.py:1966`
+
+如果已有请求正在等输入，并且本次 update 不是结束哨兵，则会立即恢复 session：
+
+```python
+elif update is not None:
+    self._update_request_as_session(existing, update)
+```
+
+位置：`scheduler.py:1967` 到 `scheduler.py:1969`
 
 `_update_request_as_session()` 最后会设置：
 
@@ -311,6 +322,15 @@ WAITING_FOR_STREAMING_REQ → WAITING
 ```
 
 然后后续会重新参与调度。
+
+如果 update 是结束哨兵，则 Scheduler 会结束这个 streaming session：
+
+```python
+else:
+    self.finish_requests(request.request_id, RequestStatus.FINISHED_ABORTED)
+```
+
+位置：`scheduler.py:1970` 到 `scheduler.py:1972`
 
 ---
 
@@ -853,9 +873,20 @@ self.waiting.remove_requests(waiting_requests_to_remove)
 self.skipped_waiting.remove_requests(waiting_requests_to_remove)
 ```
 
-位置：`scheduler.py:2024`
+位置：`scheduler.py:2024` 到 `scheduler.py:2029`
 
-然后设置 finished 状态并调用 `_free_request()`。
+然后设置 finished 状态并调用 `_free_request()`。如果请求正在 `WAITING_FOR_REMOTE_KVS`，会根据是否已经 finished_recving 决定是否延迟释放 block：
+
+```python
+if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
+    delay_free_blocks = (
+        request.request_id not in self.finished_recving_kv_req_ids
+    )
+...
+self._free_request(request, delay_free_blocks=delay_free_blocks)
+```
+
+位置：`scheduler.py:2033` 到 `scheduler.py:2042`
 
 ---
 
@@ -871,7 +902,7 @@ if not delay_free_blocks:
     self._free_blocks(request)
 ```
 
-位置：`scheduler.py:2051`
+位置：`scheduler.py:2051` 到 `scheduler.py:2062`
 
 如果 connector 需要异步发送 KV，`delay_free_blocks=True`，则不会立即调用 `_free_blocks()`。
 
@@ -881,7 +912,7 @@ if not delay_free_blocks:
 del self.requests[request.request_id]
 ```
 
-位置：`scheduler.py:2068`
+位置：`scheduler.py:2065` 到 `scheduler.py:2068`
 
 所以：
 
@@ -892,6 +923,17 @@ finished 但等待 connector 清理的请求：
 ```
 
 这解释了为什么 `self.requests` 不能简单等同于 unfinished requests。
+
+Scheduler 也专门用这个差异判断是否还有 finished 请求需要处理：
+
+```python
+num_in_queues = (
+    len(self.waiting) + len(self.skipped_waiting) + len(self.running)
+)
+return len(self.requests) > num_in_queues
+```
+
+位置：`scheduler.py:2118` 到 `scheduler.py:2128`
 
 ---
 

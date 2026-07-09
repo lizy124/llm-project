@@ -93,12 +93,33 @@ self.scheduler: SchedulerInterface = Scheduler(
 
 ```text
 EngineCore
+  → load_general_plugins()
   → 创建 model_executor
   → 初始化 / profile KV cache
   → 创建 structured_output_manager
-  → 创建 Scheduler
-  → 初始化 connector / multimodal cache / batch queue
+  → 从 scheduler_config 解析 Scheduler 类并创建 Scheduler
+  → 初始化 connector / multimodal receiver cache / batch queue
+  → 初始化 prefix cache hashing、abort queue、GC / env cache 状态
 ```
+
+如果 Scheduler 有 connector，会先让 model executor 初始化 KV output aggregator：
+
+```python
+if self.scheduler.connector is not None:
+    self.model_executor.init_kv_output_aggregator(self.scheduler.connector)
+```
+
+位置：`vllm/vllm/v1/engine/core.py:163` 到 `vllm/vllm/v1/engine/core.py:164`
+
+EngineCore 还会按多模态配置创建 engine 侧 receiver cache：
+
+```python
+self.mm_receiver_cache = mm_registry.engine_receiver_cache_from_config(
+    vllm_config
+)
+```
+
+位置：`vllm/vllm/v1/engine/core.py:166` 到 `vllm/vllm/v1/engine/core.py:169`
 
 如果 Scheduler 有 KV connector，还会把 Worker 侧 handshake metadata 收集到 Scheduler connector：
 
@@ -236,6 +257,30 @@ SchedulerOutput 和 ModelRunnerOutput 不一定在同一次 step 调用中立即
 SchedulerOutput 会和 future 一起暂存在 batch_queue，
 等对应 future 完成后再回到 update_from_output。
 ```
+
+当前源码里还要区分 generation sampling 是否能立即执行：
+
+```python
+if not scheduler_output.pending_structured_output_tokens:
+    grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+    future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+else:
+    deferred_scheduler_output = scheduler_output
+```
+
+位置：`vllm/vllm/v1/engine/core.py:559` 到 `vllm/vllm/v1/engine/core.py:572`
+
+如果结构化输出需要等待前一个 batch 的结果，sampling 会被延后；当前 batch 出队并完成 `update_from_output()` 后，再为 deferred scheduler output 计算 grammar bitmask 并调用 `sample_tokens()`：
+
+```python
+grammar_output = self.scheduler.get_grammar_bitmask(
+    deferred_scheduler_output
+)
+future = self.model_executor.sample_tokens(grammar_output, non_block=True)
+batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
+```
+
+位置：`vllm/vllm/v1/engine/core.py:612` 到 `vllm/vllm/v1/engine/core.py:630`
 
 ---
 
@@ -608,17 +653,27 @@ def pause_complete(f: Future):
 
 位置：`vllm/vllm/v1/engine/core.py:786` 到 `vllm/vllm/v1/engine/core.py:797`
 
-`wake_up()` 则反过来：
+`wake_up()` 则反过来。它会先处理只恢复调度用的 `"scheduling"` tag，再按需唤醒 executor，最后恢复 scheduler：
 
 ```python
+if tags is not None and "scheduling" in tags:
+    tags = [t for t in tags if t != "scheduling"]
+
 if tags is None or tags:
     self.model_executor.wake_up(tags)
 
-# Resume scheduling (applies to all levels)
 self.resume_scheduler()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:809` 到 `vllm/vllm/v1/engine/core.py:813`
+位置：`vllm/vllm/v1/engine/core.py:799` 到 `vllm/vllm/v1/engine/core.py:813`
+
+`is_sleeping()` 会同时看 scheduler pause 状态和 executor sleeping 状态：
+
+```python
+return self.is_scheduler_paused() or self.model_executor.is_sleeping
+```
+
+位置：`vllm/vllm/v1/engine/core.py:815` 到 `vllm/vllm/v1/engine/core.py:817`
 
 所以 sleep / wakeup 的边界是：
 
@@ -895,7 +950,18 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1628` 到 `vllm/vllm/v1/engine/core.py:1645`
+位置：`vllm/vllm/v1/engine/core.py:1626` 到 `vllm/vllm/v1/engine/core.py:1645`
+
+如果 `client_index == -1`，输出会发给 DP coordinator socket，而不是普通前端 client：
+
+```python
+if client_index == -1:
+    assert coord_socket is not None
+    coord_socket.send_multipart(encoder.encode(outputs))
+    continue
+```
+
+位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
 
 所以跨进程返回路径是：
 

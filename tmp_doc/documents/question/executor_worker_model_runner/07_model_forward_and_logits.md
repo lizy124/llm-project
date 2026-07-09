@@ -2,10 +2,10 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu\model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\forward_context.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/forward_context.py`
 
 本问题关注：`SchedulerOutput` 已经同步到 `InputBatch`，输入和 attention metadata 也准备好之后，模型真正在哪里 forward；forward 外层的 `set_forward_context()` 提供了什么；generation 模型的 logits 在哪里产生；pooling / embedding 类模型如何直接产生 pooling 输出；Pipeline Parallel 下为什么有些 rank 返回 `IntermediateTensors` 而不是 logits。
 
@@ -44,7 +44,9 @@ forward 之后：
 
 ```text
 _prepare_inputs()
+  → _get_slot_mappings()
   → _build_attention_metadata()
+  → _preprocess()
   → set_forward_context(...)
   → _model_forward()
   → hidden_states / IntermediateTensors
@@ -385,8 +387,8 @@ LLM forward 会产生一批 hidden states，但不是每个 token 位置都需�
 
 ```text
 prefill：
-  可能只需要最后一个位置的 logits 用来采样下一个 token；
-  如果请求 prompt_logprobs，则还要额外处理 prompt 位置 logits。
+  generation 路径通常只需要最后一个位置的 logits 用来采样下一个 token；
+  prompt_logprobs 不是直接扩大这次 `compute_logits(hidden_states[logits_indices])`，而是在 bookkeeping 中通过 `_get_prompt_logprobs_dict(hidden_states[:num_scheduled_tokens], ...)` 另行处理。
 
 chunked prefill：
   非最后 prefill chunk 可能不需要采样 logits。
@@ -625,15 +627,15 @@ logits = broadcasted["logits"]
 
 ---
 
-## 14. V2 ModelRunner 对照
+## 14. 新 GPU ModelRunner 对照
 
-V2 路径在：`vllm/v1/worker/gpu/model_runner.py`
+`gpu_worker.py` 里通过 `use_v2_model_runner` 切换到的新 GPU runner 路径在：`vllm/v1/worker/gpu/model_runner.py`。
 
 它的总体思路一致，但组织方式不同。
 
 ### 14.1 execute_model 中直接准备 batch / attention / model_inputs
 
-V2 `execute_model()` 会：
+这个 runner 的 `execute_model()` 会：
 
 ```text
 finish_requests / free_states / add_requests / update_requests
@@ -649,7 +651,7 @@ set_forward_context
 
 ### 14.2 eager / piecewise / full cudagraph
 
-V2 明确区分：
+新 GPU runner 明确区分：
 
 ```text
 FULL：cudagraph_manager.run_fullgraph(batch_desc)
@@ -661,7 +663,7 @@ NONE：self.model(**model_inputs)
 
 ### 14.3 logits 在 sample 阶段计算
 
-V2 的 sampling 里会：
+新 GPU runner 的 sampling 里会：
 
 ```python
 sample_hidden_states = hidden_states[input_batch.logits_indices]
@@ -821,7 +823,7 @@ self.model.compute_logits(sample_hidden_states)
 
 一般不会。
 
-pooling 模型 forward 后调用 `_pool()` 或 V2 的 `pool()`，直接生成 pooling output。
+pooling 模型 forward 后调用旧 GPU runner 的 `_pool()`，或新 GPU runner 在 `GPUWorker.execute_model()` 中补调的 `pool()`，直接生成 pooling output。
 
 ### 18.5 非最后 PP rank 为什么没有 logits？
 
@@ -840,7 +842,9 @@ pooling 模型 forward 后调用 `_pool()` 或 V2 的 `pool()`，直接生成 po
 ```text
 InputBatch / SchedulerOutput
   → _prepare_inputs()
+  → _get_slot_mappings()
   → _build_attention_metadata()
+  → _preprocess()
   → set_forward_context(attn_metadata, slot_mapping, batch_desc, ...)
   → _model_forward()
   → hidden_states / IntermediateTensors

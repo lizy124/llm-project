@@ -1297,7 +1297,7 @@ Scheduler 先乐观认为发出去的 token 已经进入计算进度；如果后
 
 不一定。
 
-如果 KV Connector 需要异步保存 / 发送 KV，或者 block 释放需要 deferred free，请求可能 finished 但仍暂留在 `self.requests`。
+如果 KV Connector 需要异步保存 / 发送 KV，请求可能 finished 但仍暂留在 `self.requests`。普通 deferred free 只延迟 KV block 归还 block pool；走到 `_free_blocks()` 时，请求索引已经会从 `self.requests` 删除。
 
 真正删除发生在：
 

@@ -25,7 +25,7 @@ waiting 阶段入口是：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:625`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:625`
 
 这说明 waiting 请求能进入 running 的第一前提是：
 
@@ -692,7 +692,7 @@ if load_kv_async:
     continue
 ```
 
-位置：`scheduler.py:917`
+位置：`scheduler.py:917` 到 `scheduler.py:937`
 
 也就是说 async remote KV load 不会让请求进入 running。
 
@@ -938,6 +938,10 @@ if self.need_mamba_block_aligned_split and not load_kv_async:
 
 Mamba 对齐的目标是让 prefill chunk 尽量按 block 边界切分，便于 Mamba state cache。
 
+当前源码还会结合 `num_uncached_common_prefix_tokens` 做 Marconi cache admission 优化：如果公共前缀未缓存长度足够长，并且本轮 token 数超过它，会先截到公共前缀长度再按 block 对齐。
+
+位置：`scheduler.py:376` 到 `scheduler.py:384`
+
 如果对齐后 `num_new_tokens` 变成 0，Scheduler 会停止 waiting 调度。
 
 这里同样是 `break`。
@@ -1144,7 +1148,7 @@ if load_kv_async:
     continue
 ```
 
-位置：`scheduler.py:917`
+位置：`scheduler.py:917` 到 `scheduler.py:937`
 
 这里有几个关键点：
 

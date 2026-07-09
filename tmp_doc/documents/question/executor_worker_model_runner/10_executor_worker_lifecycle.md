@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\executor\abstract.py`
-- `code/vllm/vllm\v1\executor\uniproc_executor.py`
-- `code/vllm/vllm\v1\executor\multiproc_executor.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\v1\worker\worker_base.py`
-- `code/vllm/vllm\v1\engine\core.py`
+- `code/vllm/vllm/v1/executor/abstract.py`
+- `code/vllm/vllm/v1/executor/uniproc_executor.py`
+- `code/vllm/vllm/v1/executor/multiproc_executor.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/worker/worker_base.py`
+- `code/vllm/vllm/v1/engine/core.py`
 
 本问题关注：Executor / Worker / ModelRunner 从初始化、KV cache 构建、模型 warmup、profile、sleep / wake_up，到 shutdown、异常监控和恢复，是如何组织成完整生命周期闭环的。
 
@@ -113,14 +113,14 @@ ExecutorWithExternalLauncher
 多进程初始化中会：
 
 ```text
-1. 创建 message queues；
-2. 创建 worker 进程；
-3. 等待 worker ready；
-4. 运行 init_worker / init_device / load_model；
-5. 启动 worker monitor。
+1. 父进程创建 distributed_init_method 和 RPC broadcast queue；
+2. 父进程启动 WorkerProc；
+3. 子进程 WorkerProc.__init__ 中创建 WorkerWrapperBase，并执行 init_worker / init_device / load_model；
+4. 子进程初始化 message queues 后发送 READY；
+5. 父进程等待所有 worker ready，启动 worker monitor，并等待 queues ready。
 ```
 
-位置：`multiproc_executor.py:110` 到 `multiproc_executor.py:236`
+位置：`multiproc_executor.py:110` 到 `multiproc_executor.py:236`，以及 `multiproc_executor.py:593` 到 `multiproc_executor.py:653`
 
 ---
 
@@ -484,16 +484,16 @@ self.collective_rpc("shutdown")
 `GPUModelRunner.shutdown()` 会：
 
 ```text
-1. synchronize device；
-2. clear kv_caches；
-3. clear attn_groups；
-4. delete kv_cache_config / model；
-5. gc.collect()；
-6. empty_cache()；
-7. 记录日志。
+1. 调用 _cleanup_profiling_kv_cache()，同步设备并清理 kv_caches / attn_groups / kv_cache_config / layer.kv_cache；
+2. ROCm 场景额外清理 captured graphs；
+3. 清空 static_forward_context；
+4. 将 self.model 置空；
+5. 清空 RoPE cache；
+6. reset_workspace_manager()；
+7. 在清理过程中执行 gc.collect() 和 empty_cache()。
 ```
 
-位置：`gpu_model_runner.py:1522` 到 `gpu_model_runner.py:1538`
+位置：`gpu_model_runner.py:6340` 到 `gpu_model_runner.py:6396`
 
 ### 11.5 关闭顺序为什么重要
 
@@ -509,9 +509,9 @@ Executor shutdown
 原因是：
 
 ```text
-- 先让 control plane 停止；
-- 再释放 device 资源；
-- 避免进程仍在跑时提前删掉关键资源。
+- 先让 worker 收到退出信号并执行自身 shutdown；
+- 再确保进程终止并关闭 message queues；
+- 避免队列或进程还在使用时提前删掉关键资源。
 ```
 
 ---
@@ -628,17 +628,19 @@ cache_config.block_size
 
 ## 14. init_kv_cache 和 warmup 的关系
 
-### 14.1 initialize_from_config 不是单独分配 cache
+### 14.1 Worker.initialize_from_config 只负责 KV cache 初始化相关工作
 
-它还包含：
+`GPUWorker.initialize_from_config()` 包含：
 
 ```text
+- 更新 cache_config.num_gpu_blocks；
 - kv transfer 初始化；
-- KV zero metadata；
-- routed experts 初始化；
-- warmup / compile；
-- 可能的 CUDA graph capture。
+- 在 kv_cache memory pool 中调用 model_runner.initialize_kv_cache()；
+- routed experts capturer 初始化；
+- KV zero metadata 初始化。
 ```
+
+真正的 warmup / compile / CUDA graph capture 不在这个 Worker 方法里，而是在 `Executor.initialize_from_config()` 随后通过 `collective_rpc("compile_or_warm_up_model")` 调用 `GPUWorker.compile_or_warm_up_model()` 完成。
 
 ### 14.2 为什么 warmup 在 KV cache 初始化之后
 
@@ -684,9 +686,9 @@ load_model
 
 ### 16.1 initialize_from_config 是初始化模型还是 KV cache？
 
-两者都有。
+在 Worker 侧它主要是 KV cache 初始化；模型权重已经在 `load_model()` 阶段加载。
 
-它既初始化 KV cache，也会进行 warmup / compile，从而让 worker 真正进入可运行状态。
+在 Executor 层的 `initialize_from_config()` 会先广播 Worker 的 `initialize_from_config()`，再广播 `compile_or_warm_up_model()`，所以从 EngineCore 的视角看这一大阶段包含“初始化 KV cache + warmup / compile”。
 
 ### 16.2 sleep 会不会影响模型权重？
 

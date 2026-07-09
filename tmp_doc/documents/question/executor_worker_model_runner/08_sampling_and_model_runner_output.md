@@ -2,11 +2,11 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu\model_runner.py`
-- `code/vllm/vllm\v1\sample\sampler.py`
-- `code/vllm/vllm\v1\outputs.py`
-- `code/vllm/vllm\v1\structured_output\utils.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/sample/sampler.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/structured_output/utils.py`
 
 本问题关注：`execute_model()` 已经完成 forward 和 logits 计算后，`sample_tokens()` 如何把 logits 变成真正的 sampled token、logprobs、prompt logprobs、routed experts、KV connector output、EC connector output，并最终构造 `ModelRunnerOutput`。同时也要解释异步输出包装 `AsyncGPUModelRunnerOutput` 如何把 GPU 张量复制到 CPU 并返回最终结果。
 
@@ -71,7 +71,7 @@ def sample_tokens(self, grammar_output: "GrammarOutput | None")
 4. 调用 _update_states_after_model_execute()；
 5. 处理 async scheduling / PP 广播；
 6. 处理 speculative decoding draft tokens；
-7. finalize KV connector；
+7. 如果 spec decode 延迟了 KV connector finalize，则在 draft model 之后 finalize；
 8. 可选附加 routed experts；
 9. 构造 ModelRunnerOutput；
 10. 如果是 async scheduling，则包装成 AsyncGPUModelRunnerOutput。
@@ -231,7 +231,7 @@ logprobs_tensors
 9. 返回 SamplerOutput。
 ```
 
-位置：`sample.py:20` 到 `sample.py:58`
+位置：`sampler.py:20` 到 `sampler.py:58`
 
 ### 5.2 Sampler.sample 的输入输出
 
@@ -239,7 +239,7 @@ logprobs_tensors
 sampled, processed_logprobs = self.sample(logits, sampling_metadata)
 ```
 
-位置：`sample.py:243` 起
+位置：`sampler.py:243` 起
 
 它会返回：
 
@@ -254,7 +254,7 @@ processed_logprobs: 可选的 logprobs tensor
 sampled_token_ids=sampled.unsqueeze(-1)
 ```
 
-位置：`sample.py:141` 到 `sample.py:148`
+位置：`sampler.py:141` 到 `sampler.py:148`
 
 ---
 
@@ -270,7 +270,7 @@ Sampler 的核心步骤如下。
 raw_logprobs = logits.log_softmax(dim=-1, dtype=torch.float32)
 ```
 
-位置：`sample.py:85` 到 `sample.py:94`，以及 `sample.py:305` 到 `sample.py:306`
+位置：`sampler.py:85` 到 `sampler.py:94`，以及 `sampler.py:305` 到 `sampler.py:306`
 
 如果 `logprobs_mode == raw_logits`，则直接保留 logits 作为“原始 logprobs 载体”。
 
@@ -286,7 +286,7 @@ temperature
 random/greedy sampling
 ```
 
-位置：`sample.py:98` 到 `sample.py:102`，`sample.py:273` 到 `sample.py:302`
+位置：`sampler.py:98` 到 `sampler.py:102`，`sampler.py:273` 到 `sampler.py:302`
 
 ### 6.3 采样 token
 
@@ -294,7 +294,7 @@ random/greedy sampling
 random_sampled, processed_logprobs = self.topk_topp_sampler(...)
 ```
 
-位置：`sample.py:286` 到 `sample.py:291`
+位置：`sampler.py:286` 到 `sampler.py:291`
 
 如果 `all_greedy`，则直接返回 argmax；
 如果 `all_random`，则直接随机采样；
@@ -309,7 +309,7 @@ Sampler 支持两种 logprobs 需求：
 - logprob_token_ids：只取指定 token 的 logprobs。
 ```
 
-位置：`sample.py:84` 到 `sample.py:137`
+位置：`sampler.py:84` 到 `sampler.py:137`
 
 最终返回：
 
@@ -320,7 +320,7 @@ SamplerOutput(
 )
 ```
 
-位置：`sample.py:141` 到 `sample.py:148`
+位置：`sampler.py:141` 到 `sampler.py:148`
 
 ---
 
@@ -495,13 +495,20 @@ Sampler 也支持：
 gather_specific_token_logprobs()
 ```
 
-位置：`sample.py:151` 到 `sample.py:225`
+位置：`sampler.py:151` 到 `sampler.py:225`
 
-这意味着：
+这里要区分两类 logprobs：
 
 ```text
-如果用户要求 prompt_logprobs 或特定 token logprobs，
-采样阶段会保留足够的 raw logprobs，以便在 bookkeeping / output 阶段组织成最终格式。
+生成 token 的 logprobs：
+  由 Sampler 在采样 logits 上收集，随后 bookkeeping 转成 LogprobsLists。
+
+prompt_logprobs：
+  在 _bookkeeping_sync() 里调用 _get_prompt_logprobs_dict()，
+  对 prompt hidden states 重新 compute_logits()，再用 sampler.compute_logprobs() / gather_logprobs() 组织到 CPU 侧 LogprobsTensors。
+
+logprob_token_ids：
+  由 SamplingMetadata 传给 Sampler，Sampler 通过 gather_specific_token_logprobs() 只收集指定 token 的 logprobs。
 ```
 
 ---
@@ -754,7 +761,7 @@ sample_tokens() 可能只负责接收 / 转发 / kv connector output
 grammar bitmask
 spec decode draft proposal
 bookkeeping
-KV connector finalize
+spec decode 场景下延迟的 KV connector finalize
 routed experts
 async output packaging
 ```

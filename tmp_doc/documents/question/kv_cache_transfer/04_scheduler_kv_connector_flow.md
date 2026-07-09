@@ -263,13 +263,16 @@ connector_name = kv_transfer_config.kv_connector
 
 ```text
 ExampleConnector
+ExampleHiddenStatesConnector
 LMCacheConnectorV1
 LMCacheMPConnector
 NixlConnector
 NixlPullConnector
 NixlPushConnector
 MultiConnector
+MoRIIOConnector
 OffloadingConnector
+DecodeBenchConnector
 MooncakeConnector
 MooncakeStoreConnector
 FlexKVConnectorV1
@@ -277,7 +280,7 @@ SimpleCPUOffloadConnector
 HF3FSKVConnector
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/factory.py:152`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/factory.py:152` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/factory.py:242`
 
 因此：
 
@@ -421,23 +424,30 @@ Scheduler 把请求放进 waiting 队列后，connector 可以提前读取 reque
 
 ## 10. waiting 阶段：先查本地 prefix cache
 
-KV Connector 只参与 waiting 请求调度阶段，准确地说是：
+KV Connector 的外部命中查询只发生在 waiting 请求的初始调度路径，准确地说是：
 
 ```text
 request.num_computed_tokens == 0
 ```
 
-的初始调度路径。
+的分支。
 
-Scheduler 先查本地 prefix cache：
+Scheduler 先查本地 prefix cache；如果是带 Mamba layers 的 hybrid 模型并且启用了 connector，会走 `find_longest_cache_hit_per_group()`，用 FA group 的最大本地命中长度传给 connector，避免重复传已经在 D-side 本地缓存的 FA blocks：
 
 ```python
-new_computed_blocks, num_new_local_computed_tokens = (
-    self.kv_cache_manager.get_computed_blocks(request)
-)
+if self.connector is not None and self.has_mamba_layers and isinstance(...):
+    computed, per_group_hits = (
+        self.kv_cache_manager.coordinator.find_longest_cache_hit_per_group(...)
+    )
+    new_computed_blocks = self.kv_cache_manager.create_kv_cache_blocks(computed)
+    num_new_local_computed_tokens = max(per_group_hits)
+else:
+    new_computed_blocks, num_new_local_computed_tokens = (
+        self.kv_cache_manager.get_computed_blocks(request)
+    )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:709`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:711`
 
 这一步得到：
 
@@ -527,7 +537,7 @@ KV load 可能在本轮 forward 路径中同步或由 Worker 侧 metadata 处理
 Scheduler 不把请求放入 WAITING_FOR_REMOTE_KVS。
 ```
 
-具体同步 / 异步行为取决于 connector 实现。
+具体同步 / 异步行为取决于 connector 实现；这类请求仍会进入本轮 `scheduled_new_reqs` / `scheduled_cached_reqs`，Worker 侧在 forward 前 `pre_forward()` 中消费 metadata 并启动 load。
 
 ### 12.3 返回 `(N, True)`，N > 0
 
@@ -639,17 +649,21 @@ connector_prefix_cache_hits = num_external_computed_tokens
 
 位置：`code/vllm/vllm/v1/core/sched/scheduler.py:739`
 
-分配成功后，如果启用了 stats：
+分配成功后，如果启用了 stats 且这次确实查询了 connector：
 
 ```python
-self.connector_prefix_cache_stats.record(
-    num_tokens=connector_prefix_cache_queries,
-    num_hits=connector_prefix_cache_hits,
-    preempted=request.num_preemptions > 0,
-)
+if (
+    self.connector_prefix_cache_stats is not None
+    and connector_prefix_cache_queries != 0
+):
+    self.connector_prefix_cache_stats.record(
+        num_tokens=connector_prefix_cache_queries,
+        num_hits=connector_prefix_cache_hits,
+        preempted=request.num_preemptions > 0,
+    )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:910`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:906` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:914`
 
 这说明 Scheduler 分开统计：
 
@@ -847,12 +861,26 @@ if load_kv_async:
 请求暂时不进入 running；
 它持有为外部 KV load 分配好的 blocks；
 状态变为 WAITING_FOR_REMOTE_KVS；
-放入 skipped_waiting，等待 Worker 侧 finished_recving。
+放入 skipped_waiting，并记录 request.num_computed_tokens；
+等待 Worker 侧 finished_recving 后再恢复。
 ```
 
 ### 19.2 load_kv_async=False
 
 请求会正常进入 running，并进入 `scheduled_new_reqs` 或 `scheduled_resumed_reqs`。
+
+```python
+self.running.append(request)
+if request.status == RequestStatus.WAITING:
+    scheduled_new_reqs.append(request)
+elif request.status == RequestStatus.PREEMPTED:
+    scheduled_resumed_reqs.append(request)
+...
+request.status = RequestStatus.RUNNING
+request.num_computed_tokens = num_computed_tokens
+```
+
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:939` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:959`
 
 含义：
 
@@ -960,7 +988,7 @@ num_external_hit_tokens = self.client.lookup(token_len, request.block_hashes)
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:85`
 
-如果 full hit，会留最后一个 token 给本地重算：
+如果 full hit，会按 block 边界保留最后 token 对应区间给本地 forward：
 
 ```python
 if num_external_hit_tokens == request.num_tokens:
@@ -1035,6 +1063,16 @@ meta = MooncakeStoreConnectorMetadata(
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:175`
 
+`MooncakeStoreConnectorMetadata` 里保存本轮请求级 `ReqMeta`、未完成请求 id 和 preempted 请求 id：
+
+```python
+self.requests: list[ReqMeta] = []
+self.unfinished_request_ids = unfinished_request_ids
+self.preempted_req_ids = preempted_req_ids
+```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py:291` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py:304`
+
 然后遍历 `scheduler_output.scheduled_new_reqs`，为每个新请求构造 `ReqMeta`：
 
 ```python
@@ -1046,13 +1084,27 @@ for request in scheduler_output.scheduled_new_reqs:
         meta.add_request(req_meta)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:181`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:181` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:222`
+
+另外，async load 场景下请求不会进入 `scheduled_new_reqs`，但 `update_state_after_alloc()` 已把它放入 `_unfinished_requests` 并保留 `load_spec`；`build_connector_meta()` 末尾会专门处理这些“pending load specs not yet scheduled”的请求，把 load metadata 发给 Worker：
+
+```python
+for request_id, (unfinished_req, block_ids) in self._unfinished_requests.items():
+    if request_id not in request_ids and request_id not in cached_reqs.req_ids:
+        load_spec = self.load_specs.pop(request_id, None)
+        ...
+        req_meta = ReqMeta.from_request_tracker(..., load_spec=load_spec, ...)
+        if req_meta is not None:
+            meta.add_request(req_meta)
+```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:314` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/scheduler.py:340`
 
 也就是说：
 
 ```text
 SchedulerOutput 提供本轮调度了哪些请求、调度了多少 token、block ids 是什么；
-connector 自己之前记录 external hit / load specs；
+connector 自己之前记录 external hit / load specs，以及 async load 的未完成请求；
 build_connector_meta() 把两边合并成 Worker 能执行的 metadata。
 ```
 
@@ -1288,7 +1340,7 @@ if request.num_computed_tokens == request.num_tokens:
 
 ```text
 1. 现在外部 KV 已经 load 到本地 blocks，可以把这些 blocks 作为已缓存 blocks；
-2. 如果 full prompt 都命中，仍要回退最后一个 token，用于重新计算 logits 采样下一个 token。
+2. 如果 full prompt 都命中，仍要回退最后一个 token，保证后续调度会保留最后 token 的 forward 来产生 next-token logits。
 ```
 
 如果 load 失败：
@@ -1399,7 +1451,8 @@ Scheduler.schedule() 构造输出
 
 Worker / ModelRunner
   → Worker 侧 connector 消费 metadata
-  → 执行 KV load / save
+  → 有 scheduled tokens 时在 forward 前后执行 KV load / save
+  → 无 scheduled tokens 时走 no_forward，只处理 KV transfer
   → 返回 kv_connector_output
 
 Scheduler.update_from_output()
@@ -1454,7 +1507,7 @@ load_kv_async = False
    → SchedulerOutput.kv_connector_metadata
 
 7. Worker 消费 metadata
-   → load external KV
+   → load external KV 到已分配的本地 slots
    → forward 剩余 2000 tokens
 ```
 
@@ -1500,9 +1553,9 @@ load_kv_async = True
    → 本轮不 forward
 
 6. build_connector_meta()
-   → Worker 侧开始 async load
+   → SchedulerOutput 携带 async load metadata
 
-7. Worker 后续返回 finished_recving
+7. Worker 侧 no_forward / connector 生命周期消费 metadata，启动 async load；后续返回 finished_recving
 
 8. Scheduler 下一轮：
    _try_promote_blocked_waiting_request()
@@ -1563,17 +1616,27 @@ SchedulerOutput.kv_connector_metadata
 Worker / ModelRunner 侧做：
 
 ```text
+handle_preemptions(metadata)
 bind_connector_metadata(metadata)
 start_load_kv()
 wait_for_layer_load()
 save_kv_layer()
 wait_for_save()
-build_connector_worker_meta()
 get_finished()
 get_block_ids_with_load_errors()
+build_connector_worker_meta()
+clear_connector_metadata()
 ```
 
-这些接口定义在 `KVConnectorBase_V1` 的 Worker-side methods 中。
+其中 `bind_connector_metadata()` / `clear_connector_metadata()` 是 Worker-side metadata 生命周期入口：前者在每次模型执行前设置 Scheduler 传来的 metadata，后者在模型执行后清空。
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:211` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:229`
+
+这些接口定义在 `KVConnectorBase_V1` 的 Worker-side methods 中，并由 ModelRunner 的 connector 封装在 forward 前后调用。
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:285` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:393`
+
+位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:65` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:95`
 
 边界一句话：
 

@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
-- `code/vllm/vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\v1\core\kv_cache_manager.py`
-- `code/vllm/vllm\v1\core\block_pool.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
 
 本问题关注：Scheduler 已经把请求调度好并分配了 KV block 后，Worker / ModelRunner 如何真正使用这些 KV cache；block table 如何映射到请求；slot mapping 如何写入 attention kernel；prefix cache / external KV / lookahead / encoder cache 对 KV 使用有什么影响；KV connector 如何把远端 KV 的 load/save、finished_recving、finished_sending 穿过执行链路。
 
@@ -275,7 +275,7 @@ attention backend 需要知道：
 ```text
 query_start_loc
 seq_lens
-num_computed_tokens
+_num_computed_tokens_cpu
 block_table_tensor
 slot_mapping
 positions
@@ -403,8 +403,11 @@ kv_connector_no_forward(scheduler_output, vllm_config)
 这表示：
 
 ```text
-即使没有 forward，也要让 KV connector 完成自己的 send / recv / metadata 收尾。
+即使没有 forward，也要给 KV connector 一个执行机会：
+绑定 metadata、启动异步 load，并回收 finished_sending / finished_recving / invalid_block_ids 等输出。
 ```
+
+注意这里传入的是 `wait_for_save=False`，所以它不是完整的 forward 后 save 等待路径。
 
 这在以下场景很常见：
 
@@ -451,7 +454,7 @@ draft model 可能也要用 KV connector；
 
 ### 10.2 finalize_kv_connector()
 
-在 sample 阶段后会调用：
+只有 `defer_finalize=True` 的 spec decode 场景，sample 阶段才会在 draft model 之后调用：
 
 ```python
 self.finalize_kv_connector()
@@ -467,6 +470,8 @@ clear_connector_metadata()
 ```
 
 位置：`kv_connector_model_runner_mixin.py:64` 到 `kv_connector_model_runner_mixin.py:73`
+
+非 spec decode 场景下，`_get_kv_connector_output()` 的 `finally` 分支会在退出 forward context 时完成 `wait_for_save()` 和 `clear_connector_metadata()`。
 
 ---
 
@@ -560,7 +565,7 @@ _update_states()
 block_table_tensor
 slot_mapping
 seq_lens
-num_computed_tokens
+_num_computed_tokens_cpu
 is_prefilling
 max_seq_len
 positions

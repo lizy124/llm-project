@@ -14,6 +14,8 @@
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/kv_connector.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
 - `code/vllm/vllm/v1/outputs.py`
 
 本问题关注：外部 KV Cache 命中后，Scheduler 如何把“远端已有 KV”转成本地 block 分配和 load 计划；`load_kv_async=True` 为什么会让本轮不 forward；`delay_cache_blocks=True` 为什么必须存在；Worker / ModelRunner 如何发起 load；`finished_recving` 如何回到 Scheduler 并让 `WAITING_FOR_REMOTE_KVS` 请求恢复调度；以及 load 失败时如何进入 invalid blocks / recompute 链路。
@@ -96,7 +98,9 @@ load 的完成闭环发生在 Scheduler.update_from_output() 之后的下一轮 
 
 ### 3.1 Request.kv_transfer_params
 
-外部 KV load 通常由请求上的 `kv_transfer_params` 驱动。
+外部 KV load 通常由请求上的 `kv_transfer_params` 驱动。V1 `Request` 初始化时会从 `sampling_params.extra_args["kv_transfer_params"]` 读取它；pooling params 目前不会设置这个字段。
+
+位置：`code/vllm/vllm/v1/request.py:101` 到 `code/vllm/vllm/v1/request.py:117`
 
 以 NIXL pull 为例，常见字段包括：
 
@@ -188,7 +192,7 @@ kv_connector_worker_meta  worker → scheduler 的附加 metadata
 
 外部 KV 查询发生在 WAITING 请求调度阶段。
 
-位置：`scheduler.py:624` 到 `scheduler.py:979`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:624` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:986`
 
 核心前提是：
 
@@ -196,7 +200,7 @@ kv_connector_worker_meta  worker → scheduler 的附加 metadata
 request.num_computed_tokens == 0
 ```
 
-这说明这是一个尚未在本地跑起来的新请求，或者是被抢占后重新等待的请求，需要重新判断本地 / 外部 prefix 命中。
+这说明这是一个尚未在本地跑起来的新请求，或者是被抢占后重新等待的请求，需要重新判断本地 / 外部 prefix 命中。async load 完成后回到 WAITING 的请求通常已经带着 `num_computed_tokens > 0`，会走“KVTransfer: WAITING reqs have num_computed_tokens > 0”分支，不再重新查询 connector。
 
 流程是：
 
@@ -219,7 +223,7 @@ num_external_computed_tokens = ext_tokens
 num_computed_tokens = num_new_local_computed_tokens + num_external_computed_tokens
 ```
 
-位置：`scheduler.py:671` 到 `scheduler.py:748`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:775`
 
 ---
 
@@ -296,7 +300,7 @@ ext_tokens is None
 
 Scheduler 会把请求从当前队列取出，放入本轮 `step_skipped_waiting`，稍后再尝试。
 
-位置：`scheduler.py:729` 到 `scheduler.py:735`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:729` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:735`
 
 这表示 connector 还没准备好判断命中，而不是请求失败。
 
@@ -321,7 +325,7 @@ remote decode / block ids 场景：
   否则返回 (count, True)。
 ```
 
-位置：`nixl/pull_scheduler.py:52` 到 `nixl/pull_scheduler.py:110`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:52` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:110`
 
 ### 6.3 Offloading 示例
 
@@ -337,7 +341,7 @@ remote decode / block ids 场景：
 5. 返回 (num_hit_tokens, bool(num_hit_tokens))。
 ```
 
-位置：`offloading/scheduler.py:646` 到 `offloading/scheduler.py:662`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:646` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:662`
 
 这说明 offloading connector 的外部 KV load 也是异步 load：只要命中 token 数大于 0，就返回 `load_kv_async=True`。
 
@@ -367,7 +371,7 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:781` 到 `scheduler.py:785`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:781` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:785`
 
 这就是为什么异步 load 时本轮不 forward：
 
@@ -412,7 +416,7 @@ if num_new_tokens == 0 and num_external_computed_tokens == 0:
     raise ValueError(...)
 ```
 
-位置：`kv_cache_manager.py:340` 到 `kv_cache_manager.py:346`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:340` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:346`
 
 也就是说：
 
@@ -424,7 +428,7 @@ num_new_tokens == 0 是合法的，前提是存在 external computed tokens。
 
 ## 9. allocate_slots() 如何为外部 KV 分配本地 block
 
-调用位置：`scheduler.py:873` 到 `scheduler.py:885`
+调用位置：`code/vllm/vllm/v1/core/sched/scheduler.py:873` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:885`
 
 异步 load 时关键参数是：
 
@@ -451,7 +455,7 @@ num_lookahead_tokens=0 if load_kv_async and use_eagle else normal lookahead
 6. 因 delay_cache_blocks=True，直接返回新 blocks，不 cache。
 ```
 
-位置：`kv_cache_manager.py:348` 到 `kv_cache_manager.py:458`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:348` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:458`
 
 ---
 
@@ -488,7 +492,7 @@ KVCacheCoordinator.allocate_new_computed_blocks()
 4. 对部分 attention 类型记录 new_block_ids。
 ```
 
-位置：`single_type_kv_cache_manager.py:234` 到 `single_type_kv_cache_manager.py:276`
+位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:234` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:276`
 
 ---
 
@@ -511,7 +515,7 @@ if not self.enable_caching or delay_cache_blocks:
     return self.create_kv_cache_blocks(new_blocks)
 ```
 
-位置：`kv_cache_manager.py:442` 到 `kv_cache_manager.py:445`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:442` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:445`
 
 如果没有这个延迟，可能出现错误：
 
@@ -543,7 +547,7 @@ connector.update_state_after_alloc(
 )
 ```
 
-位置：`scheduler.py:896` 到 `scheduler.py:905`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:896` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:905`
 
 这个调用非常关键，因为 connector 只有在 block 分配之后才知道：
 
@@ -575,7 +579,7 @@ blocks.get_unhashed_block_ids_all_groups()
 
 如果本地已经 full prefix cache hit，`num_external_tokens=0`，也可能保留一个空 recv 任务，用于通知远端释放。
 
-位置：`nixl/pull_scheduler.py:126` 到 `nixl/pull_scheduler.py:179`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:126` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:179`
 
 ### 12.2 Offloading 示例
 
@@ -597,7 +601,7 @@ load_job_id       这次 load 任务 id
 _current_batch_load_jobs[load_job_id] = TransferJob(...)
 ```
 
-位置：`offloading/scheduler.py:670` 到 `offloading/scheduler.py:760`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:670` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:760`
 
 这就是后续 `build_connector_meta()` 发送给 Worker 的 load job。
 
@@ -617,7 +621,7 @@ self._inflight_prefills.add(request)
 continue
 ```
 
-位置：`scheduler.py:916` 到 `scheduler.py:937`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:916` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:937`
 
 几个关键点：
 
@@ -638,7 +642,7 @@ continue
 request.num_computed_tokens will not be used anywhere until the request finished the KV transfer.
 ```
 
-位置：`scheduler.py:922` 到 `scheduler.py:934`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:922` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:934`
 
 ---
 
@@ -651,7 +655,7 @@ meta = self._build_kv_connector_meta(self.connector, scheduler_output)
 scheduler_output.kv_connector_metadata = meta
 ```
 
-位置：`scheduler.py:1076` 到 `scheduler.py:1083`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1076` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1083`
 
 `_build_kv_connector_meta()` 本质就是：
 
@@ -659,7 +663,7 @@ scheduler_output.kv_connector_metadata = meta
 return connector.build_connector_meta(scheduler_output)
 ```
 
-位置：`scheduler.py:1100` 到 `scheduler.py:1103`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1100` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1103`
 
 ### 14.1 NIXL metadata
 
@@ -689,7 +693,7 @@ _reqs_not_processed
 _reqs_need_send
 ```
 
-位置：`nixl/base_scheduler.py:397` 到 `nixl/base_scheduler.py:426`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:397` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:426`
 
 ### 14.2 Offloading metadata
 
@@ -707,7 +711,7 @@ OffloadingConnectorMetadata(
 
 然后清空当前批次的 load jobs。
 
-位置：`offloading/scheduler.py:1027` 到 `offloading/scheduler.py:1035`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1027` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1035`
 
 ---
 
@@ -717,7 +721,7 @@ OffloadingConnectorMetadata(
 
 Worker / ModelRunner 对 0-token step 有专门路径。
 
-在 `GPUModelRunner.execute_model()` 中：
+在 legacy `GPUModelRunner.execute_model()` 中：
 
 ```python
 if not num_scheduled_tokens:
@@ -726,7 +730,17 @@ if not num_scheduled_tokens:
     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`gpu_model_runner.py:4096` 到 `gpu_model_runner.py:4112`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4096` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4112`
+
+在新版 GPU model runner 中，同样会在 `scheduler_output.total_num_scheduled_tokens == 0` 时走 connector 的 `no_forward()`：
+
+```python
+if scheduler_output.total_num_scheduled_tokens == 0:
+    empty_output = self.kv_connector.no_forward(scheduler_output)
+    return empty_output
+```
+
+位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1118` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1121`
 
 这表示：
 
@@ -736,7 +750,7 @@ if not num_scheduled_tokens:
 发起或推进 KV load / save。
 ```
 
-`kv_connector_no_forward()` 的实现位置：`kv_connector_model_runner_mixin.py:35`
+legacy `kv_connector_no_forward()` 的实现位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:35`
 
 它会：
 
@@ -746,19 +760,23 @@ _get_kv_connector_output(... wait_for_save=False)
 返回只包含 kv_connector_output 的 ModelRunnerOutput
 ```
 
-位置：`kv_connector_model_runner_mixin.py:36` 到 `kv_connector_model_runner_mixin.py:48`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:36` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:48`
+
+新版 `ActiveKVConnector.no_forward()` 则会直接调用 `pre_forward()` 和 `post_forward(wait_for_save=False)`，同样只推进 connector，不跑模型。
+
+位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:98` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:105`
 
 ---
 
 ## 16. Worker / ModelRunner 如何发起 load
 
-Worker 侧 connector 生命周期被包在：
+legacy Worker 侧 connector 生命周期被包在：
 
 ```python
 KVConnectorModelRunnerMixin._get_kv_connector_output(...)
 ```
 
-位置：`kv_connector_model_runner_mixin.py:77`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:77`
 
 核心步骤：
 
@@ -775,7 +793,11 @@ KVConnectorModelRunnerMixin._get_kv_connector_output(...)
 10. clear_connector_metadata()。
 ```
 
-位置：`kv_connector_model_runner_mixin.py:83` 到 `kv_connector_model_runner_mixin.py:112`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:83` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:112`
+
+新版 GPU runner 的 `ActiveKVConnector` 拆成 `pre_forward()` / `post_forward()`：`pre_forward()` 绑定 metadata 并启动 load，`post_forward()` 等待 save、收集 finished_recving / invalid_block_ids / stats / worker_meta 并清理 metadata。
+
+位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:61` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:96`
 
 最关键的是：
 
@@ -783,9 +805,17 @@ KVConnectorModelRunnerMixin._get_kv_connector_output(...)
 kv_connector.start_load_kv(get_forward_context())
 ```
 
-位置：`kv_connector_model_runner_mixin.py:91` 到 `kv_connector_model_runner_mixin.py:95`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:91` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:95`
 
-这说明 load 是在 forward context 建好后、模型 forward 前启动的。
+新版路径对应的是：
+
+```python
+self.kv_connector.start_load_kv(get_forward_context())
+```
+
+位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:70` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:75`
+
+这说明 load 是在 forward context 建好后、模型 forward 前启动的；如果是 0-token no-forward 路径，则会用空 forward context 驱动 connector。
 
 ---
 
@@ -798,7 +828,7 @@ NixlPullConnector.start_load_kv()
   → NixlPullConnectorWorker.start_load_kv(metadata)
 ```
 
-位置：`nixl/connector.py:342` 到 `nixl/connector.py:346`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:342` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:346`
 
 Worker 侧会遍历：
 
@@ -817,7 +847,7 @@ metadata.reqs_to_recv
 6. 发送 heartbeats / 处理 reqs_to_send 等控制信息。
 ```
 
-位置：`nixl/pull_worker.py:40` 到 `nixl/pull_worker.py:99`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py:40` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py:99`
 
 真正 READ transfer 在：
 
@@ -827,7 +857,7 @@ _read_blocks_for_req()
   → _read_blocks(...)
 ```
 
-位置：`nixl/pull_worker.py:101` 到 `nixl/pull_worker.py:179`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py:101` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py:179`
 
 这条路径说明：
 
@@ -846,7 +876,7 @@ Offloading Worker 在 metadata 中看到：
 metadata.load_jobs
 ```
 
-入口：`OffloadingConnectorWorker.start_kv_transfers()`，位置：`offloading/worker.py:234`
+入口：`OffloadingConnectorWorker.start_kv_transfers()`，位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:234`
 
 它会：
 
@@ -857,7 +887,7 @@ metadata.load_jobs
 4. worker.transfer_async(job_id, transfer_spec) 发起异步 load。
 ```
 
-位置：`offloading/worker.py:234` 到 `offloading/worker.py:244`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:234` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:244`
 
 load 完成后，`get_finished()` 会从底层 worker 拉取 finished transfer：
 
@@ -867,7 +897,7 @@ worker.get_finished()
   → finished_recving.add(req_id)
 ```
 
-位置：`offloading/worker.py:252` 到 `offloading/worker.py:286`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:252` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:286`
 
 ---
 
@@ -881,7 +911,9 @@ output.finished_sending, output.finished_recving = (
 )
 ```
 
-位置：`kv_connector_model_runner_mixin.py:102` 到 `kv_connector_model_runner_mixin.py:104`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:102` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:104`
+
+新版 GPU connector 对应位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:83` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:96`
 
 然后这个 output 被放进：
 
@@ -915,7 +947,7 @@ if kv_connector_output:
     self._update_from_kv_xfer_finished(kv_connector_output)
 ```
 
-位置：`scheduler.py:1731` 到 `scheduler.py:1733`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1731` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1733`
 
 `_update_from_kv_xfer_finished()` 中：
 
@@ -929,7 +961,7 @@ for req_id in kv_connector_output.finished_recving or ():
         self._free_blocks(self.requests[req_id])
 ```
 
-位置：`scheduler.py:2417` 到 `scheduler.py:2440`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2417` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2440`
 
 这说明：
 
@@ -958,7 +990,7 @@ if self._is_blocked_waiting_status(request.status) and not self._try_promote_blo
     continue
 ```
 
-位置：`scheduler.py:638` 到 `scheduler.py:649`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:638` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:649`
 
 `WAITING_FOR_REMOTE_KVS` 属于 blocked waiting status：
 
@@ -970,9 +1002,9 @@ return status in (
 )
 ```
 
-位置：`scheduler.py:1804` 到 `scheduler.py:1810`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1804` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1810`
 
-恢复逻辑在：`_try_promote_blocked_waiting_request()`，位置：`scheduler.py:2384`
+恢复逻辑在：`_try_promote_blocked_waiting_request()`，位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2384`
 
 ```text
 如果 req_id 不在 finished_recving_kv_req_ids：
@@ -985,7 +1017,7 @@ return status in (
   返回 True，继续走普通 WAITING 调度逻辑。
 ```
 
-位置：`scheduler.py:2388` 到 `scheduler.py:2399`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2388` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2399`
 
 ---
 
@@ -993,7 +1025,7 @@ return status in (
 
 `_update_waiting_for_remote_kv()` 是外部 KV load 完成后的提交点。
 
-位置：`scheduler.py:2350`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2350`
 
 正常成功路径：
 
@@ -1004,7 +1036,7 @@ return status in (
 3. finished_recving_kv_req_ids.remove(request_id)
 ```
 
-位置：`scheduler.py:2372` 到 `scheduler.py:2382`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2372` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2382`
 
 ### 22.1 为什么这里才 cache_blocks()
 
@@ -1034,9 +1066,9 @@ request.num_computed_tokens == request.num_tokens
 request.num_tokens - 1
 ```
 
-让下一轮重新计算最后一个 token。
+让下一轮保留最后 token 的 forward，用于产生 next-token logits。
 
-位置：`scheduler.py:2377` 到 `scheduler.py:2380`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2377` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2380`
 
 这个逻辑与本地 prefix cache full hit 的处理一致。
 
@@ -1060,7 +1092,9 @@ Worker 侧采集位置：
 output.invalid_block_ids = kv_connector.get_block_ids_with_load_errors()
 ```
 
-位置：`kv_connector_model_runner_mixin.py:105`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:105`
+
+新版 GPU connector 对应位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:89`
 
 Scheduler 在 `update_from_output()` 开头处理：
 
@@ -1069,7 +1103,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     failed_kv_load_req_ids = self._handle_invalid_blocks(...)
 ```
 
-位置：`scheduler.py:1490` 到 `scheduler.py:1498`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1490` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1498`
 
 ### 23.1 async load 失败
 
@@ -1085,7 +1119,7 @@ self.skipped_waiting 中 status == WAITING_FOR_REMOTE_KVS 的请求
 _update_requests_with_invalid_blocks(... evict_blocks=False)
 ```
 
-位置：`scheduler.py:2560` 到 `scheduler.py:2573`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2560` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2573`
 
 这会把受影响请求的 `num_computed_tokens` 回退到第一个失败 block 之前。
 
@@ -1097,7 +1131,7 @@ _update_requests_with_invalid_blocks(... evict_blocks=False)
 failed_recving_kv_req_ids |= async_failed_req_ids
 ```
 
-位置：`scheduler.py:2615` 到 `scheduler.py:2617`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2615` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2617`
 
 随后请求仍要等 `finished_recving`，因为 connector 必须完成/收尾这次 transfer。
 
@@ -1110,7 +1144,7 @@ failed_recving_kv_req_ids |= async_failed_req_ids
   从 failed_recving_kv_req_ids 移除。
 ```
 
-位置：`scheduler.py:2360` 到 `scheduler.py:2371`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2360` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2371`
 
 也就是说：
 
@@ -1159,7 +1193,7 @@ async load 会占用本地 blocks，但请求暂时不 forward，也不容易通
 reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:865` 到 `scheduler.py:871`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:865` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:871`
 
 `allocate_slots()` 会用：
 
@@ -1167,7 +1201,7 @@ reserved_blocks = self._inflight_prefill_reserved_blocks()
 available_blocks = block_pool.get_num_free_blocks() - reserved_blocks
 ```
 
-位置：`kv_cache_manager.py:414` 到 `kv_cache_manager.py:420`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:414` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:420`
 
 这样可以避免：
 
@@ -1198,7 +1232,7 @@ WAITING_FOR_REMOTE_KVS + skipped_waiting
   delay_free_blocks = request_id not in finished_recving_kv_req_ids
 ```
 
-位置：`scheduler.py:2031` 到 `scheduler.py:2043`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2031` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2043`
 
 含义是：
 
@@ -1353,7 +1387,7 @@ update_from_output()
   → status = WAITING
 ```
 
-下一轮普通调度会从最后一个 token 开始计算 logits，然后继续 decode。
+下一轮普通调度会保留最后 token 的 forward 来计算 next-token logits，然后继续 decode。
 
 ---
 
@@ -1383,7 +1417,7 @@ Scheduler 注释明确说明，这个值在 KV transfer 完成前不会被用于
 
 不是。
 
-它只表示外部 KV load 完成。请求还需要重新进入 Scheduler，可能重算最后一个 token，继续 prefill suffix 或 decode。
+它只表示外部 KV load 完成。请求还需要重新进入 Scheduler，可能保留最后 token 的 forward，继续 prefill suffix 或 decode。
 
 ### 31.6 为什么 0-token step 还要调用 Worker？
 

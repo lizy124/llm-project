@@ -2,12 +2,13 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\worker\gpu_input_batch.py`
-- `code/vllm/vllm\v1\worker\gpu\attn_utils.py`
-- `code/vllm/vllm\v1\worker\gpu\block_table.py`
-- `code/vllm/vllm\forward_context.py`
-- `code/vllm/vllm\v1\attention\backend.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/gpu/attn_utils.py`
+- `code/vllm/vllm/v1/worker/block_table.py`
+- `code/vllm/vllm/v1/worker/gpu/block_table.py`
+- `code/vllm/vllm/forward_context.py`
+- `code/vllm/vllm/v1/attention/backends/abstract.py`
 
 本问题关注：`SchedulerOutput` 进入 `GPUModelRunner.execute_model()` 之后，`ModelRunner` 如何把请求级状态变成本轮 forward 需要的张量和 metadata，具体包括 `input_ids / inputs_embeds / positions / slot_mapping / block_table / attention metadata / spec decode metadata / multimodal metadata` 等；这些数据分别从哪里来、在哪一层组装、哪些字段只为某些模型或 attention backend 服务。
 
@@ -77,12 +78,13 @@ spec_decode_metadata
 同时它还会把这些关键张量准备好：
 
 - `input_ids`
-- `inputs_embeds`
+- `inputs_embeds`（仅 prompt_embeds / multimodal 路径会用）
 - `positions`
 - `query_start_loc`
-- `seq_lens`
+- `optimistic_seq_lens_cpu` / `seq_lens`
 - `num_computed_tokens`
 - `num_accepted_tokens`
+- `prev_positions`（async spec decode / batch 变更时用于回看上一轮位置）
 - `discard_request_mask`
 - `req_indices`
 - `num_scheduled_tokens`
@@ -94,21 +96,27 @@ spec_decode_metadata
 
 attention backend 不直接读 `InputBatch`，它们读的是 `CommonAttentionMetadata` 和由具体 `AttentionMetadataBuilder` 构造的 per-layer metadata。
 
-`_build_attention_metadata()` 会把这些公共输入整理出来：
+`_build_attention_metadata()` 会先构造一份 `CommonAttentionMetadata` 基础模板，里面包括：
 
-- `query_start_loc`
-- `seq_lens`
-- `max_seq_len`
-- `max_query_len`
+- `query_start_loc` / `query_start_loc_cpu`
+- `seq_lens` / `_seq_lens_cpu` / `seq_lens_cpu_upper_bound`
+- `_num_computed_tokens_cpu`
+- `num_reqs` / `num_actual_tokens`
+- `max_seq_len` / `max_query_len`
 - `block_table_tensor`
 - `slot_mapping`
 - `positions`
-- `dcp_local_seq_lens`
-- `encoder_seq_lens`
-- `mm_req_doc_ranges`
 - `is_prefilling`
+- `mm_req_doc_ranges`
 
-然后按 KV cache group、attention group、ubatch、spec decode 等维度调用 builder。
+随后在每个 KV cache group 的浅拷贝上补充或替换：
+
+- `encoder_seq_lens` / `encoder_seq_lens_cpu`
+- group 对应的 `block_table_tensor`
+- group 对应的 `slot_mapping`
+- DCP 场景下的 `dcp_local_seq_lens` / `dcp_local_seq_lens_cpu`
+
+最后按 KV cache group、attention group、ubatch、spec decode 等维度调用 builder。
 
 ### 2.4 _preprocess() 负责把特殊输入路径合并成最终 forward 输入
 
@@ -376,13 +384,13 @@ logits_indices = draft + bonus token 对应的一组位置
 
 `MultiGroupBlockTable` 维护多个 KV cache group 的 block 表。
 
-位置：`gpu_block_table.py:223`（同目录为 `worker/block_table.py` 的旧实现；当前执行链路使用 `gpu/block_table.py`）
+位置：`worker/block_table.py:223`（`InputBatch` 当前导入并持有的是 `MultiGroupBlockTable`；`worker/gpu/block_table.py` 是另一套 GPU block table 辅助实现）
 
 核心职责：
 
 - `append_row()` / `add_row()`：更新每个请求的 block ids
-- `commit_block_table()`：把 CPU 侧 block table 提交到 GPU
-- `compute_slot_mapping()`：根据 query positions 计算 slot mapping
+- `commit_block_table()`：把各 KV cache group 的 CPU 侧 block table 提交到 GPU
+- `compute_slot_mapping()`：根据 `query_start_loc` 和 `positions` 为每个 KV cache group 计算 slot mapping
 
 ### 6.2 slot mapping 的语义
 
@@ -400,20 +408,31 @@ block_id + block 内 offset
 
 共同决定。
 
-### 6.3 _get_slot_mappings() 会为每个 KV cache group 构造 slot mapping
+### 6.3 slot mapping 先在 _prepare_inputs() 中计算，再由 _get_slot_mappings() 整理视图
 
-位置：`gpu_model_runner.py:3960`
+位置：`gpu_model_runner.py:2118`、`gpu_model_runner.py:3960`
 
-它返回两套视图：
+`_prepare_inputs()` 先调用：
 
-- `slot_mappings_by_gid`
-- `slot_mappings_by_layer`
+```python
+self.input_batch.block_table.compute_slot_mapping(
+    num_reqs,
+    self.query_start_loc.gpu[: num_reqs + 1],
+    self.positions[:total_num_scheduled_tokens],
+)
+```
 
-构造细节：
+这一步已经把每个 KV cache group 的 `BlockTable.slot_mapping.gpu` 算好。随后 `_get_slot_mappings()` 返回两套视图：
 
-- encoder-only attention：slot mapping 直接置零或走特殊路径
-- 其他 attention：从 `self.input_batch.block_table[kv_cache_gid]` 里取 `slot_mapping.gpu`
-- padded 区域填 `-1`，给 CUDA graph 兼容使用
+- `slot_mappings_by_gid`：按 KV cache group id 提供给 `_build_attention_metadata()`
+- `slot_mappings_by_layer`：按 layer name 提供给 `set_forward_context()`
+
+整理细节：
+
+- encoder-only attention：slot mapping 直接置零
+- 其他 attention：从 `self.input_batch.block_table[kv_cache_gid].slot_mapping.gpu` 取已计算好的结果
+- padded 区域填 `-1`，给 CUDA graph / 独立 KV update 路径兼容使用
+- ubatch 场景下，layer 级 slot mapping 还会按 `ubatch.token_slice` 切片
 
 ### 6.4 为什么还要区分 by-gid 和 by-layer
 
@@ -445,20 +464,22 @@ gid 级 slot mapping → layer 级映射
 
 ```python
 CommonAttentionMetadata(
-    query_start_loc,
-    query_start_loc_cpu,
-    seq_lens,
-    seq_lens_cpu_upper_bound,
-    max_seq_len,
-    num_reqs,
-    num_actual_tokens,
-    max_query_len,
-    block_table_tensor,
-    slot_mapping,
-    causal,
-    dcp_local_seq_lens,
-    positions,
-    ...
+    query_start_loc=self.query_start_loc.gpu[: num_reqs_padded + 1],
+    query_start_loc_cpu=self.query_start_loc.cpu[: num_reqs_padded + 1],
+    seq_lens=self.seq_lens[:num_reqs_padded],
+    _seq_lens_cpu=seq_lens_cpu,
+    _num_computed_tokens_cpu=num_computed_tokens_cpu,
+    seq_lens_cpu_upper_bound=seq_lens_cpu_upper_bound,
+    num_reqs=num_reqs_padded,
+    num_actual_tokens=num_tokens_padded,
+    max_query_len=max_query_len,
+    max_seq_len=max_seq_len,
+    block_table_tensor=block_table_gid_0,
+    slot_mapping=slot_mapping_gid_0,
+    causal=True,
+    is_prefilling=is_prefilling,
+    positions=self.positions[:num_tokens_padded],
+    mm_req_doc_ranges=req_doc_ranges,
 )
 ```
 
@@ -483,17 +504,20 @@ CommonAttentionMetadata(
 
 ### 7.3 按 KV cache group / attention group 构造
 
-`_build_attention_metadata()` 会先按 KV cache group 循环，再按组内 attention group 循环。
+`_build_attention_metadata()` 先用 gid 0 的 block table 和 slot mapping 构造 `cm_base`，然后对每个 KV cache group 做浅拷贝 `cm = copy(cm_base)`，再替换该 group 自己的 `encoder_seq_lens`、`block_table_tensor` 和 `slot_mapping`。
+
+随后它会按组内 attention group 调用对应 builder，并把同一个 builder 产物挂到该 attention group 的所有 layer name 上。
 
 这样做的原因是：
 
 - 不同 group 可能有不同 block size / cache spec
+- 不同 group 的 block table / slot mapping 不同
 - 不同 backend 可能对 metadata 形状要求不同
-- 有些 layer 共享 metadata，有些不共享
+- 同一个 attention group 内的多个 layer 可以共享 metadata
 
 ### 7.4 builder 缓存与 update_block_table
 
-如果 builder 支持 `supports_update_block_table`，那么不同 KV cache group 之间相同结构的 metadata 可以复用，只更新 block table，减少构造开销。
+`_build_attention_metadata()` 会用 `(KVCacheSpec, type(builder))` 作为缓存 key。若同一类 cache spec 和同一类 builder 已经构造过 metadata，且 builder 支持 `supports_update_block_table`，后续 group 可以复用缓存的 metadata，只通过 `builder.update_block_table()` 替换 block table 和 slot mapping。
 
 这也是为什么 `_build_attention_metadata()` 里会维护 `cached_attn_metadata`。
 
@@ -573,7 +597,7 @@ inputs_embeds = None
 
 ### 8.4 encoder-decoder
 
-对 encoder-decoder 模型，`_preprocess()` 会额外调用 `_execute_mm_encoder()` 并把 `encoder_outputs` 塞进 `model_kwargs`。
+对 encoder-decoder 模型，只有当 `scheduler_output.scheduled_encoder_inputs` 非空时，`_preprocess()` 才会额外调用 `_execute_mm_encoder()`，并把 `encoder_outputs` 塞进 `model_kwargs`；纯 decode 步不会重复执行 encoder。
 
 ### 8.5 M-RoPE / XD-RoPE
 

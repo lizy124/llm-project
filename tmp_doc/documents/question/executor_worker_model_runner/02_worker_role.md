@@ -2,12 +2,13 @@
 
 源码位置：
 
-- `code/vllm/vllm\v1\worker\worker_base.py`
-- `code/vllm/vllm\v1\worker\gpu_worker.py`
-- `code/vllm/vllm\v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm\v1\executor\abstract.py`
-- `code/vllm/vllm\v1\executor\uniproc_executor.py`
-- `code/vllm/vllm\v1\executor\multiproc_executor.py`
+- `code/vllm/vllm/v1/worker/worker_base.py`
+- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/executor/abstract.py`
+- `code/vllm/vllm/v1/executor/uniproc_executor.py`
+- `code/vllm/vllm/v1/executor/multiproc_executor.py`
 
 本问题关注：`Worker` 在 Executor / ModelRunner 中间到底负责什么，Worker 如何初始化设备、加载模型、profile 显存、初始化 KV cache、执行 `SchedulerOutput`、处理 pipeline parallel 中间张量、管理 sleep / wake_up / profile / LoRA / shutdown，以及它和 `Executor`、`ModelRunner` 的职责边界。
 

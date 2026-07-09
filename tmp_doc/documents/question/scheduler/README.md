@@ -143,6 +143,23 @@ EngineCoreOutputs 如何按 client_index 返回？
 
 ## 3. 补充专题
 
+### token 状态专题
+
+- [Scheduler 中各种 token 数和请求状态到底是什么](token_states.md)
+
+建议在读 `02`、`03`、`04`、`08` 时配合阅读。
+
+它专门解释 Scheduler 中容易混淆的基础 token / state 概念：
+
+```text
+num_tokens
+num_computed_tokens
+num_tokens_with_spec
+num_output_placeholders
+num_scheduled_tokens
+WAITING / RUNNING / PREEMPTED / blocked / finished
+```
+
 ### Spec Decode token 状态专题
 
 - [Spec Decode 中各种 token 和状态到底是什么](spec_decode_token_states.md)
@@ -181,6 +198,7 @@ num_tokens_with_spec 里包含的 spec token，
 ```text
 vllm_scheduler.md
   → 01_request_states.md
+  → token_states.md
   → 02_token_budget.md
   → 03_running_decode_prefill.md
   → 04_waiting_to_running.md
@@ -261,8 +279,11 @@ vllm_scheduler.md：
 01-08：
   按问题拆开的专题文档，适合逐段精读 scheduler.py。
 
+token_states.md：
+  Scheduler 基础 token / request state 概念补充，适合解决 token 计数和状态迁移混淆。
+
 spec_decode_token_states.md：
-  spec decode 概念补充，适合解决 token 状态混淆。
+  spec decode 概念补充，适合解决投机解码 token 状态混淆。
 
 README.md：
   当前目录索引和阅读路线。

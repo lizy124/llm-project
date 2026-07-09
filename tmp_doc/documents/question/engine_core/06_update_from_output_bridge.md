@@ -265,13 +265,14 @@ perf_stats = self.perf_metrics.get_step_perf_stats_per_gpu(scheduler_output)
 sampled_token_ids = model_runner_output.sampled_token_ids
 logprobs = model_runner_output.logprobs
 prompt_logprobs_dict = model_runner_output.prompt_logprobs_dict
+num_scheduled_tokens = scheduler_output.num_scheduled_tokens
 pooler_outputs = model_runner_output.pooler_output
 num_nans_in_logits = model_runner_output.num_nans_in_logits
 kv_connector_output = model_runner_output.kv_connector_output
 cudagraph_stats = model_runner_output.cudagraph_stats
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1469` 到 `vllm/vllm/v1/core/sched/scheduler.py:1476`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1468` 到 `vllm/vllm/v1/core/sched/scheduler.py:1475`
 
 这些信息回答的是：
 
@@ -366,7 +367,36 @@ prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
 
 位置：`vllm/vllm/v1/core/sched/scheduler.py:1681` 到 `vllm/vllm/v1/core/sched/scheduler.py:1682`
 
-### 4.5 KV connector 输出
+### 4.5 routed experts 输出
+
+如果 Worker 返回了 MoE routed experts 信息，Scheduler 会先把 step 级 routing 数据写入 scheduler 侧 slot buffer，并按 ModelRunner 的请求顺序构造 offset：
+
+```python
+if model_runner_output.routed_experts is not None:
+    re = model_runner_output.routed_experts
+    self.routed_experts_mgr.store_batch(re.routing_data, re.slot_mapping)
+    routing_data = re.routing_data.astype(...)
+    offset = 0
+    for rid in model_runner_output.req_ids:
+        routing_offsets[rid] = offset
+        offset += num_scheduled_tokens[rid]
+```
+
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1500` 到 `vllm/vllm/v1/core/sched/scheduler.py:1519`
+
+后面构造单请求输出时，Scheduler 会根据请求是否为 prefill、普通 decode 或 spec decode，从 slot buffer 或本轮 routing 数据中切出 `routed_experts`：
+
+```python
+if self.enable_return_routed_experts and routing_data is not None and new_token_ids:
+    ...
+    routed_experts = ...
+```
+
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1615` 到 `vllm/vllm/v1/core/sched/scheduler.py:1653`
+
+这说明 routed experts 不是直接原样透传整个 batch，而是在 Scheduler 里按请求输出重新切分。
+
+### 4.6 KV connector 输出
 
 如果 Worker 返回了 KV connector 输出，Scheduler 会处理 KV transfer 完成状态：
 
@@ -375,7 +405,7 @@ if kv_connector_output:
     self._update_from_kv_xfer_finished(kv_connector_output)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1732` 到 `vllm/vllm/v1/core/sched/scheduler.py:1734`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1731` 到 `vllm/vllm/v1/core/sched/scheduler.py:1733`
 
 如果有外部 KV load 失败，还会先处理 invalid blocks：
 
@@ -387,7 +417,32 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1491` 到 `vllm/vllm/v1/core/sched/scheduler.py:1499`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1490` 到 `vllm/vllm/v1/core/sched/scheduler.py:1498`
+
+Worker 侧 KV connector stats 也会从 `ModelRunnerOutput` 取出，并与 Scheduler 侧 connector stats 聚合：
+
+```python
+kv_connector_stats: KVConnectorStats | None = (
+    kv_connector_output.kv_connector_stats if kv_connector_output else None
+)
+if self.connector:
+    scheduler_kv_connector_stats = self.connector.get_kv_connector_stats()
+    ...
+```
+
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1735` 到 `vllm/vllm/v1/core/sched/scheduler.py:1750`
+
+随后 Scheduler 还会收集 KV cache manager 和 connector 的事件，并通过 `kv_event_publisher` 发布：
+
+```python
+events = self.kv_cache_manager.take_events()
+...
+if events:
+    batch = KVEventBatch(ts=time.time(), events=events)
+    self.kv_event_publisher.publish(batch)
+```
+
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1752` 到 `vllm/vllm/v1/core/sched/scheduler.py:1767`
 
 所以 `ModelRunnerOutput` 是真实结果来源。
 
@@ -395,7 +450,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
 
 ```text
 没有 ModelRunnerOutput，Scheduler 只有计划，没有结果；
-它不知道生成了什么 token、是否有 pooling output、KV transfer 是否失败、logprobs 是什么。
+它不知道生成了什么 token、是否有 pooling output、KV transfer 是否失败、routed experts / logprobs 是什么。
 ```
 
 ---
@@ -698,6 +753,6 @@ EngineCore 在每轮 step 中先调用 Scheduler.schedule() 得到 SchedulerOutp
 执行结束后，EngineCore 先处理执行期间到达的 abort，
 然后把 SchedulerOutput 和 ModelRunnerOutput 一起传给 Scheduler.update_from_output()。
 Scheduler 以 SchedulerOutput 为本轮计划账本，以 ModelRunnerOutput 为真实执行结果，
-更新请求状态、处理 stop / spec decode / logprobs / pooling / KV transfer，
+更新请求状态、处理 stop / spec decode / logprobs / pooling / routed experts / KV transfer，
 最后按 client_index 返回 EngineCoreOutputs。
 ```
