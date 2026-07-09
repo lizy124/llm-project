@@ -6,6 +6,8 @@
 - `vllm/vllm/v1/engine/async_llm.py`
 - `vllm/vllm/v1/engine/output_processor.py`
 - `vllm/vllm/v1/engine/core_client.py`
+- `vllm/vllm/v1/engine/core.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
 - `vllm/vllm/v1/engine/__init__.py`
 
 本问题关注：`EngineCoreOutputs` 如何被外层 Engine 消费，并转换成最终用户可见输出。
@@ -90,7 +92,7 @@ Worker / ModelRunner
 class EngineCoreOutput(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:180`
+位置：`vllm/vllm/v1/engine/__init__.py:173` 到 `vllm/vllm/v1/engine/__init__.py:180`
 
 主要字段包括：
 
@@ -116,7 +118,7 @@ routed_experts: np.ndarray | None = None
 num_nans_in_logits: int = 0
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:181` 到 `vllm/vllm/v1/engine/__init__.py:201`
+位置：`vllm/vllm/v1/engine/__init__.py:182` 到 `vllm/vllm/v1/engine/__init__.py:199`
 
 可以分成几类：
 
@@ -144,7 +146,7 @@ def finished(self) -> bool:
     return self.finish_reason is not None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:203` 到 `vllm/vllm/v1/engine/__init__.py:205`
+位置：`vllm/vllm/v1/engine/__init__.py:201` 到 `vllm/vllm/v1/engine/__init__.py:203`
 
 所以：
 
@@ -164,7 +166,7 @@ finish_reason is not None
 class EngineCoreOutputs(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:225`
+位置：`vllm/vllm/v1/engine/__init__.py:218` 到 `vllm/vllm/v1/engine/__init__.py:223`
 
 字段包括：
 
@@ -181,7 +183,7 @@ wave_complete: int | None = None
 start_wave: int | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:229` 到 `vllm/vllm/v1/engine/__init__.py:244`
+位置：`vllm/vllm/v1/engine/__init__.py:227` 到 `vllm/vllm/v1/engine/__init__.py:244`
 
 各字段含义是：
 
@@ -204,7 +206,7 @@ def __post_init__(self):
         self.timestamp = time.monotonic()
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:246` 到 `vllm/vllm/v1/engine/__init__.py:248`
+位置：`vllm/vllm/v1/engine/__init__.py:244` 到 `vllm/vllm/v1/engine/__init__.py:246`
 
 ---
 
@@ -257,6 +259,8 @@ EngineCore.step()
 ```
 
 `dict[int, EngineCoreOutputs]` 的 key 是 `client_index`。
+
+Scheduler 会先把有普通 request 输出的 `EngineCoreOutput` 按 `request.client_index` 分组；如果本轮没有普通输出，但有 `finished_requests` 或 `scheduler_stats`，也可能构造只携带这些字段的 `EngineCoreOutputs`。
 
 也就是说 EngineCore 返回的输出天然按前端 client 分组：
 
@@ -338,7 +342,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1628` 到 `vllm/vllm/v1/engine/core.py:1646`
+位置：`vllm/vllm/v1/engine/core.py:1626` 到 `vllm/vllm/v1/engine/core.py:1647`
 
 所以多进程路径是：
 
@@ -458,6 +462,8 @@ while True:
 OutputProcessor.process_outputs() 不返回给 output_handler；
 它会把 RequestOutput 放进每个请求自己的 RequestOutputCollector queue。
 ```
+
+真正对外 `yield` 的是 `AsyncLLM.generate()` / pooling generate 里的 per-request async generator：它先从 collector 取输出，再把普通 `RequestOutput` / `PoolingRequestOutput` 返回给调用方；generation streaming input 的 `STREAM_FINISHED` sentinel 只用于解除循环，不会作为用户输出 yield。
 
 因此这里有断言：
 
@@ -621,9 +627,10 @@ self.aggregate = output_kind == RequestOutputKind.DELTA
 self.request_id = request_id
 self.output: RequestOutput | PoolingRequestOutput | Exception | None = None
 self.ready = asyncio.Event()
+self._input_stream_task: asyncio.Task | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:54` 到 `vllm/vllm/v1/engine/output_processor.py:58`
+位置：`vllm/vllm/v1/engine/output_processor.py:54` 到 `vllm/vllm/v1/engine/output_processor.py:60`
 
 `put()` 会把输出放进 collector：
 
@@ -644,7 +651,8 @@ elif isinstance(self.output, PoolingRequestOutput) and isinstance(output, Poolin
 ```text
 如果消费者来不及取，新的 RequestOutput 可以和已有 output 合并；
 DELTA 模式下按 delta 聚合；
-Exception 会直接传给消费者。
+PoolingRequestOutput 会用最新输出替换旧输出；
+Exception 会记录到 collector，消费者取出时重新 raise。
 ```
 
 消费者通过：
@@ -653,7 +661,7 @@ Exception 会直接传给消费者。
 async def get(self) -> RequestOutput | PoolingRequestOutput:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:78`
+位置：`vllm/vllm/v1/engine/output_processor.py:78` 到 `vllm/vllm/v1/engine/output_processor.py:86`
 
 等待输出。
 
@@ -1557,7 +1565,7 @@ else:
   input_chunk_queue = None，等待后续输入。
 
 如果 final request 到达且 engine 已结束：
-  _finish_request() 并向 queue put STREAM_FINISHED sentinel，用来解除 generate loop；它不是普通用户输出。
+  _finish_request() 并向 queue put STREAM_FINISHED sentinel，用来解除 generation generate loop；AsyncLLM.generate() 会过滤它，它不是普通用户输出。
 ```
 
 相关位置：`vllm/vllm/v1/engine/output_processor.py:543` 到 `vllm/vllm/v1/engine/output_processor.py:560`，`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:675`
@@ -1607,7 +1615,8 @@ if req_state.queue is not None and (
 这说明：
 
 ```text
-异步 abort 可以立即向请求队列放入一个 finished=abort 的最终输出；
+异步 abort 会先清理 OutputProcessor 状态；
+如果 make_request_output() 能构造 abort 输出，就立即向请求队列放入 finished=abort 的输出；
 同时返回 internal request ids，让 EngineCore 也取消内部请求。
 ```
 
@@ -1720,7 +1729,8 @@ AsyncLLM output_handler task
   └─ logger_manager.record()
 
 Async generator
-  → await RequestOutputCollector.get()
+  → q.get_nowait() or await RequestOutputCollector.get()
+  → generation 路径过滤 STREAM_FINISHED sentinel
   → yield RequestOutput / PoolingRequestOutput
 ```
 
@@ -2109,7 +2119,8 @@ AsyncLLM output_handler
   → await EngineCoreClient.abort_requests_async(reqs_to_abort)
 
 per-request async generator
-  → await RequestOutputCollector.get()
+  → q.get_nowait() or await RequestOutputCollector.get()
+  → generation 路径过滤 STREAM_FINISHED sentinel
   → yield RequestOutput / PoolingRequestOutput
 ```
 

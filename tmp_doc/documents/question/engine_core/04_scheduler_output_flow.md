@@ -83,10 +83,17 @@ class SchedulerOutput:
     num_common_prefix_blocks: list[int]
     finished_req_ids: set[str]
     free_encoder_mm_hashes: list[str]
-    ...
+    preempted_req_ids: set[str] | None = None
+    has_structured_output_requests: bool = False
+    pending_structured_output_tokens: bool = False
+    num_invalid_spec_tokens: dict[str, int] | None = None
+    kv_connector_metadata: KVConnectorMetadata | None = None
+    ec_connector_metadata: ECConnectorMetadata | None = None
+    new_block_ids_to_zero: list[int] | None = None
+    num_spec_tokens_to_schedule: int = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:180`
+位置：`vllm/vllm/v1/core/sched/output.py:180` 到 `vllm/vllm/v1/core/sched/output.py:245`
 
 可以把它理解成：
 
@@ -216,7 +223,7 @@ class NewRequestData:
     prefill_token_ids: list[int] | None = None
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:30` 到 `vllm/vllm/v1/core/sched/output.py:40`
+位置：`vllm/vllm/v1/core/sched/output.py:30` 到 `vllm/vllm/v1/core/sched/output.py:44`
 
 可以理解为：
 
@@ -400,7 +407,39 @@ new_block_ids_to_zero：
 
 ---
 
-### 4.7 finished_req_ids 和 free_encoder_mm_hashes
+### 4.7 async / structured / dynamic spec 相关字段
+
+`SchedulerOutput` 还包含一些用于异步调度、结构化输出和动态 speculative decoding 的字段：
+
+```python
+preempted_req_ids: set[str] | None = None
+has_structured_output_requests: bool = False
+pending_structured_output_tokens: bool = False
+num_invalid_spec_tokens: dict[str, int] | None = None
+num_spec_tokens_to_schedule: int = 0
+```
+
+位置：`vllm/vllm/v1/core/sched/output.py:217` 到 `vllm/vllm/v1/core/sched/output.py:245`
+
+含义可以概括为：
+
+```text
+preempted_req_ids：
+  v2 model runner 使用的本轮被抢占请求集合。
+
+has_structured_output_requests / pending_structured_output_tokens：
+  async scheduling / batch queue 场景下判断 grammar bitmask 是否能立即计算。
+
+num_invalid_spec_tokens：
+  structured output 过滤 draft tokens 后，用于调整 spec decode 接受率统计。
+
+num_spec_tokens_to_schedule：
+  dynamic speculative decoding 下，Scheduler 选出的下一步 spec token 数。
+```
+
+---
+
+### 4.8 finished_req_ids 和 free_encoder_mm_hashes
 
 ```python
 finished_req_ids: set[str]

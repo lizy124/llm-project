@@ -53,7 +53,7 @@ InputProcessor
 class EngineCoreRequest(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:88`
+位置：`vllm/vllm/v1/engine/__init__.py:86`
 
 它是外层 Engine 交给 EngineCore 的请求对象。
 
@@ -82,7 +82,7 @@ reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:94` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/vllm/v1/engine/__init__.py:92` 到 `vllm/vllm/v1/engine/__init__.py:135`
 
 可以理解为：
 
@@ -699,7 +699,7 @@ self.waiting 或 self.skipped_waiting
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:133` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/vllm/v1/engine/__init__.py:131` 到 `vllm/vllm/v1/engine/__init__.py:135`
 
 EngineCore.add_request() 在加进 Scheduler 后会立即 abort：
 
@@ -1021,7 +1021,7 @@ existing = self.requests.get(request.request_id)
 
 位置：`vllm/vllm/v1/core/sched/scheduler.py:1960`
 
-如果已存在，表示这是同一 streaming session 的后续输入，Scheduler 会更新已有 request，而不是创建全新 request。
+如果已存在，表示这是同一 streaming session 的后续输入。Scheduler 会用 `StreamingUpdate.from_request()` 构造更新：已有请求还没停在 `WAITING_FOR_STREAMING_REQ` 时，把 update 追加到 `existing.streaming_queue`；已有请求已经在等待新输入且 update 非空时，立即 `_update_request_as_session()`；final request 则结束该 streaming session。
 
 所以 streaming 请求入口主线是：
 
@@ -1031,7 +1031,9 @@ AsyncGenerator input
   → 使用同一个 internal request_id
   → EngineCore.add_request()
   → Scheduler.add_request()
-  → 如果 request_id 已存在，更新已有 session
+      → existing request 仍在运行：append 到 streaming_queue
+      → existing request 已等待输入：_update_request_as_session()
+      → final request：finish streaming session
 ```
 
 ---
@@ -1147,9 +1149,9 @@ AsyncLLM.add_request(prompt=AsyncGenerator)
        same internal request_id
        EngineCoreClient.add_request_async()
        Scheduler.add_request()
-       existing request_id → update existing session
+       existing request_id → append streaming_queue 或更新已有 session
   → input stream 结束:
-       发送 final request
+       发送 final request，结束 streaming session
 ```
 
 ---
@@ -1265,5 +1267,5 @@ streaming input 则是：
 多个 resumable EngineCoreRequest
   → same internal request_id
   → Scheduler.add_request()
-  → 更新已有 session
+  → 追加到 streaming_queue 或更新已有 session；final request 结束 session
 ```

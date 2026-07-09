@@ -926,7 +926,7 @@ def pause_scheduler(
 ) -> Future | None:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1663` 到 `vllm/vllm/v1/engine/core.py:1665`
+位置：`vllm/vllm/v1/engine/core.py:1661` 到 `vllm/vllm/v1/engine/core.py:1663`
 
 注释概括：
 
@@ -936,7 +936,7 @@ wait：设置 PAUSED_NEW，继续 step，让 in-flight 请求 drain；
 keep：设置 PAUSED_ALL，冻结请求，等 output queue 空。
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1666` 到 `vllm/vllm/v1/engine/core.py:1677`
+位置：`vllm/vllm/v1/engine/core.py:1664` 到 `vllm/vllm/v1/engine/core.py:1676`
 
 abort 模式会发送 abort outputs：
 
@@ -948,7 +948,7 @@ if mode == "abort":
     self._send_abort_outputs(aborted_reqs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1687` 到 `vllm/vllm/v1/engine/core.py:1691`
+位置：`vllm/vllm/v1/engine/core.py:1685` 到 `vllm/vllm/v1/engine/core.py:1690`
 
 如果当前已经 pause complete，则可立即 reset cache 并返回：
 
@@ -959,7 +959,7 @@ if self._pause_complete():
     return None
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1696` 到 `vllm/vllm/v1/engine/core.py:1699`
+位置：`vllm/vllm/v1/engine/core.py:1694` 到 `vllm/vllm/v1/engine/core.py:1697`
 
 否则注册 idle callback，等 EngineCore 空闲后再清 cache、resolve Future：
 
@@ -969,7 +969,7 @@ self._idle_state_callbacks.append(partial(engine_idle_callback, future=future))
 return future
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1701` 到 `vllm/vllm/v1/engine/core.py:1703`
+位置：`vllm/vllm/v1/engine/core.py:1699` 到 `vllm/vllm/v1/engine/core.py:1701`
 
 ---
 
@@ -1297,10 +1297,14 @@ async def sleep_async(...):
 frontend method
   → UTILITY(client_idx, call_id, method_name, args)
   → EngineCoreProc._handle_client_request(UTILITY)
-  → getattr(self, method_name)(*args)
-  → UtilityOutput(call_id, result)
-  → Future.set_result()
+  → getattr(self, method_name)(*converted_args)
+  → _invoke_utility_method()
+      → 普通结果：UtilityOutput(call_id, result)
+      → Future 结果：注册 callback，完成后再发 UtilityOutput
+  → frontend Future.set_result()
 ```
+
+位置：`vllm/vllm/v1/engine/core.py:1384` 到 `vllm/vllm/v1/engine/core.py:1449`
 
 ---
 
@@ -1361,6 +1365,15 @@ def collective_rpc(...):
 ```
 
 位置：`vllm/vllm/v1/engine/core.py:844` 到 `vllm/vllm/v1/engine/core.py:851`
+
+同步 `LLMEngine.apply_model()` 只是 `collective_rpc("apply_model", args=(func,))` 的封装：
+
+```python
+def apply_model(self, func: Callable[[nn.Module], _R]) -> list[_R]:
+    return self.collective_rpc("apply_model", args=(func,))
+```
+
+位置：`vllm/vllm/v1/engine/llm_engine.py:428` 到 `vllm/vllm/v1/engine/llm_engine.py:429`
 
 所以这类控制接口的最终执行者是 `model_executor`。
 
@@ -1713,14 +1726,18 @@ if envs.VLLM_ELASTIC_EP_DRAIN_REQUESTS:
 
 位置：`vllm/vllm/v1/engine/async_llm.py:1013` 到 `vllm/vllm/v1/engine/async_llm.py:1018`
 
-然后调用 client：
+然后进入 scaling 状态，调用 client，最后恢复 scaling 标记：
 
 ```python
-await self.engine_core.scale_elastic_ep(new_data_parallel_size)
-self.vllm_config.parallel_config.data_parallel_size = new_data_parallel_size
+set_scaling_elastic_ep(True)
+try:
+    await self.engine_core.scale_elastic_ep(new_data_parallel_size)
+    self.vllm_config.parallel_config.data_parallel_size = new_data_parallel_size
+finally:
+    set_scaling_elastic_ep(False)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:1037` 到 `vllm/vllm/v1/engine/async_llm.py:1040`
+位置：`vllm/vllm/v1/engine/async_llm.py:1037` 到 `vllm/vllm/v1/engine/async_llm.py:1042`
 
 `DPLBAsyncMPClient.scale_elastic_ep()` 负责真正扩缩 engine cores：
 

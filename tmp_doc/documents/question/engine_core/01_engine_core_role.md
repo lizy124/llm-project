@@ -427,7 +427,7 @@ EngineCoreClient 屏蔽了 EngineCore 是同进程还是后台进程的差异；
 
 `Scheduler` 是 EngineCore 内部的调度组件。
 
-EngineCore 初始化时会创建 Scheduler：
+EngineCore 初始化时会先创建 `model_executor`、初始化 KV cache，并在需要时调整 `scheduler_config` / `cache_config`，然后创建 Scheduler：
 
 ```python
 Scheduler = vllm_config.scheduler_config.get_scheduler_cls()
@@ -481,7 +481,9 @@ hash_block_size
 EngineCore
   → 创建 model_executor
   → profile / 初始化 KV cache
+  → 必要时处理 non_causal / attention-free KV cache 和 auto-fit max_model_len
   → 生成 scheduler_kv_cache_config
+  → 解析 scheduler_block_size / hash_block_size
   → 创建 Scheduler
 ```
 
@@ -914,7 +916,7 @@ outputs.engine_index = engine_index
 tracker = sockets[client_index].send_multipart(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1621` 到 `vllm/vllm/v1/engine/core.py:1645`
+位置：`vllm/vllm/v1/engine/core.py:1620` 到 `vllm/vllm/v1/engine/core.py:1644`
 
 所以后台进程模式下：
 

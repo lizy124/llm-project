@@ -7,6 +7,7 @@
 - `vllm/vllm/v1/engine/core_client.py`
 - `vllm/vllm/v1/engine/core.py`
 - `vllm/vllm/v1/engine/utils.py`
+- `vllm/vllm/v1/engine/input_processor.py`
 - `vllm/vllm/v1/executor/abstract.py`
 
 本问题关注：外层 Engine 初始化时如何创建 `InputProcessor`、`OutputProcessor`、`EngineCoreClient`，以及如何把配置和 executor 选择传给内部 EngineCore。
@@ -206,6 +207,7 @@ data parallel frontend 行为控制；
 `InputProcessor.__init__()` 会拆出很多配置：
 
 ```python
+self.vllm_config = vllm_config
 self.model_config = model_config = vllm_config.model_config
 self.cache_config = vllm_config.cache_config
 self.lora_config = vllm_config.lora_config
@@ -213,9 +215,20 @@ self.scheduler_config = vllm_config.scheduler_config
 self.speculative_config = vllm_config.speculative_config
 self.structured_outputs_config = vllm_config.structured_outputs_config
 self.observability_config = vllm_config.observability_config
+self.use_v2_model_runner = vllm_config.use_v2_model_runner
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:44` 到 `vllm/vllm/v1/engine/input_processor.py:51`
+位置：`vllm/vllm/v1/engine/input_processor.py:44` 到 `vllm/vllm/v1/engine/input_processor.py:52`
+
+它还会创建 / 保存：
+
+```text
+renderer；
+MultiModalBudget 推导出的 mm_encoder_cache_size / skip_prompt_length_check；
+InputPreprocessor。
+```
+
+位置：`vllm/vllm/v1/engine/input_processor.py:54` 到 `vllm/vllm/v1/engine/input_processor.py:73`
 
 它主要用来：
 
@@ -241,14 +254,18 @@ self.vllm_config = vllm_config
 它使用 `vllm_config` 完成内部初始化：
 
 ```text
-选择 Scheduler 类；
+加载 engine / scheduler 层插件；
 创建 model_executor；
 初始化 KV cache；
-设置 scheduler block size；
-配置 batch queue；
-判断 spec decode；
 创建 StructuredOutputManager；
+选择 Scheduler 类；
+设置 scheduler block size / hash_block_size；
+必要时禁用不适用的 chunked prefill / prefix caching；
+配置 KV connector handshake；
+配置 batch queue / step_fn；
+判断 spec decode / diffusion draft-token 检查；
 创建 request block hasher；
+冻结 startup heap 并启用 env cache。
 ```
 
 ### 3.4 Executor 使用的配置
@@ -516,6 +533,15 @@ else:
 多进程解耦模式下，这件事由 EngineCoreProc 处理。
 ```
 
+如果是 external launcher DP，`LLMEngine` 会在 `EngineCoreClient` 创建后复用已有 DP group 的 CPU group：
+
+```python
+if self.external_launcher_dp:
+    self.dp_group = get_dp_group().cpu_group
+```
+
+位置：`vllm/vllm/v1/engine/llm_engine.py:135` 到 `vllm/vllm/v1/engine/llm_engine.py:138`
+
 ### 5.5 创建 renderer
 
 ```python
@@ -594,6 +620,16 @@ self.model_executor = self.engine_core.engine_core.model_executor
 位置：`vllm/vllm/v1/engine/llm_engine.py:123` 到 `vllm/vllm/v1/engine/llm_engine.py:125`
 
 这主要是为了 v0 兼容。
+
+同一分支还会捕获 driver model 并注册 finalizer，用于在 engine 删除时清理 bytecode hooks 持有的模型引用：
+
+```python
+model = self._get_driver_model_for_cleanup()
+if model is not None:
+    self._finalizer = weakref.finalize(...)
+```
+
+位置：`vllm/vllm/v1/engine/llm_engine.py:127` 到 `vllm/vllm/v1/engine/llm_engine.py:133`
 
 它说明在 inproc 下结构是：
 
@@ -773,6 +809,19 @@ DPLBAsyncMPClient。
 ```
 
 ### 6.7 创建 logger_manager
+
+创建 logger 前，AsyncLLM 会先加载自定义 stat logger 插件；如果存在自定义 logger，即使入参 `log_stats=False`，也会打开 `self.log_stats`，但不启用默认 logger：
+
+```python
+custom_stat_loggers = list(stat_loggers or [])
+custom_stat_loggers.extend(load_stat_logger_plugin_factories())
+...
+self.log_stats = log_stats or has_custom_loggers
+```
+
+位置：`vllm/vllm/v1/engine/async_llm.py:120` 到 `vllm/vllm/v1/engine/async_llm.py:130`
+
+然后创建 `StatLoggerManager`：
 
 ```python
 self.logger_manager = StatLoggerManager(
@@ -1009,7 +1058,7 @@ context.Process(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:162` 到 `vllm/vllm/v1/engine/utils.py:170`
+位置：`vllm/vllm/v1/engine/utils.py:163` 到 `vllm/vllm/v1/engine/utils.py:171`
 
 其中 `common_kwargs` 包含：
 
@@ -1024,7 +1073,7 @@ common_kwargs = {
 }
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:139` 到 `vllm/vllm/v1/engine/utils.py:147`
+位置：`vllm/vllm/v1/engine/utils.py:141` 到 `vllm/vllm/v1/engine/utils.py:148`
 
 所以后台进程拿到的关键初始化参数也是：
 
@@ -1053,7 +1102,7 @@ class CoreEngineActorManager:
     """
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:370` 到 `vllm/vllm/v1/engine/utils.py:377`
+位置：`vllm/vllm/v1/engine/utils.py:347` 到 `vllm/vllm/v1/engine/utils.py:354`
 
 它会根据 DP / MoE 选择 actor class：
 
@@ -1065,7 +1114,7 @@ actor_class = (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:396` 到 `vllm/vllm/v1/engine/utils.py:400`
+位置：`vllm/vllm/v1/engine/utils.py:373` 到 `vllm/vllm/v1/engine/utils.py:378`
 
 Ray actor 初始化时也传入：
 
@@ -1077,7 +1126,7 @@ local_client；
 addresses；
 ```
 
-对应位置：`vllm/vllm/v1/engine/utils.py:486` 到 `vllm/vllm/v1/engine/utils.py:500`
+对应位置：`vllm/vllm/v1/engine/utils.py:472` 到 `vllm/vllm/v1/engine/utils.py:480`
 
 ---
 
@@ -1140,10 +1189,11 @@ kv_cache_config = self._initialize_kv_caches(vllm_config)
 ```text
 注册 KV cache specs；
 从 model_executor 获取 worker 侧 KV cache specs；
-profile 可用 GPU memory；
+如果发现 non_causal KV cache spec，禁用 chunked prefill / prefix caching；
+profile 可用 GPU memory，attention-free 模型则可用 KV memory 记为 0；
 生成 worker / scheduler KV cache config；
-必要时更新 max_model_len；
-更新 cache_config.num_gpu_blocks / block_size / kv_cache_size_tokens；
+必要时更新 max_model_len，并通过 collective_rpc("update_max_model_len") 同步给 workers；
+更新 cache_config.num_gpu_blocks / block_size / kv_cache_size_tokens / kv_cache_max_concurrency；
 调用 model_executor.initialize_from_config(kv_cache_configs) 初始化 worker KV cache 并 warmup model。
 ```
 
@@ -1151,8 +1201,13 @@ profile 可用 GPU memory；
 
 ```python
 kv_cache_specs = self.model_executor.get_kv_cache_specs()
-available_gpu_memory = self.model_executor.determine_available_memory()
+if has_kv_cache:
+    available_gpu_memory = self.model_executor.determine_available_memory()
+else:
+    available_gpu_memory = [0] * len(kv_cache_specs)
 kv_cache_configs = get_kv_cache_configs(...)
+if max_model_len_after != max_model_len_before:
+    self.collective_rpc("update_max_model_len", args=(max_model_len_after,))
 scheduler_kv_cache_config = generate_scheduler_kv_cache_config(kv_cache_configs)
 self.model_executor.initialize_from_config(kv_cache_configs)
 ```
@@ -1165,7 +1220,7 @@ self.model_executor.initialize_from_config(kv_cache_configs)
 self.structured_output_manager = StructuredOutputManager(vllm_config)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:132` 到 `vllm/vllm/v1/engine/core.py:134`
+位置：`vllm/vllm/v1/engine/core.py:134`
 
 ### 9.5 选择并创建 Scheduler
 
@@ -1176,6 +1231,16 @@ Scheduler = vllm_config.scheduler_config.get_scheduler_cls()
 ```
 
 位置：`vllm/vllm/v1/engine/core.py:136` 到 `vllm/vllm/v1/engine/core.py:137`
+
+如果模型没有 KV cache 且配置开启了 chunked prefill，会先禁用 chunked prefill：
+
+```python
+if len(kv_cache_config.kv_cache_groups) == 0:
+    if vllm_config.scheduler_config.enable_chunked_prefill:
+        vllm_config.scheduler_config.enable_chunked_prefill = False
+```
+
+位置：`vllm/vllm/v1/engine/core.py:139` 到 `vllm/vllm/v1/engine/core.py:144`
 
 然后解析 block size：
 
@@ -1235,7 +1300,7 @@ kv_connector.set_xfer_handshake_metadata_pp_aware(content)
 
 位置：`vllm/vllm/v1/engine/core.py:171` 到 `vllm/vllm/v1/engine/core.py:190`
 
-### 9.7 batch queue / step_fn
+### 9.7 batch queue
 
 ```python
 self.batch_queue_size = vllm_config.max_concurrent_batches
@@ -1245,16 +1310,6 @@ if self.batch_queue_size > 1:
 ```
 
 位置：`vllm/vllm/v1/engine/core.py:192` 到 `vllm/vllm/v1/engine/core.py:202`
-
-然后决定 step function：
-
-```python
-self.step_fn = (
-    self.step if self.batch_queue is None else self.step_with_batch_queue
-)
-```
-
-位置：`vllm/vllm/v1/engine/core.py:221` 到 `vllm/vllm/v1/engine/core.py:223`
 
 ### 9.8 request_block_hasher
 
@@ -1279,27 +1334,56 @@ Request.from_engine_core_request(request, self.request_block_hasher)
 
 时传入，用于 prefix cache / block hash。
 
-### 9.9 EngineCore 初始化总图
+### 9.9 step_fn / async_scheduling / aborts_queue
+
+request block hasher 初始化后，EngineCore 再决定 step function：
+
+```python
+self.step_fn = (
+    self.step if self.batch_queue is None else self.step_with_batch_queue
+)
+self.async_scheduling = vllm_config.scheduler_config.async_scheduling
+self.aborts_queue = queue.Queue[list[str]]()
+```
+
+位置：`vllm/vllm/v1/engine/core.py:221` 到 `vllm/vllm/v1/engine/core.py:226`
+
+最后还会冻结 startup heap、挂 GC debug callback，并启用 envs cache：
+
+```python
+freeze_gc_heap()
+maybe_attach_gc_debug_callback()
+enable_envs_cache()
+```
+
+位置：`vllm/vllm/v1/engine/core.py:230` 到 `vllm/vllm/v1/engine/core.py:237`
+
+### 9.10 EngineCore 初始化总图
 
 ```text
 EngineCore.__init__(vllm_config, executor_class, log_stats)
   → load plugins
   → self.model_executor = executor_class(vllm_config)
+  → 可选 EEP scale-up before KV init
   → _initialize_kv_caches(vllm_config)
       → get_kv_cache_specs()
+      → 处理 non_causal KV cache spec
       → determine_available_memory()
       → get_kv_cache_configs()
+      → 可选 collective_rpc("update_max_model_len")
       → generate_scheduler_kv_cache_config()
       → model_executor.initialize_from_config()
   → StructuredOutputManager(vllm_config)
   → Scheduler = scheduler_config.get_scheduler_cls()
+  → 无 KV cache 时可禁用 chunked prefill
   → resolve_kv_cache_block_sizes()
   → Scheduler(vllm_config, kv_cache_config, structured_output_manager, ...)
   → KV connector handshake
   → mm_receiver_cache
-  → batch_queue / step_fn
+  → batch_queue
   → request_block_hasher
-  → aborts_queue
+  → step_fn / async_scheduling / aborts_queue
+  → freeze_gc_heap() / enable_envs_cache()
 ```
 
 ---
@@ -1361,8 +1445,16 @@ vllm_config.cache_config.num_gpu_blocks = num_gpu_blocks
 
 ```python
 cache_config.block_size = response.block_size
-cache_config.kv_cache_size_tokens = ... response.kv_cache_size_tokens
-cache_config.kv_cache_max_concurrency = ... response.kv_cache_max_concurrency
+cache_config.kv_cache_size_tokens = (
+    getattr(cache_config, "kv_cache_size_tokens", None)
+    if getattr(cache_config, "kv_cache_size_tokens", None) is not None
+    else response.kv_cache_size_tokens
+)
+cache_config.kv_cache_max_concurrency = (
+    getattr(cache_config, "kv_cache_max_concurrency", None)
+    if getattr(cache_config, "kv_cache_max_concurrency", None) is not None
+    else response.kv_cache_max_concurrency
+)
 ```
 
 位置：`vllm/vllm/v1/engine/core_client.py:731` 到 `vllm/vllm/v1/engine/core_client.py:745`
@@ -1370,7 +1462,9 @@ cache_config.kv_cache_max_concurrency = ... response.kv_cache_max_concurrency
 所以多进程初始化不是单向配置下发，还包括：
 
 ```text
-EngineCore 初始化后，把 profiling / cache 结果回写给 frontend。
+EngineCore 初始化后，把 profiling / cache 结果回写给 frontend；
+DP 场景下 num_gpu_blocks 会累加所有 engine 的值；
+kv_cache_size_tokens / kv_cache_max_concurrency 保持 per-engine cache_config_info 语义，不跨 DP 累加。
 ```
 
 ---
@@ -1578,14 +1672,18 @@ EngineCore.__init__()
   → executor_class(vllm_config)
   → model_executor
   → model_executor.get_kv_cache_specs()
+  → 处理 non_causal / attention-free KV cache 情况
   → model_executor.determine_available_memory()
   → get_kv_cache_configs()
+  → 可选同步 auto-fit 后的 max_model_len 到 workers
   → generate_scheduler_kv_cache_config()
   → model_executor.initialize_from_config()
   → StructuredOutputManager
   → scheduler_config.get_scheduler_cls()
+  → resolve_kv_cache_block_sizes()
   → Scheduler(...)
-  → batch_queue / step_fn
+  → batch_queue / request_block_hasher / step_fn
+  → aborts_queue / env cache
 ```
 
 ---
@@ -1606,9 +1704,9 @@ Engine 初始化时如何配置 EngineCore？
 
 随后外层 Engine 会创建 EngineCoreClient。LLMEngine 通过 EngineCoreClient.make_client() 根据 multiprocess_mode 选择 InprocClient 或 SyncMPClient；AsyncLLM 通过 EngineCoreClient.make_async_mp_client() 选择 AsyncMPClient 或 DP 版本的 async client。
 
-如果是 InprocClient，会在当前进程直接创建 EngineCore；如果是 MPClient，会启动后台 EngineCoreProc，并通过 ZMQ 与它通信。后台 EngineCoreProc 初始化完成后会回传 EngineCoreReadyResponse，把 max_model_len、num_gpu_blocks、block_size 等实际初始化结果同步回前端 vllm_config。
+如果是 InprocClient，会在当前进程直接创建 EngineCore；如果是 MPClient，会启动后台 EngineCoreProc，并通过 ZMQ 与它通信。后台 EngineCoreProc 初始化完成后会回传 EngineCoreReadyResponse，把 max_model_len、num_gpu_blocks、block_size 等实际初始化结果同步回前端 vllm_config，其中 num_gpu_blocks 在 DP 场景下累加，KV cache capacity 字段保持 per-engine 语义。
 
-真正的 EngineCore 内部初始化发生在 EngineCore.__init__()。它会用 executor_class(vllm_config) 创建 model_executor，profile 并初始化 KV cache，再根据 scheduler_config.get_scheduler_cls() 创建 Scheduler。Scheduler 需要 KV cache 配置，所以必须在 KV cache 初始化之后创建。
+真正的 EngineCore 内部初始化发生在 EngineCore.__init__()。它会用 executor_class(vllm_config) 创建 model_executor，profile 并初始化 KV cache；KV cache 初始化可能禁用不适用的 chunked prefill / prefix caching，也可能把 auto-fit 后的 max_model_len 同步给 workers。之后 EngineCore 再根据 scheduler_config.get_scheduler_cls() 创建 Scheduler。Scheduler 需要 KV cache 配置，所以必须在 KV cache 初始化之后创建。
 ```
 
 最小心智模型：

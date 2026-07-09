@@ -220,7 +220,7 @@ def _should_throttle_prefills(self) -> bool:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1914` 到 `vllm/vllm/v1/engine/core.py:1921`
+位置：`vllm/vllm/v1/engine/core.py:1912` 到 `vllm/vllm/v1/engine/core.py:1919`
 
 这用于 DP prefill balancing：
 
@@ -745,8 +745,11 @@ step_with_batch_queue()
   ├─ 如果 batch_queue 未满，并且 Scheduler 有请求：
   │    ├─ scheduler.schedule()
   │    ├─ model_executor.execute_model(..., non_block=True)
+  │    ├─ EC consumer 路径用 total_num_scheduled_tokens 判断 model_executed
+  │    ├─ pooling / 无 token 执行路径直接等待 execute_model future
   │    ├─ 如可立即采样，则 sample_tokens(non_block=True)
-  │    ├─ 把 future + scheduler_output 放进 batch_queue
+  │    ├─ structured output 待前序 token 时可 deferred sampling
+  │    ├─ 把 future + scheduler_output + exec_future 放进 batch_queue
   │    └─ 如果队列还没满且还有可调度请求，可以先 return None
   │
   ├─ 否则 / 或需要回收结果：
@@ -947,7 +950,7 @@ return (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1914` 到 `vllm/vllm/v1/engine/core.py:1921`
+位置：`vllm/vllm/v1/engine/core.py:1912` 到 `vllm/vllm/v1/engine/core.py:1919`
 
 这会影响：
 
@@ -961,7 +964,13 @@ self.scheduler.schedule(self._should_throttle_prefills())
 本轮延后 prefill。
 ```
 
-### 16.2 没有真实执行时可能执行 dummy batch
+### 16.2 DP busy loop 还会发布 request counts / 推进 elastic EP scaling
+
+DP busy loop 会在 GPU step 前后调用 `_maybe_publish_request_counts()`，把本地 running / waiting 计数通过 `EngineCoreOutputs(scheduler_stats=stats)` 发出去；如果正在 elastic EP scaling，还会推进 `eep_scaling_state.progress()`，移除中的 worker 完成后直接退出。
+
+位置：`vllm/vllm/v1/engine/core.py:1928` 到 `vllm/vllm/v1/engine/core.py:1940`
+
+### 16.3 没有真实执行时可能执行 dummy batch
 
 DP busy loop 中，如果本轮没有执行模型，但全局仍处于 running wave，可能执行 dummy batch：
 
@@ -976,7 +985,7 @@ if not executed:
         self.execute_dummy_batch()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1944` 到 `vllm/vllm/v1/engine/core.py:1953`
+位置：`vllm/vllm/v1/engine/core.py:1942` 到 `vllm/vllm/v1/engine/core.py:1956`
 
 作用是：
 
@@ -985,7 +994,7 @@ if not executed:
 也可能需要执行 dummy pass 来保持集体通信 / wave 同步。
 ```
 
-### 16.3 全局 unfinished 判断
+### 16.4 全局 unfinished 判断
 
 DP EngineCore 还会周期性同步全局是否还有未完成请求：
 
@@ -995,7 +1004,7 @@ self.engines_running = self._has_global_unfinished_reqs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1955` 到 `vllm/vllm/v1/engine/core.py:1958`
+位置：`vllm/vllm/v1/engine/core.py:1953` 到 `vllm/vllm/v1/engine/core.py:1956`
 
 `_has_global_unfinished_reqs()` 内部使用 DP group 同步：
 
@@ -1007,9 +1016,9 @@ has_unfinished, pause_consensus = ParallelConfig.sync_dp_state(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1988` 到 `vllm/vllm/v1/engine/core.py:1992`
+位置：`vllm/vllm/v1/engine/core.py:1986` 到 `vllm/vllm/v1/engine/core.py:1990`
 
-所以 DP 模式下，一轮 step 不只是本地 Scheduler / Worker 闭环，还要参与全局 DP wave 状态同步。
+所以 DP 模式下，一轮 step 不只是本地 Scheduler / Worker 闭环，还要参与 request count 发布、elastic EP scaling 状态推进、dummy batch 和全局 DP wave 状态同步。
 
 ---
 
@@ -1268,7 +1277,7 @@ batch queue 模式
 if scheduler.has_requests() and batch_queue not full:
     scheduler_output = scheduler.schedule(...)
     exec_future = model_executor.execute_model(...)
-    sample future if needed
+    choose exec_future / sample_tokens future / deferred sampling
     batch_queue.appendleft((future, scheduler_output, exec_future))
     if queue still not full and more work can be scheduled:
         return None, model_executed

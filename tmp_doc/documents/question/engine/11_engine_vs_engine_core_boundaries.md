@@ -437,11 +437,13 @@ return processed_outputs.request_outputs
 
 位置：`vllm/vllm/v1/engine/llm_engine.py:334`
 
-异步路径中，`OutputProcessor` 把输出推入 queue，`generate()` 从 queue 里取：
+异步路径中，`OutputProcessor` 把输出推入 queue，`generate()` 从 queue 里取；generation 路径会过滤 streaming input 的 `STREAM_FINISHED` sentinel：
 
 ```python
 out = q.get_nowait() or await q.get()
-yield out
+...
+if out is not STREAM_FINISHED:
+    yield out
 ```
 
 位置：`vllm/vllm/v1/engine/async_llm.py:573` 到 `vllm/vllm/v1/engine/async_llm.py:586`
@@ -461,8 +463,10 @@ model_executor；
 KV cache；
 StructuredOutputManager；
 Scheduler；
+mm_receiver_cache；
 batch_queue / step_fn；
 request_block_hasher；
+async_scheduling 标志；
 aborts_queue。
 ```
 
@@ -780,16 +784,21 @@ EngineCoreRequest
 
 ```text
 request_id；
-prompt_token_ids / prompt_embeds；
+prompt_token_ids / prompt_embeds / prompt_is_token_ids；
 mm_features；
 sampling_params / pooling_params；
 arrival_time；
 lora_request；
 cache_salt；
-priority；
+data_parallel_rank；
 trace_headers；
 client_index；
 current_wave；
+priority；
+resumable；
+external_req_id；
+reasoning_ended / reasoning_parser_kwargs；
+abort_immediately。
 ```
 
 ### 8.3 Request
@@ -806,14 +815,19 @@ Request.from_engine_core_request()
 
 ```text
 status；
+stop_reason；
+kv_transfer_params；
 num_computed_tokens；
 output_token_ids；
 all_token_ids；
 spec_token_ids；
+num_output_placeholders / async_tokens_to_discard；
+next_decode_eligible_step / last_sched_seq；
 block_hashes；
 prefill_stats；
 num_preemptions；
 streaming_queue；
+abort_immediately。
 ```
 
 所以请求边界是：
@@ -837,20 +851,28 @@ Scheduler：Request
 ```text
 request_id；
 new_token_ids；
-new_logprobs；
+new_logprobs / new_prompt_logprobs_tensors；
 pooling_output；
 finish_reason；
 stop_reason；
+events；
+kv_transfer_params；
+trace_headers；
+prefill_stats；
+routed_experts；
+num_nans_in_logits。
 ```
 
 `EngineCoreOutputs` 是一批输出和 stats：
 
 ```text
+engine_index
 outputs: list[EngineCoreOutput]
 scheduler_stats
 timestamp
 utility_output
 finished_requests
+wave_complete / start_wave
 ```
 
 它们由 Scheduler.update_from_output() 生成，并经 EngineCoreClient 返回给外层 Engine。

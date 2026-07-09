@@ -419,12 +419,13 @@ returning the RequestOutput back to the caller.
 
 位置：`vllm/vllm/v1/engine/async_llm.py:549` 到 `vllm/vllm/v1/engine/async_llm.py:554`
 
-`generate()` 本身从 `RequestOutputCollector` 取输出：
+`generate()` 本身从 `RequestOutputCollector` 取输出；generation 路径会过滤 streaming input 的 `STREAM_FINISHED` sentinel：
 
 ```python
 out = q.get_nowait() or await q.get()
 ...
-yield out
+if out is not STREAM_FINISHED:
+    yield out
 ```
 
 位置：`vllm/vllm/v1/engine/async_llm.py:573` 到 `vllm/vllm/v1/engine/async_llm.py:586`
@@ -485,6 +486,7 @@ EngineCoreProc
 `InputProcessor.__init__()` 保存各种配置：
 
 ```python
+self.vllm_config = vllm_config
 self.model_config = model_config = vllm_config.model_config
 self.cache_config = vllm_config.cache_config
 self.lora_config = vllm_config.lora_config
@@ -492,17 +494,23 @@ self.scheduler_config = vllm_config.scheduler_config
 self.speculative_config = vllm_config.speculative_config
 self.structured_outputs_config = vllm_config.structured_outputs_config
 self.observability_config = vllm_config.observability_config
+self.use_v2_model_runner = vllm_config.use_v2_model_runner
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:44` 到 `vllm/vllm/v1/engine/input_processor.py:51`
+位置：`vllm/vllm/v1/engine/input_processor.py:44` 到 `vllm/vllm/v1/engine/input_processor.py:52`
 
-它还创建 `InputPreprocessor`：
+它还会根据多模态能力初始化 `mm_encoder_cache_size` / `skip_prompt_length_check`，并创建 `InputPreprocessor`：
 
 ```python
+if self.supports_mm_inputs:
+    mm_budget = MultiModalBudget(vllm_config, mm_registry)
+    self.mm_encoder_cache_size = mm_budget.encoder_cache_size
+    self.skip_prompt_length_check = mm_budget.processor.info.skip_prompt_length_check
+...
 self.input_preprocessor = InputPreprocessor(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:69` 到 `vllm/vllm/v1/engine/input_processor.py:73`
+位置：`vllm/vllm/v1/engine/input_processor.py:58` 到 `vllm/vllm/v1/engine/input_processor.py:73`
 
 ### 5.2 process_inputs()
 
@@ -891,8 +899,10 @@ kv_cache_config = self._initialize_kv_caches(vllm_config)
 
 ```text
 获取 KV cache specs；
-profile 可用 GPU memory；
+如果发现 non_causal KV cache spec，禁用 chunked prefill / prefix caching；
+profile 可用 GPU memory，attention-free 模型则可用 KV memory 记为 0；
 生成 worker KV cache config；
+必要时把 auto-fit 后的 max_model_len 同步给 workers；
 生成 scheduler KV cache config；
 更新 cache_config；
 调用 model_executor.initialize_from_config() 初始化 worker 侧 KV cache 并 warmup model。
@@ -1107,10 +1117,12 @@ profile；
 reset_mm_cache；
 reset_prefix_cache；
 reset_encoder_cache；
+pause_generation / resume_generation；
 sleep；
 wake_up；
 add_lora / remove_lora / list_loras / pin_lora；
-collective_rpc。
+collective_rpc / apply_model；
+scale_elastic_ep。
 ```
 
 这些通常通过 `EngineCoreClient` 转发给 `EngineCore`，再由 EngineCore 操作：
@@ -1386,7 +1398,7 @@ AsyncLLM.output_handler
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()
   → RequestOutputCollector.put()
-  → generate() yield
+  → generate() 过滤 STREAM_FINISHED sentinel 后 yield
 ```
 
 ### 17.4 EngineCore 内部主链路
