@@ -84,10 +84,16 @@ total_num_scheduled_tokens
 scheduled_spec_decode_tokens
 scheduled_encoder_inputs
 num_common_prefix_blocks
-kv_connector_metadata
-ec_connector_metadata
 finished_req_ids
 free_encoder_mm_hashes
+preempted_req_ids
+has_structured_output_requests
+pending_structured_output_tokens
+num_invalid_spec_tokens
+kv_connector_metadata
+ec_connector_metadata
+new_block_ids_to_zero
+num_spec_tokens_to_schedule
 ```
 
 EngineCore 自己不解释这些字段的细节。
@@ -204,7 +210,58 @@ EngineCore
 model_executor.execute_model(scheduler_output)
 ```
 
-不同的是 `collective_rpc()` 的实现会把请求分发到多个 Worker。
+不同的是底层分发方式不同。
+
+多进程 Executor 会把 `execute_model` 广播给 Worker，并只从输出 rank 或 KV output aggregator 收集结果：
+
+```python
+return self.collective_rpc(
+    "execute_model",
+    args=(scheduler_output,),
+    unique_reply_rank=self.output_rank,
+    non_block=non_block,
+    timeout=envs.VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS,
+    kv_output_aggregator=self.kv_output_aggregator,
+)
+```
+
+位置：`vllm/vllm/v1/executor/multiproc_executor.py:307` 到 `vllm/vllm/v1/executor/multiproc_executor.py:317`
+
+Ray Executor 则不是简单走抽象类里的 `collective_rpc("execute_model")`：
+
+```python
+if not self.uses_sampler or not scheduler_output.total_num_scheduled_tokens:
+    return self._execute_dag(scheduler_output, None, non_block)
+
+self.scheduler_output = scheduler_output
+return COMPLETED_NONE_FUTURE if non_block else None
+```
+
+位置：`vllm/vllm/v1/executor/ray_executor.py:399` 到 `vllm/vllm/v1/executor/ray_executor.py:416`
+
+对于需要 sampling 的 generation 路径，Ray Executor 会先暂存 `scheduler_output`，等 EngineCore 随后调用 `sample_tokens(grammar_output)` 时再执行 compiled DAG：
+
+```python
+scheduler_output = self.scheduler_output
+...
+self.scheduler_output = None
+return self._execute_dag(scheduler_output, grammar_output, non_block)
+```
+
+位置：`vllm/vllm/v1/executor/ray_executor.py:418` 到 `vllm/vllm/v1/executor/ray_executor.py:441`
+
+Ray compiled DAG 内部会直接调用 Worker 的 `model_runner.execute_model()`，如果返回 `None`，就在 DAG 内继续调用 `sample_tokens(grammar_output)`：
+
+```python
+output = self.worker.model_runner.execute_model(
+    scheduler_output, intermediate_tensors
+)
+...
+elif output is None:
+    output = self.worker.model_runner.sample_tokens(grammar_output)
+```
+
+位置：`vllm/vllm/v1/executor/ray_utils.py:123` 到 `vllm/vllm/v1/executor/ray_utils.py:175`
 
 对 EngineCore 来说，这些差异被 `model_executor` 屏蔽。
 
@@ -222,7 +279,7 @@ model_executor.execute_model(scheduler_output)
 多 GPU；
 tensor parallel；
 pipeline parallel；
-Ray；
+Ray compiled DAG；
 多进程 Worker。
 ```
 
@@ -241,7 +298,7 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py` 中的 `sample_tokens()` / `execute_model()`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:807` 到 `vllm/vllm/v1/worker/gpu_worker.py:810`
 
 它会先判断本轮是否有真实 forward：
 
