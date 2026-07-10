@@ -806,6 +806,8 @@ def has_pending_push_work(self) -> bool:
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py:333` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py:338`
 
+注意当前实现用 `_finished_request_blocks` 覆盖 P 侧已结束但 WRITE 未完成的 blocks，用 `_push_pending_registrations` 覆盖 D 侧尚未下发给 worker 的 registrations；`_newly_finished_push_blocks` 会在 `build_connector_meta()` 中被打包后清空，不单独作为返回条件。
+
 Scheduler 的 `has_requests()` 会检查这个状态：
 
 ```python
@@ -993,7 +995,7 @@ so that offloading starts AFTER transfers related to token sampling,
 thereby avoiding delays to token generation.
 ```
 
-也就是说，Offloading store 可能被延迟到下一步开始提交。
+也就是说，Offloading store 可能被延迟到下一步开始提交。当前实现会在 worker 侧 `handle_preemptions()` 或 `start_kv_transfers()` 开头把 `_unsubmitted_store_jobs` 提交给底层 offloading worker；如果本轮 metadata 带有 `jobs_to_flush`，`handle_preemptions()` 还会先 `worker.wait(jobs_to_flush)`，确保相关 block 被复用前 store 已经完成。
 
 ### 14.3 Offloading get_finished 不用 finished_sending 表示 store 完成
 
@@ -1050,20 +1052,31 @@ for job_id, count in meta.completed_jobs.items():
 请求结束时：
 
 ```python
+req_status = self._req_status.get(request.request_id)
+if req_status is None:
+    self.manager.on_request_finished(_create_req_context(request))
+    return False, None
+
 if not req_status.transfer_jobs:
+    self.manager.on_request_finished(req_status.req_context)
     del self._req_status[request.request_id]
     return False, None
-...
+
+for job_id in req_status.transfer_jobs:
+    ...
+    self._block_id_to_pending_jobs.setdefault(bid, set()).add(job_id)
 return False, None
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1133` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1167`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1162` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1201`
 
 注意它返回 False：
 
 ```text
 Offloading connector 请求结束时通常不通过 delay_free_blocks 保留整个 request；
-它用 pending jobs + block_id_to_pending_jobs + jobs_to_flush 保护 block 复用安全。
+未跟踪或无 in-flight jobs 的请求会立刻 manager.on_request_finished()；
+仍有 in-flight jobs 的请求会把相关 block 记入 block_id_to_pending_jobs，
+等 update_connector_output() 看到最后一个 completed job 后再触发 manager.on_request_finished()。
 ```
 
 这和 NIXL push 的 `finished_sending → _free_blocks()` 模式不同。
