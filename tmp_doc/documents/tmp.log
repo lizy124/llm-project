@@ -82,12 +82,12 @@
 - [x] 3. engine_core：README.md、01_engine_core_role.md、02_request_entry.md、03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md、06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md、engine_core_overview.md 已重新审阅并完成小改。
 - [x] 4. scheduler：README.md、01_request_states.md、02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md、05_prefix_and_external_kv_hits.md、06_kv_block_allocation_and_preemption.md、07_auxiliary_scheduling_features.md、08_update_after_worker_output.md、token_states.md、spec_decode_token_states.md、vllm_scheduler.md 已重新审阅并完成小改。
 - [x] 5. executor_worker_model_runner：README.md、01_executor_role.md、02_worker_role.md、03_model_runner_role.md、04_execute_model_flow.md、05_input_batch_and_state_update.md、06_prepare_inputs_and_attention_metadata.md、07_model_forward_and_logits.md、08_sampling_and_model_runner_output.md、09_worker_kv_cache_interaction.md、10_executor_worker_lifecycle.md、executor_worker_model_runner_overview.md 已重新审阅并完成小改。
-- [ ] 6. kv_cache_transfer：README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md 已重新审阅并完成小改；05_external_kv_load_flow.md 正在审阅。
+- [ ] 6. kv_cache_transfer：README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md、05_external_kv_load_flow.md 已重新审阅并完成小改；06_external_kv_save_flow.md 正在审阅。
 - [ ] 7. attention：待重新审阅。
 - [ ] 8. parallelism：待重新审阅。
 - [ ] 9. sampling_and_output：待重新审阅。
 - [ ] 10. spec_decode：待重新审阅。
 
-当前文件：llm-project\tmp_doc\documents\question\kv_cache_transfer\05_external_kv_load_flow.md
-下一个文件：llm-project\tmp_doc\documents\question\kv_cache_transfer\06_external_kv_save_flow.md
+当前文件：llm-project\tmp_doc\documents\question\kv_cache_transfer\06_external_kv_save_flow.md
+下一个文件：llm-project\tmp_doc\documents\question\kv_cache_transfer\07_connector_failure_and_recovery.md
 

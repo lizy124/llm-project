@@ -150,6 +150,7 @@ Scheduler 侧 connector 不真正搬 KV 数据。它只做：
 与 load 直接相关的是：
 
 ```text
+handle_preemptions(kv_connector_metadata)
 bind_connector_metadata()
 start_load_kv(forward_context)
 get_finished(finished_req_ids)
@@ -438,8 +439,10 @@ num_new_computed_tokens=num_new_local_computed_tokens
 new_computed_blocks=new_computed_blocks
 num_external_computed_tokens=num_external_computed_tokens
 delay_cache_blocks=True
-reserved_blocks=_inflight_prefill_reserved_blocks()
 num_lookahead_tokens=0 if load_kv_async and use_eagle else normal lookahead
+full_sequence_must_fit=scheduler_reserve_full_isl
+reserved_blocks=_inflight_prefill_reserved_blocks()
+has_scheduled_reqs=bool(self.running)
 ```
 
 `allocate_slots()` 内部会：
@@ -791,6 +794,8 @@ KVConnectorModelRunnerMixin._get_kv_connector_output(...)
 8. get_block_ids_with_load_errors()；
 9. 收集 stats / events / worker_meta；
 10. clear_connector_metadata()。
+
+新版 `ActiveKVConnector.pre_forward()` 在 bind metadata 前还会调用 `handle_preemptions(kv_connector_metadata)`，用于让需要处理异步 save / evict 的 connector 在 block 被覆盖前完成预处理。
 ```
 
 位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:83` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:112`
