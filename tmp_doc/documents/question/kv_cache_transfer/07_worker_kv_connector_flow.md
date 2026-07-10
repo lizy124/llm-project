@@ -110,7 +110,8 @@ EngineCore.step()
   → handle_preemptions(kv_connector_metadata)
   → _update_states() / _prepare_inputs() / _build_attention_metadata()
   → set_forward_context(attn_metadata, ...)
-  → maybe_get_kv_connector_output(scheduler_output)
+  → legacy: maybe_get_kv_connector_output(scheduler_output)
+    或新版: kv_connector.pre_forward(scheduler_output)
       → bind_connector_metadata(kv_connector_metadata)
       → start_load_kv(forward_context)
       → model forward
@@ -304,6 +305,8 @@ cross-layer uniform 布局：
 connector 已经知道本地 KV cache tensor 的地址、形状和 layer 映射。
 ```
 
+注意新版 `v1/worker/gpu/kv_connector.py:47` 的 `ActiveKVConnector` 当前只注册 `register_kv_caches(kv_caches_dict)`，源码里仍有 TODO 标注 cross-layer KV cache 支持待补；legacy model runner 路径才包含上面这段 `register_cross_layers_kv_cache(...)` 分支。
+
 ---
 
 ## 6. KVConnectorMetadata 在 Worker 侧如何进入 execute_model
@@ -318,7 +321,7 @@ kv_connector_metadata: KVConnectorMetadata | None = None
 
 Executor / Worker 只是把这个 `SchedulerOutput` 透传给 `GPUModelRunner.execute_model()`。
 
-在 `GPUModelRunner.execute_model()` 开头，如果存在 KV transfer group，会先取出 metadata：
+在 legacy `GPUModelRunner.execute_model()` 开头，如果存在 KV transfer group，会先取出 metadata：
 
 ```python
 if has_kv_transfer_group():
@@ -327,9 +330,9 @@ if has_kv_transfer_group():
     get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4075`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4078`
 
-这一步还没有真正 load KV，而是先处理 preemption / evicted blocks。
+这一步还没有真正 load KV，而是先处理 preemption / evicted blocks。新版 GPU runner 则把同样的动作放在 `ActiveKVConnector.pre_forward()` 内部，位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:61` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:75`。
 
 为什么要在 forward 前先 `handle_preemptions()`？
 
@@ -464,6 +467,8 @@ if not defer_finalize:
 2. forward 中：让 attention layer hook 能找到 metadata；
 3. forward 后：等待 save、收集 output、清理 metadata。
 ```
+
+新版 GPU model runner 不再用这个 context manager 包住 forward，而是通过 `v1/worker/gpu/kv_connector.py` 的 `ActiveKVConnector` 拆成显式的 `pre_forward()` / `post_forward()`：`pre_forward()` 调 `handle_preemptions()`、`bind_connector_metadata()` 和 `start_load_kv()`；`post_forward()` 调 `wait_for_save()`、`get_finished()`、`get_block_ids_with_load_errors()`、收集 stats/events/worker_meta 并 `clear_connector_metadata()`。no-forward 路径则直接调用 `ActiveKVConnector.no_forward()`。
 
 ---
 

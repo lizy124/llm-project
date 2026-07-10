@@ -389,19 +389,19 @@ ForwardContext 让模型内部 attention layer 不用显式传参，也能拿到
 
 ```text
 head_size
-num_heads
-num_kv_heads
 dtype
 kv_cache_dtype
 block_size
-is_attention_free
-is_hybrid
-is_mla
+use_mla
 use_sparse
 has_sink
 use_mm_prefix
-attention_type
+use_per_head_quant_scales
+attn_type
+use_non_causal
+use_batch_invariant
 use_kv_connector
+num_heads
 ```
 
 也就是说 backend 选择不是只看平台，而是同时看模型结构、KV cache 配置和运行功能。

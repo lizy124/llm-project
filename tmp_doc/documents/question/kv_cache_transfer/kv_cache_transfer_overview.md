@@ -155,7 +155,7 @@ KVCacheManager 负责“把调度语义翻译成 KV block 账本”。
 
 `BlockPool` 是 Scheduler 侧的 KV block 元数据资源池。
 
-源码位置：`code/vllm/vllm/v1/core/block_pool.py:130`
+源码位置：`code/vllm/vllm/v1/core/block_pool.py:144`
 
 它管理的是：
 
@@ -435,6 +435,8 @@ GPUWorker.initialize_from_config(kv_cache_config)
   → register_kv_caches(...) / register_cross_layers_kv_cache(...)
 ```
 
+注意新版 `v1/worker/gpu/kv_connector.py` 的 `ActiveKVConnector` 当前只调用 `register_kv_caches(kv_caches_dict)`，cross-layer KV cache 支持在该路径仍是 TODO；legacy GPU model runner 路径包含 `register_cross_layers_kv_cache(...)` 分支。
+
 关键边界：
 
 ```text
@@ -680,17 +682,24 @@ _update_states()
   → logits / pooling / sample_tokens
 ```
 
-KV connector 的核心插入点是 forward context：
+KV connector 的核心插入点是 forward context 及其前后钩子：
 
 ```text
-set_forward_context(attn_metadata, ...)
-  + maybe_get_kv_connector_output(scheduler_output)
-  → _model_forward(...)
+legacy:
+  set_forward_context(attn_metadata, ...)
+    + maybe_get_kv_connector_output(scheduler_output)
+    → _model_forward(...)
+
+新版:
+  set_forward_context(attn_metadata, ...)
+    → kv_connector.pre_forward(scheduler_output)
+    → model forward
+    → sample_tokens() / pool() 中 kv_connector.post_forward(finished_req_ids)
 ```
 
-### 5.2 maybe_get_kv_connector_output 的时序
+### 5.2 Worker connector 生命周期
 
-进入 context 时：
+legacy `maybe_get_kv_connector_output()` 进入 context 时：
 
 ```text
 KVConnectorOutput()
@@ -699,7 +708,7 @@ KVConnectorOutput()
   → start_load_kv(get_forward_context())
 ```
 
-退出 context 时：
+legacy context 退出时，或新版 `ActiveKVConnector.post_forward()` 中：
 
 ```text
 wait_for_save()
@@ -711,7 +720,9 @@ wait_for_save()
   → clear_connector_metadata()
 ```
 
-这说明 Worker connector 生命周期包住一次模型执行：
+新版 `ActiveKVConnector.pre_forward()` 则把 `handle_preemptions()`、`bind_connector_metadata()` 和 `start_load_kv()` 合并在 forward 前执行。
+
+这说明 Worker connector 生命周期围绕一次模型执行：
 
 ```text
 forward 前启动 load；
@@ -1724,9 +1735,10 @@ SchedulerOutput.kv_connector_metadata
   → GPUModelRunner.execute_model()
   → handle_preemptions()
   → set_forward_context()
-  → maybe_get_kv_connector_output()
+  → legacy maybe_get_kv_connector_output() 或新版 kv_connector.pre_forward()
   → start_load_kv()
   → attention layer wait_for_layer_load() / save_kv_layer()
+  → legacy context exit 或新版 kv_connector.post_forward()
   → get_finished() / invalid_block_ids
   → ModelRunnerOutput.kv_connector_output
 ```

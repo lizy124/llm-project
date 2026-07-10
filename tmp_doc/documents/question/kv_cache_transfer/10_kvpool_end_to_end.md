@@ -71,7 +71,7 @@ new request
   → SchedulerOutput.kv_connector_metadata
   → Executor / Worker / GPUModelRunner.execute_model()
   → Worker connector bind metadata
-  → start_load_kv()
+  → legacy context 或新版 ActiveKVConnector.pre_forward() 调 start_load_kv()
   → attention/forward 使用本地 paged KV cache
   → save_kv_layer() 可异步保存新 KV
   → wait_for_save()
@@ -254,7 +254,7 @@ KVCacheManager.get_computed_blocks(request)
   → num_new_local_computed_tokens
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:709`
+位置：`vllm/v1/core/sched/scheduler.py:710`
 
 这一步回答：
 
@@ -272,7 +272,7 @@ ext_tokens, load_kv_async = self.connector.get_num_new_matched_tokens(
 )
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:723`
+位置：`vllm/v1/core/sched/scheduler.py:723` 到 `vllm/v1/core/sched/scheduler.py:728`
 
 这个接口回答两个问题：
 
@@ -342,7 +342,7 @@ num_new_tokens = request.num_tokens - num_computed_tokens
 num_new_tokens = min(num_new_tokens, token_budget)
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:791`
+位置：`vllm/v1/core/sched/scheduler.py:792` 到 `vllm/v1/core/sched/scheduler.py:812`
 
 因此：
 
@@ -369,7 +369,7 @@ request.num_computed_tokens = num_computed_tokens
 request.status = RUNNING
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:956`
+位置：`vllm/v1/core/sched/scheduler.py:954` 到 `vllm/v1/core/sched/scheduler.py:960`
 
 ---
 
@@ -386,11 +386,14 @@ new_blocks = self.kv_cache_manager.allocate_slots(
     num_lookahead_tokens=effective_lookahead_tokens,
     num_external_computed_tokens=num_external_computed_tokens,
     delay_cache_blocks=load_kv_async,
+    full_sequence_must_fit=self.scheduler_reserve_full_isl,
+    reserved_blocks=reserved_blocks,
+    has_scheduled_reqs=bool(self.running),
     ...
 )
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:873`
+位置：`vllm/v1/core/sched/scheduler.py:874` 到 `vllm/v1/core/sched/scheduler.py:886`
 
 这里有几个关键参数：
 
@@ -423,7 +426,7 @@ self.connector.update_state_after_alloc(
 )
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:900`
+位置：`vllm/v1/core/sched/scheduler.py:901` 到 `vllm/v1/core/sched/scheduler.py:906`
 
 这一步的含义是：
 
@@ -476,7 +479,7 @@ self.running.append(request)
 request.status = RequestStatus.RUNNING
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:939`
+位置：`vllm/v1/core/sched/scheduler.py:940` 到 `vllm/v1/core/sched/scheduler.py:960`
 
 Worker 在本轮 forward 前触发 connector load，attention 层使用已经 load 好的 KV。
 
@@ -492,7 +495,7 @@ step_skipped_waiting.prepend_request(request)
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:781` 和 `vllm/v1/core/sched/scheduler.py:917`
+位置：`vllm/v1/core/sched/scheduler.py:782` 到 `vllm/v1/core/sched/scheduler.py:785`，以及 `vllm/v1/core/sched/scheduler.py:918` 到 `vllm/v1/core/sched/scheduler.py:938`
 
 这表示：
 
@@ -643,7 +646,7 @@ set_forward_context(None)
 
 ## 13. forward 前后 KVPool 如何包进执行上下文
 
-真正 forward 路径中，KV connector 被包在 forward context 里：
+legacy GPU model runner 路径中，KV connector 被包在 forward context 里：
 
 ```python
 with (
@@ -658,11 +661,13 @@ with (
 
 位置：`vllm/v1/worker/gpu_model_runner.py:4302`
 
+新版 GPU model runner 路径中，`v1/worker/gpu/model_runner.py` 在设置 forward context 后调用 `self.kv_connector.pre_forward(scheduler_output)`，在 `sample_tokens()` / `pool()` 阶段调用 `self.kv_connector.post_forward(finished_req_ids)` 收集 `KVConnectorOutput`。
+
 这说明：
 
 ```text
 KVPool load / save 不是 forward 之后单独补的一步，
-而是嵌入 forward 上下文，让 attention 层可以按 layer 与 KV transfer 协同。
+而是嵌入 forward 上下文或其前后钩子，让 attention 层可以按 layer 与 KV transfer 协同。
 ```
 
 ---

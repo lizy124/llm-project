@@ -112,7 +112,7 @@ request A 的 bookkeeping 先清掉；
 
 ### 4.1 多个 batch 可能同时 in-flight
 
-`max_concurrent_batches` 定义在：`code/vllm/vllm/config/vllm.py:501`
+`max_concurrent_batches` 定义在：`code/vllm/vllm/config/vllm.py:494`
 
 ```python
 @property
@@ -129,7 +129,7 @@ def max_concurrent_batches(self) -> int:
     return pp_size
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:501` 到 `code/vllm/vllm/config/vllm.py:512`
+位置：`code/vllm/vllm/config/vllm.py:494` 到 `code/vllm/vllm/config/vllm.py:505`
 
 含义：
 
@@ -517,7 +517,7 @@ def _drain_deferred_frees(self):
 
 ## 10. BlockPool.free_blocks 真正做什么
 
-入口：`code/vllm/vllm/v1/core/block_pool.py:419`
+入口：`code/vllm/vllm/v1/core/block_pool.py:614`
 
 ```python
 def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
@@ -541,7 +541,7 @@ self.free_block_queue.prepend_n(blocks_without_hash)
 self.free_block_queue.append_n(blocks_with_hash)
 ```
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:427` 到 `code/vllm/vllm/v1/core/block_pool.py:440`
+位置：`code/vllm/vllm/v1/core/block_pool.py:622` 到 `code/vllm/vllm/v1/core/block_pool.py:635`
 
 这说明：
 
@@ -894,6 +894,8 @@ self.deferred_frees.append((self.sched_step_seq, blocks))
 把 fence 设为 M，意味着等到当前已发出的更晚 step 也 processed 后再归还；
 这样不会早于 request.last_sched_seq，安全但可能稍微晚一点释放。
 ```
+
+因此时间线示例里的 `deferred_frees.append((1, A_blocks))` 只对应“当前已发出的最新非空 step 仍是 1”的情况；如果释放发生时 Scheduler 已经发出后续非空 step，实际 fence 会是更大的 `sched_step_seq`。
 
 这和注释保持一致：
 

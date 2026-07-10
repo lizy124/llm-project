@@ -2,15 +2,15 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\flashinfer.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\gdn_attn.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\mamba_attn.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\mla_attention.py`
+- `code/vllm/vllm/v1\core\sched\output.py`
+- `code/vllm/vllm/v1\core\sched\scheduler.py`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/v1\attention\backend.py`
+- `code/vllm/vllm/v1\attention\backends\utils.py`
+- `code/vllm/vllm/v1\attention\backends\flashinfer.py`
+- `code/vllm/vllm/v1\attention\backends\gdn_attn.py`
+- `code/vllm/vllm/v1\attention\backends\mamba_attn.py`
+- `code/vllm/vllm/model_executor\layers\attention\mla_attention.py`
 
 本文用于梳理 prefill、decode、chunked prefill、mixed batch、spec decode 在 attention metadata 中的差异：Scheduler 如何表达“本轮每个请求跑多少 token”，ModelRunner 如何把它翻译成 `query_start_loc / seq_lens / max_query_len / max_seq_len / slot_mapping / is_prefilling`，以及具体 attention backend 如何根据这些字段选择 prefill kernel、decode kernel 或 mixed path。
 
@@ -459,7 +459,7 @@ chunked prefill：
 
 ## 8. CommonAttentionMetadata 如何承载这些字段
 
-定义位置：`code/vllm/vllm/v1/attention/backend.py:361`
+定义位置：`code/vllm/vllm/v1/attention/backend.py:393`
 
 `CommonAttentionMetadata` 是所有 backend 的公共输入，不是最终 kernel 参数。
 
@@ -1459,7 +1459,7 @@ backend reorder threshold 可能提升，让 spec decode 仍被视为 decode-lik
 ```text
 code/vllm/vllm/v1/worker/gpu_model_runner.py:1889
 code/vllm/vllm/v1/worker/gpu_model_runner.py:2208
-code/vllm/vllm/v1/attention/backend.py:361
+code/vllm/vllm/v1/attention/backend.py:393
 code/vllm/vllm/v1/attention/backends/utils.py:538
 code/vllm/vllm/v1/attention/backends/flashinfer.py:912
 ```

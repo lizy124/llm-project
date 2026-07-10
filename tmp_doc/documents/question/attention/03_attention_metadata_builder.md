@@ -2,13 +2,13 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\mla_attention.py`
+- `code/vllm/vllm/v1\attention\backend.py`
+- `code/vllm/vllm/v1\attention\backends\`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/v1\worker\utils.py`
+- `code/vllm/vllm/forward_context.py`
+- `code/vllm/vllm/model_executor\layers\attention\attention.py`
+- `code/vllm/vllm/model_executor\layers\attention\mla_attention.py`
 
 本文用于梳理 `AttentionMetadataBuilder` 如何把 `ModelRunner` 的 batch 状态、KV cache block table、slot mapping、prefill / decode 形态、CUDA graph / ubatching / cascade / spec decode 等执行条件，翻译成具体 attention backend 可以直接消费的 metadata。
 
@@ -103,7 +103,7 @@ backend class
 
 `AttentionMetadata` 是 backend-specific metadata 的基类。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:354`
+位置：`code/vllm/vllm/v1/attention/backend.py:386`
 
 它本身只定义统一类型边界，真正字段在具体 backend 中扩展，例如：
 
@@ -124,7 +124,7 @@ BaseMambaAttentionMetadata
 
 `CommonAttentionMetadata` 是 builder 的统一输入。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:361`
+位置：`code/vllm/vllm/v1/attention/backend.py:393`
 
 它保存的是所有 backend 都可能需要的 batch 级信息，例如：
 
@@ -161,7 +161,7 @@ InputBatch / SchedulerOutput / block table / slot mapping
 
 `AttentionMetadataBuilder` 是本文主角。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533`
+位置：`code/vllm/vllm/v1/attention/backend.py:565`
 
 关键接口包括：
 

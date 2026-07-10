@@ -2,17 +2,17 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\engine\arg_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\selector.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\registry.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\platforms\cuda.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\platforms\rocm.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\platforms\cpu.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\mla_attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/config\attention.py`
+- `code/vllm/vllm/engine\arg_utils.py`
+- `code/vllm/vllm/v1\attention\selector.py`
+- `code/vllm/vllm/v1\attention\backend.py`
+- `code/vllm/vllm/v1\attention\backends\registry.py`
+- `code/vllm/vllm/platforms\cuda.py`
+- `code/vllm/vllm/platforms\rocm.py`
+- `code/vllm/vllm/platforms\cpu.py`
+- `code/vllm/vllm/model_executor\layers\attention\attention.py`
+- `code/vllm/vllm/model_executor\layers\attention\mla_attention.py`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
 
 本问题关注：vLLM V1 如何把用户显式配置、模型 attention 形态、KV cache dtype、block size、硬件平台、compute capability、backend 能力约束，最终收敛成一个 `AttentionBackend` 类；以及这个选择结果如何继续影响 attention layer、metadata builder、CUDA graph、KV cache shape 和 forward 实现。
 
@@ -184,9 +184,15 @@ FlashMLA / Triton MLA / FlashInfer MLA：服务 DeepSeek-style MLA 的 decode �
 ```python
 backend: AttentionBackendEnum | None = None
 flash_attn_version: Literal[2, 3, 4] | None = None
+use_prefill_decode_attention: bool = False
+flash_attn_max_num_splits_for_cuda_graph: int = 32
+tq_max_kv_splits_for_cuda_graph: int = 32
 use_trtllm_attention: bool | None = None
+disable_flashinfer_q_quantization: bool = False
 mla_prefill_backend: MLAPrefillBackendEnum | None = None
+use_prefill_query_quantization: bool = False
 use_non_causal: bool = False
+flex_attn_block_m / flex_attn_block_n / flex_attn_q_block_size / flex_attn_kv_block_size
 ```
 
 位置：`code/vllm/vllm/config/attention.py:16`

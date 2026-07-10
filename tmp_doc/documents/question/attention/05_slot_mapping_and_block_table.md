@@ -2,18 +2,18 @@
 
 源码位置：
 
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/core/sched/scheduler.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/core/sched/output.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/core/kv_cache_manager.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/core/block_pool.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu_input_batch.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/block_table.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu/block_table.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu/model_runner.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/attention/backend.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/attention/backends/utils.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/block_table.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/block_table.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/utils.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
 
 本问题关注：vLLM V1 中 request 的逻辑 token 序列如何通过 `block table` 和 `slot mapping` 映射到 paged KV cache 的物理位置；Scheduler、KVCacheManager、InputBatch / ModelRunner、attention metadata builder、attention backend 分别维护哪一部分；以及 prefix cache、chunked prefill、spec decode、context parallelism、CUDA graph padding、KV connector、多 KV cache group、hybrid block 等路径如何影响这套映射。
 
@@ -57,7 +57,7 @@ block table 是页表，slot mapping 是本轮 token 的展开后物理地址。
 
 ## 2. 先给最小主链路
 
-在 classic `GPUModelRunner` 路径中，主链路是：
+在 主线 `GPUModelRunner` 路径中，主链路是：
 
 ```text
 Scheduler.schedule()

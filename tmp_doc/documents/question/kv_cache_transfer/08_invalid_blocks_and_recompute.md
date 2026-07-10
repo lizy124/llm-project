@@ -109,7 +109,9 @@ Scheduler 需要把这些本地 block id 反查到请求当前持有的 block ta
 
 ## 4. invalid_block_ids 从哪里来
 
-Worker / ModelRunner 侧统一采集点在：
+Worker / ModelRunner 侧统一采集点有两条路径。
+
+legacy mixin 路径在：
 
 ```python
 KVConnectorModelRunnerMixin._get_kv_connector_output()
@@ -124,6 +126,8 @@ output.invalid_block_ids = kv_connector.get_block_ids_with_load_errors()
 ```
 
 位置：`kv_connector_model_runner_mixin.py:102` 到 `kv_connector_model_runner_mixin.py:106`
+
+新版 GPU connector 路径在：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:77` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:96`，`ActiveKVConnector.post_forward()` 同样把 `get_block_ids_with_load_errors()` 写入 `KVConnectorOutput.invalid_block_ids`。
 
 这说明：
 
@@ -174,15 +178,17 @@ def get_block_ids_with_load_errors(self) -> set[int]:
     return self.connector_worker.get_block_ids_with_load_errors()
 ```
 
-Worker 实现在：`nixl/base_worker.py:2191`
+Worker 实现在：`nixl/base_worker.py:2301`
 
 ```text
 1. NIXL worker 内部维护 _invalid_block_ids 队列；
-2. load / postprocess 失败时把本地 block ids 放入该队列；
+2. _handle_failed_transfer() 在非 HMA 路径下把 recving metadata 中的本地 logical block ids 放入该队列；
 3. get_block_ids_with_load_errors() drain 队列并返回 set[int]。
 ```
 
-位置：`nixl/base_worker.py:2191` 到 `nixl/base_worker.py:2205`
+失败记录位置：`nixl/base_worker.py:2050` 到 `nixl/base_worker.py:2066`
+
+上报位置：`nixl/base_worker.py:2301` 到 `nixl/base_worker.py:2315`
 
 关键点：
 
@@ -436,10 +442,13 @@ _update_requests_with_invalid_blocks(...)
 它对每个请求做：
 
 ```python
+# TODO: add support for hybrid memory allocator
 (req_block_ids,) = self.kv_cache_manager.get_block_ids(req_id)
 req_num_computed_tokens = request.num_computed_tokens - num_scheduled_tokens.get(req_id, 0)
 req_num_computed_blocks = (req_num_computed_tokens + block_size - 1) // block_size
 ```
+
+这里的解包 `(req_block_ids,)` 也说明当前 invalid block 恢复逻辑仍按单 KV group 路径处理，源码 TODO 明确标注 HMA 支持待补。
 
 位置：`scheduler.py:2488` 到 `scheduler.py:2498`
 

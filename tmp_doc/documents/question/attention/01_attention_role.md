@@ -170,7 +170,7 @@ AttentionImplBase / AttentionImpl
 `Attention` 定义在：
 
 ```text
-code/vllm/vllm/model_executor/layers/attention/attention.py:178
+code/vllm/vllm/model_executor/layers/attention/attention.py:192
 ```
 
 源码注释直接说明它做三件事：
@@ -188,7 +188,7 @@ The class does the following:
 """
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:178`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:192`
 
 它是模型结构的一部分，每个 transformer block 通常会持有一个 attention layer。
 
@@ -241,7 +241,7 @@ get_builder_cls()
 get_kv_cache_shape(...)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:72` 到 `code/vllm/vllm/v1/attention/backend.py:96`
+位置：`code/vllm/vllm/v1/attention/backend.py:73` 到 `code/vllm/vllm/v1/attention/backend.py:96`
 
 所以 backend 不是“某个 attention 算法名”的泛称，而是 vLLM 内部的执行后端契约：
 
@@ -254,7 +254,7 @@ backend = metadata builder + impl + KV cache layout + capability checks。
 `AttentionMetadataBuilder` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:533
+code/vllm/vllm/v1/attention/backend.py:565
 ```
 
 它的核心方法是：
@@ -268,7 +268,7 @@ def build(
 ) -> M:
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:599`
+位置：`code/vllm/vllm/v1/attention/backend.py:632`
 
 它负责把 `CommonAttentionMetadata` 变成具体 backend 的 metadata。
 
@@ -286,7 +286,7 @@ ModelRunner 不应该直接知道每个 backend 的私有字段，所以它只�
 `AttentionImplBase` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:702
+code/vllm/vllm/v1/attention/backend.py:734
 ```
 
 标准 attention impl 是：
@@ -295,7 +295,7 @@ code/vllm/vllm/v1/attention/backend.py:702
 class AttentionImpl(AttentionImplBase[T], Generic[T]):
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:780`
+位置：`code/vllm/vllm/v1/attention/backend.py:812`
 
 核心 forward 抽象是：
 
@@ -313,7 +313,7 @@ def forward(
 ) -> torch.Tensor:
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:806`
+位置：`code/vllm/vllm/v1/attention/backend.py:839`
 
 MLA 则有单独抽象：
 
