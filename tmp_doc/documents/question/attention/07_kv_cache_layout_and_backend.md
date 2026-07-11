@@ -1215,7 +1215,7 @@ MLA kernels require contiguous per-layer KV cache views.
 Identity permutation keeps num_layers first in physical layout, signaling cross-layer allocation is unsupported.
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1204` 到 `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1213`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1210` 到 `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1219`
 
 所以：
 
@@ -1909,11 +1909,12 @@ metadata 会引用已经存在的 kv_cache layout，但不会重新分配 KV cac
 ```text
 code/vllm/vllm/v1/kv_cache_interface.py:95
 code/vllm/vllm/v1/kv_cache_interface.py:867
-code/vllm/vllm/v1/core/kv_cache_utils.py:1247
+code/vllm/vllm/v1/core/kv_cache_utils.py:1306
 code/vllm/vllm/v1/core/kv_cache_utils.py:1937
 code/vllm/vllm/v1/attention/backend.py:87
-code/vllm/vllm/v1/worker/gpu_model_runner.py:7059
-code/vllm/vllm/v1/worker/gpu_model_runner.py:7220
+code/vllm/vllm/v1/worker/gpu_model_runner.py:7072
+code/vllm/vllm/v1/worker/gpu/attn_utils.py:194
+code/vllm/vllm/v1/worker/gpu_model_runner.py:7217
 code/vllm/vllm/v1/worker/utils.py:462
 ```
 
