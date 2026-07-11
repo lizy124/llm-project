@@ -89,9 +89,9 @@ Scheduler.schedule()
 - `_prepare_inputs()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
 - `_build_attention_metadata()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
 - `_get_slot_mappings()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3960`
-- `get_attention_context()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
-- `unified_kv_cache_update()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:692`
-- `unified_attention_with_output()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+- `get_attention_context()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
+- `unified_kv_cache_update()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:713`
+- `unified_attention_with_output()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:757`
 
 这里有两个输出视图：
 
@@ -160,9 +160,9 @@ self.blocks = [KVCacheBlock(idx) for idx in range(num_gpu_blocks)]
 
 位置：`code/vllm/vllm/v1/core/block_pool.py:162`
 
-注意：`BlockPool` 会保留一个 `null_block`，它的 `block_id = 0`，用于 padding / null block。
+注意：`BlockPool` 会从 free queue 中取出 `block_id = 0` 的 block 作为 `null_block`，用于 padding / null block。
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:176`
+位置：`code/vllm/vllm/v1/core/block_pool.py:188`
 
 因此很多路径会把 padding block table 行填成 `NULL_BLOCK_ID = 0`。
 
@@ -350,6 +350,8 @@ encoder-decoder cross-attention blocks
 
 位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:290`
 
+源码注释里 `<to be computed>` 覆盖 `<new> + <lookahead>`，但 `allocate_slots()` 进一步说明真正会提交进 prefix cache 的 token 会被 cap 到 `request.num_tokens`，避免把可能被拒绝的 draft token 作为已定稿 KV 缓存。
+
 含义：
 
 ```text
@@ -366,11 +368,7 @@ lookahead：spec decode / EAGLE 等预留 token。
 ext_comp + new + lookahead
 ```
 
-但真正要计算的是：
-
-```text
-new
-```
+本轮模型 forward 的主输入来自 `num_new_tokens` 对应的 scheduled tokens；lookahead 主要是为 speculative proposer 预留 KV 空间，最终是否提交仍取决于后续接受结果。
 
 这解释了一个容易混淆的点：
 
@@ -1522,9 +1520,10 @@ lookahead = num_lookahead_tokens
 
 ```text
 1. block table 可能包含为 draft / lookahead 分配的 blocks；
-2. slot mapping 可以为乐观执行的 draft token 计算写入位置；
-3. 最终只有 accepted tokens 推进请求状态；
-4. rejected draft 对应的 token 进度会在 scheduler update / output update 阶段修正。
+2. slot mapping 可以为本轮调度的 draft token 计算写入位置；
+3. lookahead 预留的是后续可能使用的 KV 空间，不一定对应本轮普通 attention 输入；
+4. 最终只有 accepted tokens 推进请求状态；
+5. rejected draft 对应的 token 进度会在 scheduler update / output update 阶段修正。
 ```
 
 在 `_prepare_inputs()` 中，如果有 spec decode：
@@ -1703,17 +1702,23 @@ block_table_tensor = torch.zeros((num_reqs_padded, 1), dtype=torch.int32, device
 
 ```text
 普通 decoder attention 强依赖 paged block table；
-encoder-only / 特殊 attention 类型可能使用占位 block table / slot mapping；
+encoder-only / 特殊 attention 类型可能先使用占位 block table / slot mapping；
 具体语义由 wrapper backend 或具体 backend 解释。
 ```
 
-cross-attention wrapper 通常会把 common metadata 改写为 encoder KV 视角，例如：
+例如 CPU encoder-only builder 会基于 `seq_lens` 重新构造 encoder block table，并重新计算 slot mapping。
+
+位置：`code/vllm/vllm/v1/attention/backends/cpu_attn.py:188`
+
+cross-attention wrapper 会把 common metadata 改写为 encoder KV 视角，例如：
 
 ```text
 causal = False
 seq_lens 使用 encoder_seq_lens
-slot_mapping 使用 encoder KV cache 对应的 mapping
+slot_mapping 使用 CrossAttentionBuilder 根据 encoder_seq_lens + block_table_tensor 重新计算的 encoder KV mapping
 ```
+
+位置：`code/vllm/vllm/model_executor/layers/attention/cross_attention.py:81`
 
 所以不要把 decoder self-attention 的 block table 语义机械套到所有 attention 类型。
 
@@ -1905,7 +1910,8 @@ slot mapping 会给 5 个 token 都计算潜在写入位置。
 所以：
 
 ```text
-slot mapping 可以为乐观执行分配物理位置；
+slot mapping 可以为本轮调度的 draft token 分配物理位置；
+lookahead 只保证后续 speculative 路径有可用 KV 空间；
 请求最终状态由 accepted tokens 决定。
 ```
 
