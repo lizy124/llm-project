@@ -144,13 +144,15 @@ BlockPool / KVCacheManager 负责的是：
 
 KV connector 在 Scheduler 和 Worker 两侧都有角色。
 
+Scheduler 侧基础接口中，`request_finished()` 属于 `KVConnectorBase_V1`；`request_finished_all_groups()` 属于支持 HMA 的 `SupportsHMA` 扩展，Scheduler 会按 connector 类型选择调用。
+
 Scheduler 侧基础接口：
 
 ```text
 get_num_new_matched_tokens()
 update_state_after_alloc()
 build_connector_meta()
-request_finished() / request_finished_all_groups()
+request_finished() / SupportsHMA.request_finished_all_groups()
 update_connector_output()
 has_pending_push_work()
 ```
@@ -691,6 +693,8 @@ KVPool load / save 不是 forward 之后单独补的一步，
 10. clear_connector_metadata()。
 ```
 
+这是普通非 speculative 路径的顺序。开启 speculative decoding 时，`defer_finalize=True` 会让 `_get_kv_connector_output()` 跳过 `wait_for_save()` 和 `clear_connector_metadata()`，但仍然收集 `get_finished()`、invalid blocks、stats / events / worker_meta；后续 `sample_tokens()` 中的 `finalize_kv_connector()` 再执行 wait 和 clear。
+
 位置：`vllm/v1/worker/kv_connector_model_runner_mixin.py:77`
 
 其中：
@@ -870,7 +874,11 @@ Scheduler 发起 async load
 
 ## 19. full hit 为什么要回退最后一个 token
 
-当外部 KVPool 或本地 cache 命中整个 prompt 时：
+本地 prefix cache 查询时会预先把最大命中长度限制为 `request.num_tokens - 1`，避免直接把整个 prompt 都当成本地 cache hit。
+
+位置：`vllm/v1/core/kv_cache_manager.py:221` 到 `vllm/v1/core/kv_cache_manager.py:227`
+
+异步外部 KVPool load 完成后，如果出现整个 prompt 都来自外部 KV：
 
 ```text
 request.num_computed_tokens == request.num_tokens
@@ -900,9 +908,9 @@ if request.num_computed_tokens == request.num_tokens:
 所以 full hit 的实际执行模型是：
 
 ```text
-KVPool 命中完整 prompt
-  → 把 num_computed_tokens 回退到 prompt_len - 1
-  → 本轮 forward 最后一个 prompt token
+异步 KVPool load 命中完整 prompt
+  → 恢复调度时把 num_computed_tokens 回退到 prompt_len - 1
+  → 后续 forward 最后一个 prompt token
   → 产生 logits
   → sample 第一个 output token
 ```
@@ -1180,7 +1188,8 @@ num_computed_tokens = 800
 
 ```text
 external/local 总命中 = prompt_len
-如果异步 load：finished_recving 后 cache_blocks()
+本地 prefix cache 查询会把最大本地 hit 限制到 prompt_len - 1
+如果异步外部 load 后 num_computed_tokens == prompt_len：finished_recving 后 cache_blocks()
 _update_waiting_for_remote_kv() 把 num_computed_tokens 回退到 prompt_len - 1
 下一轮 forward 最后一个 prompt token
 sample 第一个 output token
@@ -1193,7 +1202,8 @@ Scheduler 查到外部命中且 connector 要异步 load
 num_new_tokens = 0
 allocate_slots(delay_cache_blocks=True)
 request.status = WAITING_FOR_REMOTE_KVS
-Worker no_forward 或后续 step 推进 load
+如果同轮还有其他 scheduled tokens，则在普通 forward step 中随其他请求推进 load
+只有整个 batch total_num_scheduled_tokens=0 时才走 no-forward
 finished_recving 回 Scheduler
 请求恢复 WAITING / PREEMPTED
 下一轮再调度 forward

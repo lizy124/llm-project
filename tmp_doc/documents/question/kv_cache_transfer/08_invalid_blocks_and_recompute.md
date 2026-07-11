@@ -9,12 +9,14 @@
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/flexkv_connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py`
 - `code/vllm/vllm/config/kv_transfer.py`
 - `code/vllm/tests/v1/kv_connector/unit/test_kv_load_failure_recovery.py`
 - `code/vllm/tests/v1/kv_connector/unit/test_error_propagation.py`
 
-本问题关注：外部 KV load 失败时，Worker connector 如何把失败 block ids 回传给 Scheduler；Scheduler 如何区分 async load 和 sync load；如何根据 block id 找到受影响请求和 token 位置；`num_computed_tokens` 为什么可以回退到第一个失败 block 之前；`kv_load_failure_policy=recompute/fail` 如何影响后续请求状态；以及为什么 async load 失败仍要等 `finished_recving` 才做最终提交。
+本问题关注：外部 KV load 失败时，Worker connector 如何把失败 block ids 回传给 Scheduler；Scheduler 如何区分 async load 和 sync load；如何根据 block id 找到受影响请求和 token 位置；`num_computed_tokens` 为什么可以回退到第一个失败 block 之前；`kv_load_failure_policy=recompute/fail` 如何影响后续请求状态；以及为什么 recompute policy 下 async load 失败仍要等 `finished_recving` 才做最终提交。
 
 ---
 
@@ -91,8 +93,10 @@ Requests referencing these blocks should be rescheduled to recompute them.
 它表示的是：
 
 ```text
-本地 GPU KV block id。
+Scheduler / KVCacheManager 本地 block table 中的 block id。
 ```
+
+以 NIXL 为例，上报的是 `ReqMeta.local_block_ids` 中的 logical block ids，而不是 remote block id，也不是用于 kernel 传输 / 后处理的 `local_physical_block_ids`。
 
 不是：
 
@@ -135,6 +139,8 @@ output.invalid_block_ids = kv_connector.get_block_ids_with_load_errors()
 具体 connector 负责发现 load 错误；
 ModelRunner 只负责把错误 block ids 塞进 KVConnectorOutput。
 ```
+
+注意 Worker 侧收集顺序是先调用 `get_finished()` 得到 finished_sending / finished_recving，再调用 `get_block_ids_with_load_errors()`；而 Scheduler 侧消费顺序相反，会在 `update_from_output()` 早期先处理 invalid blocks，最后再处理 finished KV transfer。
 
 ---
 
@@ -182,13 +188,14 @@ Worker 实现在：`nixl/base_worker.py:2301`
 
 ```text
 1. NIXL worker 内部维护 _invalid_block_ids 队列；
-2. _handle_failed_transfer() 在非 HMA 路径下把 recving metadata 中的本地 logical block ids 放入该队列；
-3. get_block_ids_with_load_errors() drain 队列并返回 set[int]。
+2. handshake / transfer 失败时走 _handle_failed_transfer()；
+3. _handle_failed_transfer() 在非 HMA 路径下把 recving metadata 中的本地 logical block ids 放入该队列；
+4. get_block_ids_with_load_errors() drain 队列并返回 set[int]。
 ```
 
-失败记录位置：`nixl/base_worker.py:2050` 到 `nixl/base_worker.py:2066`
+失败记录位置：`nixl/base_worker.py:817` 到 `nixl/base_worker.py:828`，`nixl/base_worker.py:1905` 到 `nixl/base_worker.py:1953`
 
-上报位置：`nixl/base_worker.py:2301` 到 `nixl/base_worker.py:2315`
+上报位置：`nixl/base_worker.py:2191` 到 `nixl/base_worker.py:2205`
 
 关键点：
 
@@ -224,9 +231,22 @@ get_block_ids_with_load_errors()
 
 ### 7.3 MultiConnector / KVOutputAggregator
 
-多 worker / 多 connector 场景会合并 invalid ids。
+多 connector 和多 worker 场景都会合并 invalid ids，但发生在不同层：
 
-`kv_connector/utils.py` 中聚合逻辑：
+```text
+MultiConnector：同一个 worker 进程内，多个 child connector 的 invalid block ids 取 union。
+KVOutputAggregator：多个 worker 的 KVConnectorOutput.invalid_block_ids 取 union。
+```
+
+MultiConnector 逻辑：
+
+```python
+agg_block_ids |= c.get_block_ids_with_load_errors()
+```
+
+位置：`multi_connector.py:338` 到 `multi_connector.py:342`
+
+`kv_connector/utils.py` 中多 worker 聚合逻辑：
 
 ```python
 invalid_block_ids |= kv_output.invalid_block_ids
@@ -853,7 +873,7 @@ must still be reported via get_finished().
 
 位置：`kv_connector/v1/base.py:383` 到 `kv_connector/v1/base.py:389`
 
-所以 Scheduler 的动作分两段：
+所以在 recompute policy 下，Scheduler 的动作分两段：
 
 ```text
 invalid_block_ids 到达：
@@ -863,9 +883,13 @@ finished_recving 到达：
   _update_waiting_for_remote_kv() 提交有效前缀或释放 blocks。
 ```
 
+如果 policy 是 fail，`update_from_output()` 会立即把受影响请求置为 `FINISHED_ERROR`；若 transfer 还没 `finished_recving`，blocks 的实际释放仍会延迟到 connector 收尾后。
+
 ---
 
 ## 25. async load 失败后的下一轮调度
+
+本节描述 recompute policy 下的恢复路径。
 
 完成 `finished_recving` 后，下一轮 `schedule()` 会尝试 promote：
 
@@ -919,7 +943,8 @@ async load 失败：
   invalid blocks 先回退 num_computed_tokens；
   recompute 下记录 failed_recving_kv_req_ids；
   仍等待 finished_recving；
-  promote 时 cache 有效前缀或释放 blocks。
+  promote 时 cache 有效前缀或释放 blocks；
+  fail 下请求立即 FINISHED_ERROR，但 blocks 释放仍可能等 transfer 收尾。
 ```
 
 两者共同点：

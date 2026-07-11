@@ -5,7 +5,9 @@
 - `code/vllm/vllm/v1/attention/`
 - `code/vllm/vllm/model_executor/layers/attention/`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
 - `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/block_table.py`
 - `code/vllm/vllm/v1/worker/gpu/attn_utils.py`
 - `code/vllm/vllm/v1/worker/gpu/block_table.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
@@ -17,7 +19,7 @@
 - `code/vllm/vllm/platforms/cuda.py`
 - `code/vllm/vllm/compilation/`
 
-本文用于总览 vLLM V1 Attention 子系统，重点梳理 attention 在执行链路中的位置：backend 如何选择，metadata 如何构造，prefill / decode 如何区分，slot mapping / block table 如何连接 paged KV cache，attention forward 如何读写 KV，以及 cascade attention、KV connector hook、CUDA graph / compile 如何挂接。
+本文用于总览 vLLM V1 Attention 子系统，重点梳理 attention 在执行链路中的位置：backend 如何选择，metadata 如何构造，prefill / decode 如何区分，slot mapping / block table 如何连接 paged KV cache，attention forward 如何读写 KV，以及 cascade attention、KV connector hook、CUDA graph / compile 如何挂接。除特别说明外，本文的 `GPUModelRunner._prepare_inputs()` / `_build_attention_metadata()` 主链路指 legacy V1 runner（`v1/worker/gpu_model_runner.py`）；当前源码也存在 V2 runner（`v1/worker/gpu/model_runner.py`），入口和 helper 名称不同，但 attention metadata / block table / slot mapping 的职责边界一致。
 
 ---
 
@@ -108,6 +110,8 @@ attention 子系统横跨三类代码：
 3. 每轮执行时的 metadata 构造：
    code/vllm/vllm/v1/worker/gpu_model_runner.py
    code/vllm/vllm/v1/worker/gpu_input_batch.py
+   code/vllm/vllm/v1/worker/block_table.py
+   code/vllm/vllm/v1/worker/gpu/model_runner.py
    code/vllm/vllm/v1/worker/gpu/block_table.py
 ```
 
@@ -220,7 +224,7 @@ AttentionBackend 说明“这个 backend 能不能用、KV cache 长什么样、
 
 ### 3.2 `CommonAttentionMetadata`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:361`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:362`
 
 `CommonAttentionMetadata` 是所有 backend 共享的 batch 级 attention 描述。
 
@@ -297,13 +301,15 @@ AttentionMetadataBuilder 负责“把公共 metadata 翻译成某个 backend 能
 num_heads
 head_size
 scale
+DCP / PCP world size 和 rank
+是否需要返回 decode LSE
+是否支持 quant query input
+
+标准 AttentionImpl 的构造接口还接收：
 num_kv_heads
 alibi_slopes
 sliding_window
 kv_cache_dtype
-DCP / PCP world size 和 rank
-是否需要返回 decode LSE
-是否支持 quant query input
 ```
 
 `AttentionImpl` 定义普通 attention 的 forward 接口。
@@ -324,7 +330,7 @@ AttentionImplBase / AttentionImpl 负责“真正调 kernel 算 attention”。
 
 ### 3.5 `Attention layer`
 
-源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:318`
+源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:178`
 
 模型里的 attention layer 是后端实现和模型 forward 的连接点。
 
@@ -385,7 +391,7 @@ ForwardContext 让模型内部 attention layer 不用显式传参，也能拿到
 - `code/vllm/vllm/model_executor/layers/attention/attention.py:317`
 - `code/vllm/vllm/v1/attention/selector.py:54`
 
-选择时会传入：
+选择入口显式参数包括：
 
 ```text
 head_size
@@ -393,8 +399,8 @@ dtype
 kv_cache_dtype
 block_size
 use_mla
-use_sparse
 has_sink
+use_sparse
 use_mm_prefix
 use_per_head_quant_scales
 attn_type
@@ -404,7 +410,7 @@ use_kv_connector
 num_heads
 ```
 
-也就是说 backend 选择不是只看平台，而是同时看模型结构、KV cache 配置和运行功能。
+`block_size` 会从 `cache_config` 推导，`use_kv_connector` 会从 `kv_transfer_config` 推导；其他模型结构和运行功能会继续进入 selector config / backend validation。也就是说 backend 选择不是只看平台，而是同时看模型结构、KV cache 配置和运行功能。
 
 ### 4.2 selector 层做配置归一
 
@@ -620,7 +626,7 @@ padding token 的 slot mapping 会填 `-1`，让 KV cache update 跳过无效位
 
 ### 5.5 `_build_attention_metadata()` 是核心翻译层
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2216`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
 
 它的主要流程：
 
@@ -952,10 +958,11 @@ backend impl forward 输出 attention 后的 hidden states，然后模型继续�
 ```text
 hidden_states[logits_indices]
   → model.compute_logits()
+  → ExecuteModelState
   → sample_tokens()
 ```
 
-所以 attention 的输出不是最终 token，而是模型 hidden states 的一部分。
+在 legacy runner 中，`execute_model()` 计算 logits 后缓存 `ExecuteModelState` 并返回 `None`，EngineCore 随后调用 `model_executor.sample_tokens()` 生成 `ModelRunnerOutput`。所以 attention 的输出不是最终 token，而是模型 hidden states 的一部分。
 
 ---
 
@@ -1058,8 +1065,8 @@ backend builder 是否支持 cascade
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2519`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2557`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2511`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2549`
 
 这里得到的是 cascade attention 可用的 common prefix length，不一定等于请求真实共享 prefix。它还会被 `min(num_computed_tokens)` 截断，并按 block size 向下取整；如果 ubatching 已启用、builder 判断当前 batch 不适合 cascade，或 backend 不支持该路径，最终会退化为 0。
 
@@ -1227,7 +1234,7 @@ capture / warmup 时会跑 dummy input。
 
 ### 12.5 torch.compile 通过 opaque attention op 隔离复杂逻辑
 
-源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:504`
+源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:502` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:522`，custom op 注册在 `code/vllm/vllm/model_executor/layers/attention/attention.py:779`
 
 Attention layer 通常会把 attention 包成：
 
@@ -1303,7 +1310,10 @@ EngineCore.step()
 
       → hidden_states
       → compute_logits(hidden_states[logits_indices])
-      → sample_tokens()
+      → 保存 ExecuteModelState
+      → return None
+
+  → EngineCore / model_executor.sample_tokens()
       → ModelRunnerOutput
   → Scheduler.update_from_output()
 ```

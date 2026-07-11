@@ -25,7 +25,7 @@ Attention backend selection 本质上是一个“两段式选择 + 一段式落�
 ```text
 1. Attention / MLAAttention 根据当前层形态调用 get_attn_backend(...)
 2. selector 把层信息和全局配置打包成 AttentionSelectorConfig
-3. current_platform.get_attn_backend_cls(...) 按平台优先级和 backend.validate_configuration() 选出 backend 类
+3. current_platform.get_attn_backend_cls(...) 按平台优先级和 backend.validate_configuration() 返回 backend 类路径，selector 再解析成 backend 类
 4. Attention layer 用 backend.get_impl_cls() 创建 forward impl
 5. GPUModelRunner 按 backend.get_builder_cls() 创建 metadata builder
 6. KV cache 初始化按 backend.get_kv_cache_shape() / stride / layout reshape cache tensor
@@ -63,6 +63,8 @@ Attention.__init__()
     )
   → AttentionSelectorConfig
   → current_platform.get_attn_backend_cls(...)
+  → selected AttentionBackend qualname/path
+  → selector resolve_obj_by_qualname()
   → selected AttentionBackend class
   → backend.get_impl_cls()
   → self.impl = impl_cls(...)
@@ -393,7 +395,7 @@ current_platform.get_attn_backend_cls(
 vllm_config.attention_config.backend
 ```
 
-也就是用户显式指定的 backend，或者 `None`。
+也就是用户显式指定的 backend，或者 `None`。平台方法返回的是 backend 的 qualname/path；selector 随后用 `resolve_obj_by_qualname()` 把它解析成 `type[AttentionBackend]`。
 
 ### 6.3 结果会被缓存
 
@@ -733,7 +735,7 @@ ROCM_AITER_MLA_SPARSE
 ```text
 1. ROCM_ATTN        # 但 KV connector 场景会跳过
 2. ROCM_AITER_FA    # AITER MHA enabled 时加入
-3. ROCM_AITER_UNIFIED_ATTN
+3. ROCM_AITER_UNIFIED_ATTN  # AITER found/supported 时加入
 4. TRITON_ATTN
 5. TURBOQUANT
 ```
@@ -788,7 +790,11 @@ Sparse Attention is not supported on CPU
 
 ### 10.2 XPU
 
-XPU 继承通用平台逻辑并有自己的 config update / block size update。对 GDN attention 这类内核，还会把 block size 对齐到 kernel 支持的大小。
+XPU 平台重写了 `get_attn_backend_cls()`：会先设置 NHD layout，再按 TurboQuant / sparse / MLA / 显式 backend / dtype 等分支返回 backend。一个特殊点是：如果显式选择 `FLASH_ATTN` 但 dtype 是 `torch.float32`，XPU 会 fallback 到 `TRITON_ATTN`。
+
+位置：`code/vllm/vllm/platforms/xpu.py:50` 到 `code/vllm/vllm/platforms/xpu.py:95`
+
+XPU 也有自己的 config update / block size update；对 GDN attention 这类内核，还会把 block size 对齐到 kernel 支持的大小。
 
 位置：`code/vllm/vllm/platforms/xpu.py:246`
 
@@ -910,13 +916,13 @@ MLA 位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:37
 
 ## 12. GPUModelRunner 如何使用选择结果
 
-backend selection 发生在 attention layer 初始化时，但真正“批处理和执行层”是在 `GPUModelRunner` 里把 backend 组织起来。
+backend selection 发生在 attention layer 初始化时，但真正“批处理和执行层”是在 `GPUModelRunner` 里把 backend 组织起来。初始化顺序上，legacy runner 会先 `initialize_attn_backend()` 聚合 attention groups / 检查 CUDA graph，再 `prepare_kernel_block_sizes()`，然后 `initialize_metadata_builders()`，最后 `initialize_kv_cache_tensors()`。
 
 ### 12.1 initialize_attn_backend() 按 KV cache group 聚合 backend
 
 `GPUModelRunner.initialize_attn_backend()` 会遍历 `kv_cache_config.kv_cache_groups`。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6763`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6736`
 
 它对每个 layer 调用：
 
@@ -1208,11 +1214,12 @@ forward_mqa：decode / data-movement-friendly path
 `MLAAttention.forward_impl()` 会根据 metadata 中的：
 
 ```text
-num_mha_tokens
-num_mqa_tokens
+num_decodes
+num_decode_tokens
+num_prefills
 ```
 
-分别调用：
+`forward_impl()` 会据此计算局部变量 `num_mqa_tokens` / `num_mha_tokens`，再分别调用：
 
 ```text
 self.impl.forward_mha(...)
@@ -1250,7 +1257,7 @@ ValueError: No valid attention backend found ... Reasons: {...}
 
 ### 16.2 显式选择
 
-显式选择语义：
+CUDA / ROCm 上的显式选择语义通常是：
 
 ```text
 backend=FLASH_ATTN
@@ -1265,7 +1272,9 @@ backend=FLASH_ATTN
 ValueError: Selected backend FLASH_ATTN is not valid for this configuration. Reason: [...]
 ```
 
-### 16.3 为什么不 fallback
+但这不是所有平台的通用规则：CPU 会忽略非 `CPU_ATTN` 的显式 backend 并返回 `CPU_ATTN`；XPU 在显式 `FLASH_ATTN` 且 dtype 为 `torch.float32` 时会 fallback 到 `TRITON_ATTN`。
+
+### 16.3 为什么 CUDA / ROCm 不 fallback
 
 因为显式选择通常代表用户想要固定某个 kernel 路径来做 benchmark、复现、规避 bug 或验证性能。如果默默 fallback，会让结果不可控。
 
@@ -1346,7 +1355,7 @@ DeviceCapability(major, minor)
 
 传给 backend 校验。
 
-CUDA 获取位置：`code/vllm/vllm/platforms/cuda.py:218`
+CUDA 抽象 stub 位置：`code/vllm/vllm/platforms/cuda.py:218`；实际实现分别在 NVML / non-NVML 平台类中：`code/vllm/vllm/platforms/cuda.py:671`、`code/vllm/vllm/platforms/cuda.py:907`
 
 ROCm 获取位置：`code/vllm/vllm/platforms/rocm.py:665`
 
@@ -1762,6 +1771,8 @@ Attention backend selection 可以压缩成下面这条线：
   → AttentionSelectorConfig
   → current_platform.get_attn_backend_cls()
   → backend.validate_configuration()
+  → selected AttentionBackend qualname/path
+  → selector resolve_obj_by_qualname()
   → selected AttentionBackend class
   → get_impl_cls() / get_builder_cls() / get_kv_cache_shape()
   → AttentionGroup / metadata builder / KV cache reshape

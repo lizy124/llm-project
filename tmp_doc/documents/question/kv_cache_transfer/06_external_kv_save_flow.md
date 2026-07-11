@@ -15,6 +15,7 @@
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py`
 - `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
 
 本文梳理请求结束时 external KV save 的完整路径：Scheduler 如何在释放请求前调用 connector，connector 如何决定是否延迟释放 blocks，Worker 侧如何执行 KV 保存 / 发送，以及 `finished_sending` 如何让 Scheduler 最终释放 KV blocks。
@@ -563,7 +564,8 @@ finally:
     output.kv_connector_stats = kv_connector.get_kv_connector_stats()
     output.kv_cache_events = kv_connector.get_kv_connector_kv_cache_events()
     output.kv_connector_worker_meta = kv_connector.build_connector_worker_meta()
-    kv_connector.clear_connector_metadata()
+    if not defer_finalize:
+        kv_connector.clear_connector_metadata()
 ```
 
 位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:83` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:112`
@@ -574,8 +576,10 @@ finally:
 1. start_load_kv() 名字偏 load，但很多 connector 也借这个 metadata 入口推进 save/send；
 2. save_kv_layer() 通常发生在 attention layer forward 过程中；
 3. wait_for_save() 在 context 退出时保证必要保存完成，避免 KV buffer 被覆盖；
-4. get_finished(finished_req_ids) 产出 finished_sending / finished_recving；
-5. 这些结果进入 ModelRunnerOutput.kv_connector_output。
+4. no-forward step 会传 wait_for_save=False，仍推进 start_load_kv() / get_finished()，但不等待 save；
+5. defer_finalize=True 时不在这里 clear metadata，后续 finalize_kv_connector() 再 wait_for_save() 并清理；
+6. get_finished(finished_req_ids) 产出 finished_sending / finished_recving；
+7. 这些结果进入 ModelRunnerOutput.kv_connector_output。
 ```
 
 ### 10.4 save_kv_layer 在 attention 层之后调用
@@ -613,7 +617,10 @@ class KVConnectorOutput:
     kv_cache_events: KVConnectorKVEvents | None = None
     kv_connector_worker_meta: KVConnectorWorkerMetadata | None = None
     invalid_block_ids: set[int] = field(default_factory=set)
+    expected_finished_count: int = 0
 ```
+
+其中 `expected_finished_count` 用于 handshake-based connector（例如 NIXL）告知 output aggregator 每个请求应等待多少个 send/recv 完成通知。
 
 位置：`code/vllm/vllm/v1/outputs.py:195` 到 `code/vllm/vllm/v1/outputs.py:212`
 
@@ -1049,16 +1056,26 @@ for job_id, count in meta.completed_jobs.items():
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1082` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1101`
 
-请求结束时：
+请求结束时，标准 connector facade 仍接收 `block_ids`，但会转发为 scheduler 侧的 `request_finished(request)`：
 
 ```python
-req_status = self._req_status.get(request.request_id)
-if req_status is None:
-    self.manager.on_request_finished(_create_req_context(request))
-    return False, None
+# offloading_connector.py
+return self.connector_scheduler.request_finished(request)
+```
 
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:157` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:171`
+
+scheduler 侧实现不接收 `block_ids`，并且所有路径都返回 `False, None`：
+
+```python
+req_context = (
+    req_status.req_context if req_status else _create_req_context(request)
+)
+self.manager.on_request_finished(req_context)
+
+if req_status is None:
+    return False, None
 if not req_status.transfer_jobs:
-    self.manager.on_request_finished(req_status.req_context)
     del self._req_status[request.request_id]
     return False, None
 
@@ -1068,15 +1085,15 @@ for job_id in req_status.transfer_jobs:
 return False, None
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1162` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1201`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1151` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1167`
 
-注意它返回 False：
+注意它始终返回 False：
 
 ```text
-Offloading connector 请求结束时通常不通过 delay_free_blocks 保留整个 request；
-未跟踪或无 in-flight jobs 的请求会立刻 manager.on_request_finished()；
+Offloading connector 请求结束时不通过 delay_free_blocks 保留整个 request；
+未跟踪或无 in-flight jobs 的请求会立刻完成 manager 侧 request_finished 处理；
 仍有 in-flight jobs 的请求会把相关 block 记入 block_id_to_pending_jobs，
-等 update_connector_output() 看到最后一个 completed job 后再触发 manager.on_request_finished()。
+后续通过 pending jobs + jobs_to_flush 保护 block 复用安全。
 ```
 
 这和 NIXL push 的 `finished_sending → _free_blocks()` 模式不同。
@@ -1284,7 +1301,7 @@ request running / prefill chunk
 
 request finished
   → request_finished() 通知 manager.on_request_finished()
-  → 通常返回 delay_free_blocks=False
+  → 返回 delay_free_blocks=False
   → pending store 通过 jobs_to_flush / block_id_to_pending_jobs 保护
 ```
 

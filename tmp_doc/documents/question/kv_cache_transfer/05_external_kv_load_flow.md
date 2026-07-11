@@ -5,6 +5,7 @@
 - `code/vllm/vllm/v1/core/sched/scheduler.py`
 - `code/vllm/vllm/v1/core/sched/output.py`
 - `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
 - `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
@@ -12,6 +13,7 @@
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py`
 - `code/vllm/vllm/v1/worker/gpu/kv_connector.py`
@@ -313,9 +315,12 @@ remote prefill 场景：
 
 ```text
 如果 kv_transfer_params.do_remote_prefill=True：
-  count = prompt_token_count - local_computed_tokens
+  actual = _mamba_prefill_token_count(len(prompt_token_ids))
+  count = actual - local_computed_tokens
   如果 count > 0：返回 (count, True)
 ```
+
+其中 Mamba 模型会把 `actual` 设为 `num_prompt_tokens - 1`，因为 decoder 侧需要重算最后一个 prompt token。
 
 remote decode / block ids 场景：
 
@@ -482,9 +487,11 @@ has_scheduled_reqs=bool(self.running)
 
 ```text
 KVCacheCoordinator.allocate_new_computed_blocks()
-  → SingleTypeKVCacheManager.add_local_computed_blocks()
-  → SingleTypeKVCacheManager.allocate_external_computed_blocks()
+  → 第一阶段：对所有 KV group 调 SingleTypeKVCacheManager.add_local_computed_blocks()
+  → 第二阶段：对所有 KV group 调 SingleTypeKVCacheManager.allocate_external_computed_blocks()
 ```
+
+这里采用 two-phase allocation：先 touch 每个 group 的本地 prefix-hit blocks，再给每个 group 分配 external blocks，避免前一个 group 分配 external blocks 时驱逐后一个 group 尚未 touch 的 cache-hit blocks。
 
 其中 `allocate_external_computed_blocks()` 会：
 
@@ -568,19 +575,24 @@ connector.update_state_after_alloc(
 _reqs_need_recv[request_id] = (request, local_block_ids)
 ```
 
-其中 `local_block_ids` 来自：
+其中 `local_block_ids` 的生成方式是：
 
 ```text
-blocks.get_unhashed_block_ids_all_groups()
+如果 num_external_tokens > 0：
+  unhashed_local_block_ids = blocks.get_unhashed_block_ids_all_groups()
+否则：
+  unhashed_local_block_ids = ()
+
+local_block_ids = get_sw_clipped_blocks(unhashed_local_block_ids)
 ```
 
 含义是：
 
 ```text
-只拉取那些还没有本地 prefix cache hash 的 blocks。
+只拉取那些还没有本地 prefix cache hash 的 blocks，并按滑动窗口裁剪。
 ```
 
-如果本地已经 full prefix cache hit，`num_external_tokens=0`，也可能保留一个空 recv 任务，用于通知远端释放。
+如果本地已经 full prefix cache hit，`num_external_tokens=0`，会保留一个空 recv 任务，用于后续 `send_notif` 通知远端释放。
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:126` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py:179`
 
@@ -875,13 +887,22 @@ Worker 会根据本地/远端 block size、TP mapping、物理布局把它们转
 
 ## 18. Offloading Worker 如何执行 load
 
-Offloading Worker 在 metadata 中看到：
+Offloading 的 Worker 侧入口先经过 wrapper：
+
+```text
+OffloadingConnector.start_load_kv()
+  → OffloadingConnectorWorker.start_kv_transfers(metadata)
+```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:89` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:92`
+
+Worker 在 metadata 中看到：
 
 ```text
 metadata.load_jobs
 ```
 
-入口：`OffloadingConnectorWorker.start_kv_transfers()`，位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:234`
+`OffloadingConnectorWorker.start_kv_transfers()` 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:234`
 
 它会：
 
@@ -894,15 +915,19 @@ metadata.load_jobs
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:234` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:244`
 
-load 完成后，`get_finished()` 会从底层 worker 拉取 finished transfer：
+load 完成后，wrapper 的 `OffloadingConnector.get_finished()` 会先把 store jobs 延迟提交给下一步的 `start_kv_transfers()`，再从底层 worker 拉取 finished transfer：
 
 ```text
-worker.get_finished()
+OffloadingConnector.get_finished()
+  → connector_worker.prepare_store_kv(metadata)
+  → connector_worker.get_finished(finished_req_ids)
   → 如果 job_id 属于 _load_jobs
   → finished_recving.add(req_id)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:252` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:286`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:111` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:120`
+
+底层 worker 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:252` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:286`
 
 ---
 
@@ -1130,7 +1155,7 @@ _update_requests_with_invalid_blocks(... evict_blocks=False)
 
 ### 23.2 finished_recving 后如何提交失败结果
 
-如果 async 请求有失败 block，Scheduler 会记录：
+如果启用了 recompute policy（`recompute_kv_load_failures=True`），async 请求有失败 block 时，Scheduler 会记录：
 
 ```text
 failed_recving_kv_req_ids |= async_failed_req_ids
@@ -1151,14 +1176,14 @@ failed_recving_kv_req_ids |= async_failed_req_ids
 
 位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2360` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2371`
 
-也就是说：
+也就是说，在 recompute policy 下：
 
 ```text
 load 失败不是立刻让请求消失；
 Scheduler 会尽量保留失败 block 之前的有效 prefix，然后后续本地重算失败部分。
 ```
 
-如果配置的 failure policy 是 fail，则后续会按失败请求处理；相关细节见 `08_invalid_blocks_and_recompute.md`。
+如果配置的 failure policy 是 fail（`recompute_kv_load_failures=False`），`_handle_invalid_blocks()` 会直接返回受影响请求，`update_from_output()` 随后用 `FINISHED_ERROR` 结束它们；相关细节见 `08_invalid_blocks_and_recompute.md`。
 
 ---
 

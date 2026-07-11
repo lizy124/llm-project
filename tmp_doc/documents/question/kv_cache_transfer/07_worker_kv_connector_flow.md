@@ -13,6 +13,7 @@
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py`
 
 本文承接 `04_scheduler_kv_connector_flow.md`：Scheduler 侧已经把外部 KV 的 load / save / preemption / block mapping 计划封装进 `SchedulerOutput.kv_connector_metadata`。本篇只看 Worker / ModelRunner 侧如何消费这个 metadata，如何把外部 KV 真正 load 到本地 paged KV cache，如何在 attention 层把本地 KV save 出去，以及如何把完成状态通过 `ModelRunnerOutput.kv_connector_output` 回传给 Scheduler。
@@ -109,6 +110,7 @@ EngineCore.step()
   → GPUModelRunner.execute_model(scheduler_output)
   → handle_preemptions(kv_connector_metadata)
   → _update_states() / _prepare_inputs() / _build_attention_metadata()
+  → _preprocess()
   → set_forward_context(attn_metadata, ...)
   → legacy: maybe_get_kv_connector_output(scheduler_output)
     或新版: kv_connector.pre_forward(scheduler_output)
@@ -728,6 +730,7 @@ if spec_config is not None:
 ```text
 target model forward 后，draft model 可能还需要保存自己的 KV cache。
 所以 wait_for_save + clear metadata 不能太早执行。
+需要注意：defer 的只是 `wait_for_save()` 和 `clear_connector_metadata()`；`get_finished()`、`get_block_ids_with_load_errors()`、stats / events / worker_meta 仍然在 context 退出时收集。
 ```
 
 ---
@@ -1137,7 +1140,9 @@ ExampleConnector 是 debug 实现：
 
 `MooncakeStoreConnector` 更接近 KVPool 场景。
 
-Worker 侧文件：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py`
+public connector wrapper 在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:87`
+
+Worker component 在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:914`
 
 它包含：
 
@@ -1181,6 +1186,12 @@ build_connector_worker_meta()
 clear_connector_metadata()
 ```
 
+需要注意：MooncakeStore 当前实现虽然实现了这些统一接口，但 `start_load_kv()`、`wait_for_layer_load()`、`save_kv_layer()`、`wait_for_save()` 都是 no-op；真实 load / store I/O 在 `get_finished()` 中发起，以便在模型计算发起后获得更好的 compute-I/O overlap。
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:275` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:303`
+
+I/O 发起位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1242` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1280`
+
 这就是 vLLM KV Connector 抽象的核心价值：
 
 ```text
@@ -1220,9 +1231,11 @@ Worker / ModelRunner
   → kv_connector_output
 
 Scheduler.update_from_output()
-  → connector.update_connector_output(kv_connector_output)
-  → finished_recving → 恢复 WAITING_FOR_REMOTE_KVS
-  → invalid_block_ids → recompute 或 fail
+  → 先处理 invalid_block_ids → recompute 或 fail
+  → _update_from_kv_xfer_finished(kv_connector_output)
+      → connector.update_connector_output(kv_connector_output)
+      → finished_recving → 记录到 finished_recving_kv_req_ids
+  → 下一轮 schedule() 再 promote WAITING_FOR_REMOTE_KVS
 ```
 
 这里有两个 load 分支：
@@ -1254,7 +1267,8 @@ Worker / ModelRunner
   → bind_connector_metadata(store metadata)
   → start_load_kv(forward_context) 可能 no-op
   → 部分 connector 在 attention layer forward 后通过 save_kv_layer(layer_name, kv_cache, attn_metadata) 保存
-  → NIXL push 等 connector 也可能通过 metadata / no-forward step / writer thread 推进保存
+  → NIXL push 通过 metadata / no-forward step / writer thread 推进保存
+  → MooncakeStore 当前在 get_finished() 中发起 load / store I/O
   → wait_for_save()
   → get_finished(finished_req_ids)
   → kv_connector_output.finished_sending
@@ -1268,7 +1282,7 @@ Scheduler.update_from_output()
 
 ```text
 Scheduler 决定“这个请求结束后是否要 save，以及 blocks 是否延迟释放”；
-Worker 决定“每层 KV 怎么从 tensor 中取出来并写到外部系统”；
+Worker 决定“KV 怎么从 tensor 中取出来并写到外部系统”（可能逐层，也可能由 connector 自己在 get_finished() / 后台线程中提交）；
 Scheduler 等 Worker 报告 finished_sending 后，才真正释放被延迟保护的 blocks。
 ```
 
@@ -1544,15 +1558,18 @@ Worker 侧可能经历：
 
 ```text
 1. execute_model() 收到 scheduler_output；
-2. total_num_scheduled_tokens = 0；
-3. 因为 has_kv_transfer_group()，不返回 EMPTY_MODEL_RUNNER_OUTPUT；
-4. 进入 kv_connector_no_forward()；
-5. bind_connector_metadata(metadata)；
-6. start_load_kv(forward_context=None) 发起或推进后台 load；
-7. 不执行模型 forward；
-8. get_finished() 如果 load 完成，返回 finished_recving；
-9. get_block_ids_with_load_errors() 如果 load 失败，返回 invalid_block_ids；
-10. ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output) 回 Scheduler。
+2. 如果有 KV transfer group，先 handle_preemptions(metadata)；
+3. 执行 _update_states(scheduler_output)；
+4. total_num_scheduled_tokens = 0；
+5. 因为 has_kv_transfer_group()，不返回 EMPTY_MODEL_RUNNER_OUTPUT；
+6. 进入 kv_connector_no_forward()；
+7. set_forward_context(None, vllm_config) 创建 attn_metadata=None 的 ForwardContext；
+8. bind_connector_metadata(metadata)；
+9. start_load_kv(get_forward_context()) 发起或推进后台 load；
+10. 不执行模型 forward；
+11. get_finished() 如果 load 完成，返回 finished_recving；
+12. get_block_ids_with_load_errors() 如果 load 失败，返回 invalid_block_ids；
+13. ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output) 回 Scheduler。
 ```
 
 Scheduler 收到后：
@@ -1588,11 +1605,12 @@ Worker 侧后续某轮收到 store metadata：
 ```text
 1. bind_connector_metadata(store metadata)；
 2. model forward 或 no-forward step 进入 connector 生命周期；
-3. attention layer exit 调 save_kv_layer()；
-4. connector 后台保存该层 KV；
-5. wait_for_save() 根据 connector 策略等待必要保存完成；
-6. get_finished(finished_req_ids) 返回 finished_sending；
-7. Scheduler 收到 finished_sending 后真正 free blocks。
+3. 对逐层 connector，attention layer exit 调 save_kv_layer()；
+4. 对 MooncakeStore 这类 connector，实际 store I/O 可在 get_finished() 中提交；
+5. connector 后台保存 KV；
+6. wait_for_save() 根据 connector 策略等待必要保存完成；
+7. get_finished(finished_req_ids) 返回 finished_sending；
+8. Scheduler 收到 finished_sending 后真正 free blocks。
 ```
 
 如果 connector 把保存状态放在 `kv_connector_worker_meta` 而不是 `finished_sending`，Scheduler 侧 connector 会在 `update_connector_output()` 中消费这些自定义状态。
@@ -1708,7 +1726,7 @@ kv_connector_worker_meta 是 connector 自定义扩展通道，用于传更复�
 wait_for_save → collect output → clear_connector_metadata
 ```
 
-如果 spec decode 设置了 `defer_finalize=True`，则延后到 `sample_tokens()` 中的 `finalize_kv_connector()`。
+如果 spec decode 设置了 `defer_finalize=True`，则只延后 `wait_for_save()` 和 `clear_connector_metadata()`；output collection 仍在 context 退出时完成，后续 `sample_tokens()` 中的 `finalize_kv_connector()` 只负责等待保存并清理 metadata。
 
 ---
 
@@ -1798,10 +1816,11 @@ Worker 初始化
   ├─ ModelRunnerOutput.kv_connector_output
   ├─ KVOutputAggregator.aggregate()  # 多 worker 时
   └─ Scheduler.update_from_output()
-       ├─ connector.update_connector_output(kv_connector_output)
-       ├─ finished_recving → 恢复 WAITING_FOR_REMOTE_KVS
-       ├─ finished_sending → 释放延迟 blocks
-       └─ invalid_block_ids → recompute / fail
+       ├─ invalid_block_ids → recompute / fail
+       └─ _update_from_kv_xfer_finished(kv_connector_output)
+            ├─ connector.update_connector_output(kv_connector_output)
+            ├─ finished_recving → 记录到 finished_recving_kv_req_ids，下一轮 schedule() 恢复 WAITING_FOR_REMOTE_KVS
+            └─ finished_sending → 释放延迟 blocks
 ```
 
 ---

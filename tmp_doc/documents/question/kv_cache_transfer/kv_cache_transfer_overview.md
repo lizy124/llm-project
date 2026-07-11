@@ -105,9 +105,10 @@ Request
 KVPool hit
   → Scheduler 为 hit tokens 分配本地 KV blocks
   → Worker 从 KVPool 把 KV 写入这些 blocks
-  → Scheduler 收到 finished_recving 后承认这些 blocks 可复用
-  → 请求结束后 Scheduler 可让 Worker 把 blocks 保存回 KVPool
-  → finished_sending 后才安全释放 blocks
+  → sync load：本轮直接进入 running，按普通路径 cache / forward
+  → async load：Scheduler 收到 finished_recving 后承认这些 blocks 可复用
+  → 请求结束后 connector 可决定是否保存 / 发送这些 blocks
+  → 若 request_finished*() 要求 delay_free_blocks，则 finished_sending 后才安全释放 blocks
 ```
 
 ---
@@ -708,7 +709,7 @@ KVConnectorOutput()
   → start_load_kv(get_forward_context())
 ```
 
-legacy context 退出时，或新版 `ActiveKVConnector.post_forward()` 中：
+legacy context 退出时，或新版 `ActiveKVConnector.post_forward()` 中，普通 forward 路径通常是：
 
 ```text
 wait_for_save()
@@ -722,7 +723,9 @@ wait_for_save()
 
 新版 `ActiveKVConnector.pre_forward()` 则把 `handle_preemptions()`、`bind_connector_metadata()` 和 `start_load_kv()` 合并在 forward 前执行。
 
-这说明 Worker connector 生命周期围绕一次模型执行：
+但这不是无条件顺序：0-token `kv_connector_no_forward()` 会传 `wait_for_save=False`；speculative decoding 下 `defer_finalize=True` 会延后 `wait_for_save()` 和 `clear_connector_metadata()`，但仍在 context 退出时收集 finished / invalid / stats / events / worker_meta。
+
+这说明 Worker connector 生命周期包住一次模型执行：
 
 ```text
 forward 前启动 load；
@@ -1250,6 +1253,8 @@ kv_transfer_params：可随输出返回给上层或远端，用于后续 remote 
 
 ### 9.2 请求结束后的主链路
 
+对于 request-finished 型异步 save / send connector，典型链路是：
+
 ```text
 Scheduler.update_from_output()
   → request stop
@@ -1271,6 +1276,8 @@ Scheduler.update_from_output()
       → _free_blocks()
 ```
 
+并非所有 KVPool connector 都把“保存决策”放在 request_finished 阶段。例如 MooncakeStore 主要在 `build_connector_meta()` 中随 scheduled requests 构造 save metadata；Offloading store 不依赖 finished_sending 释放整个 request，而是通过 worker meta 的 completed jobs 和 jobs_to_flush 管理 store 完成与 block 复用安全。
+
 ### 9.3 finished_sending 的作用
 
 `finished_sending` 表示：
@@ -1285,7 +1292,7 @@ Worker 侧异步 save / send 已完成，本地 blocks 可以释放。
 connector.request_finished*() 返回 delay_free_blocks=True。
 ```
 
-如果没有 `finished_sending`，Scheduler 会继续保留 request 和 blocks，避免外部 transfer 读到被覆盖的数据。
+如果某个 connector 的 `request_finished*()` 已返回 `delay_free_blocks=True`，但还没有对应 `finished_sending`，Scheduler 会继续保留 request 和 blocks，避免外部 transfer 读到被覆盖的数据。Offloading 这类不通过 `delay_free_blocks` 保留整个 request 的 connector 不适用这条规则。
 
 ### 9.4 save 与 prefix cache / sliding window
 
@@ -1392,6 +1399,8 @@ block_hash[i] = hash(parent_block_hash[i-1], block_tokens[i], extra_keys)
 
 ### 10.5 async load 失败为什么仍等 finished_recving
 
+本节描述 recompute policy 下的恢复路径。
+
 async load 中，即使 Worker 已经上报 invalid blocks，也必须等：
 
 ```text
@@ -1404,7 +1413,7 @@ finished_recving
 async loading 的失败 block 可以在任意 forward pass 上报，最晚必须在 get_finished() 返回该请求 finished_recving 的同一 pass 上报；即使失败，也必须通过 get_finished() 报告完成。
 ```
 
-所以动作分两段：
+所以 recompute policy 下动作分两段：
 
 ```text
 invalid_block_ids 到达：
@@ -1413,6 +1422,8 @@ invalid_block_ids 到达：
 finished_recving 到达：
   _update_waiting_for_remote_kv() 提交有效前缀或释放 blocks。
 ```
+
+如果 policy 是 fail，请求会被置为 `FINISHED_ERROR`；若 transfer 尚未收尾，blocks 的实际释放仍可能延迟到 finished_recving。
 
 ---
 

@@ -6,6 +6,7 @@
 - `code/vllm/vllm/v1/attention/selector.py`
 - `code/vllm/vllm/v1/attention/backends/`
 - `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
 - `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
 - `code/vllm/vllm/model_executor/layers/attention_layer_base.py`
 - `code/vllm/vllm/forward_context.py`
@@ -25,7 +26,7 @@
 
 ```text
 1. Attention 子系统处在 vLLM V1 哪一层？
-2. Attention layer、AttentionBackend、AttentionMetadataBuilder、AttentionImplBase 分别是什么？
+2. Attention layer / MLAAttention、AttentionBackend、AttentionMetadataBuilder、AttentionImplBase 分别是什么？
 3. Attention 子系统和 Scheduler / KVCacheManager / ModelRunner 的边界是什么？
 4. Attention 子系统如何参与 KV cache spec / KV cache layout？
 5. backend selection 发生在哪里？由哪些条件决定？
@@ -166,6 +167,8 @@ AttentionImplBase / AttentionImpl
 它们不是同一层。
 
 ### 3.1 Attention layer：模型里的 attention 模块
+
+标准 `Attention` 和 MLA 的 `MLAAttention` 是两条相关但不同的 layer 路径。本节先讲标准 `Attention`。
 
 `Attention` 定义在：
 
@@ -557,7 +560,7 @@ attention_cls = current_platform.get_attn_backend_cls(
 - 用户指定的 backend；
 - dtype / KV cache dtype；
 - head_size；
-- block_size；
+- block_size（只有用户显式指定 block size 时进入 selector config，否则为 None）；
 - 是否 MLA；
 - 是否 sparse；
 - 是否 mm prefix；
@@ -677,9 +680,10 @@ def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...)
 1. may_add_encoder_only_layers_to_kv_cache_config()
 2. maybe_add_kv_sharing_layers_to_kv_cache_groups()
 3. initialize_attn_backend(kv_cache_config)
-4. prepare_kernel_block_sizes(kv_cache_config, self.attn_groups)
-5. initialize_metadata_builders(kv_cache_config, kernel_block_sizes)
-6. initialize_kv_cache_tensors(kv_cache_config, kernel_block_sizes)
+4. initialize_mamba_ssu_backend(kv_cache_config)
+5. prepare_kernel_block_sizes(kv_cache_config, self.attn_groups)
+6. initialize_metadata_builders(kv_cache_config, kernel_block_sizes)
+7. initialize_kv_cache_tensors(kv_cache_config, kernel_block_sizes)
 ```
 
 位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7317` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7340`
@@ -977,7 +981,7 @@ def forward(self, query, key, value, output_shape=None) -> torch.Tensor:
 2. 如果 backend 支持并启用了 query quant，先量化 query；
 3. 分配 output tensor；
 4. reshape query / key / value 成 [tokens, heads, head_dim]；
-5. 如果 backend 不在 forward 内更新 KV cache，则先调用 unified_kv_cache_update()；
+5. 如果 backend 不在 forward 内更新 KV cache，且当前有 key/value、不是 KV sharing consumer 层，则先调用 unified_kv_cache_update()；
 6. 调用 unified_attention_with_output()；
 7. 返回 output.view(-1, hidden_size)。
 ```
@@ -997,21 +1001,29 @@ KV cache update 分支：
 
 ```python
 if (not self.attn_backend.forward_includes_kv_cache_update
-        and self.kv_sharing_target_layer_name is None):
-    kv_cache_dummy_dep = unified_kv_cache_update(...)
+        and self.kv_sharing_target_layer_name is None
+        and key is not None
+        and value is not None):
+    if self.use_direct_call:
+        kv_cache_dummy_dep = unified_kv_cache_update(...)
+    else:
+        kv_cache_dummy_dep = torch.ops.vllm.unified_kv_cache_update(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:491`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:490` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:502`
 
 如果当前层是 cross-layer KV sharing 的消费者层，`kv_sharing_target_layer_name is not None`，则会跳过本层自己的 KV cache update，因为它复用 target layer 的 KV cache。
 
-attention 调用：
+attention 调用同样分 direct-call 和 custom-op 两条路径：
 
 ```python
-unified_attention_with_output(query, key, value, output, self.layer_name, ...)
+if self.use_direct_call:
+    unified_attention_with_output(query, key, value, output, self.layer_name, ...)
+else:
+    torch.ops.vllm.unified_attention_with_output(query, key, value, output, self.layer_name, ...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:502`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:510` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:522`
 
 所以 `Attention.forward()` 不是直接写一段 softmax 逻辑，而是：
 
@@ -1513,13 +1525,13 @@ attention backend 从不直接问 Scheduler “这个 request 有哪些 block”
 5. maybe_transfer_kv_layer 装饰器先执行 wait_for_layer_load(layer_name)。
 6. attention forward 读取已经 load 完的 KV。
 7. attention forward 后执行 save_kv_layer(layer_name, kv_cache, attn_metadata)。
-8. forward context 退出时 wait_for_save()，收集 KVConnectorOutput。
+8. KV connector context 退出时执行 wait_for_save() 并收集 KVConnectorOutput；此时外层 ForwardContext 仍然有效。
 ```
 
 这说明：
 
 ```text
-KV connector 的真实数据传输点不是 Scheduler，也不是单纯 ModelRunner 外层，而是 attention layer 的 KV cache 边界。
+KV connector 的真实数据传输点不是 Scheduler；ModelRunner connector context 负责启动异步 load / 收集完成状态，attention layer 边界负责逐层 wait_for_layer_load() 和 save_kv_layer()。
 ```
 
 ---
@@ -1625,8 +1637,9 @@ Scheduler 决定本轮哪些请求跑、跑多少 token，并通过 KVCacheManag
   │    └─ compilation_config.static_forward_context[layer_name] = self
   │
   ├─ ModelRunner.get_kv_cache_spec()
-  │    └─ Attention.get_kv_cache_spec()
-  │         └─ FullAttentionSpec / SlidingWindowSpec / MLA spec / etc.
+  │    └─ Attention / MLAAttention.get_kv_cache_spec()
+  │         ├─ Attention：FullAttentionSpec / SlidingWindowSpec / TQFullAttentionSpec
+  │         └─ MLAAttention：MLA spec
   │
   └─ ModelRunner.initialize_kv_cache()
        ├─ initialize_attn_backend()

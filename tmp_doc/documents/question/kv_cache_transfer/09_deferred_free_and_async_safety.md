@@ -818,6 +818,10 @@ if (
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1005` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1017`
 
+Worker 侧在 `handle_preemptions()` 中对 `jobs_to_flush` 调 `worker.wait(...)`。
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:225` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:232`
+
 这个机制解决的是：
 
 ```text
@@ -957,10 +961,10 @@ step 1 output returns:
 在 step 1 output 回来前，A_blocks 不会被 request B 的 external KV load 复用。
 ```
 
-### 17.3 PP 场景下 preempt running 请求
+### 17.3 KV consumer + PP 场景下 preempt running 请求
 
 ```text
-PP 允许多个 batch 处在不同 pipeline stage；
+KV consumer + PP 允许多个 batch 处在不同 pipeline stage；
 request A 被 preempt；
 _preempt_request(A)
   → _free_request_blocks(A)
