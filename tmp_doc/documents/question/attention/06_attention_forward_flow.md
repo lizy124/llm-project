@@ -2,16 +2,17 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\kv_transfer_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\mla_attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\cross_attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\encoder_only_attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\chunked_local_attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/forward_context.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
+- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/encoder_only_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/chunked_local_attention.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/`
 
 本文用于梳理一次模型 forward 中 attention layer 如何拿到 `ForwardContext`，如何读取 `AttentionMetadata` / `slot_mapping` / `kv_cache`，如何更新 KV cache，如何调用具体 backend kernel，以及输出如何回到模型 block。
 
@@ -111,13 +112,15 @@ Attention.forward() 收到的是已经投影后的 query / key / value；
 Attention.forward() 返回 attention output，后续 output projection 通常在模型层自己的 attention module 中完成。
 ```
 
+`GPUModelRunner` 有 classic 与 modular GPU runner 两套实现；本文主线以 classic `gpu_model_runner.py` 为准，modular GPU runner 的 `prepare_attn()` / `set_forward_context()` 语义相同，只是 block table 和 slot mapping 的组织方式不同。
+
 ---
 
 ## 4. GPUModelRunner 如何包住模型 forward
 
 `GPUModelRunner.execute_model()` 在真正 forward 前已经完成了输入、slot mapping 和 metadata 构造。
 
-关键代码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255`
+关键代码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4258`
 
 ```text
 _build_attention_metadata(...)
@@ -127,7 +130,7 @@ _build_attention_metadata(...)
 
 然后进入模型 forward：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4302`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4305`
 
 ```python
 with (
@@ -163,7 +166,7 @@ with (
 
 ### 4.1 _model_forward() 本身很薄
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3757`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3760`
 
 `_model_forward()` 最终只是调用：
 
@@ -238,7 +241,7 @@ no_compile_layers
 
 ### 5.2 get_attention_context(layer_name)
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
 
 它从当前 `ForwardContext` 中取出：
 
@@ -270,7 +273,7 @@ ForwardContext 根据 layer_name 找到 metadata、layer 对象、KV cache 和 s
 
 ## 6. Attention layer 初始化时已经绑定 backend impl
 
-标准 `Attention` 定义在：`code/vllm/vllm/model_executor/layers/attention/attention.py:178`
+标准 `Attention` 定义在：`code/vllm/vllm/model_executor/layers/attention/attention.py:192`
 
 初始化时会选择 backend：
 
@@ -279,7 +282,7 @@ get_attn_backend(...)
   → self.attn_backend
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:304`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:319`
 
 然后实例化 impl：
 
@@ -288,7 +291,7 @@ impl_cls = self.attn_backend.get_impl_cls()
 self.impl = impl_cls(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:373`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:387`
 
 同时把当前 layer 注册到静态 forward context：
 
@@ -296,7 +299,7 @@ self.impl = impl_cls(...)
 compilation_config.static_forward_context[prefix] = self
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:397`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:410`
 
 这就是后面 `get_attention_context(layer_name)` 能通过 `no_compile_layers[layer_name]` 找回 layer 实例的原因。
 
@@ -308,7 +311,7 @@ compilation_config.static_forward_context[prefix] = self
 self.kv_cache = torch.tensor([])
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:413`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:424`
 
 真正的 KV cache tensor 会在 KV cache 初始化 / bind 阶段绑定到 attention layer。
 
@@ -324,7 +327,7 @@ KV cache 初始化时：绑定真实 kv_cache tensor；
 
 ## 7. Attention.forward() 的输入输出
 
-入口：`code/vllm/vllm/model_executor/layers/attention/attention.py:438`
+入口：`code/vllm/vllm/model_executor/layers/attention/attention.py:452`
 
 签名：
 
@@ -370,13 +373,13 @@ output_shape：某些 backend / MLA 变体可能需要特殊 output shape。
 关键代码位置：
 
 ```text
-maybe_calc_kv_scales：attention.py:457
-query quantization：attention.py:462
-output 分配：attention.py:474
-Q/K/V reshape：attention.py:481
-separate KV cache update：attention.py:491
-unified_attention_with_output：attention.py:502
-返回 output：attention.py:530
+maybe_calc_kv_scales：attention.py:471
+query quantization：attention.py:476
+output 分配：attention.py:488
+Q/K/V reshape：attention.py:495
+separate KV cache update：attention.py:504
+unified_attention_with_output：attention.py:516
+返回 output：attention.py:544
 ```
 
 ### 7.2 Q/K/V reshape 的边界
@@ -400,7 +403,7 @@ output:[num_tokens, num_heads, head_size_v]
 self.use_direct_call = not current_platform.opaque_attention_op()
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:394`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:408`
 
 含义是：
 
@@ -469,7 +472,7 @@ forward_includes_kv_cache_update = False
 unified_kv_cache_update(key, value, layer_name)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:499`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:504`
 
 `unified_kv_cache_update()` 内部：
 
@@ -480,7 +483,7 @@ unified_kv_cache_update(key, value, layer_name)
 4. 返回一个空 tensor 作为 dummy dependency
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:692`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:713`
 
 ### 8.3 kv_cache_dummy_dep 的意义
 
@@ -521,7 +524,7 @@ sharing layer 复用 target layer 的 KV，不重复写入。
 
 ## 9. unified_attention_with_output 做什么
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:755`
 
 装饰器：
 
@@ -556,7 +559,7 @@ self.impl.forward(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:753`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:774`
 
 ### 9.1 为什么 output 由外层传入
 
@@ -577,7 +580,7 @@ self.impl.forward(
 mutates_args=["output", "output_block_scale"]
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:779`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:800`
 
 ### 9.2 maybe_transfer_kv_layer 装饰器
 
@@ -715,7 +718,7 @@ GPUModelRunner._get_slot_mappings() 会使用 padded dimensions，
 确保 key/value tensor 和 slot_mapping 形状一致。
 ```
 
-对应判断在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4185`
+对应判断在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4188`
 
 Triton backend 还支持更多 attention type：
 
@@ -803,7 +806,7 @@ k_c_normed = k_c_normed[:num_actual_toks]
 k_pe = k_pe[:num_actual_toks]
 ```
 
-位置：`mla_attention.py:663`
+位置：`mla_attention.py:669`
 
 接着判断 token 类型：
 
@@ -812,7 +815,7 @@ num_mqa_tokens = attn_metadata.num_decode_tokens
 num_mha_tokens = q.size(0) - num_mqa_tokens
 ```
 
-位置：`mla_attention.py:682`
+位置：`mla_attention.py:681`
 
 ### 14.2 prefill：forward_mha
 
@@ -829,7 +832,7 @@ self.impl.forward_mha(
 )
 ```
 
-位置：`mla_attention.py:707`
+位置：`mla_attention.py:713`
 
 这条路径处理 prefill / chunked prefill，通常是 MHA-style 计算。
 
@@ -847,11 +850,11 @@ self.impl.forward_mha(
 7. 做 v_up projection。
 ```
 
-核心调用位置：`mla_attention.py:791`
+核心调用位置：`mla_attention.py:797`
 
 ### 14.4 MLA KV cache update
 
-MLA impl 的 `do_kv_cache_update()` 定义在：`code/vllm/vllm/v1/attention/backend.py:931`
+MLA impl 的 `do_kv_cache_update()` 定义在：`code/vllm/vllm/v1/attention/backend.py:963`
 
 它调用：
 
@@ -1022,7 +1025,7 @@ KV connector 有两层参与点。
 self.maybe_get_kv_connector_output(...)
 ```
 
-位置：`gpu_model_runner.py:4315`
+位置：`gpu_model_runner.py:4318`
 
 它包住整个 model forward，用于收集 connector 输出和 finalize 行为。
 
@@ -1032,7 +1035,11 @@ self.maybe_get_kv_connector_output(...)
 defer_kv_connector_finalize = self.speculative_config is not None
 ```
 
-位置：`gpu_model_runner.py:4297`
+位置：`gpu_model_runner.py:4304`
+
+`maybe_get_kv_connector_output()` 本身定义在 mixin 中，会在有 KV transfer group 时绑定 connector metadata、启动异步 load，并在退出时收集 finished / invalid block / stats 等输出。
+
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:51`
 
 原因是 draft model 也可能需要保存 KV，所以 finalize 可能延后。
 
@@ -1084,7 +1091,7 @@ skip_compiled
 pad_attn = cudagraph_mode == CUDAGraphMode.FULL
 ```
 
-位置：`gpu_model_runner.py:4196`
+位置：`gpu_model_runner.py:4199`
 
 如果 full graph，需要：
 
@@ -1109,7 +1116,7 @@ attn_metadata.num_actual_tokens
 num_actual_tokens = attn_metadata.num_actual_tokens
 ```
 
-MLA：`mla_attention.py:663`
+MLA：`mla_attention.py:669`
 
 ```text
 num_actual_toks = attn_metadata.num_actual_tokens
@@ -1123,7 +1130,7 @@ num_actual_toks = attn_metadata.num_actual_tokens
 @eager_break_during_capture
 ```
 
-位置：`attention.py:734`
+位置：`attention.py:755`
 
 这表示某些 capture 场景下需要在 attention custom op 边界打断 eager / graph 行为，避免把不适合 capture 的动态逻辑放进图里。
 
@@ -1163,21 +1170,23 @@ list[dict[str, AttentionMetadata]]
 
 位置：`forward_context.py:132`
 
-`get_attention_context()` 当前对 list 的处理是：
+`get_attention_context()` 对 list 型 `attn_metadata` 的兜底处理是：
 
 ```text
 attn_metadata_raw[0][layer_name]
 ```
 
-位置：`attention.py:676`
+位置：`attention.py:697`
 
-注释说明 list 场景可用于 speculative decoding，其中 `[0]` 是 base-model metadata dict。
+但 DBO / ubatch 的常规执行会由 `UBatchWrapper` 为每个 ubatch 单独创建 forward context，把对应切片的 `attn_metadata[i]` 和 `slot_mapping[i]` 放入该 ubatch 的 context。
+
+位置：`code/vllm/vllm/v1/worker/gpu_ubatch_wrapper.py:333`
 
 所以从 attention forward 的角度看：
 
 ```text
 ubatch 的切分边界由 ForwardContext 和 metadata 决定；
-Attention.forward() 仍通过 layer_name 取当前应使用的 metadata；
+真正进入单个 ubatch forward 时，Attention.forward() 仍通过 layer_name 取当前 ubatch 应使用的 metadata；
 更复杂的 microbatch 调度由 runner / wrapper 处理。
 ```
 
@@ -1191,7 +1200,7 @@ Attention.forward() 仍通过 layer_name 取当前应使用的 metadata；
 output.view(-1, hidden_size)
 ```
 
-位置：`attention.py:530`
+位置：`attention.py:544`
 
 然后模型 layer 通常会继续执行：
 
@@ -1204,7 +1213,7 @@ MLP；
 
 整个模型 forward 返回 `hidden_states` 后，`GPUModelRunner` 才做 logits：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4357`
 
 ```python
 sample_hidden_states = hidden_states[logits_indices]

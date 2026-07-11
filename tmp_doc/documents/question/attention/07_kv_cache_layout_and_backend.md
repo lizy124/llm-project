@@ -2,17 +2,18 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\kv_cache_interface.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\flash_attn.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\flashinfer.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\mla_attention.py`
+- `code/vllm/vllm/v1/kv_cache_interface.py`
+- `code/vllm/vllm/v1/core/kv_cache_utils.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/utils.py`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/attn_utils.py`
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/utils.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
 
 本文用于梳理 KV cache layout、cache dtype、page size、block size、kernel block size、stride order、KV cache group、KV connector cross-layer layout 与 attention backend 的关系。前一篇 `05_slot_mapping_and_block_table.md` 重点讲“token 如何映射到 KV slot”，本文重点讲“KV cache tensor 本身长什么样、由谁决定、如何绑定到 attention layer、backend 如何解释这块内存”。
 
@@ -360,12 +361,16 @@ size
 
 shared_by
   哪些 layer name 共享这块 raw tensor。
+
+offset / block_stride
+  packed layout 中该层在每个 block 内的字节偏移和每个物理 block 的总 stride；默认 0 表示非 packed。
 ```
 
 注意这里的 tensor 还不是最终形状：
 
 ```text
-它只是一段 int8 raw buffer；
+它通常是一段 int8 raw buffer；
+如果 offset / block_stride 非零，则描述的是 packed backing tensor 中每层的 per-block 偏移；
 后面会被 ModelRunner view 成 backend 需要的 dtype / shape / stride。
 ```
 
@@ -452,9 +457,9 @@ Pipeline parallel 下，不同 worker 可能持有不同层；但 EngineCore / S
 get_kv_cache_config_from_groups(...)
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1247`
+位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1306`
 
-它主要有三种路径。
+它主要有四种路径。
 
 #### 路径一：attention-free model
 
@@ -465,7 +470,7 @@ num_blocks = 1
 kv_cache_tensors = []
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1263` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1270`
+位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1322` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1329`
 
 这里仍然返回 `num_blocks=1`，因为 BlockPool 总是需要 null block。
 
@@ -480,9 +485,15 @@ KVCacheTensor(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1272` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1290`
+位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1331` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1349`
 
-#### 路径三：通用 hybrid groups
+#### 路径三：packed per-block groups
+
+如果是 DeepSeek V4 这类 `UniformTypeKVCacheSpecs` 组合，或显式打开 `VLLM_USE_PACKED_HMA_KV_CACHE` 的多组 HMA layout，会走 packed per-block KV cache。它会按 page size 分桶，并在一个 backing tensor 内通过 `offset / block_stride` 让不同 group 的 layer 在同一 physical block 下紧密排列。
+
+位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1253` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1300`
+
+#### 路径四：通用 hybrid groups
 
 普通 hybrid 情况下，会按 group size 建多个 memory pool。
 
@@ -500,7 +511,7 @@ raw tensor 0 shared_by = [full.0, sw.0, sw.1]
 raw tensor 1 shared_by = [full.1, sw.2]
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1301` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1326`
+位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:1358` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:1383`
 
 关键点：
 
@@ -537,10 +548,11 @@ hash_block_size
 
 位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:593`
 
-单组时：
+单组或无 group 时：
 
 ```text
 scheduler_block_size = cache_config.block_size * dcp * pcp
+hash_block_size = scheduler_block_size
 ```
 
 多组时：
@@ -715,11 +727,11 @@ stride_order: (1, 3, 0, 2, 4)
 在逻辑 shape 前面额外加一个 num_layers 维度后，backend 希望物理内存如何排列。
 ```
 
-如果返回值不包含额外层维度，或者层维度仍然放在最外层不参与 per-block 连续布局，就不适合跨层 KV transfer。
+如果返回值不包含额外层维度，或者 backend 不能按 block stride 索引 KV page，就不适合跨层 uniform KV transfer。当前代码会通过 `AttentionSpec.indexes_kv_by_block_stride` gate 这条路径。
 
 ### 8.5 get_required_kv_cache_layout()
 
-定义位置：`code/vllm/vllm/v1/attention/backend.py:346`
+定义位置：`code/vllm/vllm/v1/attention/backend.py:378`
 
 默认返回：
 
@@ -841,7 +853,7 @@ FlashInfer 在 SM100 / Blackwell 上会要求：
 get_required_kv_cache_layout() → "HND"
 ```
 
-位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:443` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:448`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:448` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:452`
 
 这说明：
 
@@ -893,24 +905,28 @@ initialize_kv_cache(kv_cache_config)
 
 入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7018`
 
-它做的事很简单：
+它的核心逻辑是：
 
 ```text
 for kv_cache_tensor in kv_cache_config.kv_cache_tensors:
-    tensor = torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device=self.device)
+    if kv_cache_tensor.block_stride > 0:
+        复用同一个 packed_backing tensor
+    else:
+        tensor = torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device=self.device)
     for layer_name in kv_cache_tensor.shared_by:
         kv_cache_raw_tensors[layer_name] = tensor
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7031` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7038`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7020` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7050`
 
 关键点：
 
 ```text
 1. 初始分配是 int8 raw byte buffer；
 2. 多个 layer_name 可以指向同一块 raw tensor；
-3. 此时还没有 backend-specific shape；
-4. 后续 _reshape_kv_cache_tensors() 才把它 view 成 dtype + shape。
+3. packed layout 下多个 KVCacheTensor 会 alias 同一个 backing tensor，但通过 offset / block_stride 切不同 per-block 区域；
+4. 此时还没有 backend-specific shape；
+5. 后续 _reshape_kv_cache_tensors() 才把它 view 成 dtype + shape。
 ```
 
 它还会校验：
@@ -936,12 +952,16 @@ raw tensor 中实际初始化的 layer names
 对 attention KV cache：
 
 ```text
-num_blocks = raw_tensor.numel() // kv_cache_spec.page_size_bytes
+if packing is not None:
+    num_blocks = raw_tensor.numel() // block_stride
+else:
+    num_blocks = raw_tensor.numel() // kv_cache_spec.page_size_bytes
+
 num_blocks_per_kv_block = kv_cache_spec.block_size // kernel_block_size
 kernel_num_blocks = num_blocks * num_blocks_per_kv_block
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7087` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7095`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7091` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7121`
 
 含义：
 
@@ -1034,17 +1054,16 @@ ModelRunner 会先按 stride order 重排 shape，再 view raw tensor，最后 `
 
 ### 12.5 page_size_padded 的 strided view
 
-如果 `kv_cache_spec.page_size_padded is not None`，ModelRunner 用 `torch.as_strided()` 创建 view。
+如果 `kv_cache_spec.page_size_padded is not None`，ModelRunner 通过 `_reshape_attention_kv_cache()` 用 `torch.as_strided()` 创建 view。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7131` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7148`
+位置：`code/vllm/vllm/v1/worker/gpu/attn_utils.py:217` 到 `code/vllm/vllm/v1/worker/gpu/attn_utils.py:247`
 
 源码注释特别强调：
 
 ```text
-这个分支假设 kv_cache_shape[0] == num_blocks，
-即第一物理维是 block index；
-这对 MLA backend 成立，
-但对标准 attention backend 不成立，因为标准 attention shape 可能从 K/V 维度开始。
+这个分支要求 unpermuted kv_cache_shape[0] == num_blocks，
+即逻辑 shape 是 num-blocks-first；
+kv-first layouts 例如 (2, num_blocks, ...) 不支持 padded page strided view。
 ```
 
 这说明 padded page layout 不是对所有 backend 都天然适用，必须配合 backend shape 假设。
@@ -1148,8 +1167,8 @@ FlashInfer.forward_includes_kv_cache_update = False。
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:443`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:450`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:448`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:454`
 
 这意味着：
 
@@ -1363,14 +1382,18 @@ KV connector 要把 KV cache 在 worker 之间、设备之间或外部存储之�
 ```text
 1. 存在 KV transfer group；
 2. connector.prefer_cross_layer_blocks 为 True；
-3. 只有一个 attention group，且所有层 page size 相同；
+3. attn_groups 只有一个 KV cache group，且该 group 内只有一个 attention group；
 4. kv_cache_spec 是 AttentionSpec；
-5. backend.get_kv_cache_stride_order(include_num_layers_dimension=True)
-   支持把 num_layers 维度放进物理 layout；
-6. stride_order[0] != 0，即层维度不是保持最外层 identity layout。
+5. kv_cache_spec.indexes_kv_by_block_stride 为 True。
 ```
 
-位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:148` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:183`
+其中 `indexes_kv_by_block_stride` 是在 `get_kv_cache_spec()` 阶段根据 backend 的 layered stride order 计算出来的；它要求 backend 定义带 num_layers 维度的 stride order，且 `stride_order[0] != 0`，即层维度不是保持最外层 identity layout。
+
+位置：
+
+- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:115`
+- `code/vllm/vllm/v1/attention/backend.py:205`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:7483`
 
 源码注释说得很直观：
 
@@ -1379,7 +1402,7 @@ A uniform layout means all layers KV caches will share the same underlying tenso
 where for a given block number, the respective KV data for all layers will be contiguous.
 ```
 
-位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:119` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:125`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:119` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:132`
 
 ### 18.2 allocate_uniform_kv_caches()
 
@@ -1423,13 +1446,9 @@ MLA backend 的 `get_kv_cache_stride_order(include_num_layers_dimension=True)` �
 (0, 1, 2, 3)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1204` 到 `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1213`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1210` 到 `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1219`
 
-而 `use_uniform_kv_cache()` 要求：
-
-```text
-stride_order[0] != 0
-```
+`AttentionBackend.indexes_kv_by_block_stride()` 会把这种 layered identity layout 判定为 False，进而让 `use_uniform_kv_cache()` 返回 False。
 
 因此 MLA 会被判定为不适合 cross-layer block layout。
 
@@ -1465,7 +1484,7 @@ kv_cache
 layer_slot_mapping
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
 
 然后根据 backend 的：
 
