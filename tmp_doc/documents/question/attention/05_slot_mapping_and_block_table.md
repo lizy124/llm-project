@@ -14,6 +14,7 @@
 - `code/vllm/vllm/v1/attention/backend.py`
 - `code/vllm/vllm/v1/attention/backends/utils.py`
 - `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py`
 
 本问题关注：vLLM V1 中 request 的逻辑 token 序列如何通过 `block table` 和 `slot mapping` 映射到 paged KV cache 的物理位置；Scheduler、KVCacheManager、InputBatch / ModelRunner、attention metadata builder、attention backend 分别维护哪一部分；以及 prefix cache、chunked prefill、spec decode、context parallelism、CUDA graph padding、KV connector、多 KV cache group、hybrid block 等路径如何影响这套映射。
 
