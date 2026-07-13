@@ -727,6 +727,10 @@ self.scheduler.set_pause_state(pause_state)
 
 位置：`vllm/vllm/v1/engine/core.py:755` 到 `vllm/vllm/v1/engine/core.py:756`
 
+多进程 `EngineCoreProc` 会覆盖 `pause_scheduler()`，支持 `wait` 模式，并在还未完全 idle 时注册 idle callback，等请求 drain 或 output queue 清空后再完成 Future：
+
+位置：`vllm/vllm/v1/engine/core.py:1674` 到 `vllm/vllm/v1/engine/core.py:1714`
+
 可以理解为：
 
 ```text
@@ -756,7 +760,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:515`
 
 `_process_aborts_queue()` 会批量取出 request ids：
 
@@ -767,7 +771,7 @@ while not self.aborts_queue.empty():
 self.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:634` 到 `vllm/vllm/v1/engine/core.py:642`
+位置：`vllm/vllm/v1/engine/core.py:643` 到 `vllm/vllm/v1/engine/core.py:651`
 
 这样做的原因是：
 
@@ -786,7 +790,7 @@ with self.aborts_queue.mutex:
     self.aborts_queue.queue.clear()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1274` 到 `vllm/vllm/v1/engine/core.py:1277`
+位置：`vllm/vllm/v1/engine/core.py:1285` 到 `vllm/vllm/v1/engine/core.py:1288`
 
 ---
 
@@ -807,7 +811,7 @@ def shutdown(self):
     logger.debug_once("[shutdown] EngineCore: local resource teardown complete")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:644` 到 `vllm/vllm/v1/engine/core.py:660`
+位置：`vllm/vllm/v1/engine/core.py:653` 到 `vllm/vllm/v1/engine/core.py:669`
 
 它释放：
 
@@ -828,7 +832,7 @@ class EngineShutdownState(IntEnum):
     SHUTTING_DOWN = 2
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:888` 到 `vllm/vllm/v1/engine/core.py:891`
+位置：`vllm/vllm/v1/engine/core.py:899` 到 `vllm/vllm/v1/engine/core.py:902`
 
 busy loop 每轮都会调用 `_handle_shutdown()`：
 
@@ -838,7 +842,7 @@ while self._handle_shutdown():
     self._process_engine_step()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1263`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1274`
 
 如果 shutdown 被请求，会根据 `shutdown_timeout` 决定 abort 还是 drain：
 
@@ -847,7 +851,7 @@ shutdown_timeout = self.vllm_config.shutdown_timeout
 mode = "abort" if shutdown_timeout == 0 else "drain"
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1327` 到 `vllm/vllm/v1/engine/core.py:1329`
+位置：`vllm/vllm/v1/engine/core.py:1338` 到 `vllm/vllm/v1/engine/core.py:1340`
 
 timeout 为 0 时，直接 abort 所有 in-flight 请求：
 
@@ -858,7 +862,7 @@ aborted_reqs = self.scheduler.finish_requests(
 self._send_abort_outputs(aborted_reqs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1337` 到 `vllm/vllm/v1/engine/core.py:1347`
+位置：`vllm/vllm/v1/engine/core.py:1348` 到 `vllm/vllm/v1/engine/core.py:1358`
 
 如果还有工作，就继续 loop；没有工作后退出：
 
@@ -871,7 +875,7 @@ if not self.has_work():
     return False
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1360` 到 `vllm/vllm/v1/engine/core.py:1366`
+位置：`vllm/vllm/v1/engine/core.py:1371` 到 `vllm/vllm/v1/engine/core.py:1377`
 
 ---
 
@@ -896,7 +900,7 @@ elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
     raise RuntimeError("Executor failed.")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1398` 到 `vllm/vllm/v1/engine/core.py:1399`
+位置：`vllm/vllm/v1/engine/core.py:1409` 到 `vllm/vllm/v1/engine/core.py:1410`
 
 utility 调用失败则不会直接当作普通请求输出，而是写入 `UtilityOutput.failure_message`：
 
@@ -912,7 +916,7 @@ output.failure_message = f"Call to {name} method failed: {str(e)}"
 self.output_queue.put_nowait(EngineCoreProc.ENGINE_CORE_DEAD)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1468` 到 `vllm/vllm/v1/engine/core.py:1472`
+位置：`vllm/vllm/v1/engine/core.py:1479` 到 `vllm/vllm/v1/engine/core.py:1483`
 
 所以异常传播大致分为：
 
@@ -938,7 +942,7 @@ for output in outputs.items() if outputs else ():
     self.output_queue.put_nowait(output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1303` 到 `vllm/vllm/v1/engine/core.py:1305`
+位置：`vllm/vllm/v1/engine/core.py:1315` 到 `vllm/vllm/v1/engine/core.py:1316`
 
 输出线程取出后设置 `engine_index` 并发给对应 client socket：
 
@@ -951,7 +955,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1626` 到 `vllm/vllm/v1/engine/core.py:1645`
+位置：`vllm/vllm/v1/engine/core.py:1632` 到 `vllm/vllm/v1/engine/core.py:1657`
 
 如果 `client_index == -1`，输出会发给 DP coordinator socket，而不是普通前端 client：
 
@@ -962,7 +966,7 @@ if client_index == -1:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
+位置：`vllm/vllm/v1/engine/core.py:1642` 到 `vllm/vllm/v1/engine/core.py:1647`
 
 所以跨进程返回路径是：
 
