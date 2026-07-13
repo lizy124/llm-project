@@ -2,13 +2,18 @@
 
 源码位置：
 
-- `code/vllm/vllm/v1\attention\backend.py`
-- `code/vllm/vllm/v1\attention\backends\`
-- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
-- `code/vllm/vllm/v1\worker\utils.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/utils.py`
+- `code/vllm/vllm/v1/worker/ubatch_utils.py`
 - `code/vllm/vllm/forward_context.py`
-- `code/vllm/vllm/model_executor\layers\attention\attention.py`
-- `code/vllm/vllm/model_executor\layers\attention\mla_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/encoder_only_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/chunked_local_attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/static_sink_attention.py`
 
 本文用于梳理 `AttentionMetadataBuilder` 如何把 `ModelRunner` 的 batch 状态、KV cache block table、slot mapping、prefill / decode 形态、CUDA graph / ubatching / cascade / spec decode 等执行条件，翻译成具体 attention backend 可以直接消费的 metadata。
 
@@ -103,7 +108,7 @@ backend class
 
 `AttentionMetadata` 是 backend-specific metadata 的基类。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:386`
+位置：`code/vllm/vllm/v1/attention/backend.py:354`
 
 它本身只定义统一类型边界，真正字段在具体 backend 中扩展，例如：
 
@@ -124,7 +129,7 @@ BaseMambaAttentionMetadata
 
 `CommonAttentionMetadata` 是 builder 的统一输入。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:393`
+位置：`code/vllm/vllm/v1/attention/backend.py:361`
 
 它保存的是所有 backend 都可能需要的 batch 级信息，例如：
 
@@ -161,7 +166,7 @@ InputBatch / SchedulerOutput / block table / slot mapping
 
 `AttentionMetadataBuilder` 是本文主角。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:565`
+位置：`code/vllm/vllm/v1/attention/backend.py:533`
 
 关键接口包括：
 
@@ -196,7 +201,7 @@ supports_update_block_table
 
 `AttentionGroup` 定义在 worker utils 中。
 
-位置：`code/vllm/vllm/v1/worker/utils.py:221`
+位置：`code/vllm/vllm/v1/worker/utils.py:222`
 
 它把同一 KV cache group 内满足以下条件的 layer 聚在一起：
 
@@ -208,7 +213,7 @@ num_heads_q 相同。
 
 这样同一组 layer 可以共享同一份 metadata builder 和同一份 metadata。
 
-原因是这些 layer 对 attention kernel 来说形状协议一致，没必要每层重复构造 metadata。
+原因是这些 layer 对 attention kernel 来说形状协议一致，没必要每层重复构造 metadata。`initialize_attn_backend()` 实际用 backend 的 `full_cls_name()`、per-layer `KVCacheSpec` 和 `num_heads_q` 组成去重 key，避免动态包装 backend 类对象不稳定导致误分组。
 
 ---
 
@@ -273,7 +278,7 @@ KV cache group
 AttentionGroup.create_metadata_builders(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/utils.py:234`
+位置：`code/vllm/vllm/v1/worker/utils.py:235`
 
 内部逻辑是：
 
@@ -313,7 +318,9 @@ GPUModelRunner._build_attention_metadata(...)
 它发生在：
 
 ```text
-_prepare_inputs()
+_may_reorder_batch()
+  → _prepare_inputs()
+  → _compute_cascade_attn_prefix_lens()（可选）
   → _determine_batch_execution_and_padding()
   → _get_slot_mappings()
   → _build_attention_metadata()
@@ -321,6 +328,8 @@ _prepare_inputs()
   → set_forward_context(...)
   → _model_forward()
 ```
+
+其中 `_may_reorder_batch()` 会在 `_prepare_inputs()` 前根据 `reorder_batch_threshold` 重排 `InputBatch`，保证后续 `query_start_loc` 和 block table 行顺序已经与 backend 期望的 decode / prefill 分区一致。
 
 ### 5.1 _build_attention_metadata() 的输入来自哪里
 
@@ -330,11 +339,11 @@ _prepare_inputs()
 1. _prepare_inputs()
    query_start_loc、seq_lens、positions、num_scheduled_tokens、logits_indices、spec decode 信息。
 
-2. _determine_batch_execution_and_padding()
-   num_tokens_padded、num_reqs_padded、cudagraph mode、ubatch slices。
+2. _compute_cascade_attn_prefix_lens() / _determine_batch_execution_and_padding()
+   cascade_attn_prefix_lens、num_tokens_padded、num_reqs_padded、cudagraph mode、ubatch slices。
 
 3. _get_slot_mappings()
-   每个 KV cache group 的 slot_mapping。
+   每个 KV cache group 的 slot_mapping，并为 `forward_context.slot_mapping` 生成按 layer name 索引的视图。
 
 4. SchedulerOutput / InputBatch
    block_table、num_common_prefix_blocks、encoder inputs、request 状态。
@@ -453,7 +462,7 @@ runner 在 hybrid KV cache group 场景下可以复用已有 metadata，只调�
 builder.update_block_table(metadata, blk_table, slot_mapping)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2370`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2370` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2437`
 
 这样可以减少重复构造开销。
 
@@ -533,7 +542,7 @@ max_query_len > 1
   可能是 prefill、chunked prefill、spec decode 或 mixed batch。
 ```
 
-`num_actual_tokens` 名称有历史包袱：普通路径下它等于当前真实 token 数；FULL CUDA graph / padding 路径下，它可能等于 padded token 数。需要未 padding 的视图时，应结合调用处的 `num_tokens` / `num_reqs`，或使用 `CommonAttentionMetadata.unpadded(...)`。
+`num_actual_tokens` 名称有历史包袱：它在 `CommonAttentionMetadata` 中由 runner 传入 `num_tokens_padded`，普通路径下等于真实 token 数；FULL CUDA graph / padding 路径下则可能等于 padded token 数。需要未 padding 的视图时，应结合调用处的 `num_tokens` / `num_reqs`，或使用 `CommonAttentionMetadata.unpadded(...)`。
 
 ### 6.2 sequence 布局字段
 
@@ -656,11 +665,13 @@ DCP 是 decode context parallelism / context parallel 相关路径。
 不同 backend 会用它构造不同结构：
 
 ```text
-FlashAttention：构造 dcp_context_kv_lens 和 max_dcp_context_kv_len；
-FlashInfer：调整 seq lens 并选择 DCP prefill wrapper；
-MLA：构造 local chunk context metadata；
+FlashAttention：当前在 builder 内按 context_kv_lens 重新计算 dcp_context_kv_lens 和 max_dcp_context_kv_len；
+FlashInfer：调整 seq lens 并选择 DCP prefill wrapper / plan；
+MLA：decode 侧直接使用 dcp_local_seq_lens，chunked prefill 侧构造 local chunk context metadata；
 Triton / Flex：按各自支持程度消费或忽略。
 ```
+
+注意：runner 会把 `dcp_local_seq_lens` 放进 common metadata，但并非每个 backend 都直接读取该字段；例如 FlashAttention builder 会基于 `seq_lens - query_lens` 自行计算本地 context KV 长度。
 
 ### 6.7 KV sharing / logits index 字段
 
@@ -671,7 +682,7 @@ num_logits_indices
 
 这组字段主要服务 KV sharing fast prefill。
 
-它们不是普通 attention 必需字段，而是某些 wrapper backend 需要把 logits index 信息附加进 metadata，用于 fast prefill 的特殊执行路径。
+它们不是普通 attention 必需字段，而是 fast prefill wrapper 会先用它们把 common metadata 改写成只覆盖 logits token 的视图，再把 `logits_indices_padded` / `num_logits_indices` 附加到返回的 backend metadata 上，用于 fast prefill 的特殊执行路径。
 
 ### 6.8 request 状态字段
 
@@ -700,15 +711,17 @@ is_prefilling
   num_scheduled_tokens
   cascade_attn_prefix_lens
   ubatch_slices
+  for_cudagraph_capture
 
 处理：
   1. 计算公共 batch 字段
   2. 构造 CommonAttentionMetadata base
   3. 补充 DCP / encoder / mm_prefix / KV sharing 字段
-  4. 按 KV cache group 替换 block table 和 slot mapping
+  4. 按 KV cache group 替换 block table、slot mapping 和 encoder_seq_lens
   5. 按 attention group 调用 builder
-  6. 可选复用 cached metadata 并 update_block_table
-  7. 可选按 ubatch 切分 metadata
+  6. 可选在 CUDA graph capture 中调用 build_for_cudagraph_capture
+  7. 可选复用 cached metadata 并 update_block_table
+  8. 可选按 ubatch 切分 metadata
 
 输出：
   attn_metadata: dict[layer_name, AttentionMetadata]
@@ -731,6 +744,8 @@ get_attention_context(layer_name)
 attn_metadata[layer_name] = metadata_for_this_layer
 ```
 
+如果启用 ubatching，`attn_metadata` 会变成 `list[dict[layer_name, metadata]]`，每个 ubatch 一份 dict；`get_attention_context()` 在普通 attention 自定义 op 中默认取第 0 份，实际 ubatch forward 会由 ubatch wrapper 切换对应的 forward context。
+
 但为了减少构造开销，同一 attention group 的多个 layer 可以指向同一个 metadata 对象。
 
 ### 7.2 为什么按 KV cache group 构造
@@ -741,11 +756,11 @@ KV cache group 可能不同：
 block size 不同；
 KV cache spec 不同；
 layer 集合不同；
-encoder-only / decoder / hybrid model 的 cache 组织不同；
+encoder-only / cross / decoder / hybrid model 的 cache 组织不同；
 某些 layer 可能共享 KV cache，某些不共享。
 ```
 
-所以 block table 和 slot mapping 必须先按 group 取出。
+所以 block table、slot mapping 和 encoder_seq_lens 必须先按 group 取出。
 
 ### 7.3 为什么还要按 attention group 构造
 
@@ -795,7 +810,7 @@ slot_mapping 表示每个新 token 写入哪个 KV slot。
 
 backend 可能据此走 decode kernel。
 
-例如 FlashInfer、MLA、GDN 等 builder 会显式把 decode tokens 拆出来。
+例如 FlashInfer、MLA、GDN、Mamba 等 builder 会显式把 decode tokens 拆出来；是否要求 decode query 长度统一，还会受 `reorder_batch_threshold` 和 backend 的 spec-as-decode 能力影响。
 
 ### 8.2 Prefill batch
 
@@ -858,7 +873,7 @@ long_extend
 pure_prefill
 ```
 
-`split_decodes_and_prefills(...)` 则在 builder 内部常用，用来把 common metadata 按 query lens、decode threshold、uniform 要求拆成不同区域。
+`split_decodes_and_prefills(...)` 则在 builder 内部常用，用来把已经重排后的 common metadata 按 query lens、decode threshold、uniform 要求拆成不同区域；必要时还会结合 `is_prefilling` 把 short extend 归到 prefill。
 
 这个机制的核心目的：
 
@@ -905,12 +920,13 @@ causal
 4. 支持 DCP context KV lens；
 5. 支持 mm_prefix range tensor；
 6. FA3 路径可能构造 AOT scheduler_metadata；
-7. CUDA graph 支持程度取决于 FA 版本和平台。
+7. CUDA graph 支持程度取决于 FA 版本和平台；
+8. full CUDA graph 下会把 scheduler_metadata 复制到预分配 buffer，并通过 max_num_splits 约束中间 buffer 上界。
 ```
 
 #### Cascade attention
 
-FlashAttention 是当前最典型支持 cascade attention 的 backend。
+FlashAttention 是当前最典型支持 cascade attention 的 backend；其 `use_cascade_attention()` 会要求 common prefix 至少约 256 token、请求数不少于 8，且不启用 ALiBi、sliding window、local attention 或 DCP。
 
 runner 先根据 common prefix blocks 计算：
 
@@ -987,9 +1003,10 @@ num_par_softmax_segments
 ```text
 1. 比 FlashAttention 更显式地管理 kernel 临时 buffer；
 2. 可支持 decoder / encoder / encoder_only / encoder_decoder 等 attention type；
-3. 支持 non-causal、mm_prefix、sink、batch invariance 等特殊能力；
+3. 支持 non-causal、mm_prefix、sink、ALiBi sqrt、batch invariance 等特殊能力；
 4. backend 的 forward_includes_kv_cache_update=False，KV cache update 可以和 attention forward 分开；
-5. CUDA graph capture 时会构造更保守的 seq_lens，避免 full graph capture 过慢。
+5. CUDA graph capture 时会先普通 build，再把 `seq_lens` 填成 1，避免 full graph capture 因 `max_model_len` 过大而过慢；
+6. backend 类声明 `use_cascade_attention()` 返回 False，metadata dataclass 虽有 cascade 字段，常规路径不会主动启用 Triton cascade。
 ```
 
 Triton metadata 不像 FlashInfer 那样显式持有 `prefill` / `decode` 子 metadata，更多是统一 paged attention 参数加 Triton kernel workspace。这类 builder 的重点不是只打包 varlen 参数，还要帮自有 Triton kernel 准备执行计划和 workspace。
@@ -1042,7 +1059,7 @@ FlashInfer builder 的特点：
 1. 不只是打包参数，还会做 wrapper planning；
 2. 同一个 batch 内 prefill 和 decode 可能分别选择 FlashInfer native 或 TRT-LLM kernel；
 3. TRTLLM path 会尽量使用 GPU tensor，减少 CPU sync；
-4. reorder_batch_threshold 通常较激进，让 decode / prefill 更容易分段；
+4. 默认 `reorder_batch_threshold` 为 1；如果 TRTLLM decode 可用，会通过 `_init_reorder_batch_threshold(..., supports_spec_as_decode=True)` 把阈值提升到 spec decode 可作为 uniform decode 处理的 query 长度；
 5. 代码中保留 cascade wrapper / metadata 路径：若 `common_prefix_len > 0` 会构造 `cascade_wrapper`，把 shared prefix 和 suffix paged KV metadata 交给 `MultiLevelCascadeAttentionWrapper.plan(...)`；但当前 `use_cascade_attention()` 明确返回 `False`，常规调度不会自动启用 FlashInfer cascade。
 ```
 
@@ -1089,7 +1106,7 @@ sliding window / local attention mask
 prefix LM / multimodal prefix full attention mask
 ```
 
-CUDA graph 下，FlexAttention builder 会尽量预构建 block mask，避免 capture 中出现不 graph-safe 的动态 mask 构造。
+CUDA graph 下，FlexAttention builder 会尽量预构建 block mask，避免 capture 中出现不 graph-safe 的动态 mask 构造；`build_for_cudagraph_capture()` 还会用 `seq_lens_cpu_upper_bound` 重新收紧 `max_seq_len`，避免用 `max_model_len` 触发不必要的 torch.compile 重编译。
 
 ### 9.5 CPUAttentionMetadataBuilder
 
@@ -1155,7 +1172,7 @@ workspace
 token_to_seq
 ```
 
-decode 侧则更接近 MQA-style 读取 compressed KV cache。
+decode 侧则更接近 MQA-style 读取 compressed KV cache，并在 DCP 下会用 `dcp_local_seq_lens` 替换本地 `seq_lens`，同时保留 `dcp_tot_seq_lens` 供后续合并。
 
 MLA builder 的特点：
 
@@ -1222,6 +1239,8 @@ prefix caching block index；
 causal conv1d metadata；
 spec decode accepted tokens。
 ```
+
+Mamba builder 默认支持 `supports_update_block_table`，但启用 speculative decoding 后会关闭该复用能力，因为 spec decode metadata 中的 state index 与 accepted-token 状态更强绑定。
 
 #### GDN
 
@@ -1334,8 +1353,9 @@ encoder-only 的复杂逻辑更多在 block table / slot mapping / CPU path 中�
 
 ```text
 包装底层 builder；
-附加 logits_indices_padded；
-附加 num_logits_indices。
+如果不是纯 decode，则先按 logits_indices 生成只覆盖 logits token 的 common metadata；
+调用底层 builder；
+再附加 logits_indices_padded 和 num_logits_indices。
 ```
 
 它说明 builder 还可以作为功能扩展点，把非 kernel 原生字段挂到 metadata 上。
@@ -1408,16 +1428,17 @@ num_reqs
 
 padding 到 capture size。
 
-metadata 中因此会同时存在：
+runner 调用处因此会同时维护真实尺寸和 padded 尺寸：
 
 ```text
-num_actual_tokens：真实 token 数；
-num_tokens_padded：执行图看到的 padded token 数；
+num_tokens / num_reqs：真实 token / request 数；
+batch_desc.num_tokens / num_reqs_padded：执行图看到的 padded token / request 数；
+CommonAttentionMetadata.num_actual_tokens：传给 builder 的执行 token 数，FULL CUDA graph 下可能是 padded token 数；
 slot_mapping padded 区域通常填 -1；
-block table padded rows 需要安全填充。
+block table padded rows 会填 `NULL_BLOCK_ID`（当前为 0，保留给 padding）。
 ```
 
-builder 必须保证 backend kernel 不会把 padded token 当作真实请求处理。
+builder 必须保证 backend kernel 不会把 padded token 当作真实请求处理；spec drafter 若需要真实视图，会在返回前通过 `CommonAttentionMetadata.unpadded(...)` 裁掉 padding。
 
 ---
 
@@ -1527,13 +1548,13 @@ builder 需要把它翻译成 backend 能理解的结构。
 
 ```text
 FlashAttention
-  构造 dcp_context_kv_lens / max_dcp_context_kv_len。
+  基于 context_kv_lens 重新计算 dcp_context_kv_lens / max_dcp_context_kv_len。
 
 FlashInfer
   调整 paged KV lens，并选择支持 DCP 的 wrapper / plan。
 
 MLA
-  构造 local chunk seq lens 和 chunked context metadata。
+  decode 侧使用 dcp_local_seq_lens，chunked prefill 侧构造 local chunk seq lens 和 chunked context metadata。
 
 Triton / Flex
   按具体支持能力使用 common metadata 或走 fallback。
@@ -1840,15 +1861,15 @@ code/vllm/tests/v1/attention/test_gdn_metadata_builder.py
 
 | 阶段 | 主要函数 / 类 | 核心输入 | 核心输出 | 作用 |
 |---|---|---|---|---|
-| backend 选择 | `get_attn_backend()` / `AttentionBackend` | head size、dtype、KV dtype、平台能力 | backend class | 决定 impl / builder / KV cache 协议 |
+| backend 选择 | `get_attn_backend()` / `AttentionBackend` | head size、dtype、KV dtype、attention type、平台能力 | backend class | 决定 impl / builder / KV cache 协议 |
 | backend 分组 | `initialize_attn_backend()` | layer、KVCacheSpec、backend | `AttentionGroup` | 找出可共享 metadata 的 layer 组 |
-| builder 创建 | `initialize_metadata_builders()` | `AttentionGroup`、config、device | `AttentionMetadataBuilder` | 为每个 group 创建 metadata 构造器 |
+| builder 创建 | `initialize_metadata_builders()` | `AttentionGroup`、config、device、kernel_block_size | `AttentionMetadataBuilder` | 为每个 group 创建 metadata 构造器；ubatching 时每个 group 多个实例 |
 | 输入准备 | `_prepare_inputs()` | `SchedulerOutput`、`InputBatch` | query_start_loc、seq_lens、positions | 生成 token / request 边界信息 |
-| slot 映射 | `_get_slot_mappings()` | block table、positions | slot_mapping | 生成 token 到 KV slot 的映射 |
-| 公共 metadata | `_build_attention_metadata()` | batch 字段、block table、slot mapping | `CommonAttentionMetadata` | 形成跨 backend 的公共 batch 描述 |
-| backend metadata | `builder.build()` | `CommonAttentionMetadata` | backend-specific `AttentionMetadata` | 生成 kernel / wrapper 可消费的 metadata |
+| slot 映射 | `_prepare_inputs()` / `_get_slot_mappings()` | block table、positions、padding 信息 | slot_mapping | 先由 block table kernel 生成 token 到 KV slot 的映射，再按 group / layer 取视图 |
+| 公共 metadata | `_build_attention_metadata()` | batch 字段、block table、slot mapping、encoder_seq_lens | `CommonAttentionMetadata` | 形成跨 backend 的公共 batch 描述 |
+| backend metadata | `builder.build()` / `build_for_cudagraph_capture()` | `CommonAttentionMetadata`、common_prefix_len | backend-specific `AttentionMetadata` | 生成 kernel / wrapper 可消费的 metadata |
 | context 注入 | `set_forward_context()` | `attn_metadata`、slot_mapping | `ForwardContext` | 让模型层能按 layer name 取 metadata |
-| attention 执行 | `Attention.forward()` / impl | QKV、KV cache、metadata | attention output | 调用具体 backend kernel |
+| attention 执行 | `Attention.forward()` / `unified_attention_with_output()` / impl | QKV、KV cache、metadata | attention output | 调用具体 backend kernel |
 
 ---
 
@@ -1864,7 +1885,7 @@ SchedulerOutput / InputBatch
   → block_table / slot_mapping
   → _build_attention_metadata()
   → CommonAttentionMetadata
-  → backend.get_builder_cls().build(...)
+  → backend.get_builder_cls().build(...) / build_for_cudagraph_capture(...)
   → backend-specific AttentionMetadata
   → set_forward_context(...)
   → Attention.forward()
