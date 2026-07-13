@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `vllm/vllm/v1/engine/llm_engine.py`
-- `vllm/vllm/v1/engine/async_llm.py`
-- `vllm/vllm/v1/engine/input_processor.py`
-- `vllm/vllm/v1/engine/output_processor.py`
-- `vllm/vllm/v1/engine/core_client.py`
-- `vllm/vllm/v1/engine/core.py`
-- `vllm/vllm/v1/engine/__init__.py`
-- `vllm/vllm/v1/request.py`
+- `vllm/v1/engine/llm_engine.py`
+- `vllm/v1/engine/async_llm.py`
+- `vllm/v1/engine/input_processor.py`
+- `vllm/v1/engine/output_processor.py`
+- `vllm/v1/engine/core_client.py`
+- `vllm/v1/engine/core.py`
+- `vllm/v1/engine/__init__.py`
+- `vllm/v1/request.py`
 
 这个目录按问题拆解 vLLM V1 外层 `Engine` 体系，重点回答：`Engine` 到底指什么、`LLMEngine` 和 `AsyncLLM` 分别承担什么角色、外层 Engine 如何把用户输入转成 `EngineCoreRequest`、如何通过 `EngineCoreClient` 驱动内部 `EngineCore`、如何把 `EngineCoreOutputs` 转成用户可见输出，以及外层 Engine 和内部 EngineCore / Scheduler / Worker 的职责边界。
 
@@ -129,7 +129,7 @@ LLMEngine.step()
 ```text
 AsyncLLM 和 LLMEngine 有什么相同点？
 异步请求如何进入 EngineCore？
-output_handler 如何消费 EngineCoreOutputs？
+_run_output_handler() 内部的 output_handler task 如何消费 EngineCoreOutputs？
 RequestOutputCollector / async generator 如何返回输出？
 streaming input 如何进入 EngineCore？
 AsyncMPClient 在异步路径中负责什么？
@@ -144,7 +144,7 @@ AsyncLLM.generate()
   → OutputProcessor.add_request(..., queue)
   → EngineCoreClient.add_request_async()
 
-AsyncLLM.output_handler
+AsyncLLM._run_output_handler() 内部的 output_handler task
   → EngineCoreClient.get_output_async()
   → OutputProcessor.process_outputs()
   → RequestOutputCollector.put()
@@ -264,7 +264,7 @@ abort 请求如何同时清理输出侧和调度侧状态？
 
 ```text
 EngineCoreOutputs 如何被 LLMEngine.step() 消费？
-AsyncLLM output_handler 如何分发输出？
+AsyncLLM._run_output_handler() 内部的 output_handler task 如何分发输出？
 EngineCoreOutput / EngineCoreOutputs / RequestOutput 有什么区别？
 RequestOutput / PoolingRequestOutput 何时构造？
 多进程输出如何通过 ZMQ 回到前端？
@@ -386,7 +386,7 @@ engine_overview.md
   → 03_async_llm.md
 ```
 
-适合重点理解：同步 `LLMEngine.step()` 和异步 `AsyncLLM.output_handler` 的差异。
+适合重点理解：同步 `LLMEngine.step()` 和异步 `AsyncLLM._run_output_handler()` 内部 output handler task 的差异。
 
 ---
 

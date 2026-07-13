@@ -92,7 +92,7 @@ Worker / ModelRunner
 class EngineCoreOutput(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:173` 到 `vllm/vllm/v1/engine/__init__.py:180`
+位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:180`
 
 主要字段包括：
 
@@ -109,6 +109,7 @@ finish_reason: FinishReason | None = None
 stop_reason: int | str | None = None
 events: list[EngineCoreEvent] | None = None
 kv_transfer_params: dict[str, Any] | None = None
+ec_transfer_params: dict[str, Any] | None = None
 
 trace_headers: Mapping[str, str] | None = None
 
@@ -118,7 +119,7 @@ routed_experts: np.ndarray | None = None
 num_nans_in_logits: int = 0
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:182` 到 `vllm/vllm/v1/engine/__init__.py:199`
+位置：`vllm/vllm/v1/engine/__init__.py:181` 到 `vllm/vllm/v1/engine/__init__.py:202`
 
 可以分成几类：
 
@@ -133,6 +134,7 @@ num_nans_in_logits: int = 0
 | `stop_reason` | stop token / stop string 等停止细节 |
 | `events` | EngineCore 事件，用于 metrics / tracing |
 | `kv_transfer_params` | KV transfer 相关输出参数 |
+| `ec_transfer_params` | EC transfer 相关输出参数 |
 | `trace_headers` | tracing 上下文 |
 | `prefill_stats` | prefill / cache 命中统计 |
 | `routed_experts` | MoE routed experts 信息 |
@@ -146,7 +148,7 @@ def finished(self) -> bool:
     return self.finish_reason is not None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:201` 到 `vllm/vllm/v1/engine/__init__.py:203`
+位置：`vllm/vllm/v1/engine/__init__.py:204` 到 `vllm/vllm/v1/engine/__init__.py:206`
 
 所以：
 
@@ -166,7 +168,7 @@ finish_reason is not None
 class EngineCoreOutputs(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:218` 到 `vllm/vllm/v1/engine/__init__.py:223`
+位置：`vllm/vllm/v1/engine/__init__.py:221` 到 `vllm/vllm/v1/engine/__init__.py:226`
 
 字段包括：
 
@@ -183,7 +185,7 @@ wave_complete: int | None = None
 start_wave: int | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:227` 到 `vllm/vllm/v1/engine/__init__.py:244`
+位置：`vllm/vllm/v1/engine/__init__.py:230` 到 `vllm/vllm/v1/engine/__init__.py:245`
 
 各字段含义是：
 
@@ -206,7 +208,7 @@ def __post_init__(self):
         self.timestamp = time.monotonic()
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:244` 到 `vllm/vllm/v1/engine/__init__.py:246`
+位置：`vllm/vllm/v1/engine/__init__.py:247` 到 `vllm/vllm/v1/engine/__init__.py:249`
 
 ---
 
@@ -232,7 +234,7 @@ RequestOutput / PoolingRequestOutput：
 OutputProcessor.process_outputs(...)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:576`
+位置：`vllm/vllm/v1/engine/output_processor.py:584`
 
 所以可以记成：
 
@@ -522,7 +524,7 @@ class OutputProcessor:
     """Process EngineCoreOutputs into RequestOutputs."""
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:417` 到 `vllm/vllm/v1/engine/output_processor.py:418`
+位置：`vllm/vllm/v1/engine/output_processor.py:424` 到 `vllm/vllm/v1/engine/output_processor.py:425`
 
 它初始化时维护这些状态：
 
@@ -533,7 +535,7 @@ self.external_req_ids: defaultdict[str, list[str]] = defaultdict(list)
 self.lora_states = LoRARequestStates(log_stats)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:431` 到 `vllm/vllm/v1/engine/output_processor.py:434`
+位置：`vllm/vllm/v1/engine/output_processor.py:435` 到 `vllm/vllm/v1/engine/output_processor.py:441`
 
 这些状态的作用是：
 
@@ -578,7 +580,7 @@ log_stats: bool
 stream_interval: int
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:129` 到 `vllm/vllm/v1/engine/output_processor.py:151`
+位置：`vllm/vllm/v1/engine/output_processor.py:129` 到 `vllm/vllm/v1/engine/output_processor.py:152`
 
 它还维护运行中的输出状态：
 
@@ -684,7 +686,7 @@ def add_request(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:512` 到 `vllm/vllm/v1/engine/output_processor.py:519`
+位置：`vllm/vllm/v1/engine/output_processor.py:520` 到 `vllm/vllm/v1/engine/output_processor.py:527`
 
 普通新请求会创建 `RequestState`：
 
@@ -702,7 +704,7 @@ req_state = RequestState.from_new_request(
 self.request_states[request_id] = req_state
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:526` 到 `vllm/vllm/v1/engine/output_processor.py:536`
+位置：`vllm/vllm/v1/engine/output_processor.py:534` 到 `vllm/vllm/v1/engine/output_processor.py:544`
 
 并记录外部 id 到内部 id 的映射：
 
@@ -710,7 +712,7 @@ self.request_states[request_id] = req_state
 self.external_req_ids[req_state.external_req_id].append(request_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:540` 到 `vllm/vllm/v1/engine/output_processor.py:541`
+位置：`vllm/vllm/v1/engine/output_processor.py:548` 到 `vllm/vllm/v1/engine/output_processor.py:549`
 
 所以：
 
@@ -794,7 +796,7 @@ def process_outputs(
 ) -> OutputProcessorOutput:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:576` 到 `vllm/vllm/v1/engine/output_processor.py:581`
+位置：`vllm/vllm/v1/engine/output_processor.py:584` 到 `vllm/vllm/v1/engine/output_processor.py:589`
 
 源码注释概括它做三件事：
 
@@ -813,7 +815,7 @@ Process the EngineCoreOutputs:
 """
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:582` 到 `vllm/vllm/v1/engine/output_processor.py:592`
+位置：`vllm/vllm/v1/engine/output_processor.py:590` 到 `vllm/vllm/v1/engine/output_processor.py:600`
 
 完整流程可以概括为：
 
@@ -823,7 +825,7 @@ process_outputs()
   → 遍历每个 EngineCoreOutput
   → 用 internal request_id 找 RequestState
   → 更新 stats
-  → 读取 new_token_ids / pooling_output / finish_reason / stop_reason / kv_transfer_params
+  → 读取 new_token_ids / pooling_output / finish_reason / stop_reason / kv_transfer_params / ec_transfer_params
   → 累积 routed experts
   → 记录 prefill num_cached_tokens
   → generation 请求 detokenize 并检查 stop string
@@ -849,7 +851,7 @@ batch to ensure system overheads are minimized. This is the
 only function that should loop over EngineCoreOutputs.
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:594` 到 `vllm/vllm/v1/engine/output_processor.py:598`
+位置：`vllm/vllm/v1/engine/output_processor.py:602` 到 `vllm/vllm/v1/engine/output_processor.py:606`
 
 含义是：
 
@@ -885,7 +887,7 @@ for engine_core_output in engine_core_outputs:
         continue
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:606` 到 `vllm/vllm/v1/engine/output_processor.py:611`
+位置：`vllm/vllm/v1/engine/output_processor.py:614` 到 `vllm/vllm/v1/engine/output_processor.py:619`
 
 这里用的是内部 request id。
 
@@ -910,7 +912,7 @@ self._update_stats_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:613` 到 `vllm/vllm/v1/engine/output_processor.py:616`
+位置：`vllm/vllm/v1/engine/output_processor.py:621` 到 `vllm/vllm/v1/engine/output_processor.py:624`
 
 内部会调用：
 
@@ -925,7 +927,7 @@ iteration_stats.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:786` 到 `vllm/vllm/v1/engine/output_processor.py:793`
+位置：`vllm/vllm/v1/engine/output_processor.py:784` 到 `vllm/vllm/v1/engine/output_processor.py:803`
 
 这一步把 EngineCore 输出中的事件、时间戳、LoRA 信息、prefill/decode 阶段信息合并到前端 stats。
 
@@ -941,9 +943,10 @@ pooling_output = engine_core_output.pooling_output
 finish_reason = engine_core_output.finish_reason
 stop_reason = engine_core_output.stop_reason
 kv_transfer_params = engine_core_output.kv_transfer_params
+ec_transfer_params = engine_core_output.ec_transfer_params
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:618` 到 `vllm/vllm/v1/engine/output_processor.py:622`
+位置：`vllm/vllm/v1/engine/output_processor.py:626` 到 `vllm/vllm/v1/engine/output_processor.py:631`
 
 如果有 routed experts，会先累积起来：
 
@@ -954,7 +957,7 @@ if engine_core_output.routed_experts is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:623` 到 `vllm/vllm/v1/engine/output_processor.py:626`
+位置：`vllm/vllm/v1/engine/output_processor.py:632` 到 `vllm/vllm/v1/engine/output_processor.py:635`
 
 routed experts 最终在请求 finished 时拼接到 `CompletionOutput`。
 
@@ -973,7 +976,7 @@ if req_state.is_prefilling:
     req_state.is_prefilling = False
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:628` 到 `vllm/vllm/v1/engine/output_processor.py:633`
+位置：`vllm/vllm/v1/engine/output_processor.py:637` 到 `vllm/vllm/v1/engine/output_processor.py:642`
 
 含义是：
 
@@ -1004,7 +1007,7 @@ if pooling_output is None:
         stop_reason = stop_string
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:635` 到 `vllm/vllm/v1/engine/output_processor.py:645`
+位置：`vllm/vllm/v1/engine/output_processor.py:644` 到 `vllm/vllm/v1/engine/output_processor.py:653`
 
 这一步很关键：
 
@@ -1034,7 +1037,7 @@ generation 输出会更新 logprobs：
 req_state.logprobs_processor.update_from_output(engine_core_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:646` 到 `vllm/vllm/v1/engine/output_processor.py:648`
+位置：`vllm/vllm/v1/engine/output_processor.py:655` 到 `vllm/vllm/v1/engine/output_processor.py:657`
 
 `LogprobsProcessor` 会根据 `EngineCoreOutput.new_logprobs` 和 `new_prompt_logprobs_tensors` 更新请求级 logprobs 状态。
 
@@ -1061,11 +1064,12 @@ if request_output := req_state.make_request_output(
     finish_reason,
     stop_reason,
     kv_transfer_params,
+    ec_transfer_params,
 ):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:650` 到 `vllm/vllm/v1/engine/output_processor.py:657`
+位置：`vllm/vllm/v1/engine/output_processor.py:659` 到 `vllm/vllm/v1/engine/output_processor.py:667`
 
 `make_request_output()` 会根据输出类型决定是否返回用户可见输出。
 
@@ -1079,10 +1083,11 @@ def make_request_output(
     finish_reason: FinishReason | None,
     stop_reason: int | str | None,
     kv_transfer_params: dict[str, Any] | None = None,
+    ec_transfer_params: dict[str, Any] | None = None,
 ) -> RequestOutput | PoolingRequestOutput | None:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:272` 到 `vllm/vllm/v1/engine/output_processor.py:279`
+位置：`vllm/vllm/v1/engine/output_processor.py:272` 到 `vllm/vllm/v1/engine/output_processor.py:280`
 
 ---
 
@@ -1099,7 +1104,7 @@ if not finished and final_only:
     return None
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:280` 到 `vllm/vllm/v1/engine/output_processor.py:285`
+位置：`vllm/vllm/v1/engine/output_processor.py:281` 到 `vllm/vllm/v1/engine/output_processor.py:286`
 
 含义是：
 
@@ -1131,7 +1136,7 @@ if self.stream_interval > 1:
         return None
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:287` 到 `vllm/vllm/v1/engine/output_processor.py:300`
+位置：`vllm/vllm/v1/engine/output_processor.py:288` 到 `vllm/vllm/v1/engine/output_processor.py:301`
 
 这说明输出不是每个 token 都一定返回。
 
@@ -1153,7 +1158,7 @@ if self.output_kind == RequestOutputKind.DELTA:
     self.sent_tokens_offset = self.detokenizer.num_output_tokens()
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:302` 到 `vllm/vllm/v1/engine/output_processor.py:308`
+位置：`vllm/vllm/v1/engine/output_processor.py:303` 到 `vllm/vllm/v1/engine/output_processor.py:309`
 
 ---
 
@@ -1169,7 +1174,7 @@ return self._new_request_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:312` 到 `vllm/vllm/v1/engine/output_processor.py:317`
+位置：`vllm/vllm/v1/engine/output_processor.py:313` 到 `vllm/vllm/v1/engine/output_processor.py:318`
 
 `_new_pooling_output()` 很简单：
 
@@ -1178,7 +1183,7 @@ def _new_pooling_output(self, pooling_output: torch.Tensor) -> PoolingOutput:
     return PoolingOutput(data=pooling_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:413` 到 `vllm/vllm/v1/engine/output_processor.py:414`
+位置：`vllm/vllm/v1/engine/output_processor.py:420` 到 `vllm/vllm/v1/engine/output_processor.py:421`
 
 最终 `_new_request_output()` 会返回 `PoolingRequestOutput`：
 
@@ -1192,7 +1197,7 @@ return PoolingRequestOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:347` 到 `vllm/vllm/v1/engine/output_processor.py:355`
+位置：`vllm/vllm/v1/engine/output_processor.py:355` 到 `vllm/vllm/v1/engine/output_processor.py:361`
 
 所以 pooling 路径是：
 
@@ -1212,7 +1217,7 @@ EngineCoreOutput.pooling_output: torch.Tensor
 output = self._new_completion_output(new_token_ids, finish_reason, stop_reason)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:319`
+位置：`vllm/vllm/v1/engine/output_processor.py:320`
 
 `_new_completion_output()` 内部会取 detokenized text：
 
@@ -1222,7 +1227,7 @@ if not delta:
     token_ids = self.detokenizer.output_token_ids
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:387` 到 `vllm/vllm/v1/engine/output_processor.py:390`
+位置：`vllm/vllm/v1/engine/output_processor.py:391` 到 `vllm/vllm/v1/engine/output_processor.py:397`
 
 如果是 DELTA 模式：
 
@@ -1246,7 +1251,7 @@ if delta and logprobs:
     logprobs = logprobs[-len(token_ids) :]
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:392` 到 `vllm/vllm/v1/engine/output_processor.py:395`
+位置：`vllm/vllm/v1/engine/output_processor.py:399` 到 `vllm/vllm/v1/engine/output_processor.py:402`
 
 最后返回：
 
@@ -1263,7 +1268,7 @@ return CompletionOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:402` 到 `vllm/vllm/v1/engine/output_processor.py:411`
+位置：`vllm/vllm/v1/engine/output_processor.py:409` 到 `vllm/vllm/v1/engine/output_processor.py:418`
 
 ---
 
@@ -1281,12 +1286,13 @@ return RequestOutput(
     outputs=cast(list[CompletionOutput], outputs),
     finished=finished,
     kv_transfer_params=kv_transfer_params,
+    ec_transfer_params=ec_transfer_params,
     num_cached_tokens=self.num_cached_tokens,
     metrics=self.stats,
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:363` 到 `vllm/vllm/v1/engine/output_processor.py:374`
+位置：`vllm/vllm/v1/engine/output_processor.py:369` 到 `vllm/vllm/v1/engine/output_processor.py:380`
 
 这里特别重要：
 
@@ -1312,7 +1318,7 @@ if prompt_token_ids is None and self.prompt_embeds is not None:
 assert prompt_token_ids is not None
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:340` 到 `vllm/vllm/v1/engine/output_processor.py:344`
+位置：`vllm/vllm/v1/engine/output_processor.py:346` 到 `vllm/vllm/v1/engine/output_processor.py:350`
 
 所以用户输出中的 `prompt_token_ids` 在 prompt embeds 场景下可能是占位 0 列表。
 
@@ -1332,7 +1338,7 @@ else:
     external_req_id = self.parent_req.external_req_id
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:321` 到 `vllm/vllm/v1/engine/output_processor.py:327`
+位置：`vllm/vllm/v1/engine/output_processor.py:322` 到 `vllm/vllm/v1/engine/output_processor.py:328`
 
 含义是：
 
@@ -1361,7 +1367,7 @@ else:
     request_outputs.append(request_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:658` 到 `vllm/vllm/v1/engine/output_processor.py:666`
+位置：`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:676`
 
 所以分发规则是：
 
@@ -1402,7 +1408,7 @@ if finish_reason is not None:
         ... stats / tracing ...
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:688`
+位置：`vllm/vllm/v1/engine/output_processor.py:678` 到 `vllm/vllm/v1/engine/output_processor.py:698`
 
 这说明 finish 后有两条路径：
 
@@ -1437,7 +1443,7 @@ def _finish_request(self, req_state: RequestState) -> None:
         self.parent_requests.pop(parent_req.request_id, None)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:695` 到 `vllm/vllm/v1/engine/output_processor.py:707`
+位置：`vllm/vllm/v1/engine/output_processor.py:705` 到 `vllm/vllm/v1/engine/output_processor.py:717`
 
 它清理三类外层状态：
 
@@ -1472,7 +1478,7 @@ if not engine_core_output.finished:
     reqs_to_abort.append(req_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:677` 到 `vllm/vllm/v1/engine/output_processor.py:681`
+位置：`vllm/vllm/v1/engine/output_processor.py:688` 到 `vllm/vllm/v1/engine/output_processor.py:691`
 
 原因是：
 
@@ -1529,7 +1535,7 @@ if req_state is not None:
     return
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:520` 到 `vllm/vllm/v1/engine/output_processor.py:524`
+位置：`vllm/vllm/v1/engine/output_processor.py:528` 到 `vllm/vllm/v1/engine/output_processor.py:532`
 
 如果是 resumable chunk，会构造 `StreamingUpdate`：
 
@@ -1541,7 +1547,7 @@ update = StreamingUpdate(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:562` 到 `vllm/vllm/v1/engine/output_processor.py:566`
+位置：`vllm/vllm/v1/engine/output_processor.py:570` 到 `vllm/vllm/v1/engine/output_processor.py:574`
 
 如果上一段已经结束，会立即 apply：
 
@@ -1553,7 +1559,7 @@ else:
     req_state.input_chunk_queue.append(update)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:568` 到 `vllm/vllm/v1/engine/output_processor.py:574`
+位置：`vllm/vllm/v1/engine/output_processor.py:576` 到 `vllm/vllm/v1/engine/output_processor.py:582`
 
 当某个 chunk 的 output finish 后：
 
@@ -1568,7 +1574,7 @@ else:
   _finish_request() 并向 queue put STREAM_FINISHED sentinel，用来解除 generation generate loop；AsyncLLM.generate() 会过滤它，它不是普通用户输出。
 ```
 
-相关位置：`vllm/vllm/v1/engine/output_processor.py:543` 到 `vllm/vllm/v1/engine/output_processor.py:560`，`vllm/vllm/v1/engine/output_processor.py:668` 到 `vllm/vllm/v1/engine/output_processor.py:675`
+相关位置：`vllm/vllm/v1/engine/output_processor.py:551` 到 `vllm/vllm/v1/engine/output_processor.py:568`，`vllm/vllm/v1/engine/output_processor.py:678` 到 `vllm/vllm/v1/engine/output_processor.py:685`
 
 ---
 
@@ -1580,7 +1586,7 @@ else:
 def abort_requests(self, request_ids: Iterable[str], internal: bool) -> list[str]:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:450`
+位置：`vllm/vllm/v1/engine/output_processor.py:457`
 
 它支持 external id 和 internal id：
 
@@ -1605,12 +1611,13 @@ if req_state.queue is not None and (
         finish_reason=FinishReason.ABORT,
         stop_reason=None,
         kv_transfer_params=None,
+        ec_transfer_params=None,
     )
 ):
     req_state.queue.put(request_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:489` 到 `vllm/vllm/v1/engine/output_processor.py:502`
+位置：`vllm/vllm/v1/engine/output_processor.py:496` 到 `vllm/vllm/v1/engine/output_processor.py:510`
 
 这说明：
 
@@ -1636,7 +1643,7 @@ if self.tracing_enabled:
     self.do_tracing(engine_core_output, req_state, iteration_stats)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:683` 到 `vllm/vllm/v1/engine/output_processor.py:688`
+位置：`vllm/vllm/v1/engine/output_processor.py:693` 到 `vllm/vllm/v1/engine/output_processor.py:698`
 
 `_update_stats_from_finished()` 会记录：
 
@@ -1652,7 +1659,7 @@ iteration_stats.update_from_finished_request(
 self.lora_states.request_finished(req_state.request_id, req_state.lora_name)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:804` 到 `vllm/vllm/v1/engine/output_processor.py:814`
+位置：`vllm/vllm/v1/engine/output_processor.py:805` 到 `vllm/vllm/v1/engine/output_processor.py:824`
 
 tracing 会使用 `trace_headers` 和请求 stats 构造 span：
 
@@ -1668,7 +1675,7 @@ instrument_manual(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:721` 到 `vllm/vllm/v1/engine/output_processor.py:772`
+位置：`vllm/vllm/v1/engine/output_processor.py:722` 到 `vllm/vllm/v1/engine/output_processor.py:782`
 
 ---
 
@@ -1747,7 +1754,7 @@ EngineCoreOutput
   ├─ finish_reason
   ├─ stop_reason
   ├─ prefill_stats
-  ├─ kv_transfer_params
+  ├─ kv_transfer_params / ec_transfer_params
   └─ routed_experts
 
 OutputProcessor.process_outputs()
@@ -1773,7 +1780,7 @@ OutputProcessor.process_outputs()
             ├─ prompt_logprobs
             ├─ outputs: list[CompletionOutput]
             ├─ finished
-            ├─ kv_transfer_params
+            ├─ kv_transfer_params / ec_transfer_params
             ├─ num_cached_tokens
             └─ metrics
 ```
@@ -1937,7 +1944,7 @@ OutputProcessor 通过 `RequestState.external_req_id` 把它转换回用户 id�
 request_id=external_req_id
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:363` 到 `vllm/vllm/v1/engine/output_processor.py:365`
+位置：`vllm/vllm/v1/engine/output_processor.py:369` 到 `vllm/vllm/v1/engine/output_processor.py:370`
 
 ### 46.3 为什么 OutputProcessor 要在请求进入 EngineCore 前 add_request？
 
@@ -1965,7 +1972,7 @@ if req_state is None:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:608` 到 `vllm/vllm/v1/engine/output_processor.py:611`
+位置：`vllm/vllm/v1/engine/output_processor.py:617` 到 `vllm/vllm/v1/engine/output_processor.py:619`
 
 说明外层已经 abort / 清理该请求，因此不再向用户返回输出。
 

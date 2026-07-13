@@ -16,7 +16,7 @@ vLLM 的主体代码都在这里，包括推理引擎、调度器、配置、入
 - `vllm/model_executor/`：模型加载与执行
 - `vllm/config/`：配置系统
 - `vllm/distributed/`：分布式执行、KV transfer / EC transfer、通信状态管理
-- `vllm/attention/`：attention 后端抽象
+- `vllm/v1/attention/`：V1 attention 后端抽象
 - `vllm/compilation/`：编译优化、CUDA graph、torch.compile 相关
 
 ### 2. `csrc/`：C++ / CUDA / CPU 原生算子层

@@ -18,7 +18,7 @@
 Engine / API
   → InputProcessor.process_inputs()
   → EngineCoreRequest
-  → EngineCoreClient.add_request()
+  → EngineCoreClient.add_request() / add_request_async()
   → EngineCore.preprocess_add_request()
   → Request.from_engine_core_request()
   → EngineCore.add_request()
@@ -26,8 +26,9 @@ Engine / API
   → EngineCore.step()
   → Scheduler.schedule()
   → SchedulerOutput
-  → model_executor.execute_model(scheduler_output)
-  → Worker / ModelRunner forward / sample
+  → model_executor.execute_model(scheduler_output, non_block=True)
+  → future.result()
+  → Worker / ModelRunner forward；必要时 sample_tokens(grammar_output)
   → ModelRunnerOutput
   → Scheduler.update_from_output(scheduler_output, model_output)
   → EngineCoreOutputs
@@ -113,9 +114,10 @@ step 返回什么？
 EngineCore.step()
   → scheduler.has_requests()
   → scheduler.schedule()
-  → model_executor.execute_model()
+  → model_executor.execute_model(..., non_block=True)
   → scheduler.get_grammar_bitmask()
-  → model_executor.sample_tokens()  # 如果 execute_model 返回 None
+  → future.result()
+  → model_executor.sample_tokens()  # 如果 model_output is None
   → _process_aborts_queue()
   → scheduler.update_from_output()
   → EngineCoreOutputs
@@ -166,11 +168,11 @@ Worker 异常如何处理？
 
 ```text
 EngineCore
-  → model_executor.execute_model(scheduler_output)
+  → model_executor.execute_model(scheduler_output, non_block=True)
   → Executor 实现分发到 Worker / ModelRunner
   → ModelRunner.execute_model()
   → forward / logits / pooling
-  → sample_tokens(grammar_output)
+  → 必要时 sample_tokens(grammar_output)
   → ModelRunnerOutput
 ```
 
@@ -242,7 +244,7 @@ EngineCore 初始化时管理哪些组件？
 batch queue 和 async scheduling 如何接入？
 EngineCoreProc busy loop 如何工作？
 input_queue / output_queue 如何驱动执行？
-profile / reset / sleep / wakeup 如何接入？
+profile / reset / sleep / wake_up 如何接入？
 abort 队列如何处理？
 异常和 shutdown 如何传播？
 ```
@@ -303,8 +305,11 @@ engine_core_overview.md
 ```text
 Scheduler.schedule()
   → SchedulerOutput
-  → model_executor.execute_model()
+  → model_executor.execute_model(..., non_block=True)
+  → future.result()
+  → 必要时 model_executor.sample_tokens(grammar_output)
   → ModelRunnerOutput
+  → _process_aborts_queue()
   → Scheduler.update_from_output()
 ```
 

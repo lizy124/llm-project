@@ -74,7 +74,7 @@ EngineCore 负责真正操作 Scheduler、model_executor 和资源生命周期�
   add_lora / remove_lora / list_loras / pin_lora
   collective_rpc
   apply_model
-  save_sharded_state
+  save_sharded_state（EngineCoreClient / EngineCore 支持；当前 LLMEngine / AsyncLLM 外层未直接暴露）
 
 进程和后台任务生命周期：
   shutdown
@@ -383,7 +383,7 @@ def abort_requests(self, request_ids: list[str]):
     self.scheduler.finish_requests(request_ids, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:409` 到 `vllm/vllm/v1/engine/core.py:415`
+位置：`vllm/vllm/v1/engine/core.py:418` 到 `vllm/vllm/v1/engine/core.py:424`
 
 所以真正的请求状态迁移发生在 Scheduler：
 
@@ -434,12 +434,24 @@ async def abort_requests_async(self, request_ids: list[str]) -> None:
 
 位置：`vllm/vllm/v1/engine/core_client.py:1126` 到 `vllm/vllm/v1/engine/core_client.py:1128`
 
+DP load-balancing 场景下，`DPLBAsyncMPClient` 会覆盖该方法，按 `reqs_in_flight` 将 request id 路由到所属 `EngineIdentity`，再发送给对应 engine：
+
+```python
+async def abort_requests_async(self, request_ids: list[str]) -> None:
+    ...
+    if engine := self.reqs_in_flight.get(request_ids[0]):
+        await self._abort_requests(request_ids, engine)
+```
+
+位置：`vllm/vllm/v1/engine/core_client.py:1529` 到 `vllm/vllm/v1/engine/core_client.py:1549`
+
 所以 abort 的 client 层差异是：
 
 ```text
 Inproc：直接函数调用；
 SyncMP：ZMQ ABORT；
-AsyncMP：await ZMQ ABORT。
+AsyncMP：await ZMQ ABORT；
+DPLBAsyncMPClient：按 request 所属 engine 路由 ABORT。
 ```
 
 ---
@@ -465,7 +477,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:515`
 
 `_process_aborts_queue()`：
 
@@ -478,7 +490,7 @@ if not self.aborts_queue.empty():
     self.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:634` 到 `vllm/vllm/v1/engine/core.py:642`
+位置：`vllm/vllm/v1/engine/core.py:643` 到 `vllm/vllm/v1/engine/core.py:651`
 
 作用是：
 
@@ -574,7 +586,7 @@ if request.abort_immediately:
     self.abort_requests([request.request_id])
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:403` 到 `vllm/vllm/v1/engine/core.py:407`
+位置：`vllm/vllm/v1/engine/core.py:412` 到 `vllm/vllm/v1/engine/core.py:416`
 
 这类请求目的不是生成，而是：
 
@@ -635,7 +647,7 @@ def profile(self, is_start: bool = True, profile_prefix: str | None = None):
     self.model_executor.profile(is_start, profile_prefix)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:662` 到 `vllm/vllm/v1/engine/core.py:663`
+位置：`vllm/vllm/v1/engine/core.py:671` 到 `vllm/vllm/v1/engine/core.py:672`
 
 所以 profile 链路是：
 
@@ -685,7 +697,7 @@ def reset_mm_cache(self):
     self.model_executor.reset_mm_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:665` 到 `vllm/vllm/v1/engine/core.py:678`
+位置：`vllm/vllm/v1/engine/core.py:674` 到 `vllm/vllm/v1/engine/core.py:687`
 
 含义：
 
@@ -738,7 +750,7 @@ def reset_prefix_cache(
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:680` 到 `vllm/vllm/v1/engine/core.py:685`
+位置：`vllm/vllm/v1/engine/core.py:689` 到 `vllm/vllm/v1/engine/core.py:694`
 
 所以 prefix cache reset 主要由 Scheduler / KV cache manager 处理。
 
@@ -790,7 +802,7 @@ def reset_encoder_cache(self) -> None:
     self.model_executor.reset_encoder_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:687` 到 `vllm/vllm/v1/engine/core.py:705`
+位置：`vllm/vllm/v1/engine/core.py:696` 到 `vllm/vllm/v1/engine/core.py:714`
 
 含义：
 
@@ -822,7 +834,7 @@ def _reset_caches(
     self.reset_encoder_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:707` 到 `vllm/vllm/v1/engine/core.py:720`
+位置：`vllm/vllm/v1/engine/core.py:716` 到 `vllm/vllm/v1/engine/core.py:729`
 
 注释说明：
 
@@ -885,7 +897,7 @@ def pause_scheduler(
 ) -> Future | None:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:722` 到 `vllm/vllm/v1/engine/core.py:724`
+位置：`vllm/vllm/v1/engine/core.py:731` 到 `vllm/vllm/v1/engine/core.py:733`
 
 同进程版本不支持 wait：
 
@@ -894,7 +906,7 @@ if mode == "wait":
     raise ValueError("'wait' mode can't be used in inproc-engine mode")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:740` 到 `vllm/vllm/v1/engine/core.py:741`
+位置：`vllm/vllm/v1/engine/core.py:749` 到 `vllm/vllm/v1/engine/core.py:750`
 
 abort 模式会结束所有请求：
 
@@ -903,7 +915,7 @@ if mode == "abort":
     self.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:743` 到 `vllm/vllm/v1/engine/core.py:744`
+位置：`vllm/vllm/v1/engine/core.py:752` 到 `vllm/vllm/v1/engine/core.py:753`
 
 然后设置 pause state：
 
@@ -914,7 +926,7 @@ if clear_cache:
     self._reset_caches()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:746` 到 `vllm/vllm/v1/engine/core.py:749`
+位置：`vllm/vllm/v1/engine/core.py:755` 到 `vllm/vllm/v1/engine/core.py:758`
 
 ### 15.3 EngineCoreProc.pause_scheduler() 多进程版本
 
@@ -926,17 +938,17 @@ def pause_scheduler(
 ) -> Future | None:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1661` 到 `vllm/vllm/v1/engine/core.py:1663`
+位置：`vllm/vllm/v1/engine/core.py:1674` 到 `vllm/vllm/v1/engine/core.py:1676`
 
 注释概括：
 
 ```text
-abort：设置 PAUSED_NEW，abort 所有请求，等待 abort outputs 发送后完成；
+abort：先 finish_requests(None, FINISHED_ABORTED) 并发送 abort outputs，随后设置 PAUSED_NEW，再根据 _pause_complete() 决定立即清 cache 或注册 idle callback；
 wait：设置 PAUSED_NEW，继续 step，让 in-flight 请求 drain；
 keep：设置 PAUSED_ALL，冻结请求，等 output queue 空。
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1664` 到 `vllm/vllm/v1/engine/core.py:1676`
+位置：`vllm/vllm/v1/engine/core.py:1677` 到 `vllm/vllm/v1/engine/core.py:1689`
 
 abort 模式会发送 abort outputs：
 
@@ -948,7 +960,7 @@ if mode == "abort":
     self._send_abort_outputs(aborted_reqs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1685` 到 `vllm/vllm/v1/engine/core.py:1690`
+位置：`vllm/vllm/v1/engine/core.py:1698` 到 `vllm/vllm/v1/engine/core.py:1702`
 
 如果当前已经 pause complete，则可立即 reset cache 并返回：
 
@@ -959,7 +971,7 @@ if self._pause_complete():
     return None
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1694` 到 `vllm/vllm/v1/engine/core.py:1697`
+位置：`vllm/vllm/v1/engine/core.py:1707` 到 `vllm/vllm/v1/engine/core.py:1710`
 
 否则注册 idle callback，等 EngineCore 空闲后再清 cache、resolve Future：
 
@@ -969,7 +981,7 @@ self._idle_state_callbacks.append(partial(engine_idle_callback, future=future))
 return future
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1699` 到 `vllm/vllm/v1/engine/core.py:1701`
+位置：`vllm/vllm/v1/engine/core.py:1712` 到 `vllm/vllm/v1/engine/core.py:1714`
 
 ---
 
@@ -982,7 +994,7 @@ pause_state = PauseState.PAUSED_ALL if mode == "keep" else PauseState.PAUSED_NEW
 self.scheduler.set_pause_state(pause_state)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:746` 到 `vllm/vllm/v1/engine/core.py:747`，`vllm/vllm/v1/engine/core.py:1693` 到 `vllm/vllm/v1/engine/core.py:1694`
+位置：`vllm/vllm/v1/engine/core.py:755` 到 `vllm/vllm/v1/engine/core.py:756`，`vllm/vllm/v1/engine/core.py:1704` 到 `vllm/vllm/v1/engine/core.py:1705`
 
 可以理解为：
 
@@ -1024,7 +1036,7 @@ def resume_scheduler(self) -> None:
     self.scheduler.set_pause_state(PauseState.UNPAUSED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:753` 到 `vllm/vllm/v1/engine/core.py:755`
+位置：`vllm/vllm/v1/engine/core.py:762` 到 `vllm/vllm/v1/engine/core.py:764`
 
 查询 pause：
 
@@ -1034,7 +1046,7 @@ def is_scheduler_paused(self) -> bool:
     return self.scheduler.pause_state != PauseState.UNPAUSED
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:757` 到 `vllm/vllm/v1/engine/core.py:759`
+位置：`vllm/vllm/v1/engine/core.py:766` 到 `vllm/vllm/v1/engine/core.py:768`
 
 ---
 
@@ -1085,7 +1097,7 @@ def sleep(self, level: int = 1, mode: PauseMode = "abort") -> None | Future:
     """Put the engine to sleep at the specified level.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:761` 到 `vllm/vllm/v1/engine/core.py:762`
+位置：`vllm/vllm/v1/engine/core.py:770` 到 `vllm/vllm/v1/engine/core.py:771`
 
 注释说明 level：
 
@@ -1095,7 +1107,7 @@ Level 1：offload model weights 到 CPU，丢弃 KV cache。
 Level 2：丢弃所有 GPU memory。
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:765` 到 `vllm/vllm/v1/engine/core.py:770`
+位置：`vllm/vllm/v1/engine/core.py:774` 到 `vllm/vllm/v1/engine/core.py:778`
 
 核心流程：
 
@@ -1111,7 +1123,7 @@ if pause_future is None:
     return None
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:774` 到 `vllm/vllm/v1/engine/core.py:784`
+位置：`vllm/vllm/v1/engine/core.py:783` 到 `vllm/vllm/v1/engine/core.py:793`
 
 如果 pause 需要异步等待，则 callback 中执行 executor sleep：
 
@@ -1127,7 +1139,7 @@ pause_future.add_done_callback(pause_complete)
 return future
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:786` 到 `vllm/vllm/v1/engine/core.py:797`
+位置：`vllm/vllm/v1/engine/core.py:795` 到 `vllm/vllm/v1/engine/core.py:806`
 
 因此 sleep 的关键公式是：
 
@@ -1175,19 +1187,23 @@ def wake_up(self, tags: list[str] | None = None):
     if tags is None or tags:
         self.model_executor.wake_up(tags)
 
-    # Resume scheduling (applies to all levels)
-    self.resume_scheduler()
+    # Partial wakes intentionally keep the remaining allocations asleep.
+    # Resume scheduling only once all executor memory is resident again.
+    if not self.model_executor.is_sleeping:
+        self.resume_scheduler()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:799` 到 `vllm/vllm/v1/engine/core.py:813`
+位置：`vllm/vllm/v1/engine/core.py:808` 到 `vllm/vllm/v1/engine/core.py:824`
 
 含义：
 
 ```text
-如果 tags 包含 scheduling，只恢复调度；
-如果 tags 还有其它资源 tag，则唤醒 model_executor 对应资源；
-最后总是 resume_scheduler()。
+如果 tags 包含 scheduling，会先从 tags 中移除；
+如果 tags is None 或仍有其它资源 tag，则唤醒 model_executor 对应资源；
+只有当 model_executor 不再 sleeping 时才 resume_scheduler()。
 ```
+
+因此 `tags=["scheduling"]` 适合 level 0 的只恢复调度；level 1 / 2 的 partial wake 如果 executor 仍处于 sleeping 状态，Scheduler 仍保持 paused。
 
 `is_sleeping()`：
 
@@ -1197,7 +1213,7 @@ def is_sleeping(self) -> bool:
     return self.is_scheduler_paused() or self.model_executor.is_sleeping
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:815` 到 `vllm/vllm/v1/engine/core.py:817`
+位置：`vllm/vllm/v1/engine/core.py:826` 到 `vllm/vllm/v1/engine/core.py:828`
 
 ---
 
@@ -1304,7 +1320,11 @@ frontend method
   → frontend Future.set_result()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1384` 到 `vllm/vllm/v1/engine/core.py:1449`
+位置：`vllm/vllm/v1/engine/core.py:1381` 到 `vllm/vllm/v1/engine/core.py:1408`，以及 `vllm/vllm/v1/engine/core.py:1443` 到 `vllm/vllm/v1/engine/core.py:1460`
+
+DP load-balancing 场景下，`DPLBAsyncMPClient.call_utility_async()` 会向所有 `core_engines` 并发发送 utility call，并只返回第一个结果。
+
+位置：`vllm/vllm/v1/engine/core_client.py:1449` 到 `vllm/vllm/v1/engine/core_client.py:1458`
 
 ---
 
@@ -1355,7 +1375,7 @@ def pin_lora(self, lora_id: int) -> bool:
     return self.model_executor.pin_lora(lora_id)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:822` 到 `vllm/vllm/v1/engine/core.py:832`
+位置：`vllm/vllm/v1/engine/core.py:833` 到 `vllm/vllm/v1/engine/core.py:843`
 
 collective_rpc 也类似：
 
@@ -1364,7 +1384,7 @@ def collective_rpc(...):
     return self.model_executor.collective_rpc(method, timeout, args, kwargs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:844` 到 `vllm/vllm/v1/engine/core.py:851`
+位置：`vllm/vllm/v1/engine/core.py:855` 到 `vllm/vllm/v1/engine/core.py:862`
 
 同步 `LLMEngine.apply_model()` 只是 `collective_rpc("apply_model", args=(func,))` 的封装：
 
@@ -1571,7 +1591,7 @@ def shutdown(self):
     logger.debug_once("[shutdown] EngineCore: local resource teardown complete")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:644` 到 `vllm/vllm/v1/engine/core.py:660`
+位置：`vllm/vllm/v1/engine/core.py:653` 到 `vllm/vllm/v1/engine/core.py:669`
 
 它释放：
 
@@ -1592,7 +1612,7 @@ def shutdown(self):
         stateless_destroy_torch_distributed_process_group(dp_group)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1811` 到 `vllm/vllm/v1/engine/core.py:1814`
+位置：`vllm/vllm/v1/engine/core.py:1822` 到 `vllm/vllm/v1/engine/core.py:1825`
 
 ---
 
@@ -1607,7 +1627,7 @@ class EngineShutdownState(IntEnum):
     SHUTTING_DOWN = 2
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:888` 到 `vllm/vllm/v1/engine/core.py:891`
+位置：`vllm/vllm/v1/engine/core.py:899` 到 `vllm/vllm/v1/engine/core.py:902`
 
 busy loop 中 `_handle_shutdown()` 会根据状态处理：
 
@@ -1626,7 +1646,7 @@ aborted_reqs = self.scheduler.finish_requests(
 self._send_abort_outputs(aborted_reqs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1344` 到 `vllm/vllm/v1/engine/core.py:1347`
+位置：`vllm/vllm/v1/engine/core.py:1355` 到 `vllm/vllm/v1/engine/core.py:1358`
 
 当没有 work 时退出：
 
@@ -1636,7 +1656,7 @@ if not self.has_work():
     return False
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1360` 到 `vllm/vllm/v1/engine/core.py:1366`
+位置：`vllm/vllm/v1/engine/core.py:1372` 到 `vllm/vllm/v1/engine/core.py:1377`
 
 这说明后台进程 shutdown 不是简单 kill，而是可以：
 
@@ -1726,9 +1746,15 @@ if envs.VLLM_ELASTIC_EP_DRAIN_REQUESTS:
 
 位置：`vllm/vllm/v1/engine/async_llm.py:1013` 到 `vllm/vllm/v1/engine/async_llm.py:1018`
 
-然后进入 scaling 状态，调用 client，最后恢复 scaling 标记：
+如果是 scale up 且启用了 `log_stats`，会先重建 `StatLoggerManager`、更新 `_logger_ref` 并记录 engine initialized；然后进入 scaling 状态，调用 client，最后恢复 scaling 标记：
 
 ```python
+if new_data_parallel_size > old_data_parallel_size and self.log_stats:
+    self.logger_manager = StatLoggerManager(...)
+    if hasattr(self, "_logger_ref"):
+        self._logger_ref[0] = self.logger_manager
+    self.logger_manager.log_engine_initialized()
+
 set_scaling_elastic_ep(True)
 try:
     await self.engine_core.scale_elastic_ep(new_data_parallel_size)
@@ -1737,7 +1763,7 @@ finally:
     set_scaling_elastic_ep(False)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:1037` 到 `vllm/vllm/v1/engine/async_llm.py:1042`
+位置：`vllm/vllm/v1/engine/async_llm.py:1020` 到 `vllm/vllm/v1/engine/async_llm.py:1042`
 
 `DPLBAsyncMPClient.scale_elastic_ep()` 负责真正扩缩 engine cores：
 
@@ -1745,7 +1771,7 @@ finally:
 async def scale_elastic_ep(self, new_data_parallel_size: int) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1545`
+位置：`vllm/vllm/v1/engine/core_client.py:1551`
 
 这类接口属于多进程 / DP 高级生命周期控制。
 
@@ -1800,8 +1826,9 @@ sleep(level, mode)
 wake_up(tags)
   └─ EngineCore.wake_up(tags)
        ├─ model_executor.wake_up(tags)  # if needed
-       └─ resume_scheduler()
-            └─ Scheduler.pause_state = UNPAUSED
+       └─ if not model_executor.is_sleeping:
+            └─ resume_scheduler()
+                 └─ Scheduler.pause_state = UNPAUSED
 ```
 
 ---
@@ -1840,7 +1867,7 @@ reset_encoder_cache
 ```text
 LoRA
   → Engine.add_lora / remove_lora / list_loras / pin_lora
-  → EngineCoreClient utility
+  → EngineCoreClient（Inproc 直接调用；MP 走 UTILITY；DPLBAsyncMPClient 会广播 utility）
   → EngineCore
   → model_executor
 ```
@@ -1947,7 +1974,7 @@ if mode == "wait":
     raise ValueError("'wait' mode can't be used in inproc-engine mode")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:740` 到 `vllm/vllm/v1/engine/core.py:741`
+位置：`vllm/vllm/v1/engine/core.py:749` 到 `vllm/vllm/v1/engine/core.py:750`
 
 多进程 `EngineCoreProc` 有 busy loop 和 idle callback，因此可以支持 wait / Future 完成。
 
@@ -2027,7 +2054,7 @@ abort 比较特殊，会先经过 OutputProcessor，把用户 external request i
 
 profile、reset、LoRA、collective_rpc 等接口通常直接转发给 EngineCore，EngineCore 再转给 model_executor 或 Scheduler。
 
-pause / sleep / wake_up 属于资源和调度控制：pause 设置 Scheduler pause_state；sleep 先 pause，再按 level 释放或 offload GPU 资源；wake_up 唤醒 model_executor 并恢复 Scheduler。
+pause / sleep / wake_up 属于资源和调度控制：pause 设置 Scheduler pause_state；sleep 先 pause，再按 level 释放或 offload GPU 资源；wake_up 按 tags 唤醒 model_executor，并且只有 executor 不再 sleeping 时才恢复 Scheduler。
 
 shutdown 则负责释放完整生命周期资源：AsyncLLM 关闭 renderer、EngineCoreClient 和 output_handler；EngineCoreClient 关闭后台进程、socket 和任务；EngineCore 关闭 structured output backend、model_executor、Scheduler 和 distributed / GPU 相关资源。
 ```
@@ -2077,6 +2104,7 @@ LLMEngine / AsyncLLM
   ├─ reset_mm_cache
   │    ├─ renderer.clear_mm_cache()
   │    └─ EngineCore.reset_mm_cache()
+  │         ├─ mm_receiver_cache.clear_cache()
   │         └─ model_executor.reset_mm_cache()
   │
   ├─ reset_prefix_cache
@@ -2098,7 +2126,8 @@ LLMEngine / AsyncLLM
   ├─ wake_up
   │    └─ EngineCore.wake_up()
   │         ├─ model_executor.wake_up(tags)
-  │         └─ Scheduler.set_pause_state(UNPAUSED)
+  │         └─ if not model_executor.is_sleeping:
+  │              └─ Scheduler.set_pause_state(UNPAUSED)
   │
   └─ shutdown
        ├─ renderer.shutdown()

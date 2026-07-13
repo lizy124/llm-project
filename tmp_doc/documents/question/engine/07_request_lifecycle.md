@@ -420,7 +420,7 @@ class EngineCoreRequest(...):
     abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:144`
+位置：`vllm/vllm/v1/engine/__init__.py:88` 到 `vllm/vllm/v1/engine/__init__.py:145`
 
 它可以理解为：
 
@@ -927,7 +927,7 @@ req_state = RequestState.from_new_request(
 self.request_states[request_id] = req_state
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:526` 到 `vllm/vllm/v1/engine/output_processor.py:536`
+位置：`vllm/vllm/v1/engine/output_processor.py:534` 到 `vllm/vllm/v1/engine/output_processor.py:544`
 
 然后登记 external 到 internal 的映射：
 
@@ -935,7 +935,7 @@ self.request_states[request_id] = req_state
 self.external_req_ids[req_state.external_req_id].append(request_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:540` 到 `vllm/vllm/v1/engine/output_processor.py:541`
+位置：`vllm/vllm/v1/engine/output_processor.py:548` 到 `vllm/vllm/v1/engine/output_processor.py:549`
 
 所以它的作用是：
 
@@ -954,7 +954,7 @@ if req_state is None:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:607` 到 `vllm/vllm/v1/engine/output_processor.py:611`
+位置：`vllm/vllm/v1/engine/output_processor.py:615` 到 `vllm/vllm/v1/engine/output_processor.py:619`
 
 因此必须先登记输出侧状态，再把请求送给 EngineCore。
 
@@ -1058,7 +1058,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/vllm/v1/engine/core.py:905` 到 `vllm/vllm/v1/engine/core.py:906`
 
 它有 input queue：
 
@@ -1066,7 +1066,7 @@ class EngineCoreProc(EngineCore):
 self.input_queue = queue.Queue[tuple[EngineCoreRequestType, Any]]()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:913`
+位置：`vllm/vllm/v1/engine/core.py:924`
 
 ### 10.1 busy loop
 
@@ -1082,7 +1082,7 @@ def run_busy_loop(self):
         self._process_engine_step()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1264`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1274`
 
 也就是说后台 EngineCoreProc 一直循环做两件事：
 
@@ -1098,7 +1098,7 @@ req = self.input_queue.get(block=block)
 self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1282` 到 `vllm/vllm/v1/engine/core.py:1284`
+位置：`vllm/vllm/v1/engine/core.py:1293` 到 `vllm/vllm/v1/engine/core.py:1295`
 
 如果队列里还有更多请求，会继续处理：
 
@@ -1108,7 +1108,7 @@ while not self.input_queue.empty():
     self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1293` 到 `vllm/vllm/v1/engine/core.py:1296`
+位置：`vllm/vllm/v1/engine/core.py:1304` 到 `vllm/vllm/v1/engine/core.py:1307`
 
 ### 10.3 分发 ADD 请求
 
@@ -1120,7 +1120,7 @@ if request_type == EngineCoreRequestType.ADD:
     self.add_request(req, request_wave)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1375` 到 `vllm/vllm/v1/engine/core.py:1381`
+位置：`vllm/vllm/v1/engine/core.py:1388` 到 `vllm/vllm/v1/engine/core.py:1392`
 
 这里进入的是 `EngineCore.add_request()`。
 
@@ -1141,7 +1141,7 @@ def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, i
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:853` 到 `vllm/vllm/v1/engine/core.py:858`
+位置：`vllm/vllm/v1/engine/core.py:864` 到 `vllm/vllm/v1/engine/core.py:869`
 
 ### 11.1 多模态 receiver cache
 
@@ -1154,7 +1154,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:862` 到 `vllm/vllm/v1/engine/core.py:865`
+位置：`vllm/vllm/v1/engine/core.py:873` 到 `vllm/vllm/v1/engine/core.py:876`
 
 ### 11.2 转成 Request
 
@@ -1162,7 +1162,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 这一步完成：
 
@@ -1179,7 +1179,7 @@ if req.use_structured_output:
     self.structured_output_manager.grammar_init(req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:868` 到 `vllm/vllm/v1/engine/core.py:874`
+位置：`vllm/vllm/v1/engine/core.py:879` 到 `vllm/vllm/v1/engine/core.py:885`
 
 这说明结构化输出 grammar 初始化发生在 EngineCore 侧，而不是 InputProcessor 侧。
 
@@ -1189,7 +1189,7 @@ if req.use_structured_output:
 return req, request.current_wave
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:875`
+位置：`vllm/vllm/v1/engine/core.py:886`
 
 `current_wave` 用于 DP 场景。
 
@@ -1230,7 +1230,7 @@ def from_engine_core_request(
     )
 ```
 
-位置：`vllm/vllm/v1/request.py:197` 到 `vllm/vllm/v1/request.py:222`
+位置：`vllm/vllm/v1/request.py:212` 到 `vllm/vllm/v1/request.py:237`
 
 也就是说，`EngineCoreRequest` 的字段会被搬进内部 `Request`，同时增加更多内部状态。
 
@@ -1246,6 +1246,15 @@ self.stop_reason: int | str | None = None
 
 位置：`vllm/vllm/v1/request.py:97` 到 `vllm/vllm/v1/request.py:99`
 
+它还初始化 KV / EC transfer 参数字段：
+
+```python
+self.kv_transfer_params: dict[str, Any] | None = None
+self.ec_transfer_params: dict[str, Any] | None = None
+```
+
+位置：`vllm/vllm/v1/request.py:101` 到 `vllm/vllm/v1/request.py:104`
+
 如果是 pooling：
 
 ```python
@@ -1253,7 +1262,7 @@ if pooling_params is not None:
     self.max_tokens = 1
 ```
 
-位置：`vllm/vllm/v1/request.py:104` 到 `vllm/vllm/v1/request.py:106`
+位置：`vllm/vllm/v1/request.py:106` 到 `vllm/vllm/v1/request.py:108`
 
 如果是 generation：
 
@@ -1264,7 +1273,23 @@ if self.structured_output_request is not None:
     self.status = RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 ```
 
-位置：`vllm/vllm/v1/request.py:107` 到 `vllm/vllm/v1/request.py:113`
+位置：`vllm/vllm/v1/request.py:109` 到 `vllm/vllm/v1/request.py:114`
+
+如果 sampling params 带 `extra_args`，还会从中取出 KV / EC transfer 参数和 KV cache 上报模式：
+
+```python
+self.kv_transfer_params = sampling_params.extra_args.get(
+    "kv_transfer_params"
+)
+self.ec_transfer_params = sampling_params.extra_args.get(
+    "ec_transfer_params"
+)
+self.kv_cache_report_mode = sampling_params.extra_args.get(
+    "kv_cache_report_mode", "incremental"
+)
+```
+
+位置：`vllm/vllm/v1/request.py:116` 到 `vllm/vllm/v1/request.py:127`
 
 也就是说，如果请求有结构化输出，它不是普通 `WAITING`，而是先进入：
 
@@ -1280,6 +1305,10 @@ WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 self._output_token_ids: list[int] = []
 self._all_token_ids: list[int] = (...)
 self.num_output_placeholders = 0
+self.async_tokens_to_discard = 0
+self.num_in_flight_tokens = 0
+self.next_decode_eligible_step = 0
+self.last_sched_seq = 0
 self.spec_token_ids: list[int] = []
 self.num_computed_tokens = 0
 self.mm_features = mm_features or []
@@ -1290,7 +1319,7 @@ self.block_hashes: list[BlockHash] = []
 self.update_block_hashes()
 ```
 
-位置：`vllm/vllm/v1/request.py:133` 到 `vllm/vllm/v1/request.py:184`
+位置：`vllm/vllm/v1/request.py:143` 到 `vllm/vllm/v1/request.py:199`
 
 这些都是 Scheduler 后续调度、prefix cache、spec decode、prefill/decode 状态更新要用的内部字段。
 
@@ -1343,7 +1372,7 @@ if pooling_params := request.pooling_params:
 
 位置：`vllm/vllm/v1/engine/core.py:384` 到 `vllm/vllm/v1/engine/core.py:393`
 
-### 13.3 KV transfer 参数检查
+### 13.3 KV / EC transfer 参数检查
 
 如果请求带了 `kv_transfer_params`，但 Scheduler 没有 KVConnector，会警告并禁用：
 
@@ -1356,6 +1385,18 @@ if request.kv_transfer_params is not None and (
 
 位置：`vllm/vllm/v1/engine/core.py:395` 到 `vllm/vllm/v1/engine/core.py:401`
 
+如果请求带了 `ec_transfer_params`，但 Scheduler 没有 ECConnector，也会警告并禁用：
+
+```python
+if (
+    request.ec_transfer_params is not None
+    and self.scheduler.get_ec_connector() is None
+):
+    logger.warning(...)
+```
+
+位置：`vllm/vllm/v1/engine/core.py:403` 到 `vllm/vllm/v1/engine/core.py:410`
+
 ### 13.4 进入 Scheduler
 
 最终调用：
@@ -1364,7 +1405,7 @@ if request.kv_transfer_params is not None and (
 self.scheduler.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:403`
+位置：`vllm/vllm/v1/engine/core.py:412`
 
 如果请求设置了 `abort_immediately`，立刻 abort：
 
@@ -1373,7 +1414,7 @@ if request.abort_immediately:
     self.abort_requests([request.request_id])
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:404` 到 `vllm/vllm/v1/engine/core.py:407`
+位置：`vllm/vllm/v1/engine/core.py:413` 到 `vllm/vllm/v1/engine/core.py:416`
 
 ### 13.5 Scheduler 接管后的状态
 
@@ -1482,7 +1523,7 @@ self.resumable = resumable
 self.streaming_queue: deque[StreamingUpdate | None] | None = None
 ```
 
-位置：`vllm/vllm/v1/request.py:188` 到 `vllm/vllm/v1/request.py:191`
+位置：`vllm/vllm/v1/request.py:203` 到 `vllm/vllm/v1/request.py:206`
 
 Scheduler 会根据这些状态处理 `WAITING_FOR_STREAMING_REQ` 等状态。
 
@@ -1847,7 +1888,7 @@ EngineCore.preprocess_add_request(EngineCoreRequest)
 
 EngineCore.add_request(Request)
   → pooling task 校验
-  → KV transfer 检查
+  → KV / EC transfer 检查
   → Scheduler.add_request(Request)
 ```
 

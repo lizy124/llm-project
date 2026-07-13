@@ -1,0 +1,106 @@
+ 建议专题顺序：
+
+  1. 根目录总览
+    - readme.txt
+    - vllm_overview.md
+    - 目的：先校准全局分层和专题索引，避免后面专题之间说法冲突。
+  2. engine
+    - 外层 Engine、LLMEngine、AsyncLLM、InputProcessor、OutputProcessor、EngineCoreClient
+    - 这是入口层，应该先看。
+  3. engine_core
+    - EngineCore、step loop、Scheduler/Worker 桥接、内部输出
+    - 紧接 engine，因为两者边界最容易混。
+  4. scheduler
+    - 调度、token budget、状态更新、spec decode token states
+    - 在 engine core 后看，链路自然。
+  5. executor_worker_model_runner
+    - executor、worker、model runner、forward、sampling、KV 交互
+    - 对应 scheduler 后面的执行层。
+  6. kv_cache_transfer
+    - KV cache manager、block pool、prefix cache、外部 KV load/save、connector flow
+    - 放在执行层后，便于核对 KV 生命周期。
+  7. attention
+    - attention backend、metadata、slot mapping、paged attention、MLA、FlashInfer 等
+    - 和 KV cache 关系密切，放在 KV 后。
+  8. parallelism
+    - TP/PP/DP/EP/CP、通信原语、组合方式
+    - 需要 engine、worker、attention 基础后再看。
+  9. sampling_and_output
+    - logits、sampler、logprobs、stop、structured output、最终输出
+    - 可回扣 OutputProcessor，放在主执行链后。
+  10. spec_decode
+  - speculative decoding 专题
+  - 依赖 scheduler、model runner、sampling，放这里更合适。
+
+  11. quantization
+  - 量化配置、权重加载、量化 linear、KV cache quant、MoE quant
+  - 和模型加载/执行相关，独立审。
+
+  12. config_and_model_loading
+  - EngineArgs、VllmConfig、模型注册、权重加载
+  - 偏配置入口，可在主链路清楚后核对。
+
+  13. model_architectures
+  - 模型结构专题
+  - 依赖模型加载和执行层背景。
+
+  14. multimodal
+  - 多模态 registry、processor、features、encoder cache
+  - 和 input processor、model runner、cache 都相关，后置审。
+
+  15. lora_and_adapters
+  - LoRA/adapters
+  - 横跨加载、执行、控制接口，后置审。
+
+  16. compilation_and_cuda_graph
+  - torch compile、CUDA graph
+  - 属于性能/运行形态专题，后置审。
+
+  17. operators
+  - 算子层
+  - 最底层，最后审比较稳。
+
+  这个顺序的原则是：先总览，再主请求链路 engine -> engine_core -> scheduler -> executor/worker/model_runner，再
+  KV/attention/parallelism，最后看横切能力和底层专题。
+
+  如果你确认，我下一步先审“根目录总览”专题：readme.txt 和 vllm_overview.md，一次性给出需要小改的点。
+
+本轮复审背景：
+- `D:\lzy\project\kv_pool\code\vllm` 已更新到新的 `origin/main`，当前 commit id：`4c81772e8bdf9e37ab2b8adfd80e4308b618fa92`。
+- 由于源码 commit 更新，需要重新核对 `llm-project\tmp_doc\documents\question` 下的文档。
+- 本轮复审不是从零做完整深度分析；默认沿用上一轮已确认的理解，重点核对源码路径、行号、对象名、字段名、函数名和调用链是否因新 commit 发生偏移或轻微变化。
+- 如果只发现行号变化，只更新行号和必要的源码位置描述。
+- 如果发现逻辑、字段、函数签名、执行顺序、边界条件或术语含义相比上一轮有实质变化，再对对应文件做深度源码分析并修正文档总结。
+
+修改规则：
+- 每个专题必须审阅，批量处理一批不能超过 3 个文件。
+- 每个文件都要至少核对其引用的源码路径和行号；不要只做目录级总结。
+- 优先做轻量复核：源码位置、行号、类名、函数名、字段名、调用链入口/出口是否仍匹配新 commit。
+- 只有当源码逻辑确实变化、文档描述与源码不一致、或无法判断是否一致时，才进行深度分析。
+- 如果文档中的源码路径、行号、术语、类名、函数名、字段名或执行顺序与 `code\vllm` 不一致，必须按新 commit 的源码修正。
+- 修改内容要保持同一目录内文档风格一致：标题层级、源码位置格式、列表缩进、术语写法、总结口径都要统一。
+- 每个文件完成后再进入下一个文件；遇到不确定逻辑时先查源码确认，不凭印象改。
+- 只修正文档本身的问题，不顺手修改无关专题或无关代码。
+- 每个文件审阅完成后，必须在 tmp_c.log 中记录进度，标记已完成的专题和待审阅的专题，以及目前的文件。
+
+进度记录：
+在llm-project\tmp_doc\documents\question中
+- [x] 1. 根目录总览：已按新 commit 复审并修正 readme.txt、vllm_overview.md。
+- [x] 2. engine：已按新 commit 复审并修正 README.md、01_engine_role.md、02_llm_engine_sync.md、03_async_llm.md、04_input_processor.md、05_output_processor.md、06_engine_core_client_bridge.md、07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md、10_lifecycle_and_control.md、11_engine_vs_engine_core_boundaries.md、engine_overview.md。
+- [ ] 3. engine_core：已按新 commit 复审并修正 README.md、01_engine_core_role.md、02_request_entry.md；待按新 commit 复审 03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md、06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md、engine_core_overview.md。
+- [ ] 4. scheduler：待按新 commit 复审 README.md、01_request_states.md、02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md、05_prefix_and_external_kv_hits.md、06_kv_block_allocation_and_preemption.md、07_auxiliary_scheduling_features.md、08_update_after_worker_output.md、token_states.md、spec_decode_token_states.md、vllm_scheduler.md。
+- [ ] 5. executor_worker_model_runner：待按新 commit 复审 README.md、01_executor_role.md、02_worker_role.md、03_model_runner_role.md、04_execute_model_flow.md、05_input_batch_and_state_update.md、06_prepare_inputs_and_attention_metadata.md、07_model_forward_and_logits.md、08_sampling_and_model_runner_output.md、09_worker_kv_cache_interaction.md、10_executor_worker_lifecycle.md、executor_worker_model_runner_overview.md。
+- [ ] 6. kv_cache_transfer：待按新 commit 复审 README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md、05_external_kv_load_flow.md、06_external_kv_save_flow.md、07_worker_kv_connector_flow.md、08_invalid_blocks_and_recompute.md、09_deferred_free_and_async_safety.md、10_kvpool_end_to_end.md、kv_cache_transfer_overview.md。
+- [ ] 7. attention：待按新 commit 复审 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md、05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md 及 attention_methods 子目录。
+- [ ] 8. parallelism：待按新 commit 复审。
+- [ ] 9. sampling_and_output：待按新 commit 复审。
+- [ ] 10. spec_decode：待按新 commit 复审。
+
+当前文件：llm-project\tmp_doc\documents\question\engine_core\03_step_loop.md
+下一个文件：llm-project\tmp_doc\documents\question\engine_core\04_scheduler_output_flow.md
+
+复审记录：
+- 2026-07-13：完成 engine 第三批 07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md；按新 commit 核对并修正 EngineCoreRequest / EngineCoreOutput 行号，补充 EC transfer 参数链路，更新 OutputProcessor 与 EngineCore / EngineCoreProc / CoreEngineActorManager 相关源码位置。
+- 2026-07-13：完成 engine 第四批 10_lifecycle_and_control.md、11_engine_vs_engine_core_boundaries.md、engine_overview.md；按新 commit 修正 EngineCore / OutputProcessor 行号，补充 wake_up partial wake 语义、DPLB abort / utility 差异、EngineCoreProc 请求预处理链路、EC transfer 与 streaming output 说明。
+- 2026-07-13：完成 engine_core 第一批 README.md、01_engine_core_role.md、02_request_entry.md；按新 commit 修正 EngineCore / EngineCoreProc / Scheduler 行号，补充 non_block=True / future.result() / _process_aborts_queue 主链路、EC transfer 入队检查、EngineCoreProc 请求预处理与 streaming request 入口行号。
+

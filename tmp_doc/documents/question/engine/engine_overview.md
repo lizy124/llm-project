@@ -545,11 +545,14 @@ return EngineCoreRequest(...)
 InputProcessor.assign_request_id(request)
 ```
 
-它会把用户 request id 保存为 external id，再生成内部唯一 id：
+它会把用户 request id 保存为 external id；默认追加 8 位随机后缀生成内部 request id，但如果启用了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，源码只告警且不改写 `request_id`：
 
 ```python
 request.external_req_id = request.request_id
-request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
+if envs.VLLM_DISABLE_REQUEST_ID_RANDOMIZATION:
+    logger.warning_once(...)
+else:
+    request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
 ```
 
 位置：`vllm/vllm/v1/engine/input_processor.py:222` 到 `vllm/vllm/v1/engine/input_processor.py:240`
@@ -561,7 +564,7 @@ external_req_id：
   用户传入的 request_id，最终 RequestOutput 里会展示它。
 
 request_id：
-  vLLM 内部唯一 request_id，用于 EngineCore / Scheduler / OutputProcessor 状态对齐。
+  默认是 vLLM 内部唯一 request_id，用于 EngineCore / Scheduler / OutputProcessor 状态对齐；禁用随机化时可能仍等于外部 id。
 ```
 
 ---
@@ -577,7 +580,7 @@ class OutputProcessor:
     """Process EngineCoreOutputs into RequestOutputs."""
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:417` 到 `vllm/vllm/v1/engine/output_processor.py:418`
+位置：`vllm/vllm/v1/engine/output_processor.py:424` 到 `vllm/vllm/v1/engine/output_processor.py:425`
 
 它负责把内部输出协议转换成用户输出协议。
 
@@ -596,7 +599,7 @@ req_state = RequestState.from_new_request(...)
 self.request_states[request_id] = req_state
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:526` 到 `vllm/vllm/v1/engine/output_processor.py:536`
+位置：`vllm/vllm/v1/engine/output_processor.py:534` 到 `vllm/vllm/v1/engine/output_processor.py:544`
 
 并登记 external 到 internal 的映射：
 
@@ -604,7 +607,7 @@ self.request_states[request_id] = req_state
 self.external_req_ids[req_state.external_req_id].append(request_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:540` 到 `vllm/vllm/v1/engine/output_processor.py:541`
+位置：`vllm/vllm/v1/engine/output_processor.py:548` 到 `vllm/vllm/v1/engine/output_processor.py:549`
 
 这一步必须发生在 EngineCore 返回输出之前，因为 EngineCoreOutput 只带内部增量信息。
 
@@ -620,7 +623,7 @@ self.external_req_ids[req_state.external_req_id].append(request_id)
 3. Create and handle RequestOutput objects。
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:576` 到 `vllm/vllm/v1/engine/output_processor.py:602`
+位置：`vllm/vllm/v1/engine/output_processor.py:584` 到 `vllm/vllm/v1/engine/output_processor.py:610`
 
 主流程：
 
@@ -635,7 +638,8 @@ for each EngineCoreOutput:
   → RequestState.make_request_output()
   → 同步路径：append 到 request_outputs
   → 异步路径：queue.put(request_output)
-  → finished 后清理 RequestState
+  → 非 streaming input 请求 finished 后清理 RequestState
+  → streaming input 请求可能应用下一段 StreamingUpdate 或等待 / 发送 STREAM_FINISHED sentinel
   → 必要时 reqs_to_abort.append(request_id)
 ```
 
@@ -761,7 +765,7 @@ self.engine_core.post_step(model_executed=model_executed)
 
 ```text
 ZMQ input_socket：发送 ADD / ABORT / UTILITY；
-ZMQ output_socket：接收 EngineCoreOutputs / UtilityOutput。
+ZMQ output_socket：接收 EngineCoreOutputs；UtilityOutput 通过 EngineCoreOutputs.utility_output 字段承载。
 ```
 
 `AsyncMPClient.add_request_async()` 会设置 client index 并发送 ADD：
@@ -980,7 +984,9 @@ AsyncLLM.generate()
   → OutputProcessor.add_request(queue)
   → AsyncMPClient.add_request_async()
   → ZMQ ADD
-  → EngineCoreProc input_queue
+  → EngineCoreProc.process_input_sockets()
+  → EngineCore.preprocess_add_request()
+  → input_queue 放入 (ADD, (Request, request_wave))
   → EngineCore.add_request()
   → Scheduler.add_request()
 ```
@@ -1004,18 +1010,19 @@ EngineCoreRequest
 ```text
 Request
   → pooling task 校验
-  → KV transfer 检查
+  → KV / EC transfer 检查
   → Scheduler.add_request()
 ```
 
 进入 Scheduler 后，请求由 Scheduler 管理：
 
 ```text
-requests dict；
+requests；
 waiting；
 skipped_waiting；
 running；
-finished / free。
+finished_req_ids / finished_req_ids_dict；
+_free_request() / _free_blocks() 释放路径。
 ```
 
 ---
@@ -1027,8 +1034,9 @@ finished / free。
 ```text
 EngineCore.step()
   → Scheduler.schedule()
-  → model_executor.execute_model()
-  → 如果 execute_model 返回 None，则 model_executor.sample_tokens(grammar_output)
+  → model_executor.execute_model(scheduler_output, non_block=True)
+  → future.result()
+  → 如果 model_output is None，则 model_executor.sample_tokens(grammar_output)
   → Scheduler.update_from_output()
   → dict[client_index, EngineCoreOutputs]
 ```
@@ -1371,8 +1379,12 @@ RequestOutput / PoolingRequestOutput  # 用户可见输出
 LLMEngine.add_request()
   → InputProcessor.process_inputs()
   → EngineCoreRequest
+  → InputProcessor.assign_request_id()
   → OutputProcessor.add_request()
   → EngineCoreClient.add_request()
+  → EngineCore.preprocess_add_request()
+  → Request.from_engine_core_request()
+  → EngineCore.add_request()
   → Scheduler.add_request()
 
 LLMEngine.step()
@@ -1388,12 +1400,17 @@ LLMEngine.step()
 AsyncLLM.generate()
   → AsyncLLM.add_request()
   → InputProcessor.process_inputs()
+  → InputProcessor.assign_request_id()
+  → _run_output_handler()
   → RequestOutputCollector
   → OutputProcessor.add_request(..., queue)
   → EngineCoreClient.add_request_async()
+  → EngineCoreProc.process_input_sockets()
+  → EngineCore.preprocess_add_request()
+  → Request.from_engine_core_request()
   → EngineCoreProc
 
-AsyncLLM.output_handler
+AsyncLLM._run_output_handler() 内创建的 output_handler 后台任务
   → EngineCoreClient.get_output_async()
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()
@@ -1407,8 +1424,9 @@ AsyncLLM.output_handler
 EngineCore.step()
   → Scheduler.schedule()
   → SchedulerOutput
-  → model_executor.execute_model()
-  → Worker / ModelRunner
+  → model_executor.execute_model(..., non_block=True)
+  → future.result()
+  → 如果 model_output is None，则 model_executor.sample_tokens(grammar_output)
   → ModelRunnerOutput
   → Scheduler.update_from_output()
   → EngineCoreOutputs

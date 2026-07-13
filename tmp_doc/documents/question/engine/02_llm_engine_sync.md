@@ -1,6 +1,6 @@
 # 02. LLMEngine 负责什么？
 
-源码位置：`vllm/vllm/v1/engine/llm_engine.py`
+源码位置：`vllm/v1/engine/llm_engine.py`
 
 本问题关注：同步接口里的 `LLMEngine` 如何作为外层 Engine，连接用户输入、`InputProcessor`、`EngineCoreClient` 和 `OutputProcessor`。
 
@@ -38,7 +38,7 @@ class LLMEngine:
     """Legacy LLMEngine for backwards compatibility."""
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:48` 到 `vllm/vllm/v1/engine/llm_engine.py:49`
+位置：`vllm/v1/engine/llm_engine.py:48` 到 `vllm/v1/engine/llm_engine.py:49`
 
 所以可以把同步 `LLMEngine` 理解为：
 
@@ -117,7 +117,7 @@ def __init__(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:51` 到 `vllm/vllm/v1/engine/llm_engine.py:61`
+位置：`vllm/v1/engine/llm_engine.py:51` 到 `vllm/v1/engine/llm_engine.py:61`
 
 初始化主线可以概括为：
 
@@ -143,7 +143,7 @@ LLMEngine.__init__()
 self.renderer = renderer = renderer_from_config(self.vllm_config)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:91`
+位置：`vllm/v1/engine/llm_engine.py:91`
 
 renderer 的作用主要是支持输入渲染、tokenizer、多模态 cache 等前端处理能力。
 
@@ -158,7 +158,7 @@ renderer 的作用主要是支持输入渲染、tokenizer、多模态 cache 等�
 self.input_processor = InputProcessor(self.vllm_config, renderer)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:93` 到 `vllm/vllm/v1/engine/llm_engine.py:94`
+位置：`vllm/v1/engine/llm_engine.py:93` 到 `vllm/v1/engine/llm_engine.py:94`
 
 注释已经说明它的职责：
 
@@ -182,7 +182,7 @@ self.output_processor = OutputProcessor(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:96` 到 `vllm/vllm/v1/engine/llm_engine.py:102`
+位置：`vllm/v1/engine/llm_engine.py:96` 到 `vllm/v1/engine/llm_engine.py:102`
 
 注释也直接说明它的职责：
 
@@ -221,7 +221,7 @@ self.engine_core = EngineCoreClient.make_client(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:104` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:104` 到 `vllm/v1/engine/llm_engine.py:111`
 
 这说明同步 `LLMEngine` 并不总是直接持有 `EngineCore`，而是持有 `EngineCoreClient`。
 
@@ -259,7 +259,7 @@ self.external_launcher_dp = (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:75` 到 `vllm/vllm/v1/engine/llm_engine.py:78`
+位置：`vllm/v1/engine/llm_engine.py:75` 到 `vllm/v1/engine/llm_engine.py:78`
 
 如果不是多进程，并且 DP size > 1，还会先初始化 DP group：
 
@@ -274,7 +274,7 @@ else:
     self.dp_group = None
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:81` 到 `vllm/vllm/v1/engine/llm_engine.py:88`
+位置：`vllm/v1/engine/llm_engine.py:81` 到 `vllm/v1/engine/llm_engine.py:88`
 
 注释强调：
 
@@ -283,7 +283,7 @@ else:
 # In the decoupled engine case this is handled in EngineCoreProc.
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:79` 到 `vllm/vllm/v1/engine/llm_engine.py:80`
+位置：`vllm/v1/engine/llm_engine.py:79` 到 `vllm/v1/engine/llm_engine.py:80`
 
 含义是：
 
@@ -320,7 +320,7 @@ def from_vllm_config(...):
     )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:143` 到 `vllm/vllm/v1/engine/llm_engine.py:158`
+位置：`vllm/v1/engine/llm_engine.py:143` 到 `vllm/v1/engine/llm_engine.py:158`
 
 它从已有 `VllmConfig` 创建 `LLMEngine`，并根据环境变量决定是否启用 V1 multiprocessing。
 
@@ -334,7 +334,7 @@ def from_engine_args(...):
     return cls(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:160` 到 `vllm/vllm/v1/engine/llm_engine.py:186`
+位置：`vllm/v1/engine/llm_engine.py:160` 到 `vllm/v1/engine/llm_engine.py:186`
 
 这一路径先把 CLI / API 层的 `EngineArgs` 转成 `VllmConfig`，再创建 Engine。
 
@@ -364,7 +364,7 @@ def add_request(
 ) -> str:
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:218` 到 `vllm/vllm/v1/engine/llm_engine.py:229`
+位置：`vllm/v1/engine/llm_engine.py:218` 到 `vllm/v1/engine/llm_engine.py:229`
 
 整体主线是：
 
@@ -387,7 +387,7 @@ if not isinstance(request_id, str):
     raise TypeError(f"request_id must be a string, got {type(request_id)}")
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:230` 到 `vllm/vllm/v1/engine/llm_engine.py:232`
+位置：`vllm/v1/engine/llm_engine.py:230` 到 `vllm/v1/engine/llm_engine.py:232`
 
 也就是说同步路径要求外部请求 id 必须是字符串。
 
@@ -407,7 +407,7 @@ if isinstance(prompt, EngineCoreRequest):
     request = prompt
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:235` 到 `vllm/vllm/v1/engine/llm_engine.py:242`
+位置：`vllm/v1/engine/llm_engine.py:235` 到 `vllm/v1/engine/llm_engine.py:242`
 
 这是一条兼容旧用法的路径。
 
@@ -418,7 +418,7 @@ if request_id != request.request_id:
     logger.warning_once(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:243` 到 `vllm/vllm/v1/engine/llm_engine.py:248`
+位置：`vllm/v1/engine/llm_engine.py:243` 到 `vllm/v1/engine/llm_engine.py:248`
 
 ### 7.2 普通 PromptType / EngineInput
 
@@ -439,7 +439,7 @@ request = self.input_processor.process_inputs(
 prompt_text, _, _ = extract_prompt_components(self.model_config, prompt)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:250` 到 `vllm/vllm/v1/engine/llm_engine.py:261`
+位置：`vllm/v1/engine/llm_engine.py:250` 到 `vllm/v1/engine/llm_engine.py:261`
 
 这一步把用户输入变成 `EngineCoreRequest`。
 
@@ -466,7 +466,7 @@ self._validate_params(params, supported_tasks)
 self._validate_lora(lora_request)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:256` 到 `vllm/vllm/v1/engine/input_processor.py:257`
+位置：`vllm/v1/engine/input_processor.py:256` 到 `vllm/v1/engine/input_processor.py:257`
 
 raw prompt 会经过预处理：
 
@@ -477,7 +477,7 @@ processed_inputs = self.input_preprocessor.preprocess(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:291` 到 `vllm/vllm/v1/engine/input_processor.py:294`
+位置：`vllm/v1/engine/input_processor.py:291` 到 `vllm/v1/engine/input_processor.py:294`
 
 然后校验并拆分输入：
 
@@ -487,7 +487,7 @@ encoder_inputs, decoder_inputs = split_enc_dec_input(processed_inputs)
 self._validate_model_inputs(encoder_inputs, decoder_inputs)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:296` 到 `vllm/vllm/v1/engine/input_processor.py:299`
+位置：`vllm/v1/engine/input_processor.py:296` 到 `vllm/v1/engine/input_processor.py:299`
 
 最终返回 `EngineCoreRequest`：
 
@@ -510,7 +510,7 @@ return EngineCoreRequest(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:370` 到 `vllm/vllm/v1/engine/input_processor.py:385`
+位置：`vllm/v1/engine/input_processor.py:370` 到 `vllm/v1/engine/input_processor.py:385`
 
 因此，`LLMEngine` 本身不做 tokenization / multimodal 细节，而是委托给 `InputProcessor`。
 
@@ -524,7 +524,7 @@ return EngineCoreRequest(
 class EngineCoreRequest(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:91`
+位置：`vllm/v1/engine/__init__.py:88` 到 `vllm/v1/engine/__init__.py:93`
 
 它的主要字段包括：
 
@@ -551,7 +551,7 @@ reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:92` 到 `vllm/vllm/v1/engine/__init__.py:135`
+位置：`vllm/v1/engine/__init__.py:94` 到 `vllm/v1/engine/__init__.py:137`
 
 可以理解为：
 
@@ -596,7 +596,7 @@ Scheduler 状态机：Request
 self.input_processor.assign_request_id(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:263`
+位置：`vllm/v1/engine/llm_engine.py:263`
 
 `assign_request_id()` 的默认逻辑是：
 
@@ -606,7 +606,7 @@ request.external_req_id = request.request_id
 request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:232` 到 `vllm/vllm/v1/engine/input_processor.py:240`
+位置：`vllm/v1/engine/input_processor.py:232` 到 `vllm/v1/engine/input_processor.py:240`
 
 它的注释说明默认会给内部 request id 增加 8 位随机后缀，以保证内部唯一性；如果设置了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，则不会追加随机后缀。
 
@@ -630,7 +630,7 @@ request_id：
 external_req_id: str | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:122` 到 `vllm/vllm/v1/engine/__init__.py:126`
+位置：`vllm/v1/engine/__init__.py:124` 到 `vllm/v1/engine/__init__.py:128`
 
 这解释了一个常见疑问：
 
@@ -651,7 +651,7 @@ params = request.params
 n = params.n if isinstance(params, SamplingParams) else 1
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:265` 到 `vllm/vllm/v1/engine/llm_engine.py:270`
+位置：`vllm/v1/engine/llm_engine.py:265` 到 `vllm/v1/engine/llm_engine.py:270`
 
 如果 `n == 1`：
 
@@ -664,7 +664,7 @@ if n == 1:
     return req_id
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:272` 到 `vllm/vllm/v1/engine/llm_engine.py:277`
+位置：`vllm/v1/engine/llm_engine.py:272` 到 `vllm/v1/engine/llm_engine.py:277`
 
 这里一定要注意顺序：
 
@@ -708,7 +708,7 @@ def add_request(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:512` 到 `vllm/vllm/v1/engine/output_processor.py:519`
+位置：`vllm/v1/engine/output_processor.py:520` 到 `vllm/v1/engine/output_processor.py:527`
 
 如果 request 已存在，说明是 streaming update，会走更新逻辑：
 
@@ -719,7 +719,7 @@ if req_state is not None:
     return
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:520` 到 `vllm/vllm/v1/engine/output_processor.py:524`
+位置：`vllm/v1/engine/output_processor.py:528` 到 `vllm/v1/engine/output_processor.py:532`
 
 普通新请求会创建 `RequestState`：
 
@@ -737,7 +737,7 @@ req_state = RequestState.from_new_request(
 self.request_states[request_id] = req_state
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:526` 到 `vllm/vllm/v1/engine/output_processor.py:536`
+位置：`vllm/v1/engine/output_processor.py:534` 到 `vllm/v1/engine/output_processor.py:544`
 
 然后记录 external id 到 internal id 的映射：
 
@@ -745,7 +745,7 @@ self.request_states[request_id] = req_state
 self.external_req_ids[req_state.external_req_id].append(request_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:540` 到 `vllm/vllm/v1/engine/output_processor.py:541`
+位置：`vllm/v1/engine/output_processor.py:548` 到 `vllm/v1/engine/output_processor.py:549`
 
 所以 OutputProcessor 的请求注册不是“把请求送去执行”，而是建立输出处理需要的外层状态。
 
@@ -759,7 +759,7 @@ PoolingParams：
   不创建 detokenizer，记录 pooling output kind。
 ```
 
-相关位置：`vllm/vllm/v1/engine/output_processor.py:211` 到 `vllm/vllm/v1/engine/output_processor.py:270`
+相关位置：`vllm/v1/engine/output_processor.py:210` 到 `vllm/v1/engine/output_processor.py:270`
 
 ---
 
@@ -771,7 +771,7 @@ PoolingParams：
 self.engine_core.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:276`
+位置：`vllm/v1/engine/llm_engine.py:276`
 
 这里的 `self.engine_core` 是 `EngineCoreClient`。
 
@@ -785,7 +785,7 @@ def add_request(self, request: EngineCoreRequest) -> None:
     self.engine_core.add_request(req, request_wave)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:297` 到 `vllm/vllm/v1/engine/core_client.py:299`
+位置：`vllm/v1/engine/core_client.py:297` 到 `vllm/v1/engine/core_client.py:299`
 
 也就是：
 
@@ -808,7 +808,7 @@ def add_request(self, request: EngineCoreRequest) -> None:
     self._send_input(EngineCoreRequestType.ADD, request)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:886` 到 `vllm/vllm/v1/engine/core_client.py:889`
+位置：`vllm/v1/engine/core_client.py:886` 到 `vllm/v1/engine/core_client.py:889`
 
 也就是把 `EngineCoreRequest` 序列化后发给后台 EngineCoreProc。
 
@@ -845,7 +845,7 @@ for idx in range(n):
 return req_id
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:279` 到 `vllm/vllm/v1/engine/llm_engine.py:294`
+位置：`vllm/v1/engine/llm_engine.py:279` 到 `vllm/v1/engine/llm_engine.py:294`
 
 含义是：
 
@@ -877,7 +877,7 @@ parallel sampling 的合并发生在 OutputProcessor / ParentRequest 层。
 def step(self) -> list[RequestOutput | PoolingRequestOutput]:
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:296`
+位置：`vllm/v1/engine/llm_engine.py:296`
 
 主流程是：
 
@@ -910,7 +910,7 @@ self.engine_core.abort_requests(processed_outputs.reqs_to_abort)
 return processed_outputs.request_outputs
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:302` 到 `vllm/vllm/v1/engine/llm_engine.py:334`
+位置：`vllm/v1/engine/llm_engine.py:302` 到 `vllm/v1/engine/llm_engine.py:334`
 
 一句话：
 
@@ -931,7 +931,7 @@ if self.should_execute_dummy_batch:
     return []
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:297` 到 `vllm/vllm/v1/engine/llm_engine.py:300`
+位置：`vllm/v1/engine/llm_engine.py:297` 到 `vllm/v1/engine/llm_engine.py:300`
 
 `should_execute_dummy_batch` 来自 `has_unfinished_requests_dp()`：
 
@@ -940,7 +940,7 @@ if not has_unfinished and aggregated_has_unfinished:
     self.should_execute_dummy_batch = True
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:201` 到 `vllm/vllm/v1/engine/llm_engine.py:202`
+位置：`vllm/v1/engine/llm_engine.py:201` 到 `vllm/v1/engine/llm_engine.py:202`
 
 含义是：
 
@@ -963,7 +963,7 @@ with record_function_or_nullcontext("llm_engine step: get_output"):
     outputs = self.engine_core.get_output()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:302` 到 `vllm/vllm/v1/engine/llm_engine.py:304`
+位置：`vllm/v1/engine/llm_engine.py:302` 到 `vllm/v1/engine/llm_engine.py:304`
 
 ### 16.1 InprocClient.get_output()
 
@@ -976,7 +976,7 @@ def get_output(self) -> EngineCoreOutputs:
     return outputs and outputs.get(0) or EngineCoreOutputs()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:289` 到 `vllm/vllm/v1/engine/core_client.py:292`
+位置：`vllm/v1/engine/core_client.py:289` 到 `vllm/v1/engine/core_client.py:292`
 
 也就是说：
 
@@ -1005,7 +1005,7 @@ def get_output(self) -> EngineCoreOutputs:
     return outputs
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:849` 到 `vllm/vllm/v1/engine/core_client.py:859`
+位置：`vllm/v1/engine/core_client.py:849` 到 `vllm/v1/engine/core_client.py:859`
 
 也就是说：
 
@@ -1043,7 +1043,7 @@ processed_outputs = self.output_processor.process_outputs(
 self.output_processor.update_scheduler_stats(outputs.scheduler_stats)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:308` 到 `vllm/vllm/v1/engine/llm_engine.py:314`
+位置：`vllm/v1/engine/llm_engine.py:308` 到 `vllm/v1/engine/llm_engine.py:314`
 
 `OutputProcessor.process_outputs()` 的入口：
 
@@ -1056,7 +1056,7 @@ def process_outputs(
 ) -> OutputProcessorOutput:
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:576` 到 `vllm/vllm/v1/engine/output_processor.py:581`
+位置：`vllm/v1/engine/output_processor.py:584` 到 `vllm/v1/engine/output_processor.py:589`
 
 源码注释概括它做三件事：
 
@@ -1070,7 +1070,7 @@ Process the EngineCoreOutputs:
 """
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:582` 到 `vllm/vllm/v1/engine/output_processor.py:592`
+位置：`vllm/v1/engine/output_processor.py:590` 到 `vllm/v1/engine/output_processor.py:600`
 
 更完整的流程是：
 
@@ -1104,9 +1104,10 @@ pooling_output = engine_core_output.pooling_output
 finish_reason = engine_core_output.finish_reason
 stop_reason = engine_core_output.stop_reason
 kv_transfer_params = engine_core_output.kv_transfer_params
+ec_transfer_params = engine_core_output.ec_transfer_params
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:618` 到 `vllm/vllm/v1/engine/output_processor.py:622`
+位置：`vllm/v1/engine/output_processor.py:626` 到 `vllm/v1/engine/output_processor.py:631`
 
 如果是 generation 输出，会先 detokenize：
 
@@ -1119,7 +1120,7 @@ if stop_string:
     stop_reason = stop_string
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:639` 到 `vllm/vllm/v1/engine/output_processor.py:645`
+位置：`vllm/v1/engine/output_processor.py:648` 到 `vllm/v1/engine/output_processor.py:653`
 
 然后更新 logprobs：
 
@@ -1127,7 +1128,7 @@ if stop_string:
 req_state.logprobs_processor.update_from_output(engine_core_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:646` 到 `vllm/vllm/v1/engine/output_processor.py:648`
+位置：`vllm/v1/engine/output_processor.py:655` 到 `vllm/v1/engine/output_processor.py:657`
 
 最后创建外部输出：
 
@@ -1138,11 +1139,12 @@ if request_output := req_state.make_request_output(
     finish_reason,
     stop_reason,
     kv_transfer_params,
+    ec_transfer_params,
 ):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:650` 到 `vllm/vllm/v1/engine/output_processor.py:657`
+位置：`vllm/v1/engine/output_processor.py:660` 到 `vllm/v1/engine/output_processor.py:667`
 
 同步 `LLMEngine` 没有 queue，所以会加入返回列表：
 
@@ -1150,7 +1152,7 @@ if request_output := req_state.make_request_output(
 request_outputs.append(request_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:664` 到 `vllm/vllm/v1/engine/output_processor.py:666`
+位置：`vllm/v1/engine/output_processor.py:671` 到 `vllm/v1/engine/output_processor.py:676`
 
 `RequestState.make_request_output()` 里会根据类型返回：
 
@@ -1165,7 +1167,7 @@ parent_req is not None：
   通过 ParentRequest 合并多个 child outputs。
 ```
 
-关键位置：`vllm/vllm/v1/engine/output_processor.py:272` 到 `vllm/vllm/v1/engine/output_processor.py:331`
+关键位置：`vllm/v1/engine/output_processor.py:272` 到 `vllm/v1/engine/output_processor.py:336`
 
 ---
 
@@ -1178,7 +1180,7 @@ with record_function_or_nullcontext("llm_engine step: abort_requests"):
     self.engine_core.abort_requests(processed_outputs.reqs_to_abort)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:317` 到 `vllm/vllm/v1/engine/llm_engine.py:319`
+位置：`vllm/v1/engine/llm_engine.py:317` 到 `vllm/v1/engine/llm_engine.py:319`
 
 `reqs_to_abort` 来自 OutputProcessor：
 
@@ -1189,7 +1191,7 @@ if not engine_core_output.finished:
     reqs_to_abort.append(req_id)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:678` 到 `vllm/vllm/v1/engine/output_processor.py:681`
+位置：`vllm/v1/engine/output_processor.py:688` 到 `vllm/v1/engine/output_processor.py:691`
 
 为什么需要这样？
 
@@ -1222,7 +1224,7 @@ def abort_request(self, request_ids: list[str], internal: bool = False) -> None:
     self.engine_core.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:212` 到 `vllm/vllm/v1/engine/llm_engine.py:216`
+位置：`vllm/v1/engine/llm_engine.py:212` 到 `vllm/v1/engine/llm_engine.py:216`
 
 这里也体现了 `LLMEngine` 的桥接职责：
 
@@ -1243,7 +1245,7 @@ internal=True：
   也可能是 parent request id。
 ```
 
-相关逻辑位置：`vllm/vllm/v1/engine/output_processor.py:450` 到 `vllm/vllm/v1/engine/output_processor.py:510`
+相关逻辑位置：`vllm/v1/engine/output_processor.py:457` 到 `vllm/v1/engine/output_processor.py:518`
 
 取消时还会给异步 queue 生成 abort final output：
 
@@ -1251,7 +1253,7 @@ internal=True：
 req_state.queue.put(request_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:489` 到 `vllm/vllm/v1/engine/output_processor.py:502`
+位置：`vllm/v1/engine/output_processor.py:495` 到 `vllm/v1/engine/output_processor.py:510`
 
 同步路径没有 queue，主要是清理状态并返回需要 EngineCore abort 的内部 ids。
 
@@ -1276,7 +1278,7 @@ def has_unfinished_requests(self) -> bool:
     return self.has_unfinished_requests_dp(has_unfinished)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:191` 到 `vllm/vllm/v1/engine/llm_engine.py:195`
+位置：`vllm/v1/engine/llm_engine.py:191` 到 `vllm/v1/engine/llm_engine.py:195`
 
 这里判断的不是 Scheduler 内部状态，而是外层 OutputProcessor 是否还有未完成请求。
 
@@ -1287,7 +1289,7 @@ def has_unfinished_requests(self) -> bool:
     return len(self.request_states) > 0
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:440` 到 `vllm/vllm/v1/engine/output_processor.py:441`
+位置：`vllm/v1/engine/output_processor.py:447` 到 `vllm/v1/engine/output_processor.py:448`
 
 所以同步 API 视角的 unfinished 是：
 
@@ -1308,7 +1310,7 @@ def get_num_unfinished_requests(self) -> int:
     return self.output_processor.get_num_unfinished_requests()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:188` 到 `vllm/vllm/v1/engine/llm_engine.py:189`
+位置：`vllm/v1/engine/llm_engine.py:188` 到 `vllm/v1/engine/llm_engine.py:189`
 
 `OutputProcessor` 返回：
 
@@ -1317,7 +1319,7 @@ def get_num_unfinished_requests(self):
     return len(self.request_states)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:437` 到 `vllm/vllm/v1/engine/output_processor.py:438`
+位置：`vllm/v1/engine/output_processor.py:444` 到 `vllm/v1/engine/output_processor.py:445`
 
 这再次说明：
 
@@ -1347,7 +1349,7 @@ if (
     self.do_log_stats_with_interval()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:321` 到 `vllm/vllm/v1/engine/llm_engine.py:332`
+位置：`vllm/v1/engine/llm_engine.py:321` 到 `vllm/v1/engine/llm_engine.py:332`
 
 这里的 stats 来源包括：
 
@@ -1378,7 +1380,7 @@ def stop_profile(self):
     self.engine_core.profile(False)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:336` 到 `vllm/vllm/v1/engine/llm_engine.py:340`
+位置：`vllm/v1/engine/llm_engine.py:336` 到 `vllm/v1/engine/llm_engine.py:340`
 
 多模态 cache 重置：
 
@@ -1388,7 +1390,7 @@ def reset_mm_cache(self):
     self.engine_core.reset_mm_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:342` 到 `vllm/vllm/v1/engine/llm_engine.py:344`
+位置：`vllm/v1/engine/llm_engine.py:342` 到 `vllm/v1/engine/llm_engine.py:344`
 
 prefix cache 重置：
 
@@ -1397,7 +1399,7 @@ def reset_prefix_cache(...):
     return self.engine_core.reset_prefix_cache(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:346` 到 `vllm/vllm/v1/engine/llm_engine.py:351`
+位置：`vllm/v1/engine/llm_engine.py:346` 到 `vllm/v1/engine/llm_engine.py:351`
 
 sleep / wake up：
 
@@ -1408,7 +1410,7 @@ def sleep(self, level: int = 1, mode: PauseMode = "abort"):
     self.engine_core.sleep(level, mode)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:361` 到 `vllm/vllm/v1/engine/llm_engine.py:364`
+位置：`vllm/v1/engine/llm_engine.py:361` 到 `vllm/v1/engine/llm_engine.py:364`
 
 LoRA：
 
@@ -1417,7 +1419,7 @@ def add_lora(self, lora_request: LoRARequest) -> bool:
     return self.engine_core.add_lora(lora_request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:403` 到 `vllm/vllm/v1/engine/llm_engine.py:405`
+位置：`vllm/v1/engine/llm_engine.py:403` 到 `vllm/v1/engine/llm_engine.py:405`
 
 这类方法可以概括为：
 
@@ -1448,7 +1450,7 @@ def get_tokenizer(self) -> TokenizerLike:
     return self.renderer.get_tokenizer()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:382` 到 `vllm/vllm/v1/engine/llm_engine.py:387`
+位置：`vllm/v1/engine/llm_engine.py:382` 到 `vllm/v1/engine/llm_engine.py:387`
 
 也就是说，同步 Engine 对 tokenizer 的访问来自 renderer，而不是 EngineCore。
 
@@ -1550,7 +1552,7 @@ async remote KV load
 KV connector metadata
 ```
 
-`LLMEngine` 只在输出里透传可能的 `kv_transfer_params`。
+`LLMEngine` 只在输出里透传可能的 `kv_transfer_params` / `ec_transfer_params`。
 
 ---
 
@@ -1714,7 +1716,7 @@ EngineCore 是内部执行核心。
 self.engine_core = EngineCoreClient.make_client(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:105` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:105` 到 `vllm/v1/engine/llm_engine.py:111`
 
 也就是 `EngineCoreClient`，而不是一定直接持有 `EngineCore`。
 
@@ -1766,7 +1768,7 @@ external_req_id = 用户传入 id
 request_id = external_req_id + 8 位随机后缀
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:232` 到 `vllm/vllm/v1/engine/input_processor.py:240`
+位置：`vllm/v1/engine/input_processor.py:232` 到 `vllm/v1/engine/input_processor.py:240`
 
 这样即使用户重复传入同一个 id，内部请求也更不容易冲突；如果设置了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，则不会追加随机后缀。
 
@@ -1785,7 +1787,7 @@ self.engine_core.execute_dummy_batch()
 return []
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:297` 到 `vllm/vllm/v1/engine/llm_engine.py:300`
+位置：`vllm/v1/engine/llm_engine.py:297` 到 `vllm/v1/engine/llm_engine.py:300`
 
 ### 32.6 stop string 为什么在 OutputProcessor 里处理？
 
@@ -1824,7 +1826,7 @@ RequestState.make_request_output()
 has_unfinished = self.output_processor.has_unfinished_requests()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:191` 到 `vllm/vllm/v1/engine/llm_engine.py:192`
+位置：`vllm/v1/engine/llm_engine.py:191` 到 `vllm/v1/engine/llm_engine.py:192`
 
 DP / multiprocess 场景会额外考虑 `dp_engines_running()` 或 DP group 全局状态。
 

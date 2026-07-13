@@ -8,6 +8,7 @@
 - `vllm/vllm/v1/engine/output_processor.py`
 - `vllm/vllm/v1/engine/core_client.py`
 - `vllm/vllm/v1/engine/core.py`
+- `vllm/vllm/v1/engine/__init__.py`
 - `vllm/vllm/v1/request.py`
 
 本问题关注：外层 `Engine` 和内部 `EngineCore` 的职责边界，避免把输入输出处理、调度、模型执行混在一起理解。
@@ -196,7 +197,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """Schedule, execute, and make output.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479` 到 `vllm/vllm/v1/engine/core.py:484`
+位置：`vllm/vllm/v1/engine/core.py:488` 到 `vllm/vllm/v1/engine/core.py:493`
 
 普通 `step()` 的主线是：
 
@@ -209,12 +210,13 @@ model_output = future.result()
 if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ...
+self._process_aborts_queue()
 engine_core_outputs = self.scheduler.update_from_output(
     scheduler_output, model_output
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:499` 到 `vllm/vllm/v1/engine/core.py:515`
 
 这说明 `EngineCore` 的核心职责是：
 
@@ -322,11 +324,14 @@ self.input_processor.assign_request_id(request)
 
 异步位置：`vllm/vllm/v1/engine/async_llm.py:368`
 
-`assign_request_id()` 会把用户传入 id 保存成 `external_req_id`，再生成内部唯一 id：
+`assign_request_id()` 会把用户传入 id 保存成 `external_req_id`；默认追加 8 位随机后缀生成内部唯一 id，但如果启用了 `VLLM_DISABLE_REQUEST_ID_RANDOMIZATION`，源码只告警且不改写 `request_id`：
 
 ```python
 request.external_req_id = request.request_id
-request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
+if envs.VLLM_DISABLE_REQUEST_ID_RANDOMIZATION:
+    logger.warning_once(...)
+else:
+    request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
 ```
 
 位置：`vllm/vllm/v1/engine/input_processor.py:222` 到 `vllm/vllm/v1/engine/input_processor.py:240`
@@ -418,7 +423,7 @@ class OutputProcessor:
     """Process EngineCoreOutputs into RequestOutputs."""
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:417` 到 `vllm/vllm/v1/engine/output_processor.py:418`
+位置：`vllm/vllm/v1/engine/output_processor.py:424` 到 `vllm/vllm/v1/engine/output_processor.py:425`
 
 所以外层 Engine 负责把：
 
@@ -490,7 +495,7 @@ EngineCore 的请求预处理入口：
 def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, int]:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:853`
+位置：`vllm/vllm/v1/engine/core.py:864`
 
 核心转换：
 
@@ -498,7 +503,7 @@ def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, i
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 如果是结构化输出请求，还会初始化 grammar：
 
@@ -507,7 +512,7 @@ if req.use_structured_output:
     self.structured_output_manager.grammar_init(req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:868` 到 `vllm/vllm/v1/engine/core.py:874`
+位置：`vllm/vllm/v1/engine/core.py:879` 到 `vllm/vllm/v1/engine/core.py:885`
 
 转换边界是：
 
@@ -522,7 +527,7 @@ Request：Scheduler 内部使用的请求状态对象。
 self.scheduler.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:403`
+位置：`vllm/vllm/v1/engine/core.py:412`
 
 这一步之后，请求进入 Scheduler 的：
 
@@ -577,7 +582,7 @@ def reset_prefix_cache(...):
     return self.scheduler.reset_prefix_cache(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:680` 到 `vllm/vllm/v1/engine/core.py:685`
+位置：`vllm/vllm/v1/engine/core.py:689` 到 `vllm/vllm/v1/engine/core.py:694`
 
 ```python
 def sleep(self, level: int = 1, mode: PauseMode = "abort"):
@@ -587,7 +592,7 @@ def sleep(self, level: int = 1, mode: PauseMode = "abort"):
     model_executor.sleep(level)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:761` 到 `vllm/vllm/v1/engine/core.py:797`
+位置：`vllm/vllm/v1/engine/core.py:770` 到 `vllm/vllm/v1/engine/core.py:806`
 
 这说明 EngineCore 是内部资源和执行系统的控制层。
 
@@ -857,6 +862,7 @@ finish_reason；
 stop_reason；
 events；
 kv_transfer_params；
+ec_transfer_params；
 trace_headers；
 prefill_stats；
 routed_experts；
@@ -875,7 +881,7 @@ finished_requests
 wave_complete / start_wave
 ```
 
-它们由 Scheduler.update_from_output() 生成，并经 EngineCoreClient 返回给外层 Engine。
+`Scheduler.update_from_output()` 生成按 `client_index` 分组的 `dict[int, EngineCoreOutputs]`；InprocClient 取 index 0 的输出，MP 路径经 EngineCoreProc / EngineCoreClient 返回给对应外层 Engine。
 
 ### 9.2 RequestOutput / PoolingRequestOutput
 
@@ -960,8 +966,12 @@ AsyncLLM.generate()
   → assign_request_id()
   → RequestOutputCollector
   → OutputProcessor.add_request(..., queue)
-  → EngineCoreClient.add_request_async()
-  → EngineCoreProc
+  → AsyncMPClient.add_request_async()
+  → EngineCoreProc.process_input_sockets()
+  → EngineCore.preprocess_add_request()
+  → Request
+  → EngineCoreProc._handle_client_request()
+  → EngineCore.add_request()
   → Scheduler.add_request()
 ```
 
@@ -1026,7 +1036,8 @@ AsyncLLM.add_lora()
 EngineCore 再转给：
 
 ```text
-Scheduler：reset_prefix_cache / pause_scheduler / resume_scheduler
+Scheduler：reset_prefix_cache / set_pause_state / finish_requests / reset_encoder_cache
+EngineCore：pause_scheduler / resume_scheduler 协调 Scheduler 状态切换和缓存清理
 model_executor：profile / sleep / wake_up / add_lora / collective_rpc
 ```
 
@@ -1144,8 +1155,8 @@ LLMEngine / AsyncLLM
   → 接收用户请求
   → InputProcessor.process_inputs()
   → OutputProcessor.add_request()
-  → EngineCoreClient.add_request()
-  → EngineCoreClient.get_output()
+  → EngineCoreClient.add_request() / add_request_async()
+  → EngineCoreClient.get_output() / get_output_async()
   → OutputProcessor.process_outputs()
   → 返回 / yield RequestOutput
 ```

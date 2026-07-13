@@ -2,11 +2,11 @@
 
 源码位置：
 
-- `vllm/vllm/v1/engine/llm_engine.py`
-- `vllm/vllm/v1/engine/async_llm.py`
-- `vllm/vllm/v1/engine/core.py`
-- `vllm/vllm/v1/engine/core_client.py`
-- `vllm/vllm/v1/engine/__init__.py`
+- `vllm/v1/engine/llm_engine.py`
+- `vllm/v1/engine/async_llm.py`
+- `vllm/v1/engine/core.py`
+- `vllm/v1/engine/core_client.py`
+- `vllm/v1/engine/__init__.py`
 
 本问题关注：`Engine` 到底是不是 `LLMEngine` / `AsyncLLM`，以及外层 Engine 和内部 `EngineCore` 的关系。
 
@@ -41,7 +41,7 @@ class EngineCore:
     """Inner loop of vLLM's Engine."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:96` 到 `vllm/vllm/v1/engine/core.py:97`
+位置：`vllm/v1/engine/core.py:96` 到 `vllm/v1/engine/core.py:97`
 
 这句话说明：
 
@@ -139,7 +139,7 @@ class LLMEngine:
     """Legacy LLMEngine for backwards compatibility."""
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:48` 到 `vllm/vllm/v1/engine/llm_engine.py:49`
+位置：`vllm/v1/engine/llm_engine.py:48` 到 `vllm/v1/engine/llm_engine.py:49`
 
 这里说它是 `Legacy LLMEngine for backwards compatibility`，说明它保留了传统同步 `LLMEngine` 接口形态。
 
@@ -154,7 +154,7 @@ self.renderer = renderer = renderer_from_config(self.vllm_config)
 self.input_processor = InputProcessor(self.vllm_config, renderer)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:91` 到 `vllm/vllm/v1/engine/llm_engine.py:94`
+位置：`vllm/v1/engine/llm_engine.py:91` 到 `vllm/v1/engine/llm_engine.py:94`
 
 接着创建 `OutputProcessor`：
 
@@ -163,7 +163,7 @@ self.input_processor = InputProcessor(self.vllm_config, renderer)
 self.output_processor = OutputProcessor(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:96` 到 `vllm/vllm/v1/engine/llm_engine.py:102`
+位置：`vllm/v1/engine/llm_engine.py:96` 到 `vllm/v1/engine/llm_engine.py:102`
 
 这两个注释已经把边界说得很清楚：
 
@@ -186,7 +186,7 @@ OutputProcessor：
 self.engine_core = EngineCoreClient.make_client(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:104` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:104` 到 `vllm/v1/engine/llm_engine.py:111`
 
 注意这里容易误解：
 
@@ -219,7 +219,7 @@ LLMEngine
 request = self.input_processor.process_inputs(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:250` 到 `vllm/vllm/v1/engine/llm_engine.py:260`
+位置：`vllm/v1/engine/llm_engine.py:250` 到 `vllm/v1/engine/llm_engine.py:260`
 
 然后登记到 `OutputProcessor`：
 
@@ -227,7 +227,7 @@ request = self.input_processor.process_inputs(...)
 self.output_processor.add_request(request, prompt_text, None, 0)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:272` 到 `vllm/vllm/v1/engine/llm_engine.py:274`
+位置：`vllm/v1/engine/llm_engine.py:272` 到 `vllm/v1/engine/llm_engine.py:274`
 
 最后送入 EngineCoreClient：
 
@@ -235,7 +235,7 @@ self.output_processor.add_request(request, prompt_text, None, 0)
 self.engine_core.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:275` 到 `vllm/vllm/v1/engine/llm_engine.py:276`
+位置：`vllm/v1/engine/llm_engine.py:275` 到 `vllm/v1/engine/llm_engine.py:276`
 
 同步请求入口可以概括为：
 
@@ -258,7 +258,7 @@ LLMEngine.add_request()
 outputs = self.engine_core.get_output()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:302` 到 `vllm/vllm/v1/engine/llm_engine.py:304`
+位置：`vllm/v1/engine/llm_engine.py:302` 到 `vllm/v1/engine/llm_engine.py:304`
 
 然后交给 `OutputProcessor`：
 
@@ -270,7 +270,7 @@ processed_outputs = self.output_processor.process_outputs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:306` 到 `vllm/vllm/v1/engine/llm_engine.py:313`
+位置：`vllm/v1/engine/llm_engine.py:306` 到 `vllm/v1/engine/llm_engine.py:313`
 
 最后返回用户可见输出：
 
@@ -278,7 +278,7 @@ processed_outputs = self.output_processor.process_outputs(
 return processed_outputs.request_outputs
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:334`
+位置：`vllm/v1/engine/llm_engine.py:334`
 
 所以同步输出路径是：
 
@@ -310,7 +310,7 @@ class AsyncLLM(EngineClient):
     """An asynchronous wrapper for the vLLM engine."""
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:70` 到 `vllm/vllm/v1/engine/async_llm.py:71`
+位置：`vllm/v1/engine/async_llm.py:70` 到 `vllm/v1/engine/async_llm.py:71`
 
 这句注释也说明它是一个异步 wrapper：
 
@@ -327,7 +327,7 @@ AsyncLLM 是 vLLM engine 的异步外壳。
 self.input_processor = InputProcessor(self.vllm_config, renderer)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:132` 到 `vllm/vllm/v1/engine/async_llm.py:135`
+位置：`vllm/v1/engine/async_llm.py:132` 到 `vllm/v1/engine/async_llm.py:135`
 
 然后创建 `OutputProcessor`：
 
@@ -336,7 +336,7 @@ self.input_processor = InputProcessor(self.vllm_config, renderer)
 self.output_processor = OutputProcessor(...)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:137` 到 `vllm/vllm/v1/engine/async_llm.py:143`
+位置：`vllm/v1/engine/async_llm.py:137` 到 `vllm/v1/engine/async_llm.py:143`
 
 再创建异步 multi-process client：
 
@@ -345,7 +345,7 @@ self.output_processor = OutputProcessor(...)
 self.engine_core = EngineCoreClient.make_async_mp_client(...)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:145` 到 `vllm/vllm/v1/engine/async_llm.py:153`
+位置：`vllm/v1/engine/async_llm.py:145` 到 `vllm/v1/engine/async_llm.py:153`
 
 所以 `AsyncLLM` 和 `LLMEngine` 的核心边界是一样的：
 
@@ -373,7 +373,7 @@ AsyncLLM：
 request = self.input_processor.process_inputs(...)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:349` 到 `vllm/vllm/v1/engine/async_llm.py:360`
+位置：`vllm/v1/engine/async_llm.py:349` 到 `vllm/v1/engine/async_llm.py:360`
 
 然后启动 output handler：
 
@@ -381,7 +381,7 @@ request = self.input_processor.process_inputs(...)
 self._run_output_handler()
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:370` 到 `vllm/vllm/v1/engine/async_llm.py:373`
+位置：`vllm/v1/engine/async_llm.py:370` 到 `vllm/v1/engine/async_llm.py:373`
 
 真正把请求送进 EngineCore 的代码在 `_add_request()`：
 
@@ -390,7 +390,7 @@ self.output_processor.add_request(request, prompt, parent_req, index, queue)
 await self.engine_core.add_request_async(request)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:400` 到 `vllm/vllm/v1/engine/async_llm.py:412`
+位置：`vllm/v1/engine/async_llm.py:400` 到 `vllm/v1/engine/async_llm.py:412`
 
 异步请求入口可以概括为：
 
@@ -426,7 +426,7 @@ returning the RequestOutput back to the caller.
 """
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:541` 到 `vllm/vllm/v1/engine/async_llm.py:554`
+位置：`vllm/v1/engine/async_llm.py:541` 到 `vllm/v1/engine/async_llm.py:554`
 
 所以异步对外路径是：
 
@@ -450,7 +450,7 @@ API server / caller
 outputs = await engine_core.get_output_async()
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:656` 到 `vllm/vllm/v1/engine/async_llm.py:660`
+位置：`vllm/v1/engine/async_llm.py:656` 到 `vllm/v1/engine/async_llm.py:660`
 
 然后分片交给 `OutputProcessor`：
 
@@ -460,7 +460,7 @@ processed_outputs = output_processor.process_outputs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:674` 到 `vllm/vllm/v1/engine/async_llm.py:677`
+位置：`vllm/v1/engine/async_llm.py:674` 到 `vllm/v1/engine/async_llm.py:677`
 
 如果 stop string 触发了需要 abort 的请求，还会异步通知 EngineCore：
 
@@ -468,7 +468,7 @@ processed_outputs = output_processor.process_outputs(
 await engine_core.abort_requests_async(processed_outputs.reqs_to_abort)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:685` 到 `vllm/vllm/v1/engine/async_llm.py:689`
+位置：`vllm/v1/engine/async_llm.py:685` 到 `vllm/v1/engine/async_llm.py:689`
 
 所以异步输出路径是：
 
@@ -476,7 +476,7 @@ await engine_core.abort_requests_async(processed_outputs.reqs_to_abort)
 EngineCoreProc
   → EngineCoreOutputs
   → AsyncMPClient.get_output_async()
-  → AsyncLLM.output_handler
+  → AsyncLLM._run_output_handler() 创建的后台 output_handler task
   → OutputProcessor.process_outputs()
   → RequestOutputCollector
   → AsyncLLM.generate() yield
@@ -495,7 +495,7 @@ class EngineCore:
     """Inner loop of vLLM's Engine."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:96` 到 `vllm/vllm/v1/engine/core.py:97`
+位置：`vllm/v1/engine/core.py:96` 到 `vllm/v1/engine/core.py:97`
 
 可以理解为：
 
@@ -522,7 +522,7 @@ class EngineCoreRequest(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:86` 到 `vllm/vllm/v1/engine/__init__.py:143`
+位置：`vllm/v1/engine/__init__.py:88` 到 `vllm/v1/engine/__init__.py:145`
 
 之后由 EngineCore 转成 Scheduler 内部的 `Request`：
 
@@ -530,7 +530,7 @@ class EngineCoreRequest(...):
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:853` 到 `vllm/vllm/v1/engine/core.py:875`
+位置：`vllm/v1/engine/core.py:864` 到 `vllm/v1/engine/core.py:886`
 
 再交给 Scheduler：
 
@@ -538,7 +538,7 @@ req = Request.from_engine_core_request(request, self.request_block_hasher)
 self.scheduler.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:372` 到 `vllm/vllm/v1/engine/core.py:403`
+位置：`vllm/v1/engine/core.py:372` 到 `vllm/v1/engine/core.py:417`；其中 `self.scheduler.add_request(request)` 在 `vllm/v1/engine/core.py:412`
 
 所以请求边界是：
 
@@ -562,7 +562,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """Schedule, execute, and make output.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479` 到 `vllm/vllm/v1/engine/core.py:484`
+位置：`vllm/v1/engine/core.py:488` 到 `vllm/v1/engine/core.py:493`
 
 核心代码主线是：
 
@@ -580,7 +580,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/v1/engine/core.py:499` 到 `vllm/v1/engine/core.py:515`
 
 这说明 EngineCore 的主职责是：
 
@@ -610,7 +610,7 @@ EngineCore.step()
 
 ### 5.3 EngineCore 输出的还不是最终用户输出
 
-`EngineCoreOutput` 是单个请求的内部增量输出：
+`EngineCoreOutput` 是单个请求的内部增量输出；当前还包含 `ec_transfer_params` 字段：
 
 ```python
 class EngineCoreOutput(...):
@@ -620,7 +620,7 @@ class EngineCoreOutput(...):
     finish_reason: FinishReason | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:173` 到 `vllm/vllm/v1/engine/__init__.py:204`
+位置：`vllm/v1/engine/__init__.py:175` 到 `vllm/v1/engine/__init__.py:207`
 
 `EngineCoreOutputs` 是一批内部输出：
 
@@ -633,7 +633,7 @@ class EngineCoreOutputs(...):
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:218` 到 `vllm/vllm/v1/engine/__init__.py:247`
+位置：`vllm/v1/engine/__init__.py:221` 到 `vllm/v1/engine/__init__.py:249`
 
 它们还不是用户最终看到的 `RequestOutput`。
 
@@ -677,7 +677,7 @@ class EngineCoreClient(ABC):
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:71` 到 `vllm/vllm/v1/engine/core_client.py:80`
+位置：`vllm/v1/engine/core_client.py:71` 到 `vllm/v1/engine/core_client.py:80`
 
 也就是说，`EngineCoreClient` 的作用是屏蔽运行方式差异：
 
@@ -714,7 +714,7 @@ if multiprocess_mode and not asyncio_mode:
 return InprocClient(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:82` 到 `vllm/vllm/v1/engine/core_client.py:105`
+位置：`vllm/v1/engine/core_client.py:82` 到 `vllm/v1/engine/core_client.py:105`
 
 所以外层 `LLMEngine` 只管调用：
 
@@ -743,7 +743,7 @@ InprocClient: client for in-process EngineCore.
 * pulls EngineCoreOutputs by stepping the EngineCore
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:276` 到 `vllm/vllm/v1/engine/core_client.py:284`
+位置：`vllm/v1/engine/core_client.py:276` 到 `vllm/v1/engine/core_client.py:284`
 
 它初始化时直接创建 `EngineCore`：
 
@@ -751,7 +751,7 @@ InprocClient: client for in-process EngineCore.
 self.engine_core = EngineCore(*args, **kwargs)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:286` 到 `vllm/vllm/v1/engine/core_client.py:287`
+位置：`vllm/v1/engine/core_client.py:286` 到 `vllm/v1/engine/core_client.py:287`
 
 拉输出时直接调用 `step_fn()`：
 
@@ -761,7 +761,7 @@ self.engine_core.post_step(model_executed=model_executed)
 return outputs and outputs.get(0) or EngineCoreOutputs()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:289` 到 `vllm/vllm/v1/engine/core_client.py:292`
+位置：`vllm/v1/engine/core_client.py:289` 到 `vllm/v1/engine/core_client.py:292`
 
 添加请求时会先预处理，再加入 EngineCore：
 
@@ -770,7 +770,7 @@ req, request_wave = self.engine_core.preprocess_add_request(request)
 self.engine_core.add_request(req, request_wave)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:297` 到 `vllm/vllm/v1/engine/core_client.py:299`
+位置：`vllm/v1/engine/core_client.py:297` 到 `vllm/v1/engine/core_client.py:299`
 
 所以 Inproc 模式是：
 
@@ -799,7 +799,7 @@ MPClient: base client for multi-proc EngineCore.
     * pulls EngineCoreOutputs via output_socket
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:467` 到 `vllm/vllm/v1/engine/core_client.py:478`
+位置：`vllm/v1/engine/core_client.py:467` 到 `vllm/v1/engine/core_client.py:478`
 
 后台进程里的对象是 `EngineCoreProc`：
 
@@ -808,7 +808,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/v1/engine/core.py:905` 到 `vllm/v1/engine/core.py:906`
 
 所以多进程关系是：
 
@@ -849,7 +849,7 @@ EngineCoreClient 不是 EngineCore 本体。
 self.engine_core = EngineCoreClient.make_client(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:104` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:104` 到 `vllm/v1/engine/llm_engine.py:111`
 
 这里变量名叫 `self.engine_core`，但实际创建的是 `EngineCoreClient`。
 
@@ -1144,7 +1144,7 @@ EngineCore：
 self.engine_core = EngineCoreClient.make_client(...)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:104` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:104` 到 `vllm/v1/engine/llm_engine.py:111`
 
 所以 `self.engine_core` 这个字段名容易误导。
 
@@ -1276,7 +1276,7 @@ AsyncLLM.generate()
   → EngineCoreClient.add_request_async()
   → 后台 EngineCoreProc
 
-AsyncLLM.output_handler
+AsyncLLM._run_output_handler() 创建的后台 output_handler task
   → EngineCoreClient.get_output_async()
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()

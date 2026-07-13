@@ -53,7 +53,7 @@ InputProcessor
 class EngineCoreRequest(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:86`
+位置：`vllm/vllm/v1/engine/__init__.py:88`
 
 它是外层 Engine 交给 EngineCore 的请求对象。
 
@@ -82,7 +82,7 @@ reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:92` 到 `vllm/vllm/v1/engine/__init__.py:135`
+位置：`vllm/vllm/v1/engine/__init__.py:94` 到 `vllm/vllm/v1/engine/__init__.py:137`
 
 可以理解为：
 
@@ -114,7 +114,7 @@ EngineCore 真正交给 Scheduler 的不是 `EngineCoreRequest`，而是内部 `
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 所以对象关系是：
 
@@ -453,7 +453,7 @@ if request_type == EngineCoreRequestType.ADD:
         continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1566` 到 `vllm/vllm/v1/engine/core.py:1573`
+位置：`vllm/vllm/v1/engine/core.py:1578` 到 `vllm/vllm/v1/engine/core.py:1584`
 
 然后放入 input queue：
 
@@ -461,7 +461,7 @@ if request_type == EngineCoreRequestType.ADD:
 self.input_queue.put_nowait((request_type, request))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1584` 到 `vllm/vllm/v1/engine/core.py:1585`
+位置：`vllm/vllm/v1/engine/core.py:1595` 到 `vllm/vllm/v1/engine/core.py:1596`
 
 注意：
 
@@ -477,7 +477,7 @@ This function could be directly used in input processing thread to allow
 request initialization running in parallel with Model forward
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:853` 到 `vllm/vllm/v1/engine/core.py:858`
+位置：`vllm/vllm/v1/engine/core.py:864` 到 `vllm/vllm/v1/engine/core.py:869`
 
 ### 7.2 busy loop 从 input_queue 取请求
 
@@ -488,7 +488,7 @@ req = self.input_queue.get(block=block)
 self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1282` 到 `vllm/vllm/v1/engine/core.py:1284`
+位置：`vllm/vllm/v1/engine/core.py:1294` 到 `vllm/vllm/v1/engine/core.py:1296`
 
 对于 ADD 请求：
 
@@ -500,7 +500,7 @@ elif request_type == EngineCoreRequestType.ADD:
     self.add_request(req, request_wave)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1377` 到 `vllm/vllm/v1/engine/core.py:1381`
+位置：`vllm/vllm/v1/engine/core.py:1388` 到 `vllm/vllm/v1/engine/core.py:1392`
 
 这里的 `req` 已经是内部 `Request`，不是原始 `EngineCoreRequest`。
 
@@ -514,7 +514,7 @@ elif request_type == EngineCoreRequestType.ADD:
 def preprocess_add_request(self, request: EngineCoreRequest) -> tuple[Request, int]:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:853`
+位置：`vllm/vllm/v1/engine/core.py:864`
 
 它主要做三件事。
 
@@ -529,7 +529,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:862` 到 `vllm/vllm/v1/engine/core.py:865`
+位置：`vllm/vllm/v1/engine/core.py:873` 到 `vllm/vllm/v1/engine/core.py:876`
 
 作用是：
 
@@ -546,7 +546,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 这一步会把外层请求对象转成 Scheduler 使用的内部请求对象。
 
@@ -583,7 +583,7 @@ if req.use_structured_output:
     self.structured_output_manager.grammar_init(req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:868` 到 `vllm/vllm/v1/engine/core.py:874`
+位置：`vllm/vllm/v1/engine/core.py:879` 到 `vllm/vllm/v1/engine/core.py:885`
 
 注释说明：
 
@@ -594,7 +594,7 @@ if req.use_structured_output:
 # compilation status before scheduling request.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:869` 到 `vllm/vllm/v1/engine/core.py:873`
+位置：`vllm/vllm/v1/engine/core.py:880` 到 `vllm/vllm/v1/engine/core.py:884`
 
 也就是说：
 
@@ -610,7 +610,7 @@ grammar 初始化可以异步进行；
 return req, request.current_wave
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:875`
+位置：`vllm/vllm/v1/engine/core.py:886`
 
 `current_wave` 用于 DP wave 相关调度。
 
@@ -655,7 +655,7 @@ if pooling_params := request.pooling_params:
 
 这说明 EngineCore 会在入 Scheduler 前做一些模型能力校验。
 
-### 9.3 KV transfer params 检查
+### 9.3 KV / EC transfer params 检查
 
 如果请求带了 KV transfer params，但 Scheduler 没有 KV connector：
 
@@ -668,7 +668,16 @@ if request.kv_transfer_params is not None and (
 
 位置：`vllm/vllm/v1/engine/core.py:395` 到 `vllm/vllm/v1/engine/core.py:401`
 
-这说明 EngineCore 会检查请求携带的 KV transfer 信息是否能被当前 Scheduler / Connector 支持。
+如果请求带了 EC transfer params，但 Scheduler 没有 EC connector，也会告警：
+
+```python
+if request.ec_transfer_params is not None and self.scheduler.get_ec_connector() is None:
+    logger.warning(...)
+```
+
+位置：`vllm/vllm/v1/engine/core.py:403` 到 `vllm/vllm/v1/engine/core.py:410`
+
+这说明 EngineCore 会检查请求携带的 KV / EC transfer 信息是否能被当前 Scheduler / Connector 支持。
 
 ### 9.4 调用 Scheduler.add_request()
 
@@ -678,7 +687,7 @@ if request.kv_transfer_params is not None and (
 self.scheduler.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:403`
+位置：`vllm/vllm/v1/engine/core.py:412`
 
 从这里开始，请求就进入 Scheduler 的请求状态管理。
 
@@ -699,7 +708,7 @@ self.waiting 或 self.skipped_waiting
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:131` 到 `vllm/vllm/v1/engine/__init__.py:135`
+位置：`vllm/vllm/v1/engine/__init__.py:133` 到 `vllm/vllm/v1/engine/__init__.py:137`
 
 EngineCore.add_request() 在加进 Scheduler 后会立即 abort：
 
@@ -708,7 +717,7 @@ if request.abort_immediately:
     self.abort_requests([request.request_id])
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:404` 到 `vllm/vllm/v1/engine/core.py:407`
+位置：`vllm/vllm/v1/engine/core.py:413` 到 `vllm/vllm/v1/engine/core.py:416`
 
 注释解释：
 
@@ -717,7 +726,7 @@ if request.abort_immediately:
 # to free any pre-admission KV-transfer resources.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:404` 到 `vllm/vllm/v1/engine/core.py:406`
+位置：`vllm/vllm/v1/engine/core.py:414` 到 `vllm/vllm/v1/engine/core.py:416`
 
 这种请求不是为了正常生成，而是为了走标准 request_finished 清理路径，释放 KV transfer 相关资源。
 
@@ -739,7 +748,7 @@ Scheduler.add_request() 的入口：
 def add_request(self, request: Request) -> None:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1959`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2069`
 
 普通全新请求会：
 
@@ -748,7 +757,7 @@ self._enqueue_waiting_request(request)
 self.requests[request.request_id] = request
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1976` 到 `vllm/vllm/v1/core/sched/scheduler.py:1977`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2086` 到 `vllm/vllm/v1/core/sched/scheduler.py:2087`
 
 `_enqueue_waiting_request()` 根据请求状态选择队列：
 
@@ -759,7 +768,7 @@ else:
     self.waiting.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1812` 到 `vllm/vllm/v1/core/sched/scheduler.py:1816`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1918` 到 `vllm/vllm/v1/core/sched/scheduler.py:1922`
 
 所以请求进入 Scheduler 后可能在：
 
@@ -856,7 +865,7 @@ if request_type == EngineCoreRequestType.ABORT:
     self.aborts_queue.put_nowait(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1577` 到 `vllm/vllm/v1/engine/core.py:1582`
+位置：`vllm/vllm/v1/engine/core.py:1588` 到 `vllm/vllm/v1/engine/core.py:1594`
 
 注释说明：
 
@@ -867,7 +876,7 @@ if request_type == EngineCoreRequestType.ABORT:
 # aborting in the scheduler is idempotent.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1577` 到 `vllm/vllm/v1/engine/core.py:1581`
+位置：`vllm/vllm/v1/engine/core.py:1588` 到 `vllm/vllm/v1/engine/core.py:1593`
 
 ### 11.5 EngineCore.abort_requests()
 
@@ -878,7 +887,7 @@ def abort_requests(self, request_ids: list[str]):
     self.scheduler.finish_requests(request_ids, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:409` 到 `vllm/vllm/v1/engine/core.py:415`
+位置：`vllm/vllm/v1/engine/core.py:418` 到 `vllm/vllm/v1/engine/core.py:424`
 
 所以 EngineCore 自己不实现复杂取消逻辑，而是交给 Scheduler：
 
@@ -901,7 +910,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:515`
 
 `_process_aborts_queue()` 会批量合并 abort ids：
 
@@ -913,7 +922,7 @@ while not self.aborts_queue.empty():
 self.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:634` 到 `vllm/vllm/v1/engine/core.py:642`
+位置：`vllm/vllm/v1/engine/core.py:643` 到 `vllm/vllm/v1/engine/core.py:651`
 
 作用是：
 
@@ -1019,7 +1028,7 @@ Scheduler.add_request() 中会检查 request id 是否已存在：
 existing = self.requests.get(request.request_id)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1960`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2070`
 
 如果已存在，表示这是同一 streaming session 的后续输入。Scheduler 会用 `StreamingUpdate.from_request()` 构造更新：已有请求还没停在 `WAITING_FOR_STREAMING_REQ` 时，把 update 追加到 `existing.streaming_queue`；已有请求已经在等待新输入且 update 非空时，立即 `_update_request_as_session()`；final request 则结束该 streaming session。
 
@@ -1173,7 +1182,7 @@ Request 是 Scheduler 使用的内部状态对象。
 Request.from_engine_core_request(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 ### 15.2 请求是不是直接进入 Scheduler？
 

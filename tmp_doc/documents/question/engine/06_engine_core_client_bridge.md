@@ -1,6 +1,6 @@
 # 06. EngineCoreClient 如何连接外层 Engine 和 EngineCore？
 
-源码位置：`vllm/vllm/v1/engine/core_client.py`
+源码位置：`vllm/v1/engine/core_client.py`
 
 本问题关注：为什么外层 `LLMEngine` / `AsyncLLM` 通常通过 `EngineCoreClient` 访问 `EngineCore`，以及不同 client 形态如何屏蔽同进程、多进程、同步和异步差异。
 
@@ -108,7 +108,7 @@ class EngineCoreClient(ABC):
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:71` 到 `vllm/vllm/v1/engine/core_client.py:80`
+位置：`vllm/v1/engine/core_client.py:71` 到 `vllm/v1/engine/core_client.py:80`
 
 这段注释直接说明了三种 client 的定位。
 
@@ -127,7 +127,7 @@ def abort_requests(self, request_ids: list[str]) -> None:
     raise NotImplementedError
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:137` 到 `vllm/vllm/v1/engine/core_client.py:175`
+位置：`vllm/v1/engine/core_client.py:137` 到 `vllm/v1/engine/core_client.py:175`
 
 这类接口主要给同步 `LLMEngine` 使用。
 
@@ -144,7 +144,7 @@ async def abort_requests_async(self, request_ids: list[str]) -> None:
     raise NotImplementedError
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:212` 到 `vllm/vllm/v1/engine/core_client.py:246`
+位置：`vllm/v1/engine/core_client.py:212` 到 `vllm/v1/engine/core_client.py:246`
 
 这类接口主要给 `AsyncLLM` 使用。
 
@@ -168,7 +168,7 @@ dp_engines_running
 scale_elastic_ep
 ```
 
-相关接口位置：`vllm/vllm/v1/engine/core_client.py:140` 到 `vllm/vllm/v1/engine/core_client.py:273`
+其中抽象基类接口主要位于 `vllm/v1/engine/core_client.py:137` 到 `vllm/v1/engine/core_client.py:273`；`pause_scheduler_async`、`resume_scheduler_async`、`is_scheduler_paused_async` 是 `AsyncMPClient` 提供的异步控制方法，位置：`vllm/v1/engine/core_client.py:1130` 到 `vllm/v1/engine/core_client.py:1139`。
 
 大多数管理方法在同进程模式下直接转发给 `EngineCore`，在多进程模式下通过 `UTILITY` 消息发给后台 `EngineCoreProc`。但也有 client 本地状态和 DP 特例：`dp_engines_running()` 在 `InprocClient` 固定返回 `False`，在 `MPClient` 返回 `self.engines_running`；`scale_elastic_ep()` 只在 `DPLBAsyncMPClient` 中实现，用 client 侧流程编排 scale up / down，不是简单 UTILITY 转发。
 
@@ -189,7 +189,7 @@ def make_client(
 ) -> "EngineCoreClient":
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:82` 到 `vllm/vllm/v1/engine/core_client.py:89`
+位置：`vllm/v1/engine/core_client.py:82` 到 `vllm/v1/engine/core_client.py:89`
 
 选择逻辑是：
 
@@ -206,7 +206,7 @@ if multiprocess_mode and not asyncio_mode:
 return InprocClient(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:90` 到 `vllm/vllm/v1/engine/core_client.py:105`
+位置：`vllm/v1/engine/core_client.py:90` 到 `vllm/v1/engine/core_client.py:105`
 
 可以整理成表：
 
@@ -241,7 +241,7 @@ self.engine_core = EngineCoreClient.make_client(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:104` 到 `vllm/vllm/v1/engine/llm_engine.py:111`
+位置：`vllm/v1/engine/llm_engine.py:104` 到 `vllm/v1/engine/llm_engine.py:111`
 
 同步请求送入：
 
@@ -249,7 +249,7 @@ self.engine_core = EngineCoreClient.make_client(
 self.engine_core.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:276`
+位置：`vllm/v1/engine/llm_engine.py:276`
 
 同步 step 取输出：
 
@@ -257,7 +257,7 @@ self.engine_core.add_request(request)
 outputs = self.engine_core.get_output()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:302` 到 `vllm/vllm/v1/engine/llm_engine.py:304`
+位置：`vllm/v1/engine/llm_engine.py:302` 到 `vllm/v1/engine/llm_engine.py:304`
 
 同步 abort：
 
@@ -265,7 +265,7 @@ outputs = self.engine_core.get_output()
 self.engine_core.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:215` 到 `vllm/vllm/v1/engine/llm_engine.py:216`
+位置：`vllm/v1/engine/llm_engine.py:215` 到 `vllm/v1/engine/llm_engine.py:216`
 
 所以同步生成主路径依赖三个动作：
 
@@ -297,7 +297,7 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:145` 到 `vllm/vllm/v1/engine/async_llm.py:153`
+位置：`vllm/v1/engine/async_llm.py:145` 到 `vllm/v1/engine/async_llm.py:153`
 
 异步请求送入：
 
@@ -305,7 +305,7 @@ self.engine_core = EngineCoreClient.make_async_mp_client(
 await self.engine_core.add_request_async(request)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:411` 到 `vllm/vllm/v1/engine/async_llm.py:412`
+位置：`vllm/v1/engine/async_llm.py:411` 到 `vllm/v1/engine/async_llm.py:412`
 
 异步输出 handler 中取输出：
 
@@ -313,7 +313,7 @@ await self.engine_core.add_request_async(request)
 outputs = await engine_core.get_output_async()
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:657` 到 `vllm/vllm/v1/engine/async_llm.py:660`
+位置：`vllm/v1/engine/async_llm.py:657` 到 `vllm/v1/engine/async_llm.py:660`
 
 异步 abort：
 
@@ -321,7 +321,7 @@ outputs = await engine_core.get_output_async()
 await self.engine_core.abort_requests_async(all_request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:717` 到 `vllm/vllm/v1/engine/async_llm.py:718`
+位置：`vllm/v1/engine/async_llm.py:717` 到 `vllm/v1/engine/async_llm.py:718`
 
 所以异步路径对应关系是：
 
@@ -354,7 +354,7 @@ class InprocClient(EngineCoreClient):
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:276` 到 `vllm/vllm/v1/engine/core_client.py:284`
+位置：`vllm/v1/engine/core_client.py:276` 到 `vllm/v1/engine/core_client.py:284`
 
 它初始化时直接创建 `EngineCore`：
 
@@ -363,7 +363,7 @@ def __init__(self, *args, **kwargs):
     self.engine_core = EngineCore(*args, **kwargs)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:286` 到 `vllm/vllm/v1/engine/core_client.py:287`
+位置：`vllm/v1/engine/core_client.py:286` 到 `vllm/v1/engine/core_client.py:287`
 
 所以同进程模式没有 ZMQ，没有后台 busy loop。
 
@@ -379,7 +379,7 @@ def add_request(self, request: EngineCoreRequest) -> None:
     self.engine_core.add_request(req, request_wave)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:297` 到 `vllm/vllm/v1/engine/core_client.py:299`
+位置：`vllm/v1/engine/core_client.py:297` 到 `vllm/v1/engine/core_client.py:299`
 
 这一步做了两件事：
 
@@ -416,7 +416,7 @@ def get_output(self) -> EngineCoreOutputs:
     return outputs and outputs.get(0) or EngineCoreOutputs()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:289` 到 `vllm/vllm/v1/engine/core_client.py:292`
+位置：`vllm/v1/engine/core_client.py:289` 到 `vllm/v1/engine/core_client.py:292`
 
 这说明同步同进程模式下：
 
@@ -457,7 +457,7 @@ def abort_requests(self, request_ids: list[str]) -> None:
         self.engine_core.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:301` 到 `vllm/vllm/v1/engine/core_client.py:303`
+位置：`vllm/v1/engine/core_client.py:301` 到 `vllm/v1/engine/core_client.py:303`
 
 例如：
 
@@ -472,7 +472,7 @@ def collective_rpc(...):
     return self.engine_core.collective_rpc(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:314` 到 `vllm/vllm/v1/engine/core_client.py:363`
+位置：`vllm/v1/engine/core_client.py:314` 到 `vllm/v1/engine/core_client.py:363`
 
 同进程模式下 `dp_engines_running()` 固定返回 False：
 
@@ -481,7 +481,7 @@ def dp_engines_running(self) -> bool:
     return False
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:365` 到 `vllm/vllm/v1/engine/core_client.py:366`
+位置：`vllm/v1/engine/core_client.py:365` 到 `vllm/v1/engine/core_client.py:366`
 
 ---
 
@@ -504,7 +504,7 @@ class MPClient(EngineCoreClient):
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:467` 到 `vllm/vllm/v1/engine/core_client.py:478`
+位置：`vllm/v1/engine/core_client.py:467` 到 `vllm/v1/engine/core_client.py:478`
 
 多进程模式的核心变化是：
 
@@ -530,7 +530,7 @@ self.resources = BackgroundResources(ctx=sync_ctx)
 self._finalizer = weakref.finalize(self, self.resources)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:490` 到 `vllm/vllm/v1/engine/core_client.py:498`
+位置：`vllm/v1/engine/core_client.py:490` 到 `vllm/v1/engine/core_client.py:498`
 
 `BackgroundResources` 用于 client 被回收时清理 socket、后台进程、任务等资源。
 
@@ -552,7 +552,7 @@ self.resources.output_socket = make_zmq_socket(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:551` 到 `vllm/vllm/v1/engine/core_client.py:562`
+位置：`vllm/v1/engine/core_client.py:551` 到 `vllm/v1/engine/core_client.py:562`
 
 也就是说前端侧：
 
@@ -571,7 +571,7 @@ with launch_core_engines(
     self.resources.engine_manager = engine_manager
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:573` 到 `vllm/vllm/v1/engine/core_client.py:578`
+位置：`vllm/v1/engine/core_client.py:573` 到 `vllm/v1/engine/core_client.py:578`
 
 这里会启动后台 `EngineCoreProc`。
 
@@ -582,7 +582,7 @@ self.encoder = MsgpackEncoder(oob_tensor_consumer=tensor_ipc_sender)
 self.decoder = MsgpackDecoder(EngineCoreOutputs)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:593` 到 `vllm/vllm/v1/engine/core_client.py:594`
+位置：`vllm/v1/engine/core_client.py:593` 到 `vllm/v1/engine/core_client.py:594`
 
 如果启用了多模态 tensor IPC，会创建 `TensorIpcSender`：
 
@@ -591,7 +591,7 @@ if mm_tensor_ipc == "torch_shm" and tensor_queue is not None:
     tensor_ipc_sender = TensorIpcSender(tensor_queue)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:587` 到 `vllm/vllm/v1/engine/core_client.py:591`
+位置：`vllm/v1/engine/core_client.py:587` 到 `vllm/v1/engine/core_client.py:591`
 
 这用于把多模态 tensor 等大对象通过辅助通道传给后台 EngineCore。
 
@@ -607,7 +607,7 @@ while identities:
     self._apply_ready_response(payload)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:615` 到 `vllm/vllm/v1/engine/core_client.py:633`
+位置：`vllm/v1/engine/core_client.py:615` 到 `vllm/v1/engine/core_client.py:633`
 
 ready response 会把后台初始化后的部分配置同步回前端，例如：
 
@@ -620,7 +620,7 @@ kv_cache_max_concurrency
 dp_stats_address
 ```
 
-相关处理位置：`vllm/vllm/v1/engine/core_client.py:714` 到 `vllm/vllm/v1/engine/core_client.py:755`
+相关处理位置：`vllm/v1/engine/core_client.py:714` 到 `vllm/v1/engine/core_client.py:755`
 
 ---
 
@@ -643,7 +643,7 @@ class EngineCoreRequestType(enum.Enum):
     WAKEUP = b"\x05"
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:249` 到 `vllm/vllm/v1/engine/__init__.py:262`
+位置：`vllm/v1/engine/__init__.py:252` 到 `vllm/v1/engine/__init__.py:265`
 
 消息来源和含义是：
 
@@ -667,7 +667,7 @@ class SyncMPClient(MPClient):
     """Synchronous client for multi-proc EngineCore."""
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:779` 到 `vllm/vllm/v1/engine/core_client.py:780`
+位置：`vllm/v1/engine/core_client.py:779` 到 `vllm/v1/engine/core_client.py:780`
 
 初始化时调用 MPClient：
 
@@ -680,7 +680,7 @@ super().__init__(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:786` 到 `vllm/vllm/v1/engine/core_client.py:791`
+位置：`vllm/v1/engine/core_client.py:786` 到 `vllm/v1/engine/core_client.py:791`
 
 并创建同步输出队列：
 
@@ -688,7 +688,7 @@ super().__init__(
 self.outputs_queue = queue.Queue[EngineCoreOutputs | Exception]()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:793` 到 `vllm/vllm/v1/engine/core_client.py:794`
+位置：`vllm/v1/engine/core_client.py:793` 到 `vllm/v1/engine/core_client.py:794`
 
 ---
 
@@ -705,7 +705,7 @@ self.output_queue_thread = Thread(
 self.output_queue_thread.start()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:838` 到 `vllm/vllm/v1/engine/core_client.py:844`
+位置：`vllm/v1/engine/core_client.py:838` 到 `vllm/v1/engine/core_client.py:844`
 
 线程逻辑是：
 
@@ -731,7 +731,7 @@ else:
     outputs_queue.put_nowait(outputs)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:824` 到 `vllm/vllm/v1/engine/core_client.py:830`
+位置：`vllm/v1/engine/core_client.py:824` 到 `vllm/v1/engine/core_client.py:830`
 
 这使得同步前端的 `get_output()` 可以只从本地 queue 阻塞读取。
 
@@ -752,7 +752,7 @@ def get_output(self) -> EngineCoreOutputs:
     return outputs
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:849` 到 `vllm/vllm/v1/engine/core_client.py:859`
+位置：`vllm/v1/engine/core_client.py:849` 到 `vllm/v1/engine/core_client.py:859`
 
 含义是：
 
@@ -785,7 +785,7 @@ def _send_input(self, request_type: EngineCoreRequestType, request: Any):
     msg = (self.core_engine, request_type.value, *self.encoder.encode(request))
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:861` 到 `vllm/vllm/v1/engine/core_client.py:865`
+位置：`vllm/v1/engine/core_client.py:861` 到 `vllm/v1/engine/core_client.py:865`
 
 如果没有额外 tensor buffer：
 
@@ -793,7 +793,7 @@ def _send_input(self, request_type: EngineCoreRequestType, request: Any):
 self.input_socket.send_multipart(msg, copy=False)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:867` 到 `vllm/vllm/v1/engine/core_client.py:870`
+位置：`vllm/v1/engine/core_client.py:867` 到 `vllm/v1/engine/core_client.py:870`
 
 如果有 tensor backing buffer，则用 tracker 跟踪并保留 request 引用：
 
@@ -802,7 +802,7 @@ tracker = self.input_socket.send_multipart(msg, copy=False, track=True)
 self.add_pending_message(tracker, request)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:872` 到 `vllm/vllm/v1/engine/core_client.py:873`
+位置：`vllm/v1/engine/core_client.py:872` 到 `vllm/v1/engine/core_client.py:873`
 
 这样避免 ZMQ 还没发送完，Python 对象或 tensor buffer 就被释放。
 
@@ -819,7 +819,7 @@ def add_request(self, request: EngineCoreRequest) -> None:
     self._send_input(EngineCoreRequestType.ADD, request)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:886` 到 `vllm/vllm/v1/engine/core_client.py:889`
+位置：`vllm/v1/engine/core_client.py:886` 到 `vllm/v1/engine/core_client.py:889`
 
 同步多进程 abort：
 
@@ -829,7 +829,7 @@ def abort_requests(self, request_ids: list[str]) -> None:
         self._send_input(EngineCoreRequestType.ABORT, request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:891` 到 `vllm/vllm/v1/engine/core_client.py:893`
+位置：`vllm/v1/engine/core_client.py:891` 到 `vllm/v1/engine/core_client.py:893`
 
 所以同步 MP 请求入口是：
 
@@ -864,7 +864,7 @@ def call_utility(self, method: str, *args) -> Any:
     return future.result()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:875` 到 `vllm/vllm/v1/engine/core_client.py:881`
+位置：`vllm/v1/engine/core_client.py:875` 到 `vllm/v1/engine/core_client.py:881`
 
 例如：
 
@@ -879,7 +879,7 @@ def add_lora(self, lora_request: LoRARequest) -> bool:
     return self.call_utility("add_lora", lora_request)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:883` 到 `vllm/vllm/v1/engine/core_client.py:921`
+位置：`vllm/v1/engine/core_client.py:883` 到 `vllm/v1/engine/core_client.py:921`
 
 也就是说同步 MP 的 utility 模式是：
 
@@ -903,7 +903,7 @@ class AsyncMPClient(MPClient):
     """Asyncio-compatible client for multi-proc EngineCore."""
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:950` 到 `vllm/vllm/v1/engine/core_client.py:951`
+位置：`vllm/v1/engine/core_client.py:950` 到 `vllm/v1/engine/core_client.py:951`
 
 初始化时使用 asyncio 模式：
 
@@ -917,7 +917,7 @@ super().__init__(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:963` 到 `vllm/vllm/v1/engine/core_client.py:969`
+位置：`vllm/v1/engine/core_client.py:963` 到 `vllm/v1/engine/core_client.py:969`
 
 并保存：
 
@@ -927,7 +927,7 @@ self.client_index = client_index
 self.outputs_queue = asyncio.Queue[EngineCoreOutputs | Exception]()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:971` 到 `vllm/vllm/v1/engine/core_client.py:973`
+位置：`vllm/v1/engine/core_client.py:971` 到 `vllm/v1/engine/core_client.py:973`
 
 `client_index` 很关键：它用于多 API server / 多前端 client 场景下，把 EngineCore 输出路由回正确客户端。
 
@@ -948,7 +948,7 @@ def _ensure_output_queue_task(self):
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:984` 到 `vllm/vllm/v1/engine/core_client.py:1051`
+位置：`vllm/v1/engine/core_client.py:984` 到 `vllm/v1/engine/core_client.py:1051`
 
 任务核心逻辑是：
 
@@ -964,7 +964,7 @@ if outputs.outputs or outputs.scheduler_stats:
     outputs_queue.put_nowait(outputs)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1005` 到 `vllm/vllm/v1/engine/core_client.py:1043`
+位置：`vllm/v1/engine/core_client.py:1005` 到 `vllm/v1/engine/core_client.py:1043`
 
 这说明异步 client 会在后台 task 中持续接收 EngineCoreProc 输出：收到 `utility_output` 时解析对应 Future；子类可以先通过 `process_engine_outputs` 处理 DP / LB 元数据；只有 `outputs.outputs` 或 `outputs.scheduler_stats` 非空时才放入 asyncio queue。
 
@@ -984,7 +984,7 @@ async def get_output_async(self) -> EngineCoreOutputs:
     return outputs
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1053` 到 `vllm/vllm/v1/engine/core_client.py:1062`
+位置：`vllm/v1/engine/core_client.py:1053` 到 `vllm/v1/engine/core_client.py:1062`
 
 这对应 `AsyncLLM` output handler：
 
@@ -1009,7 +1009,7 @@ def _send_input(
 ) -> Awaitable[Any]:
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1064` 到 `vllm/vllm/v1/engine/core_client.py:1069`
+位置：`vllm/v1/engine/core_client.py:1064` 到 `vllm/v1/engine/core_client.py:1069`
 
 它构造消息：
 
@@ -1018,7 +1018,7 @@ message = (request_type.value, *self.encoder.encode(request))
 return self._send_input_message(message, engine, request)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1073` 到 `vllm/vllm/v1/engine/core_client.py:1074`
+位置：`vllm/v1/engine/core_client.py:1073` 到 `vllm/v1/engine/core_client.py:1074`
 
 真正发送时会拼上 engine identity：
 
@@ -1028,7 +1028,7 @@ msg = (engine,) + message
 return self.input_socket.send_multipart(msg, copy=False)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1086` 到 `vllm/vllm/v1/engine/core_client.py:1089`
+位置：`vllm/v1/engine/core_client.py:1086` 到 `vllm/v1/engine/core_client.py:1089`
 
 如果有 tensor buffer，也会通过 tracker 保留对象引用：
 
@@ -1038,7 +1038,7 @@ future = self.input_socket.send_multipart(msg, copy=False, track=True)
 future.add_done_callback(add_pending)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1091` 到 `vllm/vllm/v1/engine/core_client.py:1099`
+位置：`vllm/v1/engine/core_client.py:1091` 到 `vllm/v1/engine/core_client.py:1099`
 
 ---
 
@@ -1053,7 +1053,7 @@ async def add_request_async(self, request: EngineCoreRequest) -> None:
     self._ensure_output_queue_task()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1121` 到 `vllm/vllm/v1/engine/core_client.py:1124`
+位置：`vllm/v1/engine/core_client.py:1121` 到 `vllm/v1/engine/core_client.py:1124`
 
 这里会设置：
 
@@ -1075,7 +1075,7 @@ async def abort_requests_async(self, request_ids: list[str]) -> None:
         await self._send_input(EngineCoreRequestType.ABORT, request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1126` 到 `vllm/vllm/v1/engine/core_client.py:1128`
+位置：`vllm/v1/engine/core_client.py:1126` 到 `vllm/v1/engine/core_client.py:1128`
 
 ---
 
@@ -1088,7 +1088,7 @@ async def call_utility_async(self, method: str, *args) -> Any:
     return await self._call_utility_async(method, *args, engine=self.core_engine)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1101` 到 `vllm/vllm/v1/engine/core_client.py:1102`
+位置：`vllm/v1/engine/core_client.py:1101` 到 `vllm/v1/engine/core_client.py:1102`
 
 核心逻辑：
 
@@ -1105,7 +1105,7 @@ self._ensure_output_queue_task()
 return await future
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1104` 到 `vllm/vllm/v1/engine/core_client.py:1116`
+位置：`vllm/v1/engine/core_client.py:1104` 到 `vllm/v1/engine/core_client.py:1116`
 
 异步 utility 和同步 utility 的差别是：
 
@@ -1127,7 +1127,7 @@ def process_input_sockets(...):
     """Input socket IO thread."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1482` 到 `vllm/vllm/v1/engine/core.py:1489`
+位置：`vllm/v1/engine/core.py:1493` 到 `vllm/v1/engine/core.py:1500`
 
 收到消息后先解析类型：
 
@@ -1136,7 +1136,7 @@ type_frame, *data_frames = input_socket.recv_multipart(copy=False)
 request_type = EngineCoreRequestType(bytes(type_frame.buffer))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1555` 到 `vllm/vllm/v1/engine/core.py:1563`
+位置：`vllm/v1/engine/core.py:1568` 到 `vllm/v1/engine/core.py:1574`
 
 ### 26.1 ADD：先反序列化 EngineCoreRequest，再预处理
 
@@ -1150,7 +1150,7 @@ if request_type == EngineCoreRequestType.ADD:
         continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1567` 到 `vllm/vllm/v1/engine/core.py:1573`
+位置：`vllm/v1/engine/core.py:1578` 到 `vllm/v1/engine/core.py:1584`
 
 注意这里的 `request` 会变成：
 
@@ -1177,7 +1177,7 @@ if request_type == EngineCoreRequestType.ABORT:
     self.aborts_queue.put_nowait(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1574` 到 `vllm/vllm/v1/engine/core.py:1582`
+位置：`vllm/v1/engine/core.py:1585` 到 `vllm/v1/engine/core.py:1593`
 
 注释说明：
 
@@ -1188,7 +1188,7 @@ if request_type == EngineCoreRequestType.ABORT:
 # aborting in the scheduler is idempotent.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1577` 到 `vllm/vllm/v1/engine/core.py:1581`
+位置：`vllm/v1/engine/core.py:1588` 到 `vllm/v1/engine/core.py:1592`
 
 最后所有请求都会进入 input queue：
 
@@ -1196,7 +1196,7 @@ if request_type == EngineCoreRequestType.ABORT:
 self.input_queue.put_nowait((request_type, request))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1582` 到 `vllm/vllm/v1/engine/core.py:1583`
+位置：`vllm/v1/engine/core.py:1595` 到 `vllm/v1/engine/core.py:1596`
 
 ---
 
@@ -1214,7 +1214,7 @@ def run_busy_loop(self):
         self._process_engine_step()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1264`
+位置：`vllm/v1/engine/core.py:1268` 到 `vllm/v1/engine/core.py:1275`
 
 `_process_input_queue()` 里会调用：
 
@@ -1223,7 +1223,7 @@ req = self.input_queue.get(block=block)
 self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1281` 到 `vllm/vllm/v1/engine/core.py:1284`
+位置：`vllm/v1/engine/core.py:1294` 到 `vllm/v1/engine/core.py:1295`
 
 分发逻辑在 `_handle_client_request()`：
 
@@ -1242,7 +1242,7 @@ elif request_type == EngineCoreRequestType.UTILITY:
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1370` 到 `vllm/vllm/v1/engine/core.py:1399`
+位置：`vllm/v1/engine/core.py:1381` 到 `vllm/v1/engine/core.py:1408`
 
 所以后台收到的三类主消息分别是：
 
@@ -1273,7 +1273,7 @@ for output in outputs.items() if outputs else ():
 self.post_step(model_executed)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1301` 到 `vllm/vllm/v1/engine/core.py:1307`
+位置：`vllm/v1/engine/core.py:1313` 到 `vllm/v1/engine/core.py:1318`
 
 这里 `outputs.items()` 的元素是：
 
@@ -1292,7 +1292,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1626` 到 `vllm/vllm/v1/engine/core.py:1647`
+位置：`vllm/v1/engine/core.py:1639` 到 `vllm/v1/engine/core.py:1657`
 
 这说明多 client 场景下：
 
@@ -1309,7 +1309,7 @@ if client_index == -1:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
+位置：`vllm/v1/engine/core.py:1642` 到 `vllm/v1/engine/core.py:1647`
 
 ---
 
@@ -1326,7 +1326,7 @@ enqueue_output = lambda out: self.output_queue.put_nowait(
 self._invoke_utility_method(method_name, get_result, output, enqueue_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1388` 到 `vllm/vllm/v1/engine/core.py:1397`
+位置：`vllm/v1/engine/core.py:1399` 到 `vllm/v1/engine/core.py:1408`
 
 `_invoke_utility_method()` 会调用目标方法：
 
@@ -1338,7 +1338,7 @@ output.result = UtilityResult(result)
 enqueue_output(output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1432` 到 `vllm/vllm/v1/engine/core.py:1449`
+位置：`vllm/v1/engine/core.py:1447` 到 `vllm/v1/engine/core.py:1460`
 
 前端收到后用 `_process_utility_output()` 找到对应 Future：
 
@@ -1348,7 +1348,7 @@ future = utility_results.pop(output.call_id)
 future.set_result(output.result.result)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:757` 到 `vllm/vllm/v1/engine/core_client.py:768`
+位置：`vllm/v1/engine/core_client.py:757` 到 `vllm/v1/engine/core_client.py:768`
 
 所以 utility 完整闭环是：
 
@@ -1376,7 +1376,7 @@ class BackgroundResources:
     circular reference back to the client object."""
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:369` 到 `vllm/vllm/v1/engine/core_client.py:372`
+位置：`vllm/v1/engine/core_client.py:369` 到 `vllm/v1/engine/core_client.py:372`
 
 它保存：
 
@@ -1390,7 +1390,7 @@ shutdown_path
 engine_dead flag
 ```
 
-相关字段位置：`vllm/vllm/v1/engine/core_client.py:374` 到 `vllm/vllm/v1/engine/core_client.py:390`
+相关字段位置：`vllm/v1/engine/core_client.py:374` 到 `vllm/v1/engine/core_client.py:390`
 
 清理时会：
 
@@ -1403,7 +1403,7 @@ shutdown coordinator；
 同步模式下通过 shutdown_path 通知输出线程退出。
 ```
 
-相关逻辑位置：`vllm/vllm/v1/engine/core_client.py:392` 到 `vllm/vllm/v1/engine/core_client.py:452`
+相关逻辑位置：`vllm/v1/engine/core_client.py:392` 到 `vllm/v1/engine/core_client.py:452`
 
 这说明 `EngineCoreClient` 不只是通信包装，也负责多进程资源生命周期的一部分。
 
@@ -1422,7 +1422,7 @@ def validate_alive(self, frames: Sequence[zmq.Frame]):
         raise EngineDeadError()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:454` 到 `vllm/vllm/v1/engine/core_client.py:457`
+位置：`vllm/v1/engine/core_client.py:454` 到 `vllm/v1/engine/core_client.py:457`
 
 client 侧调用前会检查：
 
@@ -1432,7 +1432,7 @@ def ensure_alive(self):
         raise EngineDeadError()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:670` 到 `vllm/vllm/v1/engine/core_client.py:672`
+位置：`vllm/v1/engine/core_client.py:670` 到 `vllm/v1/engine/core_client.py:672`
 
 如果后台线程 / task 捕获异常，会放入输出队列；`get_output()` / `get_output_async()` 取到后抛出：
 
@@ -1441,9 +1441,9 @@ if isinstance(outputs, Exception):
     raise self._format_exception(outputs) from None
 ```
 
-同步位置：`vllm/vllm/v1/engine/core_client.py:855` 到 `vllm/vllm/v1/engine/core_client.py:856`
+同步位置：`vllm/v1/engine/core_client.py:855` 到 `vllm/v1/engine/core_client.py:856`
 
-异步位置：`vllm/vllm/v1/engine/core_client.py:1060` 到 `vllm/vllm/v1/engine/core_client.py:1061`
+异步位置：`vllm/v1/engine/core_client.py:1060` 到 `vllm/v1/engine/core_client.py:1061`
 
 所以异常传播链路是：
 
@@ -1470,7 +1470,7 @@ if parallel_config.data_parallel_size > 1:
 return AsyncMPClient(*client_args)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:126` 到 `vllm/vllm/v1/engine/core_client.py:132`
+位置：`vllm/v1/engine/core_client.py:126` 到 `vllm/v1/engine/core_client.py:132`
 
 也就是说异步多进程还有两种 DP 变体：
 
@@ -1492,7 +1492,7 @@ DPLBAsyncMPClient：
 self.current_wave = 0
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1213`
+位置：`vllm/v1/engine/core_client.py:1213`
 
 add request 时会设置：
 
@@ -1510,7 +1510,7 @@ await to_await
 self._ensure_output_queue_task()
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1359` 到 `vllm/vllm/v1/engine/core_client.py:1374`
+位置：`vllm/v1/engine/core_client.py:1359` 到 `vllm/v1/engine/core_client.py:1374`
 
 这说明 DP async client 还要处理：
 
@@ -1533,7 +1533,7 @@ engines_running 状态；
 self.reqs_in_flight: dict[str, EngineIdentity] = {}
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1395` 到 `vllm/vllm/v1/engine/core_client.py:1396`
+位置：`vllm/v1/engine/core_client.py:1395` 到 `vllm/v1/engine/core_client.py:1396`
 
 选 engine 时会看：
 
@@ -1550,7 +1550,7 @@ if (eng_index := request.data_parallel_rank) is None and (
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1413` 到 `vllm/vllm/v1/engine/core_client.py:1437`
+位置：`vllm/v1/engine/core_client.py:1413` 到 `vllm/v1/engine/core_client.py:1437`
 
 选择后记录：
 
@@ -1560,7 +1560,7 @@ self.reqs_in_flight[request.request_id] = chosen_engine
 return chosen_engine
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1438` 到 `vllm/vllm/v1/engine/core_client.py:1441`
+位置：`vllm/v1/engine/core_client.py:1444` 到 `vllm/v1/engine/core_client.py:1447`
 
 abort 时按请求所属 engine 路由：
 
@@ -1578,7 +1578,7 @@ for engine, req_ids in by_engine.items():
     await self._abort_requests(req_ids, engine)
 ```
 
-位置：`vllm/vllm/v1/engine/core_client.py:1523` 到 `vllm/vllm/v1/engine/core_client.py:1538`
+位置：`vllm/v1/engine/core_client.py:1529` 到 `vllm/v1/engine/core_client.py:1544`
 
 这说明：
 

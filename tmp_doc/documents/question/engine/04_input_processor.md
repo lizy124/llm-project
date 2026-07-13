@@ -1,6 +1,6 @@
 # 04. InputProcessor 如何把用户输入转成 EngineCoreRequest？
 
-源码位置：`vllm/vllm/v1/engine/input_processor.py`
+源码位置：`vllm/v1/engine/input_processor.py`
 
 本问题关注：`InputProcessor` 在外层 Engine 中的位置，以及它如何把用户侧的 prompt / EngineInput / params / LoRA / 多模态输入处理成 EngineCore 能接收的 `EngineCoreRequest`。
 
@@ -54,7 +54,7 @@ LLMEngine / AsyncLLM
 self.input_processor = InputProcessor(self.vllm_config, renderer)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:93` 到 `vllm/vllm/v1/engine/llm_engine.py:94`
+位置：`vllm/v1/engine/llm_engine.py:93` 到 `vllm/v1/engine/llm_engine.py:94`
 
 异步 `AsyncLLM` 中也持有 `InputProcessor`，请求进入时同样会调用：
 
@@ -62,7 +62,7 @@ self.input_processor = InputProcessor(self.vllm_config, renderer)
 request = self.input_processor.process_inputs(...)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:349` 到 `vllm/vllm/v1/engine/async_llm.py:360`
+位置：`vllm/v1/engine/async_llm.py:349` 到 `vllm/v1/engine/async_llm.py:360`
 
 所以层次关系是：
 
@@ -103,7 +103,7 @@ class InputProcessor:
     ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:36` 到 `vllm/vllm/v1/engine/input_processor.py:43`
+位置：`vllm/v1/engine/input_processor.py:36` 到 `vllm/v1/engine/input_processor.py:43`
 
 初始化时会保存多类配置：
 
@@ -119,7 +119,7 @@ self.observability_config = vllm_config.observability_config
 self.use_v2_model_runner = vllm_config.use_v2_model_runner
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:44` 到 `vllm/vllm/v1/engine/input_processor.py:52`
+位置：`vllm/v1/engine/input_processor.py:44` 到 `vllm/v1/engine/input_processor.py:52`
 
 这些配置会用于后续：
 
@@ -142,7 +142,7 @@ V2 ModelRunner 限制校验。
 self.renderer = renderer or renderer_from_config(vllm_config)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:56`
+位置：`vllm/v1/engine/input_processor.py:56`
 
 renderer 提供：
 
@@ -161,7 +161,7 @@ def tokenizer(self) -> TokenizerLike | None:
     return self.renderer.tokenizer
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:75` 到 `vllm/vllm/v1/engine/input_processor.py:77`
+位置：`vllm/v1/engine/input_processor.py:75` 到 `vllm/v1/engine/input_processor.py:77`
 
 ### 3.2 多模态预算
 
@@ -180,7 +180,7 @@ if self.supports_mm_inputs:
     mm_budget.reset_cache()  # Not used anymore
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:58` 到 `vllm/vllm/v1/engine/input_processor.py:67`
+位置：`vllm/v1/engine/input_processor.py:58` 到 `vllm/v1/engine/input_processor.py:67`
 
 这说明 `InputProcessor` 会提前知道：
 
@@ -204,7 +204,7 @@ self.input_preprocessor = InputPreprocessor(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:69` 到 `vllm/vllm/v1/engine/input_processor.py:73`
+位置：`vllm/v1/engine/input_processor.py:69` 到 `vllm/v1/engine/input_processor.py:73`
 
 它用于兼容 raw prompt 输入：
 
@@ -239,7 +239,7 @@ def process_inputs(
 ) -> EngineCoreRequest:
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:242` 到 `vllm/vllm/v1/engine/input_processor.py:255`
+位置：`vllm/v1/engine/input_processor.py:242` 到 `vllm/v1/engine/input_processor.py:255`
 
 主流程可以概括为：
 
@@ -276,7 +276,7 @@ self._validate_params(params, supported_tasks)
 self._validate_lora(lora_request)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:256` 到 `vllm/vllm/v1/engine/input_processor.py:257`
+位置：`vllm/v1/engine/input_processor.py:256` 到 `vllm/v1/engine/input_processor.py:257`
 
 ### 5.1 SamplingParams 校验
 
@@ -298,7 +298,7 @@ if isinstance(params, SamplingParams):
     )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:88` 到 `vllm/vllm/v1/engine/input_processor.py:100`
+位置：`vllm/v1/engine/input_processor.py:88` 到 `vllm/v1/engine/input_processor.py:100`
 
 这一步确认：
 
@@ -325,7 +325,7 @@ if params.thinking_token_budget is not None:
         raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:102` 到 `vllm/vllm/v1/engine/input_processor.py:117`
+位置：`vllm/v1/engine/input_processor.py:102` 到 `vllm/v1/engine/input_processor.py:117`
 
 含义是：
 
@@ -347,7 +347,7 @@ elif isinstance(params, PoolingParams):
         raise ValueError("This model does not support pooling")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:118` 到 `vllm/vllm/v1/engine/input_processor.py:123`
+位置：`vllm/v1/engine/input_processor.py:118` 到 `vllm/v1/engine/input_processor.py:123`
 
 如果 `params.task` 没有设置，会按模型支持任务自动补默认值：
 
@@ -361,7 +361,7 @@ if params.task is None:
         params.task = "plugin"
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:125` 到 `vllm/vllm/v1/engine/input_processor.py:131`
+位置：`vllm/v1/engine/input_processor.py:125` 到 `vllm/v1/engine/input_processor.py:131`
 
 然后校验 task 是否支持并调用：
 
@@ -369,7 +369,7 @@ if params.task is None:
 params.verify(self.model_config)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:133` 到 `vllm/vllm/v1/engine/input_processor.py:139`
+位置：`vllm/v1/engine/input_processor.py:133` 到 `vllm/v1/engine/input_processor.py:139`
 
 ### 5.4 params 类型必须二选一
 
@@ -382,7 +382,7 @@ raise TypeError(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:140` 到 `vllm/vllm/v1/engine/input_processor.py:144`
+位置：`vllm/v1/engine/input_processor.py:140` 到 `vllm/v1/engine/input_processor.py:144`
 
 所以 `InputProcessor` 明确把请求分成两类：
 
@@ -401,7 +401,7 @@ LoRA 校验入口：
 def _validate_lora(self, lora_request: LoRARequest | None) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:146`
+位置：`vllm/v1/engine/input_processor.py:146`
 
 如果请求没带 LoRA，直接返回：
 
@@ -410,7 +410,7 @@ if lora_request is None:
     return
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:147` 到 `vllm/vllm/v1/engine/input_processor.py:148`
+位置：`vllm/v1/engine/input_processor.py:147` 到 `vllm/v1/engine/input_processor.py:148`
 
 如果请求带了 LoRA，但引擎没有启用 LoRA：
 
@@ -421,7 +421,7 @@ if not self.lora_config:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:150` 到 `vllm/vllm/v1/engine/input_processor.py:154`
+位置：`vllm/v1/engine/input_processor.py:150` 到 `vllm/v1/engine/input_processor.py:154`
 
 如果有 tokenizer，还会提示不同 LoRA 使用不同 tokenizer 的支持已废弃：
 
@@ -432,7 +432,7 @@ logger.warning_once(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:156` 到 `vllm/vllm/v1/engine/input_processor.py:163`
+位置：`vllm/v1/engine/input_processor.py:156` 到 `vllm/v1/engine/input_processor.py:163`
 
 这说明：
 
@@ -456,7 +456,7 @@ if data_parallel_rank is not None and not (0 <= data_parallel_rank < num_ranks):
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:259` 到 `vllm/vllm/v1/engine/input_processor.py:267`
+位置：`vllm/v1/engine/input_processor.py:259` 到 `vllm/v1/engine/input_processor.py:267`
 
 含义是：
 
@@ -485,7 +485,7 @@ if data_parallel_rank is not None and not (0 <= data_parallel_rank < num_ranks):
 if isinstance(prompt, dict) and "type" in prompt:
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:269`
+位置：`vllm/v1/engine/input_processor.py:269`
 
 这种情况下直接使用：
 
@@ -493,7 +493,7 @@ if isinstance(prompt, dict) and "type" in prompt:
 processed_inputs: EngineInput = prompt
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:280`
+位置：`vllm/v1/engine/input_processor.py:280`
 
 如果同时传了 `tokenization_kwargs`，会警告：
 
@@ -505,7 +505,7 @@ logger.warning_once(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:270` 到 `vllm/vllm/v1/engine/input_processor.py:275`
+位置：`vllm/v1/engine/input_processor.py:270` 到 `vllm/v1/engine/input_processor.py:275`
 
 如果没有 `arrival_time`，会从 `prompt` 中取，取不到则用当前时间：
 
@@ -514,7 +514,7 @@ if arrival_time is None:
     arrival_time = prompt.get("arrival_time", time.time())
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:277` 到 `vllm/vllm/v1/engine/input_processor.py:278`
+位置：`vllm/v1/engine/input_processor.py:277` 到 `vllm/v1/engine/input_processor.py:278`
 
 ### 8.2 raw prompt
 
@@ -528,7 +528,7 @@ logger.warning_once(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:282` 到 `vllm/vllm/v1/engine/input_processor.py:286`
+位置：`vllm/v1/engine/input_processor.py:282` 到 `vllm/v1/engine/input_processor.py:286`
 
 然后设置 arrival time：
 
@@ -537,7 +537,7 @@ if arrival_time is None:
     arrival_time = time.time()
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:288` 到 `vllm/vllm/v1/engine/input_processor.py:289`
+位置：`vllm/v1/engine/input_processor.py:288` 到 `vllm/v1/engine/input_processor.py:289`
 
 并调用：
 
@@ -548,7 +548,7 @@ processed_inputs = self.input_preprocessor.preprocess(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:291` 到 `vllm/vllm/v1/engine/input_processor.py:294`
+位置：`vllm/v1/engine/input_processor.py:291` 到 `vllm/v1/engine/input_processor.py:294`
 
 因此 raw prompt 的处理链路是：
 
@@ -569,7 +569,7 @@ raw PromptType
 current_platform.validate_request(processed_inputs, params)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:296`
+位置：`vllm/v1/engine/input_processor.py:296`
 
 这一步把平台相关限制提前挡住。
 
@@ -592,7 +592,7 @@ encoder_inputs, decoder_inputs = split_enc_dec_input(processed_inputs)
 self._validate_model_inputs(encoder_inputs, decoder_inputs)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:298` 到 `vllm/vllm/v1/engine/input_processor.py:299`
+位置：`vllm/v1/engine/input_processor.py:298` 到 `vllm/v1/engine/input_processor.py:299`
 
 含义是：
 
@@ -625,7 +625,7 @@ def _validate_model_inputs(
     self._validate_model_input(decoder_input, prompt_type="decoder")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:486` 到 `vllm/vllm/v1/engine/input_processor.py:494`
+位置：`vllm/v1/engine/input_processor.py:486` 到 `vllm/v1/engine/input_processor.py:494`
 
 ### 11.1 prompt 长度校验
 
@@ -636,7 +636,7 @@ prompt_len = length_from_prompt_token_ids_or_embeds(prompt_ids, prompt_embeds)
 self._validate_prompt_len(prompt_len, prompt_type)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:451` 到 `vllm/vllm/v1/engine/input_processor.py:452`
+位置：`vllm/v1/engine/input_processor.py:451` 到 `vllm/v1/engine/input_processor.py:452`
 
 `_validate_prompt_len()` 会处理三类情况。
 
@@ -647,7 +647,7 @@ if self.skip_prompt_length_check:
     return
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:392` 到 `vllm/vllm/v1/engine/input_processor.py:393`
+位置：`vllm/v1/engine/input_processor.py:392` 到 `vllm/v1/engine/input_processor.py:393`
 
 第二，decoder prompt 不能为空：
 
@@ -656,7 +656,7 @@ if prompt_len == 0 and prompt_type == "decoder":
     raise ValueError(f"The {prompt_type} prompt cannot be empty")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:395` 到 `vllm/vllm/v1/engine/input_processor.py:396`
+位置：`vllm/v1/engine/input_processor.py:395` 到 `vllm/v1/engine/input_processor.py:396`
 
 第三，长度不能超过对应上限：
 
@@ -670,7 +670,7 @@ if prompt_len > max_prompt_len:
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:398` 到 `vllm/vllm/v1/engine/input_processor.py:422`
+位置：`vllm/v1/engine/input_processor.py:398` 到 `vllm/v1/engine/input_processor.py:422`
 
 对 generate runner，如果任一输入的 `prompt_len` 刚好等于该输入类型的上限，也会报错：decoder 上限是 `model_config.max_model_len`，encoder 上限是 `mm_encoder_cache_size`。
 
@@ -679,7 +679,7 @@ elif prompt_len == max_prompt_len and model_config.runner_type == "generate":
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:423` 到 `vllm/vllm/v1/engine/input_processor.py:432`
+位置：`vllm/v1/engine/input_processor.py:423` 到 `vllm/v1/engine/input_processor.py:432`
 
 原因是 generation 至少还要生成一个 token：
 
@@ -703,7 +703,7 @@ if prompt_input["type"] == "multimodal":
                 raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:454` 到 `vllm/vllm/v1/engine/input_processor.py:467`
+位置：`vllm/v1/engine/input_processor.py:454` 到 `vllm/v1/engine/input_processor.py:467`
 
 这一步检查单个多模态 item 的 embedding token 数是否超过预分配 encoder cache size。
 
@@ -719,7 +719,7 @@ if prompt_ids and tokenizer is not None:
         raise ValueError(f"Token id {max_input_id} is out of vocabulary")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:442`、`vllm/vllm/v1/engine/input_processor.py:469` 到 `vllm/vllm/v1/engine/input_processor.py:484`
+位置：`vllm/v1/engine/input_processor.py:442`、`vllm/v1/engine/input_processor.py:469` 到 `vllm/v1/engine/input_processor.py:484`
 
 这里使用的是：
 
@@ -744,7 +744,7 @@ if decoder_inputs["type"] == "embeds":
     prompt_is_token_ids = decoder_inputs.get("is_token_ids")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:302` 到 `vllm/vllm/v1/engine/input_processor.py:305`
+位置：`vllm/v1/engine/input_processor.py:302` 到 `vllm/v1/engine/input_processor.py:305`
 
 否则使用 token ids：
 
@@ -755,7 +755,7 @@ else:
     prompt_is_token_ids = None
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:306` 到 `vllm/vllm/v1/engine/input_processor.py:309`
+位置：`vllm/v1/engine/input_processor.py:306` 到 `vllm/v1/engine/input_processor.py:309`
 
 这里的三种字段含义是：
 
@@ -786,7 +786,7 @@ prompt_is_token_ids：
 sampling_params = params.clone()
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:313` 到 `vllm/vllm/v1/engine/input_processor.py:315`
+位置：`vllm/v1/engine/input_processor.py:313` 到 `vllm/v1/engine/input_processor.py:315`
 
 如果用户没有设置 `max_tokens`，会补成模型剩余长度：
 
@@ -798,7 +798,7 @@ if sampling_params.max_tokens is None:
     sampling_params.max_tokens = self.model_config.max_model_len - seq_len
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:317` 到 `vllm/vllm/v1/engine/input_processor.py:321`
+位置：`vllm/v1/engine/input_processor.py:317` 到 `vllm/v1/engine/input_processor.py:321`
 
 然后用 generation config 和 tokenizer 更新参数：
 
@@ -811,7 +811,7 @@ if self.tokenizer is not None:
     sampling_params.update_from_tokenizer(self.tokenizer)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:323` 到 `vllm/vllm/v1/engine/input_processor.py:328`
+位置：`vllm/v1/engine/input_processor.py:323` 到 `vllm/v1/engine/input_processor.py:328`
 
 所以 SamplingParams 在进入 EngineCore 前已经完成：
 
@@ -830,7 +830,7 @@ tokenizer 相关 stop/eos 信息更新。
 pooling_params = params.clone()
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:329` 到 `vllm/vllm/v1/engine/input_processor.py:330`
+位置：`vllm/v1/engine/input_processor.py:329` 到 `vllm/v1/engine/input_processor.py:330`
 
 所以 EngineCoreRequest 中只会有一个参数分支非空：
 
@@ -853,7 +853,7 @@ if decoder_inputs["type"] == "multimodal":
     decoder_mm_hashes = decoder_inputs["mm_hashes"]
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:335` 到 `vllm/vllm/v1/engine/input_processor.py:338`
+位置：`vllm/v1/engine/input_processor.py:335` 到 `vllm/v1/engine/input_processor.py:338`
 
 ### 14.1 校验 mm_hashes
 
@@ -866,7 +866,7 @@ if not all(
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:340` 到 `vllm/vllm/v1/engine/input_processor.py:347`
+位置：`vllm/v1/engine/input_processor.py:340` 到 `vllm/v1/engine/input_processor.py:347`
 
 这说明多模态 cache / identifier 依赖稳定的字符串 hash。
 
@@ -878,7 +878,7 @@ if not all(
 sorted_mm_idxs = argsort_mm_positions(decoder_mm_positions)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:352`
+位置：`vllm/v1/engine/input_processor.py:352`
 
 注释说明：
 
@@ -888,7 +888,7 @@ sorted_mm_idxs = argsort_mm_positions(decoder_mm_positions)
 # in the input sequence.
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:349` 到 `vllm/vllm/v1/engine/input_processor.py:351`
+位置：`vllm/v1/engine/input_processor.py:349` 到 `vllm/v1/engine/input_processor.py:351`
 
 也就是说，多模态输入原本可能按 modality 分组：
 
@@ -919,7 +919,7 @@ mm_features.append(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:357` 到 `vllm/vllm/v1/engine/input_processor.py:367`
+位置：`vllm/v1/engine/input_processor.py:357` 到 `vllm/v1/engine/input_processor.py:367`
 
 字段含义可以理解为：
 
@@ -939,7 +939,7 @@ mm_features.append(
 self._get_mm_identifier(base_mm_hash, lora_request)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:361` 到 `vllm/vllm/v1/engine/input_processor.py:364`
+位置：`vllm/v1/engine/input_processor.py:361` 到 `vllm/v1/engine/input_processor.py:364`
 
 如果启用了 `enable_tower_connector_lora`，多模态 embedding 会随 LoRA 改变，所以 identifier 要带上 LoRA 名：
 
@@ -953,7 +953,7 @@ if (
 return f"{lora_request.lora_name}:{mm_hash}"
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:175` 到 `vllm/vllm/v1/engine/input_processor.py:181`
+位置：`vllm/v1/engine/input_processor.py:175` 到 `vllm/v1/engine/input_processor.py:181`
 
 含义是：
 
@@ -987,7 +987,7 @@ return EngineCoreRequest(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:370` 到 `vllm/vllm/v1/engine/input_processor.py:385`
+位置：`vllm/v1/engine/input_processor.py:370` 到 `vllm/v1/engine/input_processor.py:385`
 
 这就是 `InputProcessor` 的核心产物。
 
@@ -1009,7 +1009,7 @@ EngineCoreRequest
 class EngineCoreRequest(msgspec.Struct, ...):
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:88` 到 `vllm/vllm/v1/engine/__init__.py:93`
+位置：`vllm/v1/engine/__init__.py:88` 到 `vllm/v1/engine/__init__.py:93`
 
 主要字段包括：
 
@@ -1036,7 +1036,7 @@ reasoning_parser_kwargs: dict[str, Any] | None = None
 abort_immediately: bool = False
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:94` 到 `vllm/vllm/v1/engine/__init__.py:137`
+位置：`vllm/v1/engine/__init__.py:94` 到 `vllm/v1/engine/__init__.py:137`
 
 可以分成几类：
 
@@ -1068,7 +1068,7 @@ abort_immediately: bool = False
 def assign_request_id(request: EngineCoreRequest):
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:222` 到 `vllm/vllm/v1/engine/input_processor.py:223`
+位置：`vllm/v1/engine/input_processor.py:222` 到 `vllm/v1/engine/input_processor.py:223`
 
 注释说明：
 
@@ -1078,7 +1078,7 @@ that adds 8 random characters in order to ensure uniqueness.
 """
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:223` 到 `vllm/vllm/v1/engine/input_processor.py:226`
+位置：`vllm/v1/engine/input_processor.py:223` 到 `vllm/v1/engine/input_processor.py:226`
 
 逻辑是：
 
@@ -1092,7 +1092,7 @@ else:
     request.request_id = f"{request.external_req_id}-{random_uuid():.8}"
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:227` 到 `vllm/vllm/v1/engine/input_processor.py:240`
+位置：`vllm/v1/engine/input_processor.py:227` 到 `vllm/v1/engine/input_processor.py:240`
 
 所以外部 id 和内部 id 的关系是：
 
@@ -1120,9 +1120,9 @@ process_inputs() 本身不会自动调用 assign_request_id()；
 LLMEngine / AsyncLLM 在 process_inputs() 后调用它。
 ```
 
-同步路径位置：`vllm/vllm/v1/engine/llm_engine.py:263`
+同步路径位置：`vllm/v1/engine/llm_engine.py:263`
 
-异步路径位置：`vllm/vllm/v1/engine/async_llm.py:368`
+异步路径位置：`vllm/v1/engine/async_llm.py:368`
 
 ---
 
@@ -1144,7 +1144,7 @@ request = self.input_processor.process_inputs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:250` 到 `vllm/vllm/v1/engine/llm_engine.py:260`
+位置：`vllm/v1/engine/llm_engine.py:250` 到 `vllm/v1/engine/llm_engine.py:260`
 
 之后：
 
@@ -1152,7 +1152,7 @@ request = self.input_processor.process_inputs(
 self.input_processor.assign_request_id(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:263`
+位置：`vllm/v1/engine/llm_engine.py:263`
 
 然后才会：
 
@@ -1161,7 +1161,7 @@ self.output_processor.add_request(request, prompt_text, None, 0)
 self.engine_core.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:274` 到 `vllm/vllm/v1/engine/llm_engine.py:276`
+位置：`vllm/v1/engine/llm_engine.py:274` 到 `vllm/v1/engine/llm_engine.py:276`
 
 同步请求入口主线是：
 
@@ -1202,7 +1202,7 @@ request = self.input_processor.process_inputs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:349` 到 `vllm/vllm/v1/engine/async_llm.py:360`
+位置：`vllm/v1/engine/async_llm.py:349` 到 `vllm/v1/engine/async_llm.py:360`
 
 异步路径额外可能设置 reasoning 字段：
 
@@ -1213,7 +1213,7 @@ if reasoning_parser_kwargs is not None:
     request.reasoning_parser_kwargs = reasoning_parser_kwargs
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:363` 到 `vllm/vllm/v1/engine/async_llm.py:366`
+位置：`vllm/v1/engine/async_llm.py:363` 到 `vllm/v1/engine/async_llm.py:366`
 
 然后同样调用：
 
@@ -1221,7 +1221,7 @@ if reasoning_parser_kwargs is not None:
 self.input_processor.assign_request_id(request)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:368`
+位置：`vllm/v1/engine/async_llm.py:368`
 
 最后由 `_add_request()` 注册输出状态并异步送入 EngineCore：
 
@@ -1230,7 +1230,7 @@ self.output_processor.add_request(request, prompt, parent_req, index, queue)
 await self.engine_core.add_request_async(request)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:408` 到 `vllm/vllm/v1/engine/async_llm.py:412`
+位置：`vllm/v1/engine/async_llm.py:408` 到 `vllm/v1/engine/async_llm.py:412`
 
 所以同步和异步普通请求的输入处理一致：
 
@@ -1255,7 +1255,7 @@ if isinstance(prompt, AsyncGenerator):
     return await self._add_streaming_input_request(...)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:316` 到 `vllm/vllm/v1/engine/async_llm.py:331`
+位置：`vllm/v1/engine/async_llm.py:316` 到 `vllm/v1/engine/async_llm.py:331`
 
 ### 20.1 用 dummy token 创建校验 request / finished signal
 
@@ -1272,7 +1272,7 @@ self.input_processor.assign_request_id(final_req)
 internal_req_id = final_req.request_id
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:447` 到 `vllm/vllm/v1/engine/async_llm.py:454`
+位置：`vllm/v1/engine/async_llm.py:447` 到 `vllm/v1/engine/async_llm.py:454`
 
 这一步得到一个内部 request id，用于整个 streaming session；后续 chunk 使用 `request_id=internal_req_id`，流结束时发送的 `final_req` 也保留同一个 internal request id。
 
@@ -1291,7 +1291,7 @@ req = self.input_processor.process_inputs(
 req.external_req_id = request_id
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:468` 到 `vllm/vllm/v1/engine/async_llm.py:475`
+位置：`vllm/v1/engine/async_llm.py:468` 到 `vllm/v1/engine/async_llm.py:475`
 
 关键点：
 
@@ -1311,7 +1311,7 @@ if req.prompt_embeds is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:476` 到 `vllm/vllm/v1/engine/async_llm.py:479`
+位置：`vllm/v1/engine/async_llm.py:476` 到 `vllm/v1/engine/async_llm.py:479`
 
 ### 20.3 输入流结束时发送 finished signal
 
@@ -1321,7 +1321,7 @@ if req.prompt_embeds is not None:
 await self._add_request(final_req, None, None, 0, queue)
 ```
 
-位置：`vllm/vllm/v1/engine/async_llm.py:491` 到 `vllm/vllm/v1/engine/async_llm.py:495`
+位置：`vllm/v1/engine/async_llm.py:491` 到 `vllm/v1/engine/async_llm.py:495`
 
 `Scheduler.add_request()` 发现同 request id 已存在且 `StreamingUpdate.from_request(final_req)` 为 `None`，于是将 streaming-input session 标记结束，而不是把它当成新的真实 prompt chunk。
 
@@ -1353,7 +1353,7 @@ AsyncGenerator input
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/v1/engine/core.py:878`
 
 `Request.from_engine_core_request()` 会把 `EngineCoreRequest` 字段复制进内部 `Request`：
 
@@ -1380,7 +1380,7 @@ return cls(
 )
 ```
 
-位置：`vllm/vllm/v1/request.py:203` 到 `vllm/vllm/v1/request.py:222`
+位置：`vllm/v1/request.py:218` 到 `vllm/v1/request.py:237`
 
 注意：内部 `Request` 会再初始化很多调度状态，例如：
 
@@ -1399,7 +1399,7 @@ streaming_queue
 abort_immediately
 ```
 
-相关位置：`vllm/vllm/v1/request.py:81` 到 `vllm/vllm/v1/request.py:195`
+相关位置：`vllm/v1/request.py:81` 到 `vllm/v1/request.py:210`
 
 所以边界很清楚：
 
@@ -1431,7 +1431,7 @@ params.verify(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:95` 到 `vllm/vllm/v1/engine/input_processor.py:100`
+位置：`vllm/v1/engine/input_processor.py:95` 到 `vllm/v1/engine/input_processor.py:100`
 
 真正的 structured output request 创建发生在内部 `Request` 初始化：
 
@@ -1441,7 +1441,7 @@ self.structured_output_request = StructuredOutputRequest.from_sampling_params(
 )
 ```
 
-位置：`vllm/vllm/v1/request.py:87` 到 `vllm/vllm/v1/request.py:89`
+位置：`vllm/v1/request.py:87` 到 `vllm/v1/request.py:89`
 
 如果有 structured output request，会设置初始状态：
 
@@ -1450,7 +1450,7 @@ if self.structured_output_request is not None:
     self.status = RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 ```
 
-位置：`vllm/vllm/v1/request.py:111` 到 `vllm/vllm/v1/request.py:112`
+位置：`vllm/v1/request.py:113` 到 `vllm/v1/request.py:114`
 
 grammar 初始化发生在 EngineCore：
 
@@ -1459,7 +1459,7 @@ if req.use_structured_output:
     self.structured_output_manager.grammar_init(req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:868` 到 `vllm/vllm/v1/engine/core.py:874`
+位置：`vllm/v1/engine/core.py:879` 到 `vllm/v1/engine/core.py:885`
 
 因此：
 
@@ -1482,7 +1482,7 @@ prompt_token_ids = decoder_inputs.get("prompt_token_ids")
 prompt_is_token_ids = decoder_inputs.get("is_token_ids")
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:302` 到 `vllm/vllm/v1/engine/input_processor.py:305`
+位置：`vllm/v1/engine/input_processor.py:302` 到 `vllm/v1/engine/input_processor.py:305`
 
 这些字段进入 `EngineCoreRequest` 后，会继续传入内部 `Request`：
 
@@ -1491,7 +1491,7 @@ prompt_embeds=request.prompt_embeds,
 prompt_is_token_ids=request.prompt_is_token_ids,
 ```
 
-位置：`vllm/vllm/v1/request.py:207` 到 `vllm/vllm/v1/request.py:208`
+位置：`vllm/v1/request.py:222` 到 `vllm/v1/request.py:223`
 
 内部 `Request` 注释说明 `prompt_is_token_ids` 用于 mixed-mode：
 
@@ -1501,7 +1501,7 @@ prompt_is_token_ids=request.prompt_is_token_ids,
 # `prompt_embeds` are set and their positions are interleaved.
 ```
 
-位置：`vllm/vllm/v1/request.py:123` 到 `vllm/vllm/v1/request.py:126`
+位置：`vllm/v1/request.py:133` 到 `vllm/v1/request.py:136`
 
 所以 InputProcessor 的职责是：
 
@@ -1525,7 +1525,7 @@ def inject_into_mm_cache(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:183` 到 `vllm/vllm/v1/engine/input_processor.py:187`
+位置：`vllm/v1/engine/input_processor.py:183` 到 `vllm/v1/engine/input_processor.py:187`
 
 注释说明它用于：
 
@@ -1551,7 +1551,7 @@ items[i], _ = cache.get_and_update_item(
 self.renderer.update_mm_cache_stats()
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:199` 到 `vllm/vllm/v1/engine/input_processor.py:215`
+位置：`vllm/v1/engine/input_processor.py:199` 到 `vllm/v1/engine/input_processor.py:215`
 
 这不是普通请求的主路径，但说明 `InputProcessor` 也承担了外层多模态输入缓存的一部分维护工作。
 
@@ -1815,7 +1815,7 @@ if pooling_params is not None:
     self.max_tokens = 1
 ```
 
-位置：`vllm/vllm/v1/request.py:104` 到 `vllm/vllm/v1/request.py:106`
+位置：`vllm/v1/request.py:106` 到 `vllm/v1/request.py:108`
 
 这说明 pooling 请求不是自回归生成 token，而是执行一次 pooling 相关输出。
 
@@ -1860,7 +1860,7 @@ InputProcessor 输出 EngineCoreRequest；
 EngineCore.preprocess_add_request() 才把 EngineCoreRequest 转成内部 Request。
 ```
 
-转换位置：`vllm/vllm/v1/request.py:198` 到 `vllm/vllm/v1/request.py:222`
+转换位置：`vllm/v1/request.py:212` 到 `vllm/v1/request.py:237`
 
 ### 31.2 InputProcessor 会不会直接进入 Scheduler？
 
@@ -1888,7 +1888,7 @@ InputProcessor.process_inputs()
 self.input_processor.assign_request_id(request)
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:263`、`vllm/vllm/v1/engine/async_llm.py:368`
+位置：`vllm/v1/engine/llm_engine.py:263`、`vllm/v1/engine/async_llm.py:368`
 
 ### 31.4 为什么要 clone SamplingParams / PoolingParams？
 
@@ -1955,7 +1955,7 @@ InputProcessor 会用：
 argsort_mm_positions(decoder_mm_positions)
 ```
 
-位置：`vllm/vllm/v1/engine/input_processor.py:352`
+位置：`vllm/v1/engine/input_processor.py:352`
 
 把多模态项按它们在输入序列中的位置排序，保证后续 encoder / decoder 对齐。
 
@@ -1973,7 +1973,7 @@ encoder 输入看：
 mm_encoder_cache_size
 ```
 
-对应代码：`vllm/vllm/v1/engine/input_processor.py:398` 到 `vllm/vllm/v1/engine/input_processor.py:403`
+对应代码：`vllm/v1/engine/input_processor.py:398` 到 `vllm/v1/engine/input_processor.py:403`
 
 ### 31.10 streaming input 为什么每个 chunk 都 process_inputs？
 

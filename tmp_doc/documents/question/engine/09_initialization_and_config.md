@@ -1102,7 +1102,7 @@ class CoreEngineActorManager:
     """
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:347` 到 `vllm/vllm/v1/engine/utils.py:354`
+位置：`vllm/vllm/v1/engine/utils.py:370` 到 `vllm/vllm/v1/engine/utils.py:377`
 
 它会根据 DP / MoE 选择 actor class：
 
@@ -1114,7 +1114,7 @@ actor_class = (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/utils.py:373` 到 `vllm/vllm/v1/engine/utils.py:378`
+位置：`vllm/vllm/v1/engine/utils.py:396` 到 `vllm/vllm/v1/engine/utils.py:401`
 
 Ray actor 初始化时也传入：
 
@@ -1126,7 +1126,7 @@ local_client；
 addresses；
 ```
 
-对应位置：`vllm/vllm/v1/engine/utils.py:472` 到 `vllm/vllm/v1/engine/utils.py:480`
+对应位置：`vllm/vllm/v1/engine/utils.py:495` 到 `vllm/vllm/v1/engine/utils.py:503`
 
 ---
 
@@ -1141,7 +1141,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/vllm/v1/engine/core.py:905` 到 `vllm/vllm/v1/engine/core.py:906`
 
 所以核心内部初始化都在 `EngineCore.__init__()`。
 
@@ -1212,7 +1212,7 @@ scheduler_kv_cache_config = generate_scheduler_kv_cache_config(kv_cache_configs)
 self.model_executor.initialize_from_config(kv_cache_configs)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:246` 到 `vllm/vllm/v1/engine/core.py:321`
+位置：`vllm/vllm/v1/engine/core.py:243` 到 `vllm/vllm/v1/engine/core.py:321`
 
 ### 9.4 创建 StructuredOutputManager
 

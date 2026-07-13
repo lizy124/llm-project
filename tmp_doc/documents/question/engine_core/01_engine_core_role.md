@@ -17,7 +17,7 @@ class EngineCore:
     """Inner loop of vLLM's Engine."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:96`
+位置：`vllm/vllm/v1/engine/core.py:96` 到 `vllm/vllm/v1/engine/core.py:97`
 
 可以理解为：
 
@@ -98,6 +98,7 @@ EngineCore 负责内部执行。
 用户输入 prompt / params
   → InputProcessor.process_inputs()
   → EngineCoreRequest
+  → InputProcessor.assign_request_id()
   → OutputProcessor.add_request()
   → EngineCoreClient.add_request()
 ```
@@ -259,7 +260,7 @@ self.engine_core.post_step(model_executed=model_executed)
 def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479`
+位置：`vllm/vllm/v1/engine/core.py:488`
 
 所以：
 
@@ -292,7 +293,7 @@ model_executed：
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:517`
 
 `InprocClient.get_output()` 会把 dict 里的 client 0 输出取出来：
 
@@ -327,7 +328,7 @@ def post_step(self, model_executed: bool) -> None:
             self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:517`
+位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:526`
 
 它做的事情是：
 
@@ -495,7 +496,7 @@ EngineCore 收到内部 `Request` 后，会调用：
 self.scheduler.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:403`
+位置：`vllm/vllm/v1/engine/core.py:412`
 
 外部 abort 则调用：
 
@@ -503,7 +504,7 @@ self.scheduler.add_request(request)
 self.scheduler.finish_requests(request_ids, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:415`
+位置：`vllm/vllm/v1/engine/core.py:424`
 
 所以 Scheduler 管理请求队列和请求状态：
 
@@ -525,7 +526,7 @@ EngineCore 的核心 `step()` 里，调度入口是：
 scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490`
+位置：`vllm/vllm/v1/engine/core.py:499`
 
 Worker 执行完成后，结果回收入口是：
 
@@ -535,7 +536,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:512` 到 `vllm/vllm/v1/engine/core.py:515`
 
 所以 Scheduler 在 EngineCore 中承担两件核心工作：
 
@@ -641,7 +642,7 @@ EngineCore 负责协调初始化；
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 然后等待结果：
 
@@ -649,7 +650,7 @@ future = self.model_executor.execute_model(scheduler_output, non_block=True)
 model_output = future.result()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:497`
+位置：`vllm/vllm/v1/engine/core.py:506`
 
 如果 `execute_model()` 返回的 `model_output` 是 `None`，说明需要单独 sampling：
 
@@ -658,7 +659,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:498` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:507` 到 `vllm/vllm/v1/engine/core.py:508`
 
 这里体现了一个重要边界：
 
@@ -684,12 +685,12 @@ self.model_executor.collective_rpc(...)
 
 位置示例：
 
-- profile：`vllm/vllm/v1/engine/core.py:662` 到 `vllm/vllm/v1/engine/core.py:663`
-- reset mm cache：`vllm/vllm/v1/engine/core.py:665` 到 `vllm/vllm/v1/engine/core.py:678`
-- reset encoder cache：`vllm/vllm/v1/engine/core.py:687` 到 `vllm/vllm/v1/engine/core.py:705`
-- sleep / wake_up：`vllm/vllm/v1/engine/core.py:761` 到 `vllm/vllm/v1/engine/core.py:813`
-- LoRA：`vllm/vllm/v1/engine/core.py:822` 到 `vllm/vllm/v1/engine/core.py:832`
-- collective_rpc：`vllm/vllm/v1/engine/core.py:844` 到 `vllm/vllm/v1/engine/core.py:851`
+- profile：`vllm/vllm/v1/engine/core.py:671` 到 `vllm/vllm/v1/engine/core.py:672`
+- reset mm cache：`vllm/vllm/v1/engine/core.py:674` 到 `vllm/vllm/v1/engine/core.py:687`
+- reset encoder cache：`vllm/vllm/v1/engine/core.py:696` 到 `vllm/vllm/v1/engine/core.py:714`
+- sleep / wake_up：`vllm/vllm/v1/engine/core.py:770` 到 `vllm/vllm/v1/engine/core.py:824`
+- LoRA：`vllm/vllm/v1/engine/core.py:833` 到 `vllm/vllm/v1/engine/core.py:843`
+- collective_rpc：`vllm/vllm/v1/engine/core.py:855` 到 `vllm/vllm/v1/engine/core.py:862`
 
 这些能力进一步说明：
 
@@ -714,7 +715,7 @@ EngineCore 不直接执行模型 forward。
 self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 真正的模型 forward 在 executor / Worker / ModelRunner 内部完成。
 
@@ -755,7 +756,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479` 到 `vllm/vllm/v1/engine/core.py:484`
+位置：`vllm/vllm/v1/engine/core.py:488` 到 `vllm/vllm/v1/engine/core.py:493`
 
 这句 `Schedule, execute, and make output` 就是 EngineCore 的核心职责。
 
@@ -792,7 +793,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:517`
 
 这条链路就是：
 
@@ -817,7 +818,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/vllm/v1/engine/core.py:905` 到 `vllm/vllm/v1/engine/core.py:906`
 
 它仍然继承 `EngineCore`，但增加了 ZMQ 输入输出线程和 busy loop。
 
@@ -835,7 +836,7 @@ def run_busy_loop(self):
         self._process_engine_step()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1264`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1276`
 
 这说明后台进程中的 EngineCore 不需要外部同步调用 `step()`；它自己循环：
 
@@ -854,7 +855,7 @@ def run_busy_loop(self):
 self.input_queue.put_nowait((request_type, request))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1584` 到 `vllm/vllm/v1/engine/core.py:1585`
+位置：`vllm/vllm/v1/engine/core.py:1595` 到 `vllm/vllm/v1/engine/core.py:1596`
 
 busy loop 中 `_process_input_queue()` 会取出请求并分发：
 
@@ -863,7 +864,7 @@ req = self.input_queue.get(block=block)
 self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1282` 到 `vllm/vllm/v1/engine/core.py:1284`
+位置：`vllm/vllm/v1/engine/core.py:1294` 到 `vllm/vllm/v1/engine/core.py:1296`
 
 ### 8.3 client request 分发
 
@@ -892,7 +893,7 @@ elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
     raise RuntimeError("Executor failed.")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1375` 到 `vllm/vllm/v1/engine/core.py:1399`
+位置：`vllm/vllm/v1/engine/core.py:1381` 到 `vllm/vllm/v1/engine/core.py:1410`
 
 ### 8.4 step 输出如何返回前端
 
@@ -905,7 +906,7 @@ for output in outputs.items() if outputs else ():
 self.post_step(model_executed)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1298` 到 `vllm/vllm/v1/engine/core.py:1307`
+位置：`vllm/vllm/v1/engine/core.py:1309` 到 `vllm/vllm/v1/engine/core.py:1318`
 
 输出线程再从 `output_queue` 取出，序列化后通过 ZMQ 发回前端：
 
@@ -916,7 +917,7 @@ outputs.engine_index = engine_index
 tracker = sockets[client_index].send_multipart(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1620` 到 `vllm/vllm/v1/engine/core.py:1644`
+位置：`vllm/vllm/v1/engine/core.py:1633` 到 `vllm/vllm/v1/engine/core.py:1657`
 
 所以后台进程模式下：
 
@@ -938,7 +939,7 @@ EngineCore 内部会通过：
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 把它转成 Scheduler 使用的内部 `Request`。
 
@@ -949,7 +950,7 @@ if req.use_structured_output:
     self.structured_output_manager.grammar_init(req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:868` 到 `vllm/vllm/v1/engine/core.py:874`
+位置：`vllm/vllm/v1/engine/core.py:879` 到 `vllm/vllm/v1/engine/core.py:885`
 
 所以输入边界是：
 
@@ -1075,8 +1076,10 @@ LLMEngine / AsyncLLM：外层用户接口、输入处理、输出处理
 
 LLMEngine.add_request()
   → InputProcessor.process_inputs()
+  → InputProcessor.assign_request_id()
   → EngineCoreClient.add_request()
   → EngineCore.preprocess_add_request()
+  → Request.from_engine_core_request()
   → EngineCore.add_request()
   → Scheduler.add_request()
 
@@ -1093,12 +1096,16 @@ LLMEngine.step()
 
 AsyncLLM.add_request()
   → InputProcessor.process_inputs()
+  → InputProcessor.assign_request_id()
   → EngineCoreClient.add_request_async()
+  → EngineCoreProc.process_input_sockets()
+  → EngineCore.preprocess_add_request()
+  → Request.from_engine_core_request()
   → 后台 EngineCoreProc input_queue
   → EngineCore.add_request()
   → Scheduler.add_request()
 
-AsyncLLM output_handler
+AsyncLLM._run_output_handler() 内创建的 output_handler 后台任务
   → EngineCoreClient.get_output_async()
   → EngineCoreOutputs
   → OutputProcessor.process_outputs()
@@ -1111,9 +1118,11 @@ EngineCore 内部一轮 step：
 EngineCore.step()
   → scheduler.has_requests()
   → scheduler.schedule()
-  → model_executor.execute_model(scheduler_output)
+  → model_executor.execute_model(scheduler_output, non_block=True)
   → scheduler.get_grammar_bitmask(scheduler_output)
-  → model_executor.sample_tokens(grammar_output)  # 如果需要
+  → future.result()
+  → model_executor.sample_tokens(grammar_output)  # 如果 model_output is None
+  → _process_aborts_queue()
   → scheduler.update_from_output(scheduler_output, model_output)
   → EngineCoreOutputs
 ```

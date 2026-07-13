@@ -263,13 +263,13 @@ OpenAIServingResponses
 代码证据：
 
 ```text
-vllm/entrypoints/openai/chat_completion/serving.py:108
+vllm/entrypoints/openai/chat_completion/serving.py:106
   OpenAIServingChat
 
 vllm/entrypoints/openai/completion/serving.py:55
   OpenAIServingCompletion
 
-vllm/entrypoints/openai/responses/serving.py:153
+vllm/entrypoints/openai/responses/serving.py:150
   OpenAIServingResponses
 ```
 
@@ -378,7 +378,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """Schedule, execute, and make output.
 ```
 
-位置：`vllm/v1/engine/core.py:479`
+位置：`vllm/v1/engine/core.py:488`
 
 普通一轮 step 做：
 
@@ -436,7 +436,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/v1/engine/core.py:894`
+位置：`vllm/v1/engine/core.py:905`
 
 它可以理解为：
 
@@ -527,7 +527,7 @@ CLI / Python API 的很多配置最终会进入 `EngineArgs`。
 代码证据：
 
 ```text
-vllm/engine/arg_utils.py:412
+vllm/engine/arg_utils.py:417
   EngineArgs
 ```
 
@@ -544,7 +544,7 @@ VllmConfig
 代码证据：
 
 ```text
-vllm/config/vllm.py:297
+vllm/config/vllm.py:288
   VllmConfig
 ```
 
@@ -574,7 +574,7 @@ KVEventsConfig
 ECTransferConfig
 ReasoningConfig
 WeightTransferConfig
-OptimizationLevel / performance_mode
+optimization_level / performance_mode
 ```
 
 这些配置分散在：
@@ -608,13 +608,13 @@ vllm/config/weight_transfer.py
 代码证据示例：
 
 ```text
-vllm/config/cache.py:43
+vllm/config/cache.py:44
   CacheConfig
 
 vllm/config/parallel.py:117
   ParallelConfig
 
-vllm/config/compilation.py:379
+vllm/config/compilation.py:381
   CompilationConfig
 
 vllm/config/kv_transfer.py:23
@@ -663,16 +663,16 @@ SchedulerOutput
 代码证据：
 
 ```text
-vllm/v1/core/sched/scheduler.py:68
+vllm/v1/core/sched/scheduler.py:69
   class Scheduler
 
-vllm/v1/core/sched/scheduler.py:388
+vllm/v1/core/sched/scheduler.py:433
   Scheduler.schedule
 
-vllm/v1/core/sched/interface.py:36
+vllm/v1/core/sched/interface.py:37
   SchedulerInterface
 
-vllm/v1/core/sched/output.py:180
+vllm/v1/core/sched/output.py:183
   SchedulerOutput
 ```
 
@@ -714,7 +714,7 @@ finished_req_ids：通知 Worker 清理的 finished 请求；
 kv_connector_metadata / ec_connector_metadata：connector 元信息。
 ```
 
-代码证据：`vllm/v1/core/sched/output.py:180`
+代码证据：`vllm/v1/core/sched/output.py:183`
 
 ### 7.3 update_from_output()：收结果
 
@@ -728,7 +728,7 @@ def update_from_output(
 ) -> dict[int, EngineCoreOutputs]:
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:1464`
+位置：`vllm/v1/core/sched/scheduler.py:1551`
 
 它的作用：
 
@@ -764,10 +764,10 @@ vllm/v1/attention/
 代码证据：
 
 ```text
-vllm/v1/core/kv_cache_manager.py:110
+vllm/v1/core/kv_cache_manager.py:114
   KVCacheManager
 
-vllm/v1/core/block_pool.py:130
+vllm/v1/core/block_pool.py:143
   BlockPool
 
 vllm/v1/core/encoder_cache_manager.py:17
@@ -859,7 +859,7 @@ vllm/v1/executor/uniproc_executor.py:45
 vllm/v1/executor/multiproc_executor.py:70
   FutureWrapper
 
-vllm/v1/executor/ray_executor_v2.py:218
+vllm/v1/executor/ray_executor_v2.py:219
   RayExecutorV2
 ```
 
@@ -932,22 +932,22 @@ cpu_model_runner.py
 vllm/v1/worker/worker_base.py:39
   WorkerBase
 
-vllm/v1/worker/gpu_worker.py:117
+vllm/v1/worker/gpu_worker.py:130
   Worker
 
-vllm/v1/worker/gpu_worker.py:377
+vllm/v1/worker/gpu_worker.py:424
   Worker.load_model
 
-vllm/v1/worker/gpu_worker.py:808
+vllm/v1/worker/gpu_worker.py:1002
   Worker.execute_model
 
 vllm/v1/worker/gpu_input_batch.py:92
   InputBatch
 
-vllm/v1/worker/gpu_model_runner.py:418
+vllm/v1/worker/gpu_model_runner.py:445
   GPUModelRunner
 
-vllm/v1/worker/gpu_model_runner.py:4044
+vllm/v1/worker/gpu_model_runner.py:4097
   GPUModelRunner.execute_model
 ```
 
@@ -1002,14 +1002,14 @@ sample_tokens(grammar_output)
 真正 forward 位置：
 
 ```text
-vllm/v1/worker/gpu_model_runner.py:4323
+vllm/v1/worker/gpu_model_runner.py:4380
   self._model_forward(...)
 ```
 
 ModelRunnerOutput 构造位置：
 
 ```text
-vllm/v1/worker/gpu_model_runner.py:4612
+vllm/v1/worker/gpu_model_runner.py:4697
   ModelRunnerOutput(...)
 ```
 
@@ -1039,10 +1039,10 @@ vllm/model_executor/model_loader/__init__.py:122
 vllm/model_executor/model_loader/__init__.py:130
   get_model
 
-vllm/model_executor/model_loader/utils.py:41
+vllm/model_executor/model_loader/utils.py:42
   initialize_model
 
-vllm/model_executor/model_loader/weight_utils.py:820
+vllm/model_executor/model_loader/weight_utils.py:828
   safetensors_weights_iterator
 ```
 
@@ -1068,13 +1068,13 @@ vllm/model_executor/models/registry.py
 代码证据：
 
 ```text
-vllm/model_executor/models/registry.py:979
+vllm/model_executor/models/registry.py:1007
   _ModelRegistry
 
-vllm/model_executor/models/registry.py:1225
+vllm/model_executor/models/registry.py:1253
   resolve_model_cls
 
-vllm/model_executor/models/registry.py:1295
+vllm/model_executor/models/registry.py:1323
   is_multimodal_model
 ```
 
@@ -1140,19 +1140,19 @@ vllm/v1/attention/
 核心代码证据：
 
 ```text
-vllm/v1/attention/backend.py:55
+vllm/v1/attention/backend.py:56
   AttentionBackend
 
-vllm/v1/attention/backend.py:565
+vllm/v1/attention/backend.py:600
   AttentionMetadataBuilder
 
-vllm/v1/attention/backend.py:734
+vllm/v1/attention/backend.py:769
   AttentionImplBase
 
 vllm/v1/attention/selector.py:54
   get_attn_backend
 
-vllm/v1/attention/backends/flashinfer.py:325
+vllm/v1/attention/backends/flashinfer.py:341
   FlashInferBackend
 ```
 
@@ -1308,7 +1308,7 @@ vllm/outputs.py:22
 vllm/outputs.py:85
   RequestOutput
 
-vllm/outputs.py:204
+vllm/outputs.py:208
   PoolingRequestOutput
 ```
 
@@ -1531,7 +1531,7 @@ vllm/config/multimodal.py
 代码证据：
 
 ```text
-vllm/multimodal/parse.py:489
+vllm/multimodal/parse.py:490
   MultiModalDataParser
 
 vllm/multimodal/inputs.py:302
@@ -1697,13 +1697,13 @@ vllm/config/speculative.py
 代码证据：
 
 ```text
-vllm/v1/spec_decode/llm_base_proposer.py:61
+vllm/v1/spec_decode/llm_base_proposer.py:68
   SpecDecodeBaseProposer
 
-vllm/v1/spec_decode/llm_base_proposer.py:443
+vllm/v1/spec_decode/llm_base_proposer.py:502
   propose
 
-vllm/v1/spec_decode/draft_model.py:17
+vllm/v1/spec_decode/draft_model.py:19
   DraftModelProposer
 
 vllm/v1/spec_decode/ngram_proposer.py:12
@@ -1762,7 +1762,7 @@ vllm/entrypoints/openai/
 PoolingRequestOutput
 ```
 
-位置：`vllm/outputs.py:204`
+位置：`vllm/outputs.py:208`
 
 内部执行区别：
 
@@ -1830,10 +1830,10 @@ vllm/platforms/__init__.py:211
 vllm/platforms/cpu.py:42
   CpuPlatform
 
-vllm/platforms/rocm.py:426
+vllm/platforms/rocm.py:444
   RocmPlatform
 
-vllm/platforms/xpu.py:31
+vllm/platforms/xpu.py:103
   XPUPlatform
 ```
 
@@ -1877,7 +1877,7 @@ vllm/compilation/cuda_graph.py:145
 vllm/compilation/piecewise_backend.py:86
   PiecewiseBackend
 
-vllm/config/compilation.py:379
+vllm/config/compilation.py:381
   CompilationConfig
 ```
 
@@ -1955,16 +1955,16 @@ benchmarks/
 代码证据：
 
 ```text
-benchmarks/throughput.py:47
+vllm/benchmarks/throughput.py:50
   run_vllm
 
-benchmarks/serve.py:763
+vllm/benchmarks/serve.py:768
   benchmark
 
-benchmarks/latency.py:79
+vllm/benchmarks/latency.py:80
   main
 
-benchmarks/sweep/param_sweep.py:8
+vllm/benchmarks/sweep/param_sweep.py:7
   ParameterSweep
 ```
 
@@ -2133,28 +2133,28 @@ vllm/platforms/
 | 对象 | 所在位置 | 作用 |
 |---|---|---|
 | `LLM` | `vllm/entrypoints/llm.py` | Python offline API 入口 |
-| `EngineArgs` | `vllm/engine/arg_utils.py:412` | 用户参数聚合 |
-| `VllmConfig` | `vllm/config/vllm.py:297` | 全局配置对象 |
+| `EngineArgs` | `vllm/engine/arg_utils.py:417` | 用户参数聚合 |
+| `VllmConfig` | `vllm/config/vllm.py:288` | 全局配置对象 |
 | `LLMEngine` | `vllm/v1/engine/llm_engine.py:48` | 同步外层 Engine |
 | `AsyncLLM` | `vllm/v1/engine/async_llm.py:70` | 异步外层 Engine |
 | `EngineCoreClient` | `vllm/v1/engine/core_client.py:71` | 外层访问 EngineCore 的客户端抽象 |
 | `EngineCore` | `vllm/v1/engine/core.py:96` | 内部执行闭环总控 |
-| `EngineCoreProc` | `vllm/v1/engine/core.py:894` | 多进程后台 EngineCore 包装器 |
-| `Scheduler` | `vllm/v1/core/sched/scheduler.py:68` | 请求调度和状态管理 |
-| `SchedulerOutput` | `vllm/v1/core/sched/output.py:180` | 一轮执行计划 |
-| `KVCacheManager` | `vllm/v1/core/kv_cache_manager.py:110` | KV cache block 管理 |
+| `EngineCoreProc` | `vllm/v1/engine/core.py:905` | 多进程后台 EngineCore 包装器 |
+| `Scheduler` | `vllm/v1/core/sched/scheduler.py:69` | 请求调度和状态管理 |
+| `SchedulerOutput` | `vllm/v1/core/sched/output.py:183` | 一轮执行计划 |
+| `KVCacheManager` | `vllm/v1/core/kv_cache_manager.py:114` | KV cache block 管理 |
 | `Executor` | `vllm/v1/executor/abstract.py:37` | Worker 执行后端抽象 |
-| `Worker` | `vllm/v1/worker/gpu_worker.py:117` | 设备侧执行实体 |
+| `Worker` | `vllm/v1/worker/gpu_worker.py:130` | 设备侧执行实体 |
 | `GPUModelRunner` | `vllm/v1/worker/gpu_model_runner.py` | 准备输入并执行模型 |
 | `ModelRunnerOutput` | `vllm/v1/outputs.py:234` | Worker 返回的内部执行结果 |
-| `EngineCoreOutputs` | `vllm/v1/engine/__init__.py:218` | EngineCore 返回给外层的内部输出 |
+| `EngineCoreOutputs` | `vllm/v1/engine/__init__.py:221` | EngineCore 返回给外层的内部输出 |
 | `RequestOutput` | `vllm/outputs.py:85` | 用户可见请求输出 |
 | `SamplingParams` | `vllm/sampling_params.py` | 用户采样参数 |
 | `Sampler` | `vllm/v1/sample/sampler.py:20` | logits 到 token 的采样器 |
-| `AttentionBackend` | `vllm/v1/attention/backend.py:55` | attention backend 抽象 |
+| `AttentionBackend` | `vllm/v1/attention/backend.py:56` | attention backend 抽象 |
 | `StructuredOutputManager` | `vllm/v1/structured_output/__init__.py:36` | 结构化输出管理 |
 | `LoRARequest` | `vllm/lora/request.py:8` | LoRA 请求对象 |
-| `MultiModalDataParser` | `vllm/multimodal/parse.py:489` | 多模态输入解析 |
+| `MultiModalDataParser` | `vllm/multimodal/parse.py:490` | 多模态输入解析 |
 | `Platform` | `vllm/platforms/interface.py:134` | 硬件平台抽象 |
 | `VllmBackend` | `vllm/compilation/backends.py:800` | torch.compile 后端 |
 
