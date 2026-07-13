@@ -21,7 +21,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479`
+位置：`vllm/vllm/v1/engine/core.py:488`
 
 也就是说，一次 `step()` 做三件事：
 
@@ -111,7 +111,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:517`
 
 ---
 
@@ -124,7 +124,7 @@ if not self.scheduler.has_requests():
     return {}, False
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:489`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:498`
 
 这里的含义是：
 
@@ -164,7 +164,7 @@ waiting / skipped_waiting / running / finished 但尚未完全清理的请求等
 scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490`
+位置：`vllm/vllm/v1/engine/core.py:499`
 
 这一步会进入 Scheduler 主调度逻辑。
 
@@ -206,7 +206,7 @@ def _should_throttle_prefills(self) -> bool:
     return False
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:474` 到 `vllm/vllm/v1/engine/core.py:477`
+位置：`vllm/vllm/v1/engine/core.py:483` 到 `vllm/vllm/v1/engine/core.py:486`
 
 也就是说，普通 EngineCore 不主动 throttle prefill。
 
@@ -220,7 +220,7 @@ def _should_throttle_prefills(self) -> bool:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1912` 到 `vllm/vllm/v1/engine/core.py:1919`
+位置：`vllm/vllm/v1/engine/core.py:1925` 到 `vllm/vllm/v1/engine/core.py:1932`
 
 这用于 DP prefill balancing：
 
@@ -251,7 +251,7 @@ def _should_throttle_prefills(self) -> bool:
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 这一步把本轮执行计划交给 `model_executor`。
 
@@ -281,7 +281,7 @@ EngineCore 随后可以先做一些轻量工作，例如获取 grammar bitmask�
 grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:492`
+位置：`vllm/vllm/v1/engine/core.py:501`
 
 然后再等待：
 
@@ -289,7 +289,7 @@ grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 model_output = future.result()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:497`
+位置：`vllm/vllm/v1/engine/core.py:506`
 
 这个结构允许：
 
@@ -313,7 +313,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:497` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:506` 到 `vllm/vllm/v1/engine/core.py:508`
 
 也就是说有两种情况：
 
@@ -337,7 +337,7 @@ EngineCore 在等待模型输出前，调用：
 grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:492`
+位置：`vllm/vllm/v1/engine/core.py:501`
 
 这个 grammar bitmask 来自 Scheduler / structured output manager，用于限制结构化输出请求下一步可选 token。
 
@@ -382,7 +382,7 @@ with (
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:493` 到 `vllm/vllm/v1/engine/core.py:500`
+位置：`vllm/vllm/v1/engine/core.py:502` 到 `vllm/vllm/v1/engine/core.py:508`
 
 ### 7.1 `log_error_detail()`
 
@@ -394,7 +394,7 @@ dump_engine_exception(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:427` 到 `vllm/vllm/v1/engine/core.py:430`
+位置：`vllm/vllm/v1/engine/core.py:426` 到 `vllm/vllm/v1/engine/core.py:440`
 
 作用是：
 
@@ -414,7 +414,7 @@ generation tokens
 iteration elapsed time
 ```
 
-对应逻辑位置：`vllm/vllm/v1/engine/core.py:433` 到 `vllm/vllm/v1/engine/core.py:472`
+对应逻辑位置：`vllm/vllm/v1/engine/core.py:442` 到 `vllm/vllm/v1/engine/core.py:481`
 
 这属于观测能力，不改变 step 主逻辑。
 
@@ -428,7 +428,7 @@ iteration elapsed time
 self._process_aborts_queue()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:503`
+位置：`vllm/vllm/v1/engine/core.py:512`
 
 然后调用：
 
@@ -438,7 +438,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 这里非常关键：
 
@@ -484,7 +484,7 @@ EngineCoreOutput 构造。
 self._process_aborts_queue()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:503`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:512`
 
 `_process_aborts_queue()` 会把执行期间收到的 abort 合并成一批：
 
@@ -496,7 +496,7 @@ while not self.aborts_queue.empty():
 self.abort_requests(request_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:634` 到 `vllm/vllm/v1/engine/core.py:642`
+位置：`vllm/vllm/v1/engine/core.py:643` 到 `vllm/vllm/v1/engine/core.py:651`
 
 为什么要在 `update_from_output()` 前处理？
 
@@ -524,7 +524,7 @@ Worker 结果回来
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:517`
 
 返回值类型是：
 
@@ -575,7 +575,7 @@ scheduler_output.total_num_scheduled_tokens > 0
 outputs = self.engine_core.get_output()
 ```
 
-位置：`vllm/vllm/v1/engine/llm_engine.py:304`
+位置：`vllm/vllm/v1/engine/llm_engine.py:302` 到 `vllm/vllm/v1/engine/llm_engine.py:304`
 
 `InprocClient.get_output()` 内部调用：
 
@@ -604,7 +604,7 @@ return outputs and outputs.get(0) or EngineCoreOutputs()
 def post_step(self, model_executed: bool) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510`
+位置：`vllm/vllm/v1/engine/core.py:519`
 
 主要逻辑是：
 
@@ -615,7 +615,7 @@ if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
         self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:517`
+位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:526`
 
 含义是：
 
@@ -633,7 +633,7 @@ EngineCore 在 step 后从 model_executor 取 draft token ids，
 # need to update draft token ids here.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:513`
+位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:522`
 
 所以：
 
@@ -716,7 +716,7 @@ batch in the job queue is finished.
 """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:534`
+位置：`vllm/vllm/v1/engine/core.py:528` 到 `vllm/vllm/v1/engine/core.py:543`
 
 它的目的主要是：
 
@@ -779,7 +779,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:546` 到 `vllm/vllm/v1/engine/core.py:607`
+位置：`vllm/vllm/v1/engine/core.py:555` 到 `vllm/vllm/v1/engine/core.py:616`
 
 ### 14.2 为什么可能返回 None
 
@@ -789,7 +789,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 tuple[dict[int, EngineCoreOutputs] | None, bool]
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:521`
+位置：`vllm/vllm/v1/engine/core.py:528` 到 `vllm/vllm/v1/engine/core.py:530`
 
 如果本轮只是调度新 batch、提交执行，但还不回收任何 batch 输出，可能返回：
 
@@ -797,7 +797,7 @@ tuple[dict[int, EngineCoreOutputs] | None, bool]
 return None, model_executed
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:576` 到 `vllm/vllm/v1/engine/core.py:581`
+位置：`vllm/vllm/v1/engine/core.py:585` 到 `vllm/vllm/v1/engine/core.py:590`
 
 含义：
 
@@ -820,7 +820,7 @@ else:
     deferred_scheduler_output = scheduler_output
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:560` 到 `vllm/vllm/v1/engine/core.py:571`
+位置：`vllm/vllm/v1/engine/core.py:568` 到 `vllm/vllm/v1/engine/core.py:580`
 
 后面在处理完前一个输出后，再为 deferred request 生成 grammar bitmask 并 sample：
 
@@ -832,7 +832,7 @@ future = self.model_executor.sample_tokens(grammar_output, non_block=True)
 batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:626` 到 `vllm/vllm/v1/engine/core.py:630`
+位置：`vllm/vllm/v1/engine/core.py:635` 到 `vllm/vllm/v1/engine/core.py:639`
 
 这说明 batch queue 模式下，EngineCore 不只是简单排队 future，还要处理 structured output 和 speculative draft token 的时序依赖。
 
@@ -854,7 +854,7 @@ def run_busy_loop(self):
         self._process_engine_step()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1264`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1274`
 
 主线是：
 
@@ -878,7 +878,7 @@ return (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1245` 到 `vllm/vllm/v1/engine/core.py:1251`
+位置：`vllm/vllm/v1/engine/core.py:1256` 到 `vllm/vllm/v1/engine/core.py:1262`
 
 也就是说，只要满足任一条件，就会继续 step：
 
@@ -899,7 +899,7 @@ for output in outputs.items() if outputs else ():
 self.post_step(model_executed)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1298` 到 `vllm/vllm/v1/engine/core.py:1307`
+位置：`vllm/vllm/v1/engine/core.py:1309` 到 `vllm/vllm/v1/engine/core.py:1318`
 
 如果本轮没有模型执行，但 Scheduler 仍有请求：
 
@@ -908,7 +908,7 @@ if not model_executed and self.scheduler.has_requests():
     time.sleep(0.001)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1309` 到 `vllm/vllm/v1/engine/core.py:1313`
+位置：`vllm/vllm/v1/engine/core.py:1320` 到 `vllm/vllm/v1/engine/core.py:1324`
 
 注释说明：
 
@@ -918,7 +918,7 @@ if not model_executed and self.scheduler.has_requests():
 # the GIL briefly to allow background transfer threads to make progress.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1309` 到 `vllm/vllm/v1/engine/core.py:1311`
+位置：`vllm/vllm/v1/engine/core.py:1320` 到 `vllm/vllm/v1/engine/core.py:1322`
 
 这说明：
 
@@ -950,7 +950,7 @@ return (
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1912` 到 `vllm/vllm/v1/engine/core.py:1919`
+位置：`vllm/vllm/v1/engine/core.py:1925` 到 `vllm/vllm/v1/engine/core.py:1932`
 
 这会影响：
 
@@ -968,7 +968,7 @@ self.scheduler.schedule(self._should_throttle_prefills())
 
 DP busy loop 会在 GPU step 前后调用 `_maybe_publish_request_counts()`，把本地 running / waiting 计数通过 `EngineCoreOutputs(scheduler_stats=stats)` 发出去；如果正在 elastic EP scaling，还会推进 `eep_scaling_state.progress()`，移除中的 worker 完成后直接退出。
 
-位置：`vllm/vllm/v1/engine/core.py:1928` 到 `vllm/vllm/v1/engine/core.py:1940`
+位置：`vllm/vllm/v1/engine/core.py:1934` 到 `vllm/vllm/v1/engine/core.py:1953`
 
 ### 16.3 没有真实执行时可能执行 dummy batch
 
@@ -977,26 +977,28 @@ DP busy loop 中，如果本轮没有执行模型，但全局仍处于 running w
 ```python
 if not executed:
     if not local_unfinished_reqs and not self.engines_running:
+        # All engines are idle.
         continue
 
-    # We are in a running state and so must execute a dummy pass
-    # if the model didn't execute any ready requests.
-    with self.log_iteration_details(None):
-        self.execute_dummy_batch()
+    # Execute a dummy pass when no ready requests ran, unless the
+    # engine is sleeping.
+    elif not self.model_executor.is_sleeping:
+        with self.log_iteration_details(None):
+            self.execute_dummy_batch()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1942` 到 `vllm/vllm/v1/engine/core.py:1956`
+位置：`vllm/vllm/v1/engine/core.py:1955` 到 `vllm/vllm/v1/engine/core.py:1965`
 
 作用是：
 
 ```text
 在 DP / MoE 等场景中，即使本 rank 没有 ready request，
-也可能需要执行 dummy pass 来保持集体通信 / wave 同步。
+只要 engine 未睡眠，也可能需要执行 dummy pass 来保持集体通信 / wave 同步。
 ```
 
 ### 16.4 全局 unfinished 判断
 
-DP EngineCore 还会周期性同步全局是否还有未完成请求：
+DP EngineCore 还会周期性同步全局是否还有未完成请求；`_has_global_unfinished_reqs()` 会先递增 `step_counter`，并且只有每 32 个 step 才实际执行 DP 状态同步，其他 step 直接保持 running：
 
 ```python
 self.engines_running = self._has_global_unfinished_reqs(
@@ -1004,7 +1006,7 @@ self.engines_running = self._has_global_unfinished_reqs(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1953` 到 `vllm/vllm/v1/engine/core.py:1956`
+位置：`vllm/vllm/v1/engine/core.py:1967` 到 `vllm/vllm/v1/engine/core.py:1970`
 
 `_has_global_unfinished_reqs()` 内部使用 DP group 同步：
 
@@ -1016,7 +1018,7 @@ has_unfinished, pause_consensus = ParallelConfig.sync_dp_state(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1986` 到 `vllm/vllm/v1/engine/core.py:1990`
+位置：`vllm/vllm/v1/engine/core.py:2000` 到 `vllm/vllm/v1/engine/core.py:2004`
 
 所以 DP 模式下，一轮 step 不只是本地 Scheduler / Worker 闭环，还要参与 request count 发布、elastic EP scaling 状态推进、dummy batch 和全局 DP wave 状态同步。
 

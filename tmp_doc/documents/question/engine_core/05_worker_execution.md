@@ -16,7 +16,7 @@
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 然后等待 Worker / ModelRunner 返回：
 
@@ -26,7 +26,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:497` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:506` 到 `vllm/vllm/v1/engine/core.py:508`
 
 主线是：
 
@@ -62,7 +62,7 @@ ModelRunner 才是真正准备输入、调用模型 forward、采样并构造 Mo
 scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490`
+位置：`vllm/vllm/v1/engine/core.py:499`
 
 然后 EngineCore 把这个计划交给 `model_executor`：
 
@@ -70,7 +70,7 @@ scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 注意这里传的是完整 `SchedulerOutput`。
 
@@ -225,7 +225,7 @@ return self.collective_rpc(
 )
 ```
 
-位置：`vllm/vllm/v1/executor/multiproc_executor.py:307` 到 `vllm/vllm/v1/executor/multiproc_executor.py:317`
+位置：`vllm/vllm/v1/executor/multiproc_executor.py:310` 到 `vllm/vllm/v1/executor/multiproc_executor.py:320`
 
 Ray Executor 则不是简单走抽象类里的 `collective_rpc("execute_model")`：
 
@@ -237,7 +237,7 @@ self.scheduler_output = scheduler_output
 return COMPLETED_NONE_FUTURE if non_block else None
 ```
 
-位置：`vllm/vllm/v1/executor/ray_executor.py:399` 到 `vllm/vllm/v1/executor/ray_executor.py:416`
+位置：`vllm/vllm/v1/executor/ray_executor.py:390` 到 `vllm/vllm/v1/executor/ray_executor.py:407`
 
 对于需要 sampling 的 generation 路径，Ray Executor 会先暂存 `scheduler_output`，等 EngineCore 随后调用 `sample_tokens(grammar_output)` 时再执行 compiled DAG：
 
@@ -248,7 +248,7 @@ self.scheduler_output = None
 return self._execute_dag(scheduler_output, grammar_output, non_block)
 ```
 
-位置：`vllm/vllm/v1/executor/ray_executor.py:418` 到 `vllm/vllm/v1/executor/ray_executor.py:441`
+位置：`vllm/vllm/v1/executor/ray_executor.py:409` 到 `vllm/vllm/v1/executor/ray_executor.py:432`
 
 Ray compiled DAG 内部会直接调用 Worker 的 `model_runner.execute_model()`，如果返回 `None`，就在 DAG 内继续调用 `sample_tokens(grammar_output)`：
 
@@ -261,7 +261,7 @@ elif output is None:
     output = self.worker.model_runner.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/executor/ray_utils.py:123` 到 `vllm/vllm/v1/executor/ray_utils.py:175`
+位置：`vllm/vllm/v1/executor/ray_utils.py:125` 到 `vllm/vllm/v1/executor/ray_utils.py:177`
 
 对 EngineCore 来说，这些差异被 `model_executor` 屏蔽。
 
@@ -298,7 +298,7 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | None:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:807` 到 `vllm/vllm/v1/worker/gpu_worker.py:810`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1000` 到 `vllm/vllm/v1/worker/gpu_worker.py:1004`
 
 它会先判断本轮是否有真实 forward：
 
@@ -307,7 +307,7 @@ forward_pass = scheduler_output.total_num_scheduled_tokens > 0
 num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:817` 到 `vllm/vllm/v1/worker/gpu_worker.py:819`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1011` 到 `vllm/vllm/v1/worker/gpu_worker.py:1013`
 
 然后调用 ModelRunner：
 
@@ -317,11 +317,12 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:867` 到 `vllm/vllm/v1/worker/gpu_worker.py:870`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1061` 到 `vllm/vllm/v1/worker/gpu_worker.py:1064`
 
 所以 Worker 在这里主要做几类事情：
 
 ```text
+等待上一轮 non-blocking PP send 完成；
 处理 pipeline parallel 的中间 tensor 收发；
 处理 profiler annotation；
 调用 model_runner.execute_model()；
@@ -336,7 +337,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(...)
 return None
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:889` 到 `vllm/vllm/v1/worker/gpu_worker.py:896`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1083` 到 `vllm/vllm/v1/worker/gpu_worker.py:1090`
 
 这说明：
 
@@ -359,7 +360,7 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | IntermediateTensors | None:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4043` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4048`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4096` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4101`
 
 这里才是真正执行模型前后处理的核心路径。
 
@@ -371,7 +372,7 @@ ModelRunner 首先会根据 `SchedulerOutput` 更新持久 batch 状态：
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4080` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4087`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4133` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4140`
 
 这一步会把 Scheduler 本轮发来的计划合并到 Worker 本地状态中，例如：
 
@@ -380,7 +381,8 @@ deferred_state_corrections_fn = self._update_states(scheduler_output)
 已有请求追加 token / block 信息；
 移除 finished 请求；
 更新 KV block 映射；
-处理 spec decode / encoder input 相关状态。
+处理 spec decode / encoder input 相关状态；
+必要时返回 deferred state corrections，在后续安全位置再应用。
 ```
 
 也就是说，Worker 不只是被动执行一个 batch，它还维护一份和 Scheduler 对齐的请求执行状态。
@@ -393,7 +395,7 @@ ModelRunner 会取出本轮 token 总数：
 num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4080`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4133`
 
 如果没有任何 token 要执行：
 
@@ -405,7 +407,7 @@ if not num_scheduled_tokens:
     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4096` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4112`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4149` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4165`
 
 这对应 EngineCore 文档里的空调度情况：
 
@@ -429,7 +431,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4131`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4181` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4184`
 
 以及构造 attention metadata：
 
@@ -439,7 +441,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4255` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4269`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4308` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4322`
 
 再执行通用预处理：
 
@@ -456,7 +458,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4271` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4280`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4324` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4333`
 
 可以理解为：
 

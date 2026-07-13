@@ -50,7 +50,7 @@ EngineCore 负责把它交给 model_executor，
 scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490`
+位置：`vllm/vllm/v1/engine/core.py:499`
 
 也就是说，EngineCore 不自己决定本轮哪些请求执行，而是把这个问题交给 Scheduler。
 
@@ -90,10 +90,11 @@ class SchedulerOutput:
     kv_connector_metadata: KVConnectorMetadata | None = None
     ec_connector_metadata: ECConnectorMetadata | None = None
     new_block_ids_to_zero: list[int] | None = None
+    kv_cache_block_copies: list[KVCacheBlockCopy] | None = None
     num_spec_tokens_to_schedule: int = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:180` 到 `vllm/vllm/v1/core/sched/output.py:245`
+位置：`vllm/vllm/v1/core/sched/output.py:182` 到 `vllm/vllm/v1/core/sched/output.py:250`
 
 可以把它理解成：
 
@@ -125,7 +126,7 @@ EngineCore 拿到 `SchedulerOutput` 后，第一件事是把它交给 `model_exe
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 这里体现了 EngineCore 和 Worker 的边界：
 
@@ -153,7 +154,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:499` 到 `vllm/vllm/v1/engine/core.py:515`
 
 这说明 `SchedulerOutput` 在 EngineCore 中会经历三次关键使用：
 
@@ -187,7 +188,7 @@ SchedulerOutput 不是一次性发给 Worker 就结束；
 scheduled_new_reqs: list[NewRequestData]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:185`
+位置：`vllm/vllm/v1/core/sched/output.py:187`
 
 这是第一次被调度的请求。
 
@@ -223,7 +224,7 @@ class NewRequestData:
     prefill_token_ids: list[int] | None = None
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:30` 到 `vllm/vllm/v1/core/sched/output.py:44`
+位置：`vllm/vllm/v1/core/sched/output.py:32` 到 `vllm/vllm/v1/core/sched/output.py:46`
 
 可以理解为：
 
@@ -239,7 +240,7 @@ scheduled_new_reqs 是 Worker 首次认识某个请求时需要的完整请求�
 scheduled_cached_reqs: CachedRequestData
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:189`
+位置：`vllm/vllm/v1/core/sched/output.py:191`
 
 对于之前已经调度过的请求，Worker 侧已经缓存了请求的静态信息，不需要每轮重复发送完整请求。
 
@@ -269,7 +270,7 @@ class CachedRequestData:
     num_output_tokens: list[int]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:111` 到 `vllm/vllm/v1/core/sched/output.py:127`
+位置：`vllm/vllm/v1/core/sched/output.py:113` 到 `vllm/vllm/v1/core/sched/output.py:128`
 
 可以理解为：
 
@@ -288,7 +289,7 @@ num_scheduled_tokens: dict[str, int]
 total_num_scheduled_tokens: int
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:191` 到 `vllm/vllm/v1/core/sched/output.py:196`
+位置：`vllm/vllm/v1/core/sched/output.py:193` 到 `vllm/vllm/v1/core/sched/output.py:198`
 
 这两个字段说明本轮到底安排了多少 token：
 
@@ -305,7 +306,7 @@ EngineCore 自己也使用 `total_num_scheduled_tokens` 判断本轮是否真正
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:517`
 
 所以：
 
@@ -322,7 +323,7 @@ total_num_scheduled_tokens == 0：可能只是清理 finished 请求或空调度
 scheduled_spec_decode_tokens: dict[str, list[int]]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:200`
+位置：`vllm/vllm/v1/core/sched/output.py:202`
 
 如果请求使用 speculative decoding，Scheduler 会把本轮要验证或参与执行的 draft tokens 放进这里。
 
@@ -354,7 +355,7 @@ Worker / ModelRunner 会根据这些 draft tokens 执行对应的验证或计算
 scheduled_encoder_inputs: dict[str, list[int]]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:204`
+位置：`vllm/vllm/v1/core/sched/output.py:206`
 
 这个字段用于多模态或 encoder-decoder 相关输入。
 
@@ -383,9 +384,10 @@ num_common_prefix_blocks: list[int]
 kv_connector_metadata: KVConnectorMetadata | None = None
 ec_connector_metadata: ECConnectorMetadata | None = None
 new_block_ids_to_zero: list[int] | None = None
+kv_cache_block_copies: list[KVCacheBlockCopy] | None = None
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:207`、`vllm/vllm/v1/core/sched/output.py:233` 到 `vllm/vllm/v1/core/sched/output.py:241`
+位置：`vllm/vllm/v1/core/sched/output.py:207` 到 `vllm/vllm/v1/core/sched/output.py:209`、`vllm/vllm/v1/core/sched/output.py:234` 到 `vllm/vllm/v1/core/sched/output.py:246`
 
 含义分别是：
 
@@ -401,6 +403,9 @@ ec_connector_metadata：
 
 new_block_ids_to_zero：
   本轮新分配、需要 Worker 先清零的 block IDs，避免旧数据污染计算。
+
+kv_cache_block_copies：
+  新 block 清零后、forward 前需要应用的 KV cache CoW copy 列表。
 ```
 
 这些字段都不是 EngineCore 自己执行，而是随 `SchedulerOutput` 下发给 Worker / ModelRunner。
@@ -419,7 +424,7 @@ num_invalid_spec_tokens: dict[str, int] | None = None
 num_spec_tokens_to_schedule: int = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:217` 到 `vllm/vllm/v1/core/sched/output.py:245`
+位置：`vllm/vllm/v1/core/sched/output.py:219` 到 `vllm/vllm/v1/core/sched/output.py:250`
 
 含义可以概括为：
 
@@ -446,7 +451,7 @@ finished_req_ids: set[str]
 free_encoder_mm_hashes: list[str]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:212` 到 `vllm/vllm/v1/core/sched/output.py:215`
+位置：`vllm/vllm/v1/core/sched/output.py:211` 到 `vllm/vllm/v1/core/sched/output.py:217`
 
 这两个字段用于通知 Worker 侧清理缓存：
 
@@ -477,7 +482,7 @@ if not self.scheduler.has_requests():
     return {}, False
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:489`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:498`
 
 这种情况下 EngineCore 不会调用 `Scheduler.schedule()`，也不会生成 `SchedulerOutput`。
 
@@ -522,7 +527,7 @@ EngineCore 判断本轮是否真正执行模型时用的是：
 scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:517`
 
 因此：
 
@@ -543,7 +548,7 @@ Note that if nothing to output in this step, None is returned.
 """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:523`
+位置：`vllm/vllm/v1/engine/core.py:528` 到 `vllm/vllm/v1/engine/core.py:532`
 
 它会优先填充 batch queue：
 
@@ -562,7 +567,7 @@ if len(batch_queue) < self.batch_queue_size and (
     return None, model_executed
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:576` 到 `vllm/vllm/v1/engine/core.py:581`
+位置：`vllm/vllm/v1/engine/core.py:585` 到 `vllm/vllm/v1/engine/core.py:590`
 
 所以 batch queue 模式中，`SchedulerOutput` 可能先进入队列，稍后等 Worker 结果回来时再和 `ModelRunnerOutput` 一起传给 `Scheduler.update_from_output()`。
 
@@ -612,7 +617,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 它把：
 
