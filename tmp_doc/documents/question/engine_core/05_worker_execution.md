@@ -481,7 +481,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4320` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4326`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4380` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 forward 外层会设置 forward context：
 
@@ -495,7 +495,7 @@ set_forward_context(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4302` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4318`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4362` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4378`
 
 这说明模型 forward 需要的不只是 token ids，还包括：
 
@@ -519,7 +519,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4354` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4355`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 然后 ModelRunner 会保存一份临时状态：
 
@@ -529,7 +529,7 @@ self.kv_connector_output = kv_connector_output
 return None
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4386` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4405`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4446` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4465`
 
 这解释了 EngineCore 中为什么有：
 
@@ -538,7 +538,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:498` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:507` 到 `vllm/vllm/v1/engine/core.py:508`
 
 含义是：
 
@@ -559,7 +559,7 @@ execute_model() 可能只完成 forward 和 logits 准备；
 model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:498` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:507` 到 `vllm/vllm/v1/engine/core.py:508`
 
 Executor 同样通过 RPC 调 Worker：
 
@@ -581,7 +581,7 @@ def sample_tokens(
     return self.model_runner.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:801` 到 `vllm/vllm/v1/worker/gpu_worker.py:805`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:993` 到 `vllm/vllm/v1/worker/gpu_worker.py:998`
 
 ModelRunner 的 `sample_tokens()` 会：
 
@@ -605,7 +605,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4456`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 采样发生在：
 
@@ -613,7 +613,7 @@ if grammar_output is not None:
 sampler_output = self._sample(logits, spec_decode_metadata)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4458` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4518` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4519`
 
 最后构造 `ModelRunnerOutput`：
 
@@ -632,7 +632,7 @@ output = ModelRunnerOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4609` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4623`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4696` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4710`
 
 所以 generation 模型的常见路径其实是：
 
@@ -721,7 +721,7 @@ EngineCore 拿到它后，还要调用：
 self.scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 由 Scheduler 生成 `EngineCoreOutputs`。
 
@@ -743,7 +743,7 @@ if self.is_pooling_model:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4345` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4352`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4405` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4412`
 
 这种情况下输出会体现在：
 
@@ -760,7 +760,7 @@ self._execute_mm_encoder(scheduler_output)
 return make_empty_encoder_model_runner_output(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4088` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4094`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4141` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4147`
 
 所以 Worker 执行阶段不只服务于文本生成，还覆盖：
 
@@ -811,7 +811,7 @@ EngineCore 等待 Worker 输出时调用：
 model_output = future.result()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:497`
+位置：`vllm/vllm/v1/engine/core.py:506`
 
 如果 Worker / ModelRunner 执行失败，异常会在这里抛出。
 
@@ -825,7 +825,7 @@ with (
     model_output = future.result()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:493` 到 `vllm/vllm/v1/engine/core.py:497`
+位置：`vllm/vllm/v1/engine/core.py:502` 到 `vllm/vllm/v1/engine/core.py:506`
 
 它能把当前 `SchedulerOutput` 相关信息带进错误日志，便于定位是哪一轮调度导致异常。
 
@@ -843,7 +843,7 @@ if self.execute_model_state is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4049` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4053`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4102` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4106`
 
 这说明 `execute_model()` 和 `sample_tokens()` 有严格配对关系：
 

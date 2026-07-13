@@ -98,7 +98,7 @@ EngineCore
   → 初始化 / profile KV cache
   → 创建 structured_output_manager
   → 从 scheduler_config 解析 Scheduler 类并创建 Scheduler
-  → 初始化 connector / multimodal receiver cache / batch queue
+  → 初始化 connector / multimodal receiver cache / batch queue / EC consumer 标记
   → 初始化 prefix cache hashing、abort queue、GC / env cache 状态
 ```
 
@@ -248,7 +248,7 @@ batch in the job queue is finished.
 """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:519` 到 `vllm/vllm/v1/engine/core.py:534`
+位置：`vllm/vllm/v1/engine/core.py:528` 到 `vllm/vllm/v1/engine/core.py:543`
 
 所以 batch queue 改变的是：
 
@@ -268,9 +268,9 @@ else:
     deferred_scheduler_output = scheduler_output
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:559` 到 `vllm/vllm/v1/engine/core.py:572`
+位置：`vllm/vllm/v1/engine/core.py:568` 到 `vllm/vllm/v1/engine/core.py:580`
 
-如果结构化输出需要等待前一个 batch 的结果，sampling 会被延后；当前 batch 出队并完成 `update_from_output()` 后，再为 deferred scheduler output 计算 grammar bitmask 并调用 `sample_tokens()`：
+如果结构化输出需要等待前一个 batch 的结果，sampling 会被延后；当前 batch 出队并完成 `update_from_output()` 后，如果启用 draft tokens，会先用 `update_draft_token_ids_in_output()` 过滤 deferred scheduler output 中的无效 spec tokens，再计算 grammar bitmask 并调用 `sample_tokens()`：
 
 ```python
 grammar_output = self.scheduler.get_grammar_bitmask(
@@ -280,7 +280,7 @@ future = self.model_executor.sample_tokens(grammar_output, non_block=True)
 batch_queue.appendleft((future, deferred_scheduler_output, exec_future))
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:612` 到 `vllm/vllm/v1/engine/core.py:630`
+位置：`vllm/vllm/v1/engine/core.py:621` 到 `vllm/vllm/v1/engine/core.py:639`
 
 ---
 
@@ -293,7 +293,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/vllm/v1/engine/core.py:905` 到 `vllm/vllm/v1/engine/core.py:906`
 
 它在 EngineCore 外面加了：
 
@@ -318,7 +318,7 @@ executor_fail_callback = lambda: self.input_queue.put_nowait(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:913` 到 `vllm/vllm/v1/engine/core.py:917`
+位置：`vllm/vllm/v1/engine/core.py:924` 到 `vllm/vllm/v1/engine/core.py:928`
 
 然后启动输入线程和输出线程：
 
@@ -338,7 +338,7 @@ self.output_thread = threading.Thread(
 self.output_thread.start()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:978` 到 `vllm/vllm/v1/engine/core.py:999`
+位置：`vllm/vllm/v1/engine/core.py:989` 到 `vllm/vllm/v1/engine/core.py:1010`
 
 真正的后台主循环是：
 
@@ -354,7 +354,7 @@ def run_busy_loop(self):
     raise SystemExit
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1265`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1276`
 
 可以理解为：
 
@@ -378,7 +378,7 @@ while not self.has_work() and self.is_running():
     self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1271` 到 `vllm/vllm/v1/engine/core.py:1284`
+位置：`vllm/vllm/v1/engine/core.py:1281` 到 `vllm/vllm/v1/engine/core.py:1295`
 
 之后会把队列里剩余输入也处理掉：
 
@@ -388,7 +388,7 @@ while not self.input_queue.empty():
     self._handle_client_request(*req)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1293` 到 `vllm/vllm/v1/engine/core.py:1296`
+位置：`vllm/vllm/v1/engine/core.py:1304` 到 `vllm/vllm/v1/engine/core.py:1307`
 
 处理完输入后，`_process_engine_step()` 调用 `step_fn()`：
 
@@ -399,7 +399,7 @@ for output in outputs.items() if outputs else ():
 self.post_step(model_executed)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1301` 到 `vllm/vllm/v1/engine/core.py:1307`
+位置：`vllm/vllm/v1/engine/core.py:1312` 到 `vllm/vllm/v1/engine/core.py:1318`
 
 如果没有实际模型执行，但 Scheduler 还有请求，会短暂 sleep 让后台传输线程推进：
 
@@ -408,7 +408,7 @@ if not model_executed and self.scheduler.has_requests():
     time.sleep(0.001)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1309` 到 `vllm/vllm/v1/engine/core.py:1313`
+位置：`vllm/vllm/v1/engine/core.py:1320` 到 `vllm/vllm/v1/engine/core.py:1324`
 
 所以后台 loop 的节奏是：
 
@@ -432,7 +432,7 @@ def _handle_client_request(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1370` 到 `vllm/vllm/v1/engine/core.py:1372`
+位置：`vllm/vllm/v1/engine/core.py:1381` 到 `vllm/vllm/v1/engine/core.py:1383`
 
 主要分发类型是：
 
@@ -451,7 +451,7 @@ elif request_type == EngineCoreRequestType.EXECUTOR_FAILED:
     raise RuntimeError("Executor failed.")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1375` 到 `vllm/vllm/v1/engine/core.py:1399`
+位置：`vllm/vllm/v1/engine/core.py:1386` 到 `vllm/vllm/v1/engine/core.py:1410`
 
 含义是：
 
@@ -471,7 +471,7 @@ enqueue_output = lambda out: self.output_queue.put_nowait(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1394` 到 `vllm/vllm/v1/engine/core.py:1396`
+位置：`vllm/vllm/v1/engine/core.py:1405` 到 `vllm/vllm/v1/engine/core.py:1407`
 
 ---
 
@@ -493,7 +493,7 @@ if isinstance(result, Future):
 output.result = UtilityResult(result)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1436` 到 `vllm/vllm/v1/engine/core.py:1445`
+位置：`vllm/vllm/v1/engine/core.py:1447` 到 `vllm/vllm/v1/engine/core.py:1456`
 
 如果调用失败，会返回 failure message：
 
@@ -504,7 +504,7 @@ except Exception as e:
 enqueue_output(output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1446` 到 `vllm/vllm/v1/engine/core.py:1449`
+位置：`vllm/vllm/v1/engine/core.py:1457` 到 `vllm/vllm/v1/engine/core.py:1460`
 
 这说明 utility 调用和普通 request 输出不同：
 
@@ -530,7 +530,7 @@ def profile(self, is_start: bool = True, profile_prefix: str | None = None):
     self.model_executor.profile(is_start, profile_prefix)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:662` 到 `vllm/vllm/v1/engine/core.py:663`
+位置：`vllm/vllm/v1/engine/core.py:671` 到 `vllm/vllm/v1/engine/core.py:672`
 
 也就是说：
 
@@ -551,7 +551,7 @@ if self.scheduler.has_unfinished_requests():
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:665` 到 `vllm/vllm/v1/engine/core.py:672`
+位置：`vllm/vllm/v1/engine/core.py:674` 到 `vllm/vllm/v1/engine/core.py:681`
 
 然后清理 EngineCore 侧 cache，并通知 executor：
 
@@ -562,7 +562,7 @@ if self.mm_receiver_cache is not None:
 self.model_executor.reset_mm_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:674` 到 `vllm/vllm/v1/engine/core.py:678`
+位置：`vllm/vllm/v1/engine/core.py:683` 到 `vllm/vllm/v1/engine/core.py:687`
 
 ### 9.3 reset_prefix_cache
 
@@ -577,7 +577,7 @@ def reset_prefix_cache(
     )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:680` 到 `vllm/vllm/v1/engine/core.py:685`
+位置：`vllm/vllm/v1/engine/core.py:689` 到 `vllm/vllm/v1/engine/core.py:694`
 
 因为 prefix cache 的逻辑状态和 KV block 管理在 Scheduler / KV cache manager 侧。
 
@@ -590,7 +590,7 @@ self.scheduler.reset_encoder_cache()
 self.model_executor.reset_encoder_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:702` 到 `vllm/vllm/v1/engine/core.py:705`
+位置：`vllm/vllm/v1/engine/core.py:711` 到 `vllm/vllm/v1/engine/core.py:714`
 
 文档注释也说明：
 
@@ -598,7 +598,7 @@ self.model_executor.reset_encoder_cache()
 Clears both the scheduler's cache manager and the GPU model runner's cache.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:688` 到 `vllm/vllm/v1/engine/core.py:692`
+位置：`vllm/vllm/v1/engine/core.py:696` 到 `vllm/vllm/v1/engine/core.py:702`
 
 ---
 
@@ -616,7 +616,7 @@ level: Sleep level.
     - Level 2: Discard all GPU memory.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:761` 到 `vllm/vllm/v1/engine/core.py:769`
+位置：`vllm/vllm/v1/engine/core.py:770` 到 `vllm/vllm/v1/engine/core.py:780`
 
 `sleep()` 先 pause scheduler：
 
@@ -627,7 +627,7 @@ if level < 1:
     return pause_future
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:774` 到 `vllm/vllm/v1/engine/core.py:778`
+位置：`vllm/vllm/v1/engine/core.py:783` 到 `vllm/vllm/v1/engine/core.py:787`
 
 level 1 以上再交给 executor 管理 GPU 内存：
 
@@ -638,7 +638,7 @@ if pause_future is None:
     return None
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:780` 到 `vllm/vllm/v1/engine/core.py:784`
+位置：`vllm/vllm/v1/engine/core.py:789` 到 `vllm/vllm/v1/engine/core.py:793`
 
 如果 pause 需要等待，会在 Future 完成后再 sleep：
 
@@ -651,9 +651,9 @@ def pause_complete(f: Future):
         future.set_exception(e)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:786` 到 `vllm/vllm/v1/engine/core.py:797`
+位置：`vllm/vllm/v1/engine/core.py:795` 到 `vllm/vllm/v1/engine/core.py:806`
 
-`wake_up()` 则反过来。它会先处理只恢复调度用的 `"scheduling"` tag，再按需唤醒 executor，最后恢复 scheduler：
+`wake_up()` 则反过来。它会先处理只恢复调度用的 `"scheduling"` tag，再按需唤醒 executor；只有 executor 已经完全不处于 sleeping 状态时，才恢复 scheduler，partial wake 会继续保持调度暂停：
 
 ```python
 if tags is not None and "scheduling" in tags:
@@ -662,10 +662,11 @@ if tags is not None and "scheduling" in tags:
 if tags is None or tags:
     self.model_executor.wake_up(tags)
 
-self.resume_scheduler()
+if not self.model_executor.is_sleeping:
+    self.resume_scheduler()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:799` 到 `vllm/vllm/v1/engine/core.py:813`
+位置：`vllm/vllm/v1/engine/core.py:808` 到 `vllm/vllm/v1/engine/core.py:824`
 
 `is_sleeping()` 会同时看 scheduler pause 状态和 executor sleeping 状态：
 
@@ -673,7 +674,7 @@ self.resume_scheduler()
 return self.is_scheduler_paused() or self.model_executor.is_sleeping
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:815` 到 `vllm/vllm/v1/engine/core.py:817`
+位置：`vllm/vllm/v1/engine/core.py:826` 到 `vllm/vllm/v1/engine/core.py:828`
 
 所以 sleep / wakeup 的边界是：
 
@@ -697,7 +698,7 @@ GPU memory sleep/wakeup：委托给 model_executor / Worker。
   output queue is empty.
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:722` 到 `vllm/vllm/v1/engine/core.py:737`
+位置：`vllm/vllm/v1/engine/core.py:731` 到 `vllm/vllm/v1/engine/core.py:746`
 
 in-process 的普通 EngineCore 不支持 wait：
 
@@ -706,7 +707,7 @@ if mode == "wait":
     raise ValueError("'wait' mode can't be used in inproc-engine mode")
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:738` 到 `vllm/vllm/v1/engine/core.py:741`
+位置：`vllm/vllm/v1/engine/core.py:749` 到 `vllm/vllm/v1/engine/core.py:750`
 
 如果是 abort 模式，会让 Scheduler 结束所有请求：
 
@@ -715,7 +716,7 @@ if mode == "abort":
     self.scheduler.finish_requests(None, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:743` 到 `vllm/vllm/v1/engine/core.py:744`
+位置：`vllm/vllm/v1/engine/core.py:752` 到 `vllm/vllm/v1/engine/core.py:753`
 
 然后设置 pause state：
 
@@ -724,7 +725,7 @@ pause_state = PauseState.PAUSED_ALL if mode == "keep" else PauseState.PAUSED_NEW
 self.scheduler.set_pause_state(pause_state)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:746` 到 `vllm/vllm/v1/engine/core.py:747`
+位置：`vllm/vllm/v1/engine/core.py:755` 到 `vllm/vllm/v1/engine/core.py:756`
 
 可以理解为：
 
@@ -884,7 +885,7 @@ executor_fail_callback = lambda: self.input_queue.put_nowait(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:913` 到 `vllm/vllm/v1/engine/core.py:917`
+位置：`vllm/vllm/v1/engine/core.py:924` 到 `vllm/vllm/v1/engine/core.py:928`
 
 如果 executor 进入失败状态，会向 input_queue 放入 `EXECUTOR_FAILED`。
 
@@ -903,7 +904,7 @@ utility 调用失败则不会直接当作普通请求输出，而是写入 `Util
 output.failure_message = f"Call to {name} method failed: {str(e)}"
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1446` 到 `vllm/vllm/v1/engine/core.py:1449`
+位置：`vllm/vllm/v1/engine/core.py:1457` 到 `vllm/vllm/v1/engine/core.py:1460`
 
 如果后台进程需要通知前端 EngineCore 已死，会发送特殊字节：
 

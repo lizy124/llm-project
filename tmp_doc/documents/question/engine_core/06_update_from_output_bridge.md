@@ -18,13 +18,13 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 它的作用是：
 
 ```text
 把本轮“发出去的计划”和“实际执行结果”合并，
-交给 Scheduler 更新请求状态、处理 stop / spec decode / logprobs / pooling / KV transfer / 资源释放，
+交给 Scheduler 更新请求状态、处理 stop / spec decode / logprobs / pooling / KV / EC transfer / 资源释放，
 最后生成 EngineCoreOutputs 返回给 EngineCore。
 ```
 
@@ -75,7 +75,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:517`
 
 这个顺序很重要：
 
@@ -98,7 +98,7 @@ return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 self._process_aborts_queue()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:503`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:512`
 
 这样 Scheduler 回收输出时可以看到最新的请求状态。
 
@@ -129,7 +129,7 @@ def update_from_output(
 ) -> dict[int, EngineCoreOutputs]:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1464` 到 `vllm/vllm/v1/core/sched/scheduler.py:1468`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1551` 到 `vllm/vllm/v1/core/sched/scheduler.py:1555`
 
 函数一开始就取出 SchedulerOutput 的关键字段：
 
@@ -137,7 +137,7 @@ def update_from_output(
 num_scheduled_tokens = scheduler_output.num_scheduled_tokens
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1472`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1559`
 
 这个字段是后续遍历请求的基础：
 
@@ -147,7 +147,7 @@ for req_id, num_tokens_scheduled in num_scheduled_tokens.items():
     ...
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1527` 到 `vllm/vllm/v1/core/sched/scheduler.py:1528`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1614` 到 `vllm/vllm/v1/core/sched/scheduler.py:1615`
 
 也就是说，Scheduler 不是遍历 Worker 返回的所有字段来决定谁被调度，而是以 `SchedulerOutput.num_scheduled_tokens` 为准。
 
@@ -168,7 +168,7 @@ scheduled_spec_token_ids = (
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1548` 到 `vllm/vllm/v1/core/sched/scheduler.py:1550`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1637` 到 `vllm/vllm/v1/core/sched/scheduler.py:1639`
 
 然后根据 Worker 返回的 `generated_token_ids` 判断接受 / 拒绝数量：
 
@@ -179,7 +179,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1554` 到 `vllm/vllm/v1/core/sched/scheduler.py:1557`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1647` 到 `vllm/vllm/v1/core/sched/scheduler.py:1650`
 
 如果有 draft token 被拒绝，Scheduler 会把之前乐观推进的进度扣回来：
 
@@ -190,7 +190,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1563` 到 `vllm/vllm/v1/core/sched/scheduler.py:1568`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1656` 到 `vllm/vllm/v1/core/sched/scheduler.py:1661`
 
 这里必须依赖 `SchedulerOutput`。
 
@@ -209,7 +209,7 @@ if request.has_encoder_inputs:
     self._free_encoder_inputs(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1577` 到 `vllm/vllm/v1/core/sched/scheduler.py:1579`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1670` 到 `vllm/vllm/v1/core/sched/scheduler.py:1672`
 
 释放是否安全，依赖请求当前进度，而这个进度与本轮 `SchedulerOutput` 中的 token 调度密切相关。
 
@@ -223,7 +223,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self._drain_deferred_frees()
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1478` 到 `vllm/vllm/v1/core/sched/scheduler.py:1482`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1565` 到 `vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 这也必须依赖 `SchedulerOutput.total_num_scheduled_tokens`。
 
@@ -242,7 +242,7 @@ Scheduler 还可能用 `SchedulerOutput` 生成 step 级性能统计：
 perf_stats = self.perf_metrics.get_step_perf_stats_per_gpu(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1484` 到 `vllm/vllm/v1/core/sched/scheduler.py:1486`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1571` 到 `vllm/vllm/v1/core/sched/scheduler.py:1573`
 
 所以 `SchedulerOutput` 不只是 Worker 的输入，也是 Scheduler 回收阶段的依据。
 
@@ -272,7 +272,7 @@ kv_connector_output = model_runner_output.kv_connector_output
 cudagraph_stats = model_runner_output.cudagraph_stats
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1468` 到 `vllm/vllm/v1/core/sched/scheduler.py:1475`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1556` 到 `vllm/vllm/v1/core/sched/scheduler.py:1563`
 
 这些信息回答的是：
 
@@ -297,7 +297,7 @@ generated_token_ids = (
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1543` 到 `vllm/vllm/v1/core/sched/scheduler.py:1546`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1632` 到 `vllm/vllm/v1/core/sched/scheduler.py:1635`
 
 这里体现了两个输入的配合：
 
@@ -316,7 +316,7 @@ new_token_ids, stopped = self._update_request_with_output(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1590` 到 `vllm/vllm/v1/core/sched/scheduler.py:1593`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1684` 到 `vllm/vllm/v1/core/sched/scheduler.py:1687`
 
 内部会 append token，并检查 stop：
 
@@ -325,7 +325,7 @@ request.append_output_token_ids(output_token_id)
 stopped = check_stop(request, self.max_model_len)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1856` 到 `vllm/vllm/v1/core/sched/scheduler.py:1861`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1961` 到 `vllm/vllm/v1/core/sched/scheduler.py:1966`
 
 所以 stop 判断不是 Worker 做最终决定，而是 Scheduler 用 Worker 结果更新请求状态后判断。
 
@@ -337,7 +337,7 @@ stopped = check_stop(request, self.max_model_len)
 pooler_output = pooler_outputs[req_index] if pooler_outputs else None
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1584`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1677`
 
 如果请求是 pooling request 且有输出，则直接停止：
 
@@ -347,7 +347,7 @@ elif request.pooling_params and pooler_output is not None:
     stopped = True
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1594` 到 `vllm/vllm/v1/core/sched/scheduler.py:1597`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1688` 到 `vllm/vllm/v1/core/sched/scheduler.py:1691`
 
 ### 4.4 logprobs 和 prompt logprobs
 
@@ -357,7 +357,7 @@ elif request.pooling_params and pooler_output is not None:
 new_logprobs = logprobs.slice_request(req_index, len(new_token_ids))
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1670` 到 `vllm/vllm/v1/core/sched/scheduler.py:1676`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1773` 到 `vllm/vllm/v1/core/sched/scheduler.py:1779`
 
 prompt logprobs 则通过 req_id 查：
 
@@ -365,7 +365,7 @@ prompt logprobs 则通过 req_id 查：
 prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1681` 到 `vllm/vllm/v1/core/sched/scheduler.py:1682`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1784` 到 `vllm/vllm/v1/core/sched/scheduler.py:1785`
 
 ### 4.5 routed experts 输出
 
@@ -382,7 +382,7 @@ if model_runner_output.routed_experts is not None:
         offset += num_scheduled_tokens[rid]
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1500` 到 `vllm/vllm/v1/core/sched/scheduler.py:1519`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1588` 到 `vllm/vllm/v1/core/sched/scheduler.py:1608`
 
 后面构造单请求输出时，Scheduler 会根据请求是否为 prefill、普通 decode 或 spec decode，从 slot buffer 或本轮 routing 数据中切出 `routed_experts`：
 
@@ -392,11 +392,11 @@ if self.enable_return_routed_experts and routing_data is not None and new_token_
     routed_experts = ...
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1615` 到 `vllm/vllm/v1/core/sched/scheduler.py:1653`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1720` 到 `vllm/vllm/v1/core/sched/scheduler.py:1757`
 
 这说明 routed experts 不是直接原样透传整个 batch，而是在 Scheduler 里按请求输出重新切分。
 
-### 4.6 KV connector 输出
+### 4.6 KV / EC connector 输出
 
 如果 Worker 返回了 KV connector 输出，Scheduler 会处理 KV transfer 完成状态：
 
@@ -405,7 +405,7 @@ if kv_connector_output:
     self._update_from_kv_xfer_finished(kv_connector_output)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1731` 到 `vllm/vllm/v1/core/sched/scheduler.py:1733`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1837` 到 `vllm/vllm/v1/core/sched/scheduler.py:1839`
 
 如果有外部 KV load 失败，还会先处理 invalid blocks：
 
@@ -417,7 +417,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1490` 到 `vllm/vllm/v1/core/sched/scheduler.py:1498`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1578` 到 `vllm/vllm/v1/core/sched/scheduler.py:1586`
 
 Worker 侧 KV connector stats 也会从 `ModelRunnerOutput` 取出，并与 Scheduler 侧 connector stats 聚合：
 
@@ -430,7 +430,7 @@ if self.connector:
     ...
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1735` 到 `vllm/vllm/v1/core/sched/scheduler.py:1750`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1841` 到 `vllm/vllm/v1/core/sched/scheduler.py:1856`
 
 随后 Scheduler 还会收集 KV cache manager 和 connector 的事件，并通过 `kv_event_publisher` 发布：
 
@@ -442,7 +442,11 @@ if events:
     self.kv_event_publisher.publish(batch)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1752` 到 `vllm/vllm/v1/core/sched/scheduler.py:1767`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1858` 到 `vllm/vllm/v1/core/sched/scheduler.py:1873`
+
+如果请求最终停止，Scheduler 在 `_free_request()` 中还会让 EC connector 的 `request_finished()` 先于 encoder cache 释放执行，并把返回的 `ec_transfer_params` 放进 `EngineCoreOutput`。
+
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2164` 到 `vllm/vllm/v1/core/sched/scheduler.py:2171`
 
 所以 `ModelRunnerOutput` 是真实结果来源。
 
@@ -450,7 +454,7 @@ if events:
 
 ```text
 没有 ModelRunnerOutput，Scheduler 只有计划，没有结果；
-它不知道生成了什么 token、是否有 pooling output、KV transfer 是否失败、routed experts / logprobs 是什么。
+它不知道生成了什么 token、是否有 pooling output、KV transfer 是否失败、EC transfer 是否需要回传参数、routed experts / logprobs 是什么。
 ```
 
 ---
@@ -463,9 +467,9 @@ if events:
 outputs: dict[int, list[EngineCoreOutput]] = defaultdict(list)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1488`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1575`
 
-当某个请求有新 token、pooling output、KV transfer params、或者 stopped 时，会构造 `EngineCoreOutput`：
+当某个请求有新 token、pooling output、KV transfer params、EC transfer params，或者 stopped 时，会构造 `EngineCoreOutput`：
 
 ```python
 outputs[request.client_index].append(
@@ -480,6 +484,7 @@ outputs[request.client_index].append(
         events=request.take_events(),
         prefill_stats=request.take_prefill_stats(),
         kv_transfer_params=kv_transfer_params,
+        ec_transfer_params=ec_transfer_params,
         trace_headers=request.trace_headers,
         routed_experts=routed_experts,
         num_nans_in_logits=request.num_nans_in_logits,
@@ -487,7 +492,7 @@ outputs[request.client_index].append(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1689` 到 `vllm/vllm/v1/core/sched/scheduler.py:1706`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1787` 到 `vllm/vllm/v1/core/sched/scheduler.py:1811`
 
 这里的 `EngineCoreOutput` 是单个请求的一次输出。
 
@@ -504,13 +509,14 @@ class EngineCoreOutput(...):
     stop_reason: int | str | None = None
     events: list[EngineCoreEvent] | None = None
     kv_transfer_params: dict[str, Any] | None = None
+    ec_transfer_params: dict[str, Any] | None = None
     trace_headers: Mapping[str, str] | None = None
     prefill_stats: PrefillStats | None = None
     routed_experts: np.ndarray | None = None
     num_nans_in_logits: int = 0
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:201`
+位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:202`
 
 可以理解为：
 
@@ -531,7 +537,7 @@ Scheduler 在这里完成了从“batch 输出”到“request 输出”的转�
 dict[int, EngineCoreOutputs]
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1464` 到 `vllm/vllm/v1/core/sched/scheduler.py:1468`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1551` 到 `vllm/vllm/v1/core/sched/scheduler.py:1555`
 
 其中：
 
@@ -549,7 +555,7 @@ engine_core_outputs = {
 }
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1770` 到 `vllm/vllm/v1/core/sched/scheduler.py:1775`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1875` 到 `vllm/vllm/v1/core/sched/scheduler.py:1880`
 
 `EngineCoreOutputs` 的定义是：
 
@@ -565,7 +571,7 @@ class EngineCoreOutputs(...):
     start_wave: int | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:244`
+位置：`vllm/vllm/v1/engine/__init__.py:221` 到 `vllm/vllm/v1/engine/__init__.py:245`
 
 ### 6.1 为什么按 client_index 分组
 
@@ -583,7 +589,7 @@ Scheduler 在构造输出时使用：
 outputs[request.client_index].append(...)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1690`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1794`
 
 所以返回值按 client 分组：
 
@@ -606,7 +612,7 @@ else:
     )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1777` 到 `vllm/vllm/v1/core/sched/scheduler.py:1789`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1882` 到 `vllm/vllm/v1/core/sched/scheduler.py:1894`
 
 这用于多 engine / 多 client 场景下高效追踪请求生命周期。
 
@@ -621,7 +627,7 @@ if (stats := self.make_stats(...)) is not None:
     eco.scheduler_stats = stats
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1791` 到 `vllm/vllm/v1/core/sched/scheduler.py:1801`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1896` 到 `vllm/vllm/v1/core/sched/scheduler.py:1906`
 
 注意：
 
@@ -753,6 +759,6 @@ EngineCore 在每轮 step 中先调用 Scheduler.schedule() 得到 SchedulerOutp
 执行结束后，EngineCore 先处理执行期间到达的 abort，
 然后把 SchedulerOutput 和 ModelRunnerOutput 一起传给 Scheduler.update_from_output()。
 Scheduler 以 SchedulerOutput 为本轮计划账本，以 ModelRunnerOutput 为真实执行结果，
-更新请求状态、处理 stop / spec decode / logprobs / pooling / routed experts / KV transfer，
+更新请求状态、处理 stop / spec decode / logprobs / pooling / routed experts / KV / EC transfer，
 最后按 client_index 返回 EngineCoreOutputs。
 ```

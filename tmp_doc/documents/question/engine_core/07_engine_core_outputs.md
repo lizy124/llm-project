@@ -29,7 +29,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:517`
 
 一句话：
 
@@ -72,6 +72,7 @@ class EngineCoreOutput(...):
     stop_reason: int | str | None = None
     events: list[EngineCoreEvent] | None = None
     kv_transfer_params: dict[str, Any] | None = None
+    ec_transfer_params: dict[str, Any] | None = None
 
     trace_headers: Mapping[str, str] | None = None
 
@@ -81,7 +82,7 @@ class EngineCoreOutput(...):
     num_nans_in_logits: int = 0
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:201`
+位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:202`
 
 核心字段含义：
 
@@ -109,6 +110,9 @@ events：
 
 kv_transfer_params：
   KV transfer 相关返回参数。
+
+ec_transfer_params：
+  EC transfer / encoder cache connector 相关返回参数。
 
 trace_headers：
   tracing 相关 headers。
@@ -160,7 +164,7 @@ class EngineCoreOutputs(...):
     start_wave: int | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:244`
+位置：`vllm/vllm/v1/engine/__init__.py:221` 到 `vllm/vllm/v1/engine/__init__.py:245`
 
 核心字段含义：
 
@@ -195,7 +199,7 @@ def __post_init__(self):
         self.timestamp = time.monotonic()
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:246` 到 `vllm/vllm/v1/engine/__init__.py:248`
+位置：`vllm/vllm/v1/engine/__init__.py:247` 到 `vllm/vllm/v1/engine/__init__.py:249`
 
 可以理解为：
 
@@ -216,9 +220,9 @@ Scheduler 先按 `client_index` 收集单请求输出：
 outputs: dict[int, list[EngineCoreOutput]] = defaultdict(list)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1488`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1575`
 
-当某个请求有新 token、pooling output、KV transfer params 或 stopped 时，Scheduler 添加一条 `EngineCoreOutput`：
+当某个请求有新 token、pooling output、KV transfer params、EC transfer params 或 stopped 时，Scheduler 添加一条 `EngineCoreOutput`：
 
 ```python
 outputs[request.client_index].append(
@@ -233,6 +237,7 @@ outputs[request.client_index].append(
         events=request.take_events(),
         prefill_stats=request.take_prefill_stats(),
         kv_transfer_params=kv_transfer_params,
+        ec_transfer_params=ec_transfer_params,
         trace_headers=request.trace_headers,
         routed_experts=routed_experts,
         num_nans_in_logits=request.num_nans_in_logits,
@@ -240,7 +245,7 @@ outputs[request.client_index].append(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1689` 到 `vllm/vllm/v1/core/sched/scheduler.py:1706`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1787` 到 `vllm/vllm/v1/core/sched/scheduler.py:1811`
 
 最后把每个 client 的输出列表包装成 `EngineCoreOutputs`：
 
@@ -251,7 +256,7 @@ engine_core_outputs = {
 }
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1770` 到 `vllm/vllm/v1/core/sched/scheduler.py:1775`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1875` 到 `vllm/vllm/v1/core/sched/scheduler.py:1880`
 
 所以返回给 EngineCore 的是：
 
@@ -276,7 +281,7 @@ value：这个 client 本轮要收到的 EngineCoreOutputs
 tuple[dict[int, EngineCoreOutputs], bool]
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479`
+位置：`vllm/vllm/v1/engine/core.py:488`
 
 为什么不是直接返回一个 `EngineCoreOutputs`？
 
@@ -290,7 +295,7 @@ tuple[dict[int, EngineCoreOutputs], bool]
 outputs[request.client_index].append(...)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1690`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1794`
 
 这样可以保证：
 
@@ -333,7 +338,7 @@ for output in outputs.items() if outputs else ():
     self.output_queue.put_nowait(output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1301` 到 `vllm/vllm/v1/engine/core.py:1305`
+位置：`vllm/vllm/v1/engine/core.py:1313` 到 `vllm/vllm/v1/engine/core.py:1316`
 
 输出线程取出时会按 `client_index` 发送到对应 socket：
 
@@ -346,7 +351,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1628` 到 `vllm/vllm/v1/engine/core.py:1645`
+位置：`vllm/vllm/v1/engine/core.py:1632` 到 `vllm/vllm/v1/engine/core.py:1657`
 
 所以多进程场景中，`client_index` 是路由输出的关键字段。
 
@@ -359,7 +364,7 @@ if client_index == -1:
     continue
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1629` 到 `vllm/vllm/v1/engine/core.py:1634`
+位置：`vllm/vllm/v1/engine/core.py:1642` 到 `vllm/vllm/v1/engine/core.py:1647`
 
 ---
 
@@ -567,6 +572,7 @@ if (
     new_token_ids
     or pooler_output is not None
     or kv_transfer_params
+    or ec_transfer_params
     or stopped
 ):
     outputs[request.client_index].append(EngineCoreOutput(...))
@@ -575,7 +581,7 @@ else:
     assert not prompt_logprobs_tensors
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1683` 到 `vllm/vllm/v1/core/sched/scheduler.py:1709`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1787` 到 `vllm/vllm/v1/core/sched/scheduler.py:1814`
 
 这里最关键的是注释：
 
@@ -598,7 +604,7 @@ EngineCore returns no partial prefill outputs.
 新生成 token；
 请求结束；
 pooling 输出；
-必要的 KV transfer / 状态事件。
+必要的 KV / EC transfer 或状态事件。
 ```
 
 单纯的中间 prefill 进度不需要作为用户输出返回。

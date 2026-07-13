@@ -8,7 +8,7 @@ Scheduler 为什么不直接管理所有 Worker，而要中间加一层 Executor
 
 ## 一句话结论
 
-Scheduler 负责“调度决策和请求状态机”，Executor 负责“执行后端抽象、Worker 生命周期、collective RPC 分发和结果收集”；中间加 Executor 是为了让调度策略不被单进程、多进程、Ray、多机多卡和控制面接口污染。
+Scheduler 负责生成调度决策，并维护请求生命周期状态；Executor 负责执行后端抽象、Worker 生命周期、collective RPC 分发和结果收集。中间加 Executor，是为了让调度策略不被单进程、多进程、Ray、多机多卡和控制面接口污染。
 
 ## L1：概念边界
 
@@ -88,7 +88,7 @@ LLMEngine / EngineCore control API
 
 ### 真实计算对象
 
-真实 GPU 计算不在 Scheduler 和 Executor 中完成，而是在 Worker / ModelRunner / model / attention backend / sampler / kernel 层完成。Executor 只负责把计划和命令分发过去；Scheduler 只负责计划和状态机。
+真实 GPU 计算不在 Scheduler 和 Executor 中完成，而是在 Worker / ModelRunner / model / attention backend / sampler / kernel 层完成。Executor 只负责把计划和命令分发过去；Scheduler 只负责生成计划并维护请求状态流转。
 
 ## L3：源码对象
 
