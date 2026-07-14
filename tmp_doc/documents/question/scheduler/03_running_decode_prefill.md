@@ -14,7 +14,7 @@
 # num_tokens_with_spec.
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:389`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:435`
 
 也就是说：
 
@@ -36,7 +36,7 @@ while req_index < len(self.running) and token_budget > 0:
     request = self.running[req_index]
 ```
 
-位置：`scheduler.py:431`
+位置：`scheduler.py:479`
 
 对于每个 running 请求，Scheduler 会依次判断：
 
@@ -71,7 +71,7 @@ num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
 ```
 
-位置：`scheduler.py:573`
+位置：`scheduler.py:622`
 
 ---
 
@@ -85,7 +85,7 @@ token_budget -= num_new_tokens
 self.running: list[Request] = []
 ```
 
-位置：`scheduler.py:183`
+位置：`scheduler.py:185`
 
 一个请求进入 `self.running` 后，通常已经满足：
 
@@ -136,7 +136,7 @@ scheduled_running_reqs 表示本轮真正被安排执行的 running 请求。
 # num_tokens_with_spec.
 ```
 
-位置：`scheduler.py:389`
+位置：`scheduler.py:435`
 
 这说明 vLLM V1 的 Scheduler 采用统一 token 追赶模型：
 
@@ -172,7 +172,7 @@ num_scheduled_tokens: dict[str, int] = {}
 token_budget = self.max_num_scheduled_tokens
 ```
 
-位置：`scheduler.py:402` 到 `scheduler.py:407`
+位置：`scheduler.py:446` 到 `scheduler.py:453`
 
 如果当前 pause 状态是 `PAUSED_ALL`，则直接把预算清零：
 
@@ -181,7 +181,7 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:408`
+位置：`scheduler.py:453` 到 `scheduler.py:456`
 
 running 阶段入口是：
 
@@ -191,7 +191,7 @@ while req_index < len(self.running) and token_budget > 0:
     request = self.running[req_index]
 ```
 
-位置：`scheduler.py:430`
+位置：`scheduler.py:478`
 
 这说明：
 
@@ -217,7 +217,7 @@ if (
     continue
 ```
 
-位置：`scheduler.py:434`
+位置：`scheduler.py:482`
 
 这个逻辑主要服务于 async scheduling 和 speculative decoding。
 
@@ -274,7 +274,7 @@ req_index += 1
 continue
 ```
 
-位置：`scheduler.py:447`
+位置：`scheduler.py:495`
 
 请求仍然留在 `self.running` 中，只是本轮不继续调度。
 
@@ -290,7 +290,7 @@ if self.current_step < request.next_decode_eligible_step:
     continue
 ```
 
-位置：`scheduler.py:450`
+位置：`scheduler.py:498`
 
 注释说明：
 
@@ -299,7 +299,7 @@ if self.current_step < request.next_decode_eligible_step:
 # to match worker-side sampled-tokens broadcast slot ring cadence.
 ```
 
-位置：`scheduler.py:451`
+位置：`scheduler.py:499`
 
 这表示在 V2 + Pipeline Parallel + async scheduling 场景下，同一个请求不能在任意连续 step 都 decode。
 
@@ -325,7 +325,7 @@ current_step < next_decode_eligible_step
 def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
 ```
 
-位置：`scheduler.py:387`
+位置：`scheduler.py:433`
 
 如果开启 throttle，Scheduler 会计算：
 
@@ -335,7 +335,7 @@ defer_prefills = (
 ) and any(not r.is_prefill_chunk for r in self.running)
 ```
 
-位置：`scheduler.py:425`
+位置：`scheduler.py:473`
 
 含义是：
 
@@ -354,7 +354,7 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:456`
+位置：`scheduler.py:504`
 
 这类请求仍然是 running，只是当前 step 不推进 prefill。
 
@@ -389,7 +389,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:462`
+位置：`scheduler.py:510`
 
 可以理解为：
 
@@ -476,7 +476,7 @@ if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
     num_new_tokens = self.scheduler_config.long_prefill_token_threshold
 ```
 
-位置：`scheduler.py:467`
+位置：`scheduler.py:515`
 
 这个限制主要用于长 prefill / chunked prefill。
 
@@ -507,7 +507,7 @@ num_new_tokens = 2048
 num_new_tokens = min(num_new_tokens, token_budget)
 ```
 
-位置：`scheduler.py:469`
+位置：`scheduler.py:517`
 
 这一步保证：
 
@@ -550,7 +550,7 @@ num_new_tokens = min(
 )
 ```
 
-位置：`scheduler.py:473`
+位置：`scheduler.py:521`
 
 这里减掉 `self.num_sampled_tokens_per_step` 是为了给采样 token 留位置。
 
@@ -560,7 +560,7 @@ num_new_tokens = min(
 self.num_sampled_tokens_per_step = 1
 ```
 
-位置：`scheduler.py:119`
+位置：`scheduler.py:121`
 
 所以 running 请求最多只能计算到：
 
@@ -592,7 +592,7 @@ if request.has_encoder_inputs:
     ) = self._try_schedule_encoder_inputs(...)
 ```
 
-位置：`scheduler.py:484`
+位置：`scheduler.py:532`
 
 `_try_schedule_encoder_inputs()` 的职责是：
 
@@ -609,7 +609,7 @@ if request.has_encoder_inputs:
 # and update `num_new_tokens` and encoder token budget accordingly.
 ```
 
-位置：`scheduler.py:1287`
+位置：`scheduler.py:1367`
 
 它会查找本轮 token 窗口覆盖的多模态 feature：
 
@@ -621,7 +621,7 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`scheduler.py:1321`
+位置：`scheduler.py:1409`
 
 如果本轮碰到了某个 encoder input，但 encoder compute budget 不够，或者 encoder cache 没空间，则 `num_new_tokens` 可能被缩短，甚至变成 0。
 
@@ -645,20 +645,21 @@ if self.need_mamba_block_aligned_split:
     )
 ```
 
-位置：`scheduler.py:498`
+位置：`scheduler.py:546`
 
-`_mamba_block_aligned_split()` 的核心逻辑是：
+`_mamba_block_aligned_split()` 的核心逻辑不是简单按长度取整，而是先计算调度后的结束位置，再让 chunk 结束位置落在合适的 block 边界上：
 
 ```python
-num_new_tokens = num_new_tokens // block_size * block_size
+aligned_end = num_computed_tokens_after_sched // block_size * block_size
+num_new_tokens = max(aligned_end - num_computed_tokens, 0)
 ```
 
-位置：`scheduler.py:364`
+位置：`scheduler.py:390` 到 `scheduler.py:396`
 
 目的：
 
 ```text
-让 Mamba state cache 的 prefill chunk 尽量按 block size 对齐。
+让 Mamba state cache 的 prefill chunk 尽量按 block size 边界结束。
 ```
 
 原因是 Mamba state cache 对 chunk 边界更敏感。如果 chunk 切得不对齐，可能导致 Mamba cache miss，或者无法缓存某些 state。
@@ -706,7 +707,7 @@ if num_new_tokens == 0:
     continue
 ```
 
-位置：`scheduler.py:503`
+位置：`scheduler.py:551`
 
 Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 
@@ -724,7 +725,7 @@ Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 #    models with mamba cache mode "align".
 ```
 
-位置：`scheduler.py:503`
+位置：`scheduler.py:551`
 
 这里选择 `continue` 而不是 `break` 很重要。
 
@@ -736,7 +737,7 @@ Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 # allow the lower-priority requests to be scheduled.
 ```
 
-位置：`scheduler.py:515`
+位置：`scheduler.py:563`
 
 也就是说：
 
@@ -762,7 +763,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:524`
+位置：`scheduler.py:572`
 
 这里的含义是：
 
@@ -795,7 +796,7 @@ while True:
     ...
 ```
 
-位置：`scheduler.py:523`
+位置：`scheduler.py:570`
 
 ### 16.1 PRIORITY 策略下抢占谁
 
@@ -809,7 +810,7 @@ preempted_req = max(
 self.running.remove(preempted_req)
 ```
 
-位置：`scheduler.py:536`
+位置：`scheduler.py:584`
 
 这里会选择优先级最低的 running 请求。
 
@@ -827,7 +828,7 @@ self.running.remove(preempted_req)
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:561`
+位置：`scheduler.py:609`
 
 通常就是 running 队尾请求。
 
@@ -844,7 +845,7 @@ req_to_new_blocks.pop(preempted_req_id)
 scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`scheduler.py:542`
+位置：`scheduler.py:590`
 
 如果它本轮还安排过 encoder input，也要恢复 encoder compute budget：
 
@@ -852,7 +853,7 @@ scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 encoder_compute_budget += num_embeds_to_restore
 ```
 
-位置：`scheduler.py:558`
+位置：`scheduler.py:649`
 
 这说明 running 阶段的抢占不是简单地“释放一个请求”，还要保证本轮已经构造的调度计划保持一致。
 
@@ -864,7 +865,7 @@ encoder_compute_budget += num_embeds_to_restore
 self._preempt_request(preempted_req, scheduled_timestamp)
 ```
 
-位置：`scheduler.py:563`
+位置：`scheduler.py:611`
 
 `_preempt_request()` 会释放请求 block / encoder cache，并把状态改为 `PREEMPTED`，再放回 waiting 队列。
 
@@ -883,7 +884,7 @@ if preempted_req == request:
     break
 ```
 
-位置：`scheduler.py:565`
+位置：`scheduler.py:613`
 
 表示已经没有更多请求可以抢占来满足它了，当前请求本轮无法调度。
 
@@ -899,7 +900,7 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:569`
+位置：`scheduler.py:617`
 
 这里是 `break`，不是 `continue`。
 
@@ -917,7 +918,7 @@ KV block 已经不足到无法满足当前请求；
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:625`
+位置：`scheduler.py:674`
 
 也就是说：
 
@@ -942,7 +943,7 @@ token_budget -= num_new_tokens
 req_index += 1
 ```
 
-位置：`scheduler.py:573`
+位置：`scheduler.py:622`
 
 这几个字段作用不同：
 
@@ -971,7 +972,7 @@ scheduled_running_reqs 是 self.running 的子集。
 if request.spec_token_ids:
 ```
 
-位置：`scheduler.py:582`
+位置：`scheduler.py:631`
 
 Scheduler 会计算本轮实际安排了多少 spec token：
 
@@ -984,7 +985,7 @@ num_scheduled_spec_tokens = (
 )
 ```
 
-位置：`scheduler.py:583`
+位置：`scheduler.py:632`
 
 这个公式可以理解为：
 
@@ -999,7 +1000,7 @@ num_scheduled_spec_tokens = (
 scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-位置：`scheduler.py:593`
+位置：`scheduler.py:642`
 
 然后清空请求上的旧 draft token：
 
@@ -1007,7 +1008,7 @@ scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:597`
+位置：`scheduler.py:646`
 
 后续 Worker 返回后，如果部分 draft token 被拒绝，会在 `update_from_output()` 中回退：
 
@@ -1015,7 +1016,7 @@ request.spec_token_ids = []
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1562`
+位置：`scheduler.py:1656`
 
 如果 async scheduling 中 placeholder 也包含 spec token，还会同步回退：
 
@@ -1023,7 +1024,7 @@ request.num_computed_tokens -= num_rejected
 request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1566`
+位置：`scheduler.py:1660`
 
 所以 speculative decode 的完整闭环是：
 
@@ -1052,7 +1053,7 @@ if encoder_inputs_to_schedule:
     encoder_compute_budget = new_encoder_compute_budget
 ```
 
-位置：`scheduler.py:600`
+位置：`scheduler.py:649`
 
 这表示：
 
@@ -1071,7 +1072,7 @@ if external_load_encoder_input:
             self.ec_connector.update_state_after_alloc(request, i)
 ```
 
-位置：`scheduler.py:608`
+位置：`scheduler.py:657`
 
 这类输入不会按普通本地 encoder compute 消耗预算，但仍要占用 encoder cache，并通知 ECConnector 构造元数据。
 
@@ -1093,7 +1094,7 @@ cached_reqs_data = self._make_cached_request_data(
 )
 ```
 
-位置：`scheduler.py:1031`
+位置：`scheduler.py:1104`
 
 然后写入：
 
@@ -1107,7 +1108,7 @@ scheduler_output = SchedulerOutput(
 )
 ```
 
-位置：`scheduler.py:1057`
+位置：`scheduler.py:1142`
 
 所以：
 
@@ -1134,7 +1135,7 @@ num_computed_tokens
 num_output_tokens
 ```
 
-位置：`scheduler.py:1219`
+位置：`scheduler.py:1308`
 
 其中：
 
@@ -1142,7 +1143,7 @@ num_output_tokens
 req_ids.append(req_id)
 ```
 
-位置：`scheduler.py:1237`
+位置：`scheduler.py:1327`
 
 表示本轮有哪些 cached/running 请求要执行。
 
@@ -1156,7 +1157,7 @@ if self.use_pp and not self.scheduler_config.async_scheduling:
     new_token_ids.append(token_ids)
 ```
 
-位置：`scheduler.py:1242`
+位置：`scheduler.py:1331`
 
 如果请求上一轮没有被调度过，就需要传完整 token ids：
 
@@ -1165,7 +1166,7 @@ if not scheduled_in_prev_step:
     all_token_ids[req_id] = req.all_token_ids.copy()
 ```
 
-位置：`scheduler.py:1259`
+位置：`scheduler.py:1346`
 
 同时传递本轮新增 block：
 
@@ -1175,7 +1176,7 @@ new_block_ids.append(
 )
 ```
 
-位置：`scheduler.py:1261`
+位置：`scheduler.py:1349`
 
 以及调度前的计算进度：
 
@@ -1186,7 +1187,7 @@ num_output_tokens.append(
 )
 ```
 
-位置：`scheduler.py:1264`
+位置：`scheduler.py:1352`
 
 这里有一个重要细节：
 
@@ -1207,7 +1208,7 @@ SchedulerOutput 中给 Worker 的 num_computed_tokens，
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`scheduler.py:1096`
+位置：`scheduler.py:1182`
 
 核心逻辑是：
 
@@ -1215,7 +1216,7 @@ self._update_after_schedule(scheduler_output)
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1139`
+位置：`scheduler.py:1228`
 
 这表示：
 
@@ -1236,7 +1237,7 @@ request.is_prefill_chunk = request.num_computed_tokens < (
 )
 ```
 
-位置：`scheduler.py:1145`
+位置：`scheduler.py:1233`
 
 这个字段表示请求当前是否还处于 prefill chunk 状态。
 
@@ -1255,7 +1256,7 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:456`
+位置：`scheduler.py:504`
 
 ### 23.2 routed experts 的 block 快照
 
@@ -1272,7 +1273,7 @@ if self.enable_return_routed_experts:
     )
 ```
 
-位置：`scheduler.py:1155` 到 `scheduler.py:1169`
+位置：`scheduler.py:1250` 到 `scheduler.py:1257`
 
 ### 23.3 从 `_inflight_prefills` 移除
 
@@ -1283,7 +1284,7 @@ if not request.is_prefill_chunk:
     self._inflight_prefills.discard(request)
 ```
 
-位置：`scheduler.py:1152`
+位置：`scheduler.py:1239`
 
 表示该请求不再被视为正在飞行中的 prefill。
 
@@ -1299,7 +1300,7 @@ if not request.is_prefill_chunk:
 new_token_ids, stopped = self._update_request_with_output(request, new_token_ids)
 ```
 
-位置：`scheduler.py:1589`
+位置：`scheduler.py:1684`
 
 对 speculative decode 来说，如果 draft token 被拒绝，会回退 `num_computed_tokens`：
 
@@ -1307,7 +1308,7 @@ new_token_ids, stopped = self._update_request_with_output(request, new_token_ids
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1562`
+位置：`scheduler.py:1656`
 
 所以 running 请求的进度更新分两层：
 
@@ -1485,7 +1486,7 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:456`
+位置：`scheduler.py:504`
 
 结果：
 
@@ -1525,7 +1526,7 @@ FCFS / 非 PRIORITY 下：
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:561`
+位置：`scheduler.py:609`
 
 如果队尾是 req-c，则 req-c 被抢占：
 
@@ -1610,7 +1611,7 @@ waiting 阶段入口要求：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:625`
+位置：`scheduler.py:674`
 
 只要本轮发生抢占，就不接纳新的 waiting 请求。
 
@@ -1624,7 +1625,7 @@ Scheduler 在 `_update_after_schedule()` 中会先把本轮已安排的 token �
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1139`
+位置：`scheduler.py:1228`
 
 这样做是为了 async / PP 场景下避免重复调度。Worker 返回后，如果 spec token 被拒绝，再回退。
 
