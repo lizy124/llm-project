@@ -114,7 +114,7 @@ def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
     """
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:479` 到 `vllm/vllm/v1/engine/core.py:484`
+位置：`vllm/vllm/v1/engine/core.py:488` 到 `vllm/vllm/v1/engine/core.py:493`
 
 普通 `step()` 的代码主线是：
 
@@ -137,7 +137,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 return engine_core_outputs, scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:486` 到 `vllm/vllm/v1/engine/core.py:508`
+位置：`vllm/vllm/v1/engine/core.py:495` 到 `vllm/vllm/v1/engine/core.py:517`
 
 这一段可以拆成三步：
 
@@ -282,7 +282,7 @@ Scheduler 需要 `kv_cache_config`，所以必须在 KV cache 初始化之后创
 scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490`
+位置：`vllm/vllm/v1/engine/core.py:499`
 
 以及：
 
@@ -292,7 +292,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 可以这样理解：
 
@@ -342,10 +342,11 @@ class SchedulerOutput:
     kv_connector_metadata: KVConnectorMetadata | None = None
     ec_connector_metadata: ECConnectorMetadata | None = None
     new_block_ids_to_zero: list[int] | None = None
+    kv_cache_block_copies: list[KVCacheBlockCopy] | None = None
     num_spec_tokens_to_schedule: int = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:180` 到 `vllm/vllm/v1/core/sched/output.py:245`
+位置：`vllm/vllm/v1/core/sched/output.py:182` 到 `vllm/vllm/v1/core/sched/output.py:250`
 
 它的作用可以分成两层：
 
@@ -386,7 +387,7 @@ EngineCore 不直接执行模型 forward。
 future = self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:491`
+位置：`vllm/vllm/v1/engine/core.py:500`
 
 `model_executor` 是 Executor 抽象，负责把调用分发到 Worker。
 
@@ -421,7 +422,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:867` 到 `vllm/vllm/v1/worker/gpu_worker.py:870`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1061` 到 `vllm/vllm/v1/worker/gpu_worker.py:1064`
 
 GPU ModelRunner 里才是真正的模型输入准备和 forward：
 
@@ -448,7 +449,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4320` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4326`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4380` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 对于 generation 模型，`execute_model()` 可能只完成 forward / logits，然后返回 `None`。
 
@@ -458,7 +459,7 @@ EngineCore 看到 `None` 后会调用：
 model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:498` 到 `vllm/vllm/v1/engine/core.py:499`
+位置：`vllm/vllm/v1/engine/core.py:507` 到 `vllm/vllm/v1/engine/core.py:508`
 
 这一步会应用 grammar bitmask、执行采样，并构造 `ModelRunnerOutput`。
 
@@ -505,7 +506,7 @@ EngineCore 不自己解释它，而是调用：
 self.scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:504` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:513` 到 `vllm/vllm/v1/engine/core.py:515`
 
 为什么要同时传 `SchedulerOutput` 和 `ModelRunnerOutput`？
 
@@ -529,6 +530,7 @@ append sampled token；
 处理 pooling output；
 处理 routed experts；
 处理 KV connector output / KV stats / KV events；
+处理 EC connector request_finished / ec_transfer_params；
 释放 finished request 资源；
 构造 EngineCoreOutput；
 按 client_index 组装 EngineCoreOutputs。
@@ -565,10 +567,12 @@ class EngineCoreOutput(...):
     pooling_output: torch.Tensor | None = None
     finish_reason: FinishReason | None = None
     stop_reason: int | str | None = None
+    kv_transfer_params: dict[str, Any] | None = None
+    ec_transfer_params: dict[str, Any] | None = None
     ...
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:201`
+位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:202`
 
 `EngineCoreOutputs` 是一组输出和统计信息：
 
@@ -584,7 +588,7 @@ class EngineCoreOutputs(...):
     start_wave: int | None = None
 ```
 
-位置：`vllm/vllm/v1/engine/__init__.py:220` 到 `vllm/vllm/v1/engine/__init__.py:244`
+位置：`vllm/vllm/v1/engine/__init__.py:221` 到 `vllm/vllm/v1/engine/__init__.py:245`
 
 同步 `LLMEngine.step()` 消费方式是：
 
@@ -679,7 +683,7 @@ class EngineCoreProc(EngineCore):
     """ZMQ-wrapper for running EngineCore in background process."""
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:894` 到 `vllm/vllm/v1/engine/core.py:895`
+位置：`vllm/vllm/v1/engine/core.py:905` 到 `vllm/vllm/v1/engine/core.py:906`
 
 它有自己的 input / output queue：
 
@@ -688,7 +692,7 @@ self.input_queue = queue.Queue[tuple[EngineCoreRequestType, Any]]()
 self.output_queue = queue.Queue[tuple[int, EngineCoreOutputs] | bytes]()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:913` 到 `vllm/vllm/v1/engine/core.py:914`
+位置：`vllm/vllm/v1/engine/core.py:924` 到 `vllm/vllm/v1/engine/core.py:925`
 
 后台 busy loop 是：
 
@@ -702,7 +706,7 @@ def run_busy_loop(self):
     raise SystemExit
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1257` 到 `vllm/vllm/v1/engine/core.py:1265`
+位置：`vllm/vllm/v1/engine/core.py:1268` 到 `vllm/vllm/v1/engine/core.py:1276`
 
 `_process_engine_step()` 会把输出放进 output queue：
 
@@ -713,7 +717,7 @@ for output in outputs.items() if outputs else ():
 self.post_step(model_executed)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1301` 到 `vllm/vllm/v1/engine/core.py:1307`
+位置：`vllm/vllm/v1/engine/core.py:1312` 到 `vllm/vllm/v1/engine/core.py:1318`
 
 输出线程再按 `client_index` 发给对应 client socket：
 
@@ -726,7 +730,7 @@ tracker = sockets[client_index].send_multipart(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:1628` 到 `vllm/vllm/v1/engine/core.py:1645`
+位置：`vllm/vllm/v1/engine/core.py:1632` 到 `vllm/vllm/v1/engine/core.py:1657`
 
 所以多进程路径是：
 
@@ -797,7 +801,7 @@ else:
     deferred_scheduler_output = scheduler_output
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:559` 到 `vllm/vllm/v1/engine/core.py:572`
+位置：`vllm/vllm/v1/engine/core.py:568` 到 `vllm/vllm/v1/engine/core.py:580`
 
 核心区别：
 
@@ -833,7 +837,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:501` 到 `vllm/vllm/v1/engine/core.py:506`
+位置：`vllm/vllm/v1/engine/core.py:510` 到 `vllm/vllm/v1/engine/core.py:515`
 
 这样可以保证执行期间到达的取消请求，在 Scheduler 回收输出前生效。
 
@@ -849,7 +853,7 @@ EXECUTOR_FAILED：executor 异常；
 WAKEUP：唤醒 loop。
 ```
 
-对应位置：`vllm/vllm/v1/engine/core.py:1375` 到 `vllm/vllm/v1/engine/core.py:1399`
+对应位置：`vllm/vllm/v1/engine/core.py:1386` 到 `vllm/vllm/v1/engine/core.py:1410`
 
 utility 输出通过 `EngineCoreOutputs(utility_output=...)` 返回，而不是走请求输出列表。
 
@@ -861,7 +865,7 @@ utility 输出通过 `EngineCoreOutputs(utility_output=...)` 返回，而不是�
 self.model_executor.profile(is_start, profile_prefix)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:662` 到 `vllm/vllm/v1/engine/core.py:663`
+位置：`vllm/vllm/v1/engine/core.py:671` 到 `vllm/vllm/v1/engine/core.py:672`
 
 `reset_mm_cache()` 清 EngineCore 侧 MM cache，并通知 Worker：
 
@@ -872,7 +876,7 @@ if self.mm_receiver_cache is not None:
 self.model_executor.reset_mm_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:674` 到 `vllm/vllm/v1/engine/core.py:678`
+位置：`vllm/vllm/v1/engine/core.py:683` 到 `vllm/vllm/v1/engine/core.py:687`
 
 `reset_prefix_cache()` 交给 Scheduler：
 
@@ -882,7 +886,7 @@ return self.scheduler.reset_prefix_cache(
 )
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:680` 到 `vllm/vllm/v1/engine/core.py:685`
+位置：`vllm/vllm/v1/engine/core.py:689` 到 `vllm/vllm/v1/engine/core.py:694`
 
 `reset_encoder_cache()` 同时清 Scheduler 逻辑状态和 Worker 物理缓存：
 
@@ -891,7 +895,7 @@ self.scheduler.reset_encoder_cache()
 self.model_executor.reset_encoder_cache()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:702` 到 `vllm/vllm/v1/engine/core.py:705`
+位置：`vllm/vllm/v1/engine/core.py:711` 到 `vllm/vllm/v1/engine/core.py:714`
 
 `sleep()` 先暂停 Scheduler，再根据 level 让 executor 管理 GPU 内存：
 
@@ -901,9 +905,9 @@ pause_future = self.pause_scheduler(mode=mode, clear_cache=clear_prefix_cache)
 model_executor.sleep(level)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:774` 到 `vllm/vllm/v1/engine/core.py:784`
+位置：`vllm/vllm/v1/engine/core.py:783` 到 `vllm/vllm/v1/engine/core.py:793`
 
-`wake_up()` 会先剔除只用于恢复调度的 `"scheduling"` tag，再按需唤醒 executor，最后恢复 Scheduler：
+`wake_up()` 会先剔除只用于恢复调度的 `"scheduling"` tag，再按需唤醒 executor；只有 executor 已经完全不处于 sleeping 状态时，才恢复 Scheduler：
 
 ```python
 if tags is not None and "scheduling" in tags:
@@ -912,10 +916,11 @@ if tags is not None and "scheduling" in tags:
 if tags is None or tags:
     self.model_executor.wake_up(tags)
 
-self.resume_scheduler()
+if not self.model_executor.is_sleeping:
+    self.resume_scheduler()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:799` 到 `vllm/vllm/v1/engine/core.py:813`
+位置：`vllm/vllm/v1/engine/core.py:808` 到 `vllm/vllm/v1/engine/core.py:824`
 
 ### 11.4 shutdown
 
@@ -941,7 +946,7 @@ gc.unfreeze()
 cleanup_dist_env_and_memory()
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:644` 到 `vllm/vllm/v1/engine/core.py:660`
+位置：`vllm/vllm/v1/engine/core.py:653` 到 `vllm/vllm/v1/engine/core.py:669`
 
 后台进程模式还有 shutdown state：
 
@@ -952,7 +957,7 @@ class EngineShutdownState(IntEnum):
     SHUTTING_DOWN = 2
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:888` 到 `vllm/vllm/v1/engine/core.py:891`
+位置：`vllm/vllm/v1/engine/core.py:899` 到 `vllm/vllm/v1/engine/core.py:902`
 
 `_handle_shutdown()` 会根据 `shutdown_timeout` 决定 abort 还是 drain。
 

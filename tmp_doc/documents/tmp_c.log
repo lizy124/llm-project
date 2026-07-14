@@ -87,8 +87,8 @@
 在llm-project\tmp_doc\documents\question中
 - [x] 1. 根目录总览：已按新 commit 复审并修正 readme.txt、vllm_overview.md。
 - [x] 2. engine：已按新 commit 复审并修正 README.md、01_engine_role.md、02_llm_engine_sync.md、03_async_llm.md、04_input_processor.md、05_output_processor.md、06_engine_core_client_bridge.md、07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md、10_lifecycle_and_control.md、11_engine_vs_engine_core_boundaries.md、engine_overview.md。
-- [ ] 3. engine_core：已按新 commit 复审并修正 README.md、01_engine_core_role.md、02_request_entry.md、03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md、06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md；待按新 commit 复审 engine_core_overview.md。
-- [ ] 4. scheduler：待按新 commit 复审 README.md、01_request_states.md、02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md、05_prefix_and_external_kv_hits.md、06_kv_block_allocation_and_preemption.md、07_auxiliary_scheduling_features.md、08_update_after_worker_output.md、token_states.md、spec_decode_token_states.md、vllm_scheduler.md。
+- [x] 3. engine_core：已按新 commit 复审并修正 README.md、01_engine_core_role.md、02_request_entry.md、03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md、06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md、engine_core_overview.md。
+- [ ] 4. scheduler：已按新 commit 复审并修正 README.md、01_request_states.md；待按新 commit 复审 02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md、05_prefix_and_external_kv_hits.md、06_kv_block_allocation_and_preemption.md、07_auxiliary_scheduling_features.md、08_update_after_worker_output.md、token_states.md、spec_decode_token_states.md、vllm_scheduler.md。
 - [ ] 5. executor_worker_model_runner：待按新 commit 复审 README.md、01_executor_role.md、02_worker_role.md、03_model_runner_role.md、04_execute_model_flow.md、05_input_batch_and_state_update.md、06_prepare_inputs_and_attention_metadata.md、07_model_forward_and_logits.md、08_sampling_and_model_runner_output.md、09_worker_kv_cache_interaction.md、10_executor_worker_lifecycle.md、executor_worker_model_runner_overview.md。
 - [ ] 6. kv_cache_transfer：待按新 commit 复审 README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md、05_external_kv_load_flow.md、06_external_kv_save_flow.md、07_worker_kv_connector_flow.md、08_invalid_blocks_and_recompute.md、09_deferred_free_and_async_safety.md、10_kvpool_end_to_end.md、kv_cache_transfer_overview.md。
 - [ ] 7. attention：待按新 commit 复审 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md、05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md 及 attention_methods 子目录。
@@ -96,8 +96,8 @@
 - [ ] 9. sampling_and_output：待按新 commit 复审。
 - [ ] 10. spec_decode：待按新 commit 复审。
 
-当前文件：llm-project\tmp_doc\documents\question\engine_core\engine_core_overview.md
-下一个文件：llm-project\tmp_doc\documents\question\scheduler\README.md
+当前文件：llm-project\tmp_doc\documents\question\scheduler\02_token_budget.md
+下一个文件：llm-project\tmp_doc\documents\question\scheduler\03_running_decode_prefill.md
 
 复审记录：
 - 2026-07-13：完成 engine 第三批 07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md；按新 commit 核对并修正 EngineCoreRequest / EngineCoreOutput 行号，补充 EC transfer 参数链路，更新 OutputProcessor 与 EngineCore / EngineCoreProc / CoreEngineActorManager 相关源码位置。
@@ -105,4 +105,5 @@
 - 2026-07-13：完成 engine_core 第一批 README.md、01_engine_core_role.md、02_request_entry.md；按新 commit 修正 EngineCore / EngineCoreProc / Scheduler 行号，补充 non_block=True / future.result() / _process_aborts_queue 主链路、EC transfer 入队检查、EngineCoreProc 请求预处理与 streaming request 入口行号。
 - 2026-07-13：完成 engine_core 第二批 03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md；按新 commit 修正 EngineCore.step / step_with_batch_queue / DP busy loop、SchedulerOutput、Executor、GPUWorker、GPUModelRunner、ModelRunnerOutput 相关行号，补充 SchedulerOutput.kv_cache_block_copies、GPUWorker 等待上一轮 PP send、ModelRunner deferred state corrections 与 DP sleeping dummy batch 条件。
 - 2026-07-13：完成 engine_core 第三批 06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md；按新 commit 修正 Scheduler.update_from_output、EngineCoreOutput/EngineCoreOutputs、EngineCoreProc、pause/sleep/wake_up、shutdown 与 output socket 相关行号，补充 ec_transfer_params、EC connector request_finished、wake_up partial wake 和 EngineCoreProc pause Future 语义。
+- 2026-07-13：完成 engine_core 收尾与 scheduler 第一批 engine_core_overview.md、scheduler/README.md、scheduler/01_request_states.md；按新 commit 修正 EngineCore 总览中的 step / SchedulerOutput / Worker / ModelRunner / EngineCoreOutput(s) / EngineCoreProc / wake_up / shutdown 行号，补充 kv_cache_block_copies、ec_transfer_params 与 EC connector 语义；按新 commit 修正 Scheduler 请求队列、blocked waiting、add_request、running/waiting 调度、抢占、async KV load、streaming、finish/free 与 unfinished 统计相关行号，并补充 _free_request 返回 KV/EC params、preempt 清理 spec_token_ids / reset_preempted_req_ids。
 

@@ -121,7 +121,7 @@ waiting 请求 block 不够时为什么停止 waiting 阶段而不是抢占？
 encoder input 如何嵌入 running / waiting 调度？
 structured output grammar 如何阻塞、生成 bitmask、推进状态？
 spec decode 如何影响 num_tokens_with_spec、lookahead blocks、SchedulerOutput 和回退？
-LoRA、Mamba、DP prefill balancing、pause state、KV / EC Connector metadata 如何影响调度？
+LoRA、Mamba、DP prefill balancing、pause state、KV / EC Connector metadata、kv_cache_block_copies 如何影响调度？
 ```
 
 ### 08. Worker 输出回收
@@ -133,7 +133,7 @@ LoRA、Mamba、DP prefill balancing、pause state、KV / EC Connector metadata �
 ```text
 schedule() 发出 SchedulerOutput 后，update_from_output() 如何消化 ModelRunnerOutput？
 sampled token、pooling output、logprobs、spec 接受/拒绝、grammar accept_tokens 如何处理？
-stop、streaming / resumable、_free_request、connector finished_recving / finished_sending 如何闭环？
+stop、streaming / resumable、_free_request、connector finished_recving / finished_sending、EC transfer params 如何闭环？
 EngineCoreOutputs 如何按 client_index 返回？
 ```
 
