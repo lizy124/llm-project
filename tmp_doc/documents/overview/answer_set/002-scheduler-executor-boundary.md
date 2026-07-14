@@ -14,11 +14,11 @@ Scheduler 负责生成调度决策，并维护请求生命周期状态；Executo
 
 ### 它是什么
 
-这个问题本质上是在问 Scheduler 和 Executor 的职责边界。Scheduler 是一轮推理中“决定怎么跑”的模块，它维护请求队列、token budget、KV block 账本，并产出 `SchedulerOutput`。Executor 是 EngineCore 和 Worker 之间的执行分发层，它把 `SchedulerOutput` 和控制命令发给一个或多个 Worker，再把 `ModelRunnerOutput` 收回来。
+这个问题本质上是在问 Scheduler 和 Executor 的职责边界。Scheduler 是一轮推理中“决定怎么跑”的模块，它维护请求队列、token budget，并通过 KVCacheManager 管理 KV block 的分配与释放状态，最终产出 `SchedulerOutput`。Executor 是 EngineCore 和 Worker 之间的执行分发层，它把 `SchedulerOutput` 和控制命令发给一个或多个 Worker，再把 `ModelRunnerOutput` 收回来。
 
 ### 它解决什么问题
 
-Executor 解决的是“同一份调度计划如何落到不同执行后端”的问题。Worker 可能是单进程里的本地对象，也可能是多进程里的子进程，还可能是 Ray actor 或外部 launcher 管理的执行单元。如果 Scheduler 直接管理 Worker，它就必须同时处理后端选择、RPC、队列、进程生命周期、Ray DAG、Worker 异常、profile、sleep、wake_up、LoRA、health、shutdown 等非调度逻辑。
+Executor 解决的是“同一份调度计划如何落到不同执行后端”的问题。Worker 这个逻辑角色可以有多种运行形态：单进程模式下是当前进程里的本地对象；多进程模式下是 vLLM 启动的子进程；Ray 模式下是 Ray 管理的远程 actor；external launcher 模式下则是由 torchrun 等外部启动器拉起的分布式执行进程。如果 Scheduler 直接管理 Worker，它就必须同时处理后端选择、RPC、队列、进程生命周期、Ray DAG、Worker 异常、profile、sleep、wake_up、LoRA、health、shutdown 等非调度逻辑。
 
 ### 它不负责什么
 

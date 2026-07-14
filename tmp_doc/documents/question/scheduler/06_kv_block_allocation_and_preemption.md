@@ -36,7 +36,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:524`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:572`
 
 waiting 阶段调用：
 
@@ -56,7 +56,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:873`
+位置：`scheduler.py:942`
 
 返回值含义：
 
@@ -96,7 +96,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:524`
+位置：`scheduler.py:572`
 
 running 阶段的分配比较简单，因为请求已经有一部分 blocks 绑定在自己身上，本轮只需要追加新增 token / lookahead token 所需的 slots。
 
@@ -120,7 +120,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:873`
+位置：`scheduler.py:942`
 
 waiting 阶段的分配要同时考虑：
 
@@ -158,7 +158,7 @@ def allocate_slots(
 ) -> KVCacheBlocks | None:
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:244`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:269`
 
 关键参数如下：
 
@@ -192,7 +192,7 @@ def allocate_slots(
 ----------------------------------------------------------------------
 ```
 
-位置：`kv_cache_manager.py:290`
+位置：`kv_cache_manager.py:315`
 
 几个缩写含义：
 
@@ -236,7 +236,7 @@ if num_new_tokens == 0 and num_external_computed_tokens == 0:
     )
 ```
 
-位置：`kv_cache_manager.py:340`
+位置：`kv_cache_manager.py:365`
 
 这说明：
 
@@ -256,7 +256,7 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:781`
+位置：`scheduler.py:834`
 
 ---
 
@@ -275,7 +275,7 @@ if load_kv_async:
 # - Allocate new blocks for tokens to be computed (`new + lookahead`)
 ```
 
-位置：`kv_cache_manager.py:328`
+位置：`kv_cache_manager.py:353`
 
 可以理解为：
 
@@ -299,7 +299,7 @@ num_local_computed_tokens = (
 )
 ```
 
-位置：`kv_cache_manager.py:355`
+位置：`kv_cache_manager.py:380`
 
 然后合并外部 KV 命中：
 
@@ -310,7 +310,7 @@ total_computed_tokens = min(
 )
 ```
 
-位置：`kv_cache_manager.py:358`
+位置：`kv_cache_manager.py:383`
 
 含义：
 
@@ -345,7 +345,7 @@ if has_scheduled_reqs and request.status in (
     watermark_blocks = self.watermark_blocks
 ```
 
-位置：`kv_cache_manager.py:363`
+位置：`kv_cache_manager.py:388`
 
 含义是：
 
@@ -390,7 +390,7 @@ if full_sequence_must_fit:
         return None
 ```
 
-位置：`kv_cache_manager.py:372`
+位置：`kv_cache_manager.py:397`
 
 注释说明它用于：
 
@@ -399,7 +399,7 @@ Only allocate blocks if the KV cache has enough free blocks to hold the full seq
 accounting for prefix cache hits and sliding window.
 ```
 
-位置：`kv_cache_manager.py:278`
+位置：`kv_cache_manager.py:303`
 
 作用是 admission gate：
 
@@ -415,7 +415,7 @@ accounting for prefix cache hits and sliding window.
 full_sequence_must_fit=self.scheduler_reserve_full_isl
 ```
 
-位置：`scheduler.py:882`
+位置：`scheduler.py:951`
 
 ---
 
@@ -425,11 +425,13 @@ full_sequence_must_fit=self.scheduler_reserve_full_isl
 
 ```python
 self.coordinator.remove_skipped_blocks(
-    request.request_id, total_computed_tokens
+    request.request_id,
+    max(0, total_computed_tokens - request.num_in_flight_tokens),
+    num_prompt_tokens=request.num_prompt_tokens,
 )
 ```
 
-位置：`kv_cache_manager.py:400`
+位置：`kv_cache_manager.py:429`
 
 注释说明：
 
@@ -440,9 +442,12 @@ self.coordinator.remove_skipped_blocks(
 # insufficient free blocks.
 # Should call this function before allocating new blocks to reduce
 # the number of evicted blocks.
+# Free on the processed-token basis: in-flight steps' attention windows
+# still read blocks below the optimistic boundary, and rejected spec
+# tokens can roll it back.
 ```
 
-位置：`kv_cache_manager.py:394`
+位置：`kv_cache_manager.py:420`
 
 这一步的意义是：
 
@@ -452,7 +457,7 @@ self.coordinator.remove_skipped_blocks(
 提高当前请求或其它请求的分配成功率。
 ```
 
-注意：即使当前请求后续因为 block 不够无法调度，这些 skipped blocks 也可以先释放。
+注意：即使当前请求后续因为 block 不够无法调度，这些 skipped blocks 也可以先释放。但新 commit 不会按乐观的 `total_computed_tokens` 直接释放，而是扣掉 `request.num_in_flight_tokens`，避免仍在 in-flight step 中被 attention 读取的 blocks 被提前归还；spec token 后续被拒绝时也可能回滚 computed 进度。
 
 ---
 
@@ -472,7 +477,7 @@ num_blocks_to_allocate = self.coordinator.get_num_blocks_to_allocate(
 )
 ```
 
-位置：`kv_cache_manager.py:404`
+位置：`kv_cache_manager.py:467`
 
 其中：
 
@@ -484,7 +489,7 @@ num_tokens_need_slot = min(
 )
 ```
 
-位置：`kv_cache_manager.py:389`
+位置：`kv_cache_manager.py:415`
 
 含义：
 
@@ -511,7 +516,7 @@ if required_blocks > available_blocks:
     return None
 ```
 
-位置：`kv_cache_manager.py:414`
+位置：`kv_cache_manager.py:446`
 
 这里有两个额外约束。
 
@@ -526,7 +531,7 @@ if load_kv_async:
     reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:865`
+位置：`scheduler.py:934`
 
 原因是 async load 会持有 blocks，且在这里不可抢占。如果它把 block 占光，可能导致已经 in-flight 的 prefill 无法完成。
 
@@ -568,7 +573,7 @@ if (
     )
 ```
 
-位置：`kv_cache_manager.py:422`
+位置：`kv_cache_manager.py:454`
 
 这一步会：
 
@@ -599,7 +604,7 @@ new_blocks = self.coordinator.allocate_new_blocks(
 )
 ```
 
-位置：`kv_cache_manager.py:435`
+位置：`kv_cache_manager.py:467`
 
 返回的 `new_blocks` 会被包装成：
 
@@ -607,7 +612,7 @@ new_blocks = self.coordinator.allocate_new_blocks(
 return self.create_kv_cache_blocks(new_blocks)
 ```
 
-位置：`kv_cache_manager.py:445` 或 `kv_cache_manager.py:458`
+位置：`kv_cache_manager.py:477` 或 `kv_cache_manager.py:490`
 
 Scheduler 会把它记录到：
 
@@ -615,7 +620,7 @@ Scheduler 会把它记录到：
 req_to_new_blocks[request_id] = new_blocks
 ```
 
-running 阶段位置：`scheduler.py:576`
+running 阶段位置：`scheduler.py:625`
 
 waiting 阶段则记录完整 blocks：
 
@@ -623,7 +628,7 @@ waiting 阶段则记录完整 blocks：
 req_to_new_blocks[request_id] = self.kv_cache_manager.get_blocks(request_id)
 ```
 
-位置：`scheduler.py:953`
+位置：`scheduler.py:1022`
 
 ---
 
@@ -636,7 +641,7 @@ if not self.enable_caching or delay_cache_blocks:
     return self.create_kv_cache_blocks(new_blocks)
 ```
 
-位置：`kv_cache_manager.py:444`
+位置：`kv_cache_manager.py:476`
 
 `delay_cache_blocks=True` 主要用于 P/D 或 KV transfer：
 
@@ -656,7 +661,7 @@ num_tokens_to_cache = min(
 self.coordinator.cache_blocks(request, num_tokens_to_cache)
 ```
 
-位置：`kv_cache_manager.py:452`
+位置：`kv_cache_manager.py:484`
 
 这里会排除不可提交的 token，例如可能被拒绝的 draft token。
 
@@ -678,7 +683,7 @@ while True:
     ...
 ```
 
-位置：`scheduler.py:523`
+位置：`scheduler.py:570`
 
 也就是说：
 
@@ -703,7 +708,7 @@ preempted_req = max(
 self.running.remove(preempted_req)
 ```
 
-位置：`scheduler.py:536`
+位置：`scheduler.py:584`
 
 含义是：
 
@@ -735,7 +740,7 @@ PRIORITY 策略下，不是简单抢占队尾，而是根据优先级和到达�
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:561`
+位置：`scheduler.py:609`
 
 也就是抢占 running 队尾请求。
 
@@ -762,7 +767,7 @@ if preempted_req in scheduled_running_reqs:
     scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`scheduler.py:542`
+位置：`scheduler.py:590`
 
 如果它本轮还安排了 encoder input，还要恢复 encoder budget：
 
@@ -778,7 +783,7 @@ if preempted_encoder_inputs:
     encoder_compute_budget += num_embeds_to_restore
 ```
 
-位置：`scheduler.py:548`
+位置：`scheduler.py:596`
 
 这说明抢占不是单纯释放 block，还必须保持本轮 `SchedulerOutput` 的一致性：
 
@@ -796,7 +801,7 @@ if preempted_encoder_inputs:
 def _preempt_request(self, request: Request, timestamp: float) -> None:
 ```
 
-位置：`scheduler.py:1105`
+位置：`scheduler.py:1191`
 
 核心逻辑：
 
@@ -810,9 +815,10 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 request.num_preemptions += 1
 self.waiting.prepend_request(request)
+self.reset_preempted_req_ids.add(request.request_id)
 ```
 
-位置：`scheduler.py:1114`
+位置：`scheduler.py:1200`
 
 所以被抢占请求会发生这些变化：
 
@@ -825,7 +831,8 @@ self.waiting.prepend_request(request)
 6. num_computed_tokens 重置为 0；
 7. 清空 spec_token_ids；
 8. num_preemptions 加 1；
-9. 放回 self.waiting 队列头部。
+9. 放回 self.waiting 队列头部；
+10. 记录到 reset_preempted_req_ids，后续通过 SchedulerOutput 通知 Worker 侧重置相关状态。
 ```
 
 状态迁移是：
@@ -847,7 +854,7 @@ RUNNING
 request.num_computed_tokens = 0
 ```
 
-位置：`scheduler.py:1118`
+位置：`scheduler.py:1204`
 
 原因是：
 
@@ -994,7 +1001,7 @@ async KV load 会设置：
 reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:865`
+位置：`scheduler.py:934`
 
 并传给：
 
@@ -1057,7 +1064,7 @@ request.status = RequestStatus.RUNNING
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:953`
+位置：`scheduler.py:1022`
 
 这里记录的是请求当前完整 block 列表，因为它是新进入模型执行流的请求，需要给 Worker 足够的初始化信息。
 

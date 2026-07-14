@@ -611,7 +611,7 @@ step_skipped_waiting.prepend_request(request)
 continue
 ```
 
-位置：`scheduler.py:834`
+位置：`scheduler.py:781`
 
 含义是：
 
@@ -1545,7 +1545,7 @@ scheduled_resumed_reqs:
 scheduled_new_reqs=new_reqs_data
 ```
 
-位置：`scheduler.py:1058`
+位置：`scheduler.py:1142`
 
 running / resumed 请求会参与：
 
@@ -1553,17 +1553,17 @@ running / resumed 请求会参与：
 scheduled_cached_reqs=cached_reqs_data
 ```
 
-位置：`scheduler.py:1059`
+位置：`scheduler.py:1142`
 
 不过在 V2 ModelRunner 下，会把 resumed 请求合并进 new requests：
 
 ```python
 if self.use_v2_model_runner:
-    scheduled_new_reqs = scheduled_new_reqs + scheduled_resumed_reqs
-    scheduled_resumed_reqs = []
+    scheduled_new_reqs.extend(scheduled_resumed_reqs)
+    scheduled_resumed_reqs.clear()
 ```
 
-位置：`scheduler.py:1012`
+位置：`scheduler.py:1084` 到 `scheduler.py:1087`
 
 语义上可以理解为：
 
@@ -1649,7 +1649,7 @@ not enable_chunked_prefill
 break
 ```
 
-位置：`scheduler.py:802`
+位置：`scheduler.py:873`
 
 结果：
 
