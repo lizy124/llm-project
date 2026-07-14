@@ -473,11 +473,12 @@ num_blocks_to_allocate = self.coordinator.get_num_blocks_to_allocate(
     num_encoder_tokens=num_encoder_tokens,
     total_computed_tokens=num_local_computed_tokens
     + num_external_computed_tokens,
+    num_local_computed_tokens=num_local_computed_tokens,
     num_tokens_main_model=num_tokens_main_model,
 )
 ```
 
-位置：`kv_cache_manager.py:467`
+位置：`kv_cache_manager.py:435`
 
 其中：
 
@@ -909,7 +910,7 @@ if preempted_req == request:
     break
 ```
 
-位置：`scheduler.py:565`
+位置：`scheduler.py:613`
 
 含义是：
 
@@ -927,7 +928,7 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:569`
+位置：`scheduler.py:617`
 
 running 阶段停止。
 
@@ -941,7 +942,7 @@ waiting 阶段入口是：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:625`
+位置：`scheduler.py:674`
 
 只要 running 阶段发生过抢占，`preempted_reqs` 非空，本轮就不会再调度 waiting 请求。
 
@@ -971,7 +972,7 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:887`
+位置：`scheduler.py:956`
 
 这里没有调用 `_preempt_request()`。
 
@@ -1009,7 +1010,7 @@ reserved_blocks = self._inflight_prefill_reserved_blocks()
 allocate_slots(..., reserved_blocks=reserved_blocks)
 ```
 
-位置：`scheduler.py:883`
+位置：`scheduler.py:952`
 
 注释说：
 
@@ -1020,7 +1021,7 @@ allocate_slots(..., reserved_blocks=reserved_blocks)
 # avoid deadlock and predictable preemptions.
 ```
 
-位置：`scheduler.py:867`
+位置：`scheduler.py:935`
 
 这说明 async KV load 请求虽然不消耗本地 forward token budget，但它对 block 资源很敏感：
 
@@ -1046,7 +1047,7 @@ num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
 ```
 
-位置：`scheduler.py:573`
+位置：`scheduler.py:622`
 
 这里 `req_to_new_blocks` 记录的是本轮新增分配的 blocks。
 
@@ -1096,21 +1097,25 @@ V2 model runner 路径下，Scheduler 会把 `scheduled_resumed_reqs` 合并进 
 def _free_request(self, request: Request, delay_free_blocks: bool = False)
 ```
 
-位置：`scheduler.py:2046`
+位置：`scheduler.py:2156`
 
 核心逻辑：
 
 ```python
 self._inflight_prefills.discard(request)
 connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
+if self.ec_connector is not None:
+    ec_delay_free, ec_xfer_params = self.ec_connector.request_finished(request)
+    connector_delay_free_blocks |= ec_delay_free
 self.encoder_cache_manager.free(request)
 self.finished_req_ids.add(request_id)
-...
+delay_free_blocks |= connector_delay_free_blocks
 if not delay_free_blocks:
     self._free_blocks(request)
+return kv_xfer_params, ec_xfer_params
 ```
 
-位置：`scheduler.py:2051`
+位置：`scheduler.py:2161`
 
 这里有一个关键点：
 
@@ -1118,7 +1123,7 @@ if not delay_free_blocks:
 请求 finished 不一定立刻释放 KV blocks。
 ```
 
-如果 connector 需要异步保存 / 发送 KV，`connector_delay_free_blocks` 可能为 True，这时会延迟释放 blocks。
+如果 KV Connector 或 EC Connector 需要异步保存 / 发送缓存，`connector_delay_free_blocks` / `ec_delay_free` 可能为 True，这时会延迟释放 blocks；函数也会把 `kv_xfer_params` 和 `ec_xfer_params` 返回给上层输出链路。
 
 ---
 
@@ -1133,7 +1138,7 @@ def _free_blocks(self, request: Request):
     del self.requests[request.request_id]
 ```
 
-位置：`scheduler.py:2065`
+位置：`scheduler.py:2185`
 
 所以：
 
@@ -1147,7 +1152,7 @@ _free_blocks() 才真正释放 KV blocks 并从 self.requests 删除。
 ```text
 finished 请求可能已经不在 running / waiting 中，
 但仍然留在 self.requests，
-通常是因为 KV Connector 还没完成异步发送，导致 `_free_request()` 暂时不能调用 `_free_blocks()`。deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 删除。
+通常是因为 KV Connector 或 EC Connector 还没完成异步发送 / 保存，导致 `_free_request()` 暂时不能调用 `_free_blocks()`。deferred free 只延迟 block 归还 block pool；一旦执行 `_free_blocks()`，请求索引已经会从 `self.requests` 删除。
 ```
 
 ---
@@ -1160,7 +1165,7 @@ finished 请求可能已经不在 running / waiting 中，
 def _free_request_blocks(self, request: Request):
 ```
 
-位置：`scheduler.py:2077`
+位置：`scheduler.py:2197`
 
 它会判断是否需要延迟释放：
 
@@ -1172,7 +1177,7 @@ if not self.defer_block_free or (
     return
 ```
 
-位置：`scheduler.py:2081`
+位置：`scheduler.py:2201`
 
 如果当前还有 in-flight GPU step 可能写这些 blocks，则不能立刻还给 block pool：
 
@@ -1182,9 +1187,11 @@ if blocks:
     self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`scheduler.py:2088`
+位置：`scheduler.py:2208`
 
 原因是 async scheduling / pipeline parallel 下，Scheduler 可能提前释放某个请求，但 GPU 上一轮写 KV 的操作还没真正完成。如果此时 block 被立即复用，可能产生写入竞态。
+
+新 commit 还有 `_free_cow_retained_blocks(blocks, fence_seq)`，用于释放 partial local hit / CoW copy 中临时保留的 blocks；如果对应 copy step 仍可能 in-flight，也会进入同一个 `deferred_frees` 队列等待 fence 完成后再归还。
 
 ---
 
@@ -1204,7 +1211,7 @@ def _drain_deferred_frees(self):
         self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`scheduler.py:2092`
+位置：`scheduler.py:2223`
 
 含义是：
 
