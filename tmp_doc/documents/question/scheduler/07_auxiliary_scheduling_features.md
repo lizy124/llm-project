@@ -108,7 +108,7 @@ def _try_schedule_encoder_inputs(
 ) -> tuple[list[int], int, int, list[int]]:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1279`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1367`
 
 函数注释说明它的职责：
 
@@ -117,7 +117,7 @@ def _try_schedule_encoder_inputs(
 # and update `num_new_tokens` and encoder token budget accordingly.
 ```
 
-位置：`scheduler.py:1287`
+位置：`scheduler.py:1376`
 
 也就是说，它不只是返回“要不要跑 encoder”，还可能修改：
 
@@ -139,7 +139,7 @@ if request.has_encoder_inputs:
     ) = self._try_schedule_encoder_inputs(...)
 ```
 
-位置：`scheduler.py:484`
+位置：`scheduler.py:532`
 
 waiting 阶段也有同样调用：
 
@@ -150,7 +150,7 @@ if request.has_encoder_inputs:
         break
 ```
 
-位置：`scheduler.py:813`
+位置：`scheduler.py:885`
 
 ---
 
@@ -166,7 +166,7 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`scheduler.py:1321`
+位置：`scheduler.py:1409`
 
 含义是：
 
@@ -182,7 +182,7 @@ if self.is_encoder_decoder:
     lo = 0
 ```
 
-位置：`scheduler.py:1327`
+位置：`scheduler.py:1415`
 
 因为 encoder-decoder 模型的 encoder input 通常必须在 decoder 开始前处理。
 
@@ -199,7 +199,7 @@ if self.encoder_cache_manager.check_and_update_cache(request, i):
     continue
 ```
 
-位置：`scheduler.py:1361`
+位置：`scheduler.py:1449`
 
 这表示：
 
@@ -215,7 +215,7 @@ if item_identifier in mm_hashes_to_schedule:
     continue
 ```
 
-位置：`scheduler.py:1356`
+位置：`scheduler.py:1444`
 
 所以 encoder input 的调度粒度不是简单按 request，而是按 request 中的每个 multimodal item。
 
@@ -238,7 +238,7 @@ num_new_tokens = max(
 break
 ```
 
-位置：`scheduler.py:1369`
+位置：`scheduler.py:1466`
 
 含义：
 
@@ -268,7 +268,7 @@ if not self.encoder_cache_manager.can_allocate(
     ...
 ```
 
-位置：`scheduler.py:1382`
+位置：`scheduler.py:1470`
 
 Scheduler 会把本轮 decoder token 范围缩短到该 encoder input 之前：
 
@@ -282,7 +282,7 @@ else:
 break
 ```
 
-位置：`scheduler.py:1389`
+位置：`scheduler.py:1477`
 
 这说明 encoder 侧资源会反向影响 decoder 侧调度：
 
@@ -303,7 +303,7 @@ token_budget = self.max_num_scheduled_tokens
 encoder_compute_budget = self.max_num_encoder_input_tokens
 ```
 
-位置：`scheduler.py:407`、`scheduler.py:414`
+位置：`scheduler.py:453`、`scheduler.py:460`
 
 区别是：
 
@@ -320,7 +320,7 @@ encoder_compute_budget -= num_encoder_embeds
 encoder_inputs_to_schedule.append(i)
 ```
 
-位置：`scheduler.py:1427`
+位置：`scheduler.py:1515`
 
 所以：
 
@@ -345,7 +345,7 @@ if self.ec_connector is not None and self.ec_connector.has_cache_item(
     continue
 ```
 
-位置：`scheduler.py:1419`
+位置：`scheduler.py:1507`
 
 这表示：
 
@@ -365,9 +365,9 @@ for i in external_load_encoder_input:
         self.ec_connector.update_state_after_alloc(request, i)
 ```
 
-running 阶段位置：`scheduler.py:608`
+running 阶段位置：`scheduler.py:657`
 
-waiting 阶段位置：`scheduler.py:972`
+waiting 阶段位置：`scheduler.py:1046`
 
 最后构造 SchedulerOutput 时会生成 EC metadata：
 
@@ -378,7 +378,7 @@ ec_meta: ECConnectorMetadata = self.ec_connector.build_connector_meta(
 scheduler_output.ec_connector_metadata = ec_meta
 ```
 
-位置：`scheduler.py:1085`
+位置：`scheduler.py:1171`
 
 ---
 
@@ -390,9 +390,9 @@ scheduler_output.ec_connector_metadata = ec_meta
 scheduled_encoder_inputs[request_id] = encoder_inputs_to_schedule
 ```
 
-running 阶段位置：`scheduler.py:600`
+running 阶段位置：`scheduler.py:649`
 
-waiting 阶段位置：`scheduler.py:964`
+waiting 阶段位置：`scheduler.py:1037`
 
 最终写入：
 
@@ -404,7 +404,7 @@ scheduler_output = SchedulerOutput(
 )
 ```
 
-位置：`scheduler.py:1057`
+位置：`scheduler.py:1142`
 
 所以 Worker 能从 `SchedulerOutput.scheduled_encoder_inputs` 知道：
 
@@ -434,7 +434,7 @@ return status in (
 )
 ```
 
-位置：`scheduler.py:1804`
+位置：`scheduler.py:1911`
 
 如果新请求进入 Scheduler 时已经是这个状态，`_enqueue_waiting_request()` 会把它放入 `skipped_waiting`。
 
@@ -449,7 +449,7 @@ if request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR:
     return True
 ```
 
-位置：`scheduler.py:2401`
+位置：`scheduler.py:2543`
 
 状态迁移是：
 
@@ -474,7 +474,7 @@ def get_grammar_bitmask(
 ) -> GrammarOutput | None:
 ```
 
-位置：`scheduler.py:1439`
+位置：`scheduler.py:1527`
 
 如果本轮没有结构化输出请求，直接返回：
 
@@ -483,7 +483,7 @@ if not scheduler_output.has_structured_output_requests:
     return None
 ```
 
-位置：`scheduler.py:1444`
+位置：`scheduler.py:1532`
 
 只收集满足以下条件的请求：
 
@@ -491,7 +491,7 @@ if not scheduler_output.has_structured_output_requests:
 req.use_structured_output and not req.is_prefill_chunk
 ```
 
-位置：`scheduler.py:1451`
+位置：`scheduler.py:1535`
 
 这说明：
 
@@ -510,7 +510,7 @@ bitmask = self.structured_output_manager.grammar_bitmask(
 )
 ```
 
-位置：`scheduler.py:1456`
+位置：`scheduler.py:1544`
 
 注意这里还传入了 `scheduled_spec_decode_tokens`，因为结构化输出也需要和 speculative decoding 协同。
 
@@ -524,20 +524,26 @@ Worker 返回 token 后，在 `update_from_output()` 中：
 if new_token_ids and self.structured_output_manager.should_advance(request):
     struct_output_request = request.structured_output_request
     ...
-    if not struct_output_request.grammar.accept_tokens(
-        req_id, new_token_ids
+    advance_token_ids = (
+        self.structured_output_manager.trim_reasoning_for_advance(
+            request, new_token_ids
+        )
+    )
+    if advance_token_ids and not grammar.accept_tokens(
+        req_id, advance_token_ids
     ):
         request.status = RequestStatus.FINISHED_ERROR
         request.resumable = False
         stopped = True
 ```
 
-位置：`scheduler.py:1598`
+位置：`scheduler.py:1693`
 
 含义：
 
 ```text
 生成 token 后，grammar 状态要向前推进；
+如果输出里混有 reasoning 内容，会先裁剪出需要交给 grammar 的 token；
 如果 grammar 拒绝这些 token，说明出现不符合约束的输出，
 请求会被标记为 FINISHED_ERROR。
 ```
@@ -554,7 +560,7 @@ blocked waiting status 还包括：
 RequestStatus.WAITING_FOR_STREAMING_REQ
 ```
 
-位置：`scheduler.py:1808`
+位置：`scheduler.py:1915`
 
 它通常来自可续写的 streaming/session 请求：当前输出停止但请求仍 `resumable`，且暂时没有下一段输入时，`_handle_stopped_request()` 会把状态设为 `WAITING_FOR_STREAMING_REQ`，并通过 `_enqueue_waiting_request()` 放入 `skipped_waiting`。
 
@@ -564,7 +570,7 @@ self.num_waiting_for_streaming_input += 1
 self._enqueue_waiting_request(request)
 ```
 
-位置：`scheduler.py:1842`
+位置：`scheduler.py:1948`
 
 waiting 调度遇到它时不会自行恢复：
 
@@ -574,7 +580,7 @@ if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
     return False
 ```
 
-位置：`scheduler.py:2408`
+位置：`scheduler.py:2550`
 
 只有后续 `add_request()` 收到同 request id 的新输入，并通过 `_update_request_as_session()` 把状态改回 `WAITING` 后，它才会重新参与调度。
 
@@ -590,7 +596,7 @@ self.num_lookahead_tokens = 0
 self.dynamic_sd_lookup: list[int] | None = None
 ```
 
-位置：`scheduler.py:229`
+位置：`scheduler.py:234`
 
 如果启用 EAGLE：
 
@@ -600,7 +606,7 @@ if speculative_config.use_eagle():
     self.num_lookahead_tokens = self.num_spec_tokens
 ```
 
-位置：`scheduler.py:239`
+位置：`scheduler.py:244`
 
 如果使用 draft model：
 
@@ -609,7 +615,7 @@ if speculative_config.uses_draft_model():
     self.num_lookahead_tokens = self.num_spec_tokens
 ```
 
-位置：`scheduler.py:242`
+位置：`scheduler.py:247`
 
 如果使用 DFlash：
 
@@ -617,7 +623,15 @@ if speculative_config.uses_draft_model():
 self.num_lookahead_tokens = self.num_spec_tokens + 1
 ```
 
-位置：`scheduler.py:244`
+位置：`scheduler.py:249`
+
+如果使用 DSpark：
+
+```python
+self.num_lookahead_tokens = self.num_spec_tokens
+```
+
+位置：`scheduler.py:254`
 
 所以 spec decode 不只影响采样，还会影响 KV block 预留：
 
@@ -639,7 +653,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:462`
+位置：`scheduler.py:510`
 
 其中：
 
@@ -680,7 +694,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:524`
+位置：`scheduler.py:572`
 
 waiting 阶段也会传：
 
@@ -688,7 +702,7 @@ waiting 阶段也会传：
 num_lookahead_tokens=effective_lookahead_tokens
 ```
 
-位置：`scheduler.py:878`
+位置：`scheduler.py:942`
 
 `allocate_slots()` 会把 `lookahead` 算入需要 slot 的范围：
 
@@ -696,7 +710,7 @@ num_lookahead_tokens=effective_lookahead_tokens
 | < comp > | < new_comp > | < ext_comp > | < new > | < lookahead > |
 ```
 
-位置：`kv_cache_manager.py:290`
+位置：`kv_cache_manager.py:315`
 
 因此：
 
@@ -705,18 +719,18 @@ num_lookahead_tokens=effective_lookahead_tokens
 Scheduler 也需要提前给它们预留 KV slots。
 ```
 
-async KV load + Eagle 有特殊处理：
+async KV load + spec lookahead 有特殊处理：
 
 ```python
-limit_lookahead_tokens = load_kv_async and self.use_eagle
+limit_lookahead_tokens = load_kv_async and self.num_lookahead_tokens > 0
 effective_lookahead_tokens = (
     0 if limit_lookahead_tokens else self.num_lookahead_tokens
 )
 ```
 
-位置：`scheduler.py:848`
+位置：`scheduler.py:917`
 
-原因是 P/D Disaggregation + Spec Decoding 场景下，额外 lookahead block 可能导致本地和远端 block 数不匹配。
+原因是 async KV load 本轮不运行 forward，要等 KV transfer 完成后再分配 speculative lookahead slots，避免本地和远端 block 数不匹配。
 
 ---
 
@@ -741,7 +755,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:582`
+位置：`scheduler.py:631`
 
 含义：
 
@@ -757,7 +771,7 @@ Scheduler 记录本轮实际要验证的 draft tokens，
 scheduled_spec_decode_tokens=scheduled_spec_decode_tokens
 ```
 
-位置：`scheduler.py:1062`
+位置：`scheduler.py:1147`
 
 同时还有：
 
@@ -765,7 +779,7 @@ scheduled_spec_decode_tokens=scheduled_spec_decode_tokens
 num_spec_tokens_to_schedule=num_spec_tokens_to_schedule
 ```
 
-位置：`scheduler.py:1073`
+位置：`scheduler.py:1159`
 
 如果启用了 dynamic speculative decoding，会根据本轮 batch size 查表：
 
@@ -776,7 +790,7 @@ if self.dynamic_sd_lookup is not None and len(num_scheduled_tokens) > 0:
     ]
 ```
 
-位置：`scheduler.py:1052`
+位置：`scheduler.py:1137`
 
 ---
 
@@ -791,7 +805,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`scheduler.py:1553`
+位置：`scheduler.py:1647`
 
 如果有 token 被拒绝：
 
@@ -800,7 +814,7 @@ if request.num_computed_tokens > 0:
     request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1562`
+位置：`scheduler.py:1656`
 
 如果 async scheduling 下 placeholder 也包含这些 spec token，还要同步回退：
 
@@ -809,7 +823,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1566`
+位置：`scheduler.py:1660`
 
 这说明 spec decode 是乐观调度：
 
@@ -835,7 +849,7 @@ scheduled_loras = set(
 assert len(scheduled_loras) <= self.lora_config.max_loras
 ```
 
-位置：`scheduler.py:616`
+位置：`scheduler.py:663`
 
 waiting 阶段，如果当前请求会引入新的 LoRA，并且本轮 LoRA 种类已经达到上限：
 
@@ -853,7 +867,7 @@ if (
     continue
 ```
 
-位置：`scheduler.py:653`
+位置：`scheduler.py:705`
 
 含义是：
 
@@ -877,7 +891,7 @@ self.need_mamba_block_aligned_split = (
 )
 ```
 
-位置：`scheduler.py:288`
+位置：`scheduler.py:299`
 
 Scheduler 会在 running / waiting 阶段调用：
 
@@ -885,9 +899,9 @@ Scheduler 会在 running / waiting 阶段调用：
 num_new_tokens = self._mamba_block_aligned_split(...)
 ```
 
-running 阶段位置：`scheduler.py:498`
+running 阶段位置：`scheduler.py:546`
 
-waiting 阶段位置：`scheduler.py:832`
+waiting 阶段位置：`scheduler.py:903`
 
 核心目的：
 
@@ -896,13 +910,14 @@ Mamba state cache 对 chunk 边界敏感；
 为了让 Mamba state 可以被缓存，prefill chunk 要尽量按 block_size 对齐。
 ```
 
-`_mamba_block_aligned_split()` 中有典型逻辑：
+`_mamba_block_aligned_split()` 中会按 block 边界裁剪 chunk 结束位置：
 
 ```python
-num_new_tokens = num_new_tokens // block_size * block_size
+aligned_end = num_computed_tokens_after_sched // block_size * block_size
+num_new_tokens = max(aligned_end - num_computed_tokens, 0)
 ```
 
-位置：`scheduler.py:364`
+位置：`scheduler.py:390`
 
 如果对齐后 `num_new_tokens == 0`：
 
@@ -923,7 +938,7 @@ waiting 阶段：break，停止 waiting 调度。
 def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
 ```
 
-位置：`scheduler.py:387`
+位置：`scheduler.py:433`
 
 如果当前 step 需要 throttle，并且不是 prefill capacity bound，且 running 中存在 decode 请求：
 
@@ -933,7 +948,7 @@ defer_prefills = (
 ) and any(not r.is_prefill_chunk for r in self.running)
 ```
 
-位置：`scheduler.py:425`
+位置：`scheduler.py:473`
 
 running 阶段，如果请求是 prefill chunk：
 
@@ -943,7 +958,7 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:456`
+位置：`scheduler.py:504`
 
 waiting 阶段，如果要提交新的本地 prefill：
 
@@ -952,7 +967,7 @@ elif defer_prefills and request.num_computed_tokens == 0:
     break
 ```
 
-位置：`scheduler.py:785`
+位置：`scheduler.py:838`
 
 但 async KV load 是例外：
 
@@ -987,7 +1002,7 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:408`
+位置：`scheduler.py:453`
 
 waiting 阶段要求：
 
@@ -995,7 +1010,7 @@ waiting 阶段要求：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:625`
+位置：`scheduler.py:674`
 
 因此：
 
@@ -1029,7 +1044,7 @@ if self.connector is not None:
     scheduler_output.kv_connector_metadata = meta
 ```
 
-位置：`scheduler.py:1080`
+位置：`scheduler.py:1166`
 
 注释说明这个函数有多个目的：
 
@@ -1039,7 +1054,7 @@ if self.connector is not None:
 # 3. Clear the internal states of the connector
 ```
 
-位置：`scheduler.py:1076`
+位置：`scheduler.py:1162`
 
 所以 SchedulerOutput 不只是告诉 Worker 哪些 token 要 forward，还会携带：
 
@@ -1065,7 +1080,7 @@ if self.ec_connector is not None:
     scheduler_output.ec_connector_metadata = ec_meta
 ```
 
-位置：`scheduler.py:1085`
+位置：`scheduler.py:1171`
 
 这说明：
 
@@ -1096,14 +1111,16 @@ SchedulerOutput(
     scheduled_spec_decode_tokens=scheduled_spec_decode_tokens,
     scheduled_encoder_inputs=scheduled_encoder_inputs,
     num_common_prefix_blocks=num_common_prefix_blocks,
-    preempted_req_ids={req.request_id for req in preempted_reqs},
+    preempted_req_ids=self.reset_preempted_req_ids,
+    finished_req_ids=self.finished_req_ids,
     free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes(),
     new_block_ids_to_zero=new_block_ids_to_zero,
+    kv_cache_block_copies=pending_kv_cache_block_copies,
     num_spec_tokens_to_schedule=num_spec_tokens_to_schedule,
 )
 ```
 
-位置：`scheduler.py:1057`
+位置：`scheduler.py:1142`
 
 含义：
 
@@ -1112,9 +1129,11 @@ SchedulerOutput(
 | `scheduled_spec_decode_tokens` | 本轮要验证的 draft/spec tokens |
 | `scheduled_encoder_inputs` | 本轮要本地处理的 encoder inputs |
 | `num_common_prefix_blocks` | running 请求公共 prefix blocks，可用于 cascade attention |
-| `preempted_req_ids` | 本轮被抢占的请求 |
+| `preempted_req_ids` | 本轮需要重置的被抢占请求 id |
+| `finished_req_ids` | 上一轮到本轮之间完成的请求 id |
 | `free_encoder_mm_hashes` | 本轮释放的 encoder cache item |
 | `new_block_ids_to_zero` | 需要清零的新 KV blocks |
+| `kv_cache_block_copies` | 本轮需要随执行完成的 KV block copy 计划 |
 | `num_spec_tokens_to_schedule` | 后续 draft/spec token 调度数量 |
 | `kv_connector_metadata` | KV Connector load/save metadata |
 | `ec_connector_metadata` | Encoder Cache Connector metadata |
