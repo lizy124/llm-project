@@ -6,7 +6,11 @@
 - `code/vllm/vllm/v1/worker/gpu_input_batch.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/outputs.py`
 - `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
 - `code/vllm/vllm/v1/core/block_pool.py`
 
 本问题关注：Scheduler 已经把请求调度好并分配了 KV block 后，Worker / ModelRunner 如何真正使用这些 KV cache；block table 如何映射到请求；slot mapping 如何写入 attention kernel；prefix cache / external KV / lookahead / encoder cache 对 KV 使用有什么影响；KV connector 如何把远端 KV 的 load/save、finished_recving、finished_sending 穿过执行链路。
@@ -36,8 +40,9 @@ Worker 侧实际关心的是：
 2. 当前 batch 里的每个请求对应哪个 block table row；
 3. 每个 token 应该写入 KV cache 的哪个 slot；
 4. 新 block 是否需要 zero；
-5. prefix cache / external KV / lookahead 该如何影响本轮执行；
-6. KV connector 的 load / save / finished_recving / finished_sending 如何贯穿执行。
+5. CoW block copy 是否需要在 forward 前应用；
+6. prefix cache / external KV / lookahead 该如何影响本轮执行；
+7. KV connector 的 load / save / finished_recving / finished_sending / invalid_block_ids 如何贯穿执行。
 ```
 
 ---
@@ -121,15 +126,18 @@ self._zero_block_ids(block_ids)
 ```python
 if scheduler_output.new_block_ids_to_zero:
     self._zero_block_ids(scheduler_output.new_block_ids_to_zero)
+if scheduler_output.kv_cache_block_copies:
+    copy_kv_cache_blocks_inplace(...)
 ```
 
-位置：`gpu_model_runner.py:1153` 到 `gpu_model_runner.py:1156`
+位置：`gpu_model_runner.py:1188` 到 `gpu_model_runner.py:1197`
 
 可以理解为：
 
 ```text
 Scheduler 分配了新 block；
-Worker 在真正使用前清零这些 block。
+Worker 在真正使用前清零这些 block；
+如果存在 partial-hit / CoW block copy，再在 forward 前执行 KV block copy。
 ```
 
 ---
@@ -223,7 +231,7 @@ self.input_batch.block_table.compute_slot_mapping(
 )
 ```
 
-位置：`gpu_model_runner.py:2118` 到 `gpu_model_runner.py:2122`
+位置：`gpu_model_runner.py:2167` 到 `gpu_model_runner.py:2171`
 
 这一步把：
 
@@ -252,7 +260,7 @@ cm_base = CommonAttentionMetadata(
 )
 ```
 
-位置：`gpu_model_runner.py:2330` 到 `gpu_model_runner.py:2347`
+位置：`gpu_model_runner.py:2394` 到 `gpu_model_runner.py:2412`
 
 也就是说：
 
@@ -284,9 +292,10 @@ block_table_tensor
 slot_mapping
 positions
 is_prefilling
+rswa_prefix_lens
 ```
 
-位置：`gpu_model_runner.py:2330` 到 `gpu_model_runner.py:2347`
+位置：`gpu_model_runner.py:2394` 到 `gpu_model_runner.py:2412`
 
 attention backend 不是自己推断 block 关系，而是直接消费这份 metadata。
 
@@ -321,7 +330,7 @@ positions_np = (
 )
 ```
 
-位置：`gpu_model_runner.py:1920` 到 `gpu_model_runner.py:1924`
+位置：`gpu_model_runner.py:1961` 到 `gpu_model_runner.py:1965`
 
 因此 prefix cache 的影响最终表现为：
 
@@ -358,7 +367,7 @@ finalize_kv_connector()
 _get_kv_connector_output()
 ```
 
-位置：`kv_connector_model_runner_mixin.py:33` 起
+位置：`kv_connector_model_runner_mixin.py:34` 起
 
 ### 8.2 forward 前绑定 metadata
 
@@ -544,7 +553,7 @@ query_start_loc
 positions
 ```
 
-位置：`gpu_model_runner.py:1906` 到 `gpu_model_runner.py:2122`
+位置：`gpu_model_runner.py:1930` 到 `gpu_model_runner.py:2171`
 
 所以顺序是：
 
@@ -574,9 +583,10 @@ is_prefilling
 max_seq_len
 positions
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
-位置：`gpu_model_runner.py:2330` 到 `gpu_model_runner.py:2347`
+位置：`gpu_model_runner.py:2394` 到 `gpu_model_runner.py:2412`
 
 这些字段说明：
 
