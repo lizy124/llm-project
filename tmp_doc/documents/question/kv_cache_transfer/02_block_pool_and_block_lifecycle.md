@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/block_pool.py`
-- `code/vllm/vllm/v1/core/kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
-- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/kv_cache_utils.py`
-- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/vllm/v1/core/block_pool.py`
+- `vllm/vllm/vllm/v1/core/kv_cache_manager.py`
+- `vllm/vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `vllm/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `vllm/vllm/vllm/v1/core/kv_cache_utils.py`
+- `vllm/vllm/vllm/v1/core/sched/scheduler.py`
 
 本问题关注：`BlockPool` 到底管理什么；KV block 如何从空闲池进入请求；prefix cache 命中时 block 如何复用；full block 什么时候写入 prefix cache；请求结束、抢占、KV transfer、deferred free 会如何影响 block 释放；以及 Scheduler、KVCacheManager、coordinator、BlockPool、Worker 之间的职责边界。
 
@@ -88,7 +88,7 @@ Engine 初始化
 
 ### 3.1 KVCacheBlock
 
-定义在：`vllm/v1/core/kv_cache_utils.py:116`
+定义在：`vllm/vllm/v1/core/kv_cache_utils.py:118`
 
 一个 `KVCacheBlock` 是 Scheduler 侧的 block 元数据：
 
@@ -104,7 +104,7 @@ is_null         是否是 null block
 
 ### 3.2 BlockPool
 
-定义在：`vllm/v1/core/block_pool.py:130`
+定义在：`vllm/vllm/v1/core/block_pool.py:143`
 
 `BlockPool` 保存：
 
@@ -131,7 +131,7 @@ reset_prefix_cache()
 
 ### 3.3 KVCacheManager
 
-定义在：`vllm/v1/core/kv_cache_manager.py:110`
+定义在：`vllm/vllm/v1/core/kv_cache_manager.py:114`
 
 `KVCacheManager` 是 Scheduler 调用的门面。Scheduler 通常不直接操作 `BlockPool`，而是通过它调用：
 
@@ -154,7 +154,7 @@ take_new_block_ids()
 
 ### 3.4 KVCacheCoordinator
 
-定义在：`vllm/v1/core/kv_cache_coordinator.py:60`
+定义在：`vllm/vllm/v1/core/kv_cache_coordinator.py:60`
 
 coordinator 负责多 KV cache group 的编排：
 
@@ -168,7 +168,7 @@ coordinator 负责多 KV cache group 的编排：
 
 ### 3.5 SingleTypeKVCacheManager
 
-定义在：`vllm/v1/core/single_type_kv_cache_manager.py:32`
+定义在：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:32`
 
 它负责每个 group 内的请求到 blocks 映射：
 
