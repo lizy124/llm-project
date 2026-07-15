@@ -2,16 +2,16 @@
 
 源码位置：
 
-- `code/vllm/vllm/v1/executor/abstract.py`
-- `code/vllm/vllm/v1/executor/uniproc_executor.py`
-- `code/vllm/vllm/v1/executor/multiproc_executor.py`
-- `code/vllm/vllm/v1/executor/ray_executor.py`
-- `code/vllm/vllm/v1/worker/worker_base.py`
-- `code/vllm/vllm/v1/worker/gpu_worker.py`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `code/vllm/vllm/v1/outputs.py`
-- `code/vllm/vllm/v1/core/sched/output.py`
-- `code/vllm/vllm/v1/engine/core.py`
+- `vllm/vllm/v1/executor/abstract.py`
+- `vllm/vllm/v1/executor/uniproc_executor.py`
+- `vllm/vllm/v1/executor/multiproc_executor.py`
+- `vllm/vllm/v1/executor/ray_executor.py`
+- `vllm/vllm/v1/worker/worker_base.py`
+- `vllm/vllm/v1/worker/gpu_worker.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/outputs.py`
+- `vllm/vllm/v1/core/sched/output.py`
+- `vllm/vllm/v1/engine/core.py`
 
 本文按“先定边界，再走主链路，再拆关键阶段，最后总结接口和数据结构”的方式，梳理 vLLM V1 执行层里 `Executor`、`Worker`、`ModelRunner` 三层的关系。
 
@@ -71,7 +71,7 @@ executor_worker_model_runner_overview.md
 
 `Executor` 是 EngineCore 和 Worker 之间的执行分发层。
 
-源码位置：`code/vllm/vllm/v1/executor/abstract.py:37`
+源码位置：`vllm/vllm/v1/executor/abstract.py:37`
 
 它负责：
 
@@ -106,8 +106,8 @@ Executor 负责“把这一轮交给谁跑”。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/worker_base.py:39`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:117`
+- `vllm/vllm/v1/worker/worker_base.py:39`
+- `vllm/vllm/v1/worker/gpu_worker.py:130`
 
 它负责：
 
@@ -141,7 +141,7 @@ Worker 负责“把执行资源准备好，并把执行请求交给 ModelRunner�
 
 `ModelRunner` 是 Worker 内部真正把 `SchedulerOutput` 变成模型执行的组件。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:418`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:445`
 
 它负责：
 
@@ -201,11 +201,11 @@ EngineCore.step()
 
 对应源码主入口：
 
-- `code/vllm/vllm/v1/engine/core.py:479`
-- `code/vllm/vllm/v1/executor/abstract.py:221`
-- `code/vllm/vllm/v1/worker/worker_base.py:142`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:808`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4044`
+- `vllm/vllm/v1/engine/core.py:488`
+- `vllm/vllm/v1/executor/abstract.py:221`
+- `vllm/vllm/v1/worker/worker_base.py:142`
+- `vllm/vllm/v1/worker/gpu_worker.py:1002`
+- `vllm/vllm/v1/worker/gpu_model_runner.py:4097`
 
 如果把执行层再压缩一层，可以记成：
 
@@ -277,7 +277,7 @@ ModelRunner 要处理的是最重的一层：
 
 Scheduler 生成的不是最终结果，而是执行计划 `SchedulerOutput`。
 
-源码位置：`code/vllm/vllm/v1/core/sched/output.py:181`
+源码位置：`vllm/vllm/v1/core/sched/output.py:183`
 
 它包含的核心信息包括：
 
@@ -298,19 +298,22 @@ Scheduler 生成的不是最终结果，而是执行计划 `SchedulerOutput`。
 - ec_connector_metadata
 - new_block_ids_to_zero
 - num_spec_tokens_to_schedule
+- structured_output_request_ids
 ```
 
 EngineCore 在每轮 `step()` 里会：
 
 ```text
 1. 调度得到 SchedulerOutput；
-2. 交给 Executor.execute_model(scheduler_output)；
-3. 等待结果；
-4. 必要时再调用 sample_tokens()；
-5. 最后把 ModelRunnerOutput 交回 Scheduler.update_from_output()。
+2. 交给 Executor.execute_model(scheduler_output, non_block=True)；
+3. 获取 structured output grammar bitmask；
+4. 等待结果；
+5. 必要时再调用 sample_tokens()；
+6. 先处理执行期间进入的 abort 队列；
+7. 最后把 ModelRunnerOutput 交回 Scheduler.update_from_output()。
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/core.py:479` 到 `code/vllm/vllm/v1/engine/core.py:508`
+源码位置：`vllm/vllm/v1/engine/core.py:488` 到 `vllm/vllm/v1/engine/core.py:517`
 
 这里的关键点是：
 
@@ -326,7 +329,7 @@ SchedulerOutput 先进入执行层，执行层完成模型前向和采样，再�
 
 `EngineCore.step()` 是整条链路的入口。
 
-源码位置：`code/vllm/vllm/v1/engine/core.py:479`
+源码位置：`vllm/vllm/v1/engine/core.py:488`
 
 核心步骤是：
 
@@ -337,6 +340,7 @@ grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 model_output = future.result()
 if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
+self._process_aborts_queue()
 engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 ```
 
@@ -346,7 +350,7 @@ Executor 把一次 `execute_model()` 变成对所有 Worker 的 RPC。
 
 对于单进程执行，`UniProcExecutor.collective_rpc()` 会直接在 driver worker 上执行方法。
 
-源码位置：`code/vllm/vllm/v1/executor/uniproc_executor.py:79`
+源码位置：`vllm/vllm/v1/executor/uniproc_executor.py:79`
 
 对于多进程 / Ray 后端，则会把调用分发到多个 worker 进程。
 
@@ -369,7 +373,7 @@ Worker 收到 `scheduler_output` 后，不是直接 forward，而是先做设备
 
 `GPUModelRunner.execute_model()` 是这条链路里最关键的执行入口。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4044`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4097`
 
 它负责把 `SchedulerOutput` 展开成：
 
@@ -384,7 +388,7 @@ Worker 收到 `scheduler_output` 后，不是直接 forward，而是先做设备
 - execute_model_state
 ```
 
-如果 batch 需要异步采样或分阶段处理，它可能先返回 `None`，再由 `sample_tokens()` 完成后半段。
+如果 batch 需要异步采样或分阶段处理，它可能先返回 `None`，再由 `sample_tokens()` 完成后半段；如果本轮没有实际 token 但存在 KV transfer，它会走 `kv_connector_no_forward()`，PP + KV transfer 下 `sample_tokens()` 也可能只透传 `kv_connector_output`。
 
 ---
 
@@ -394,7 +398,7 @@ WorkerBase 定义抽象接口，GPU Worker 实现真正逻辑。
 
 ### 6.1 WorkerBase
 
-源码位置：`code/vllm/vllm/v1/worker/worker_base.py:39`
+源码位置：`vllm/vllm/v1/worker/worker_base.py:39`
 
 它定义了 Worker 必须具备的能力：
 
@@ -414,7 +418,7 @@ shutdown
 
 WorkerWrapperBase 负责“先包装、后初始化”。
 
-源码位置：`code/vllm/vllm/v1/worker/worker_base.py:187`
+源码位置：`vllm/vllm/v1/worker/worker_base.py:187`
 
 它的意义是：
 
@@ -429,7 +433,7 @@ WorkerWrapperBase 负责“先包装、后初始化”。
 
 `Worker.__init__()` 先缓存配置，再准备设备相关状态。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_worker.py:117`
+源码位置：`vllm/vllm/v1/worker/gpu_worker.py:130`
 
 典型流程是：
 
@@ -468,7 +472,7 @@ Worker 还负责设备生命周期控制：
 
 `GPUModelRunner` 是执行层的核心。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:418`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:445`
 
 它初始化时会缓存很多状态：
 
@@ -491,7 +495,7 @@ Worker 还负责设备生命周期控制：
 
 `ExecuteModelState` 是 `execute_model()` 和 `sample_tokens()` 之间的临时状态桥梁。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:402`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:429`
 
 它保存：
 
@@ -523,7 +527,7 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 
 `_update_states()` 把 SchedulerOutput 合入 worker 侧缓存状态和 persistent batch。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1127`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1162`
 
 它会处理：
 
@@ -544,7 +548,7 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 
 `_prepare_inputs()` 把 batch 状态变成真正送给模型的输入张量。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1930`
 
 它会做的事情包括：
 
@@ -567,7 +571,7 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 
 `_build_attention_metadata()` 把 request batch 和 KV 信息变成 attention backend 需要的元数据。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 它会构造：
 
@@ -586,7 +590,7 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 
 `_preprocess()` 负责把 multimodal / encoder / prompt embeds / PP 中间张量等统合成 forward 需要的输入。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3426`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3476`
 
 它会决定：
 
@@ -603,7 +607,7 @@ sample_tokens() 负责消费这些中间态并生成最终采样结果。
 
 `_model_forward()` 是真正调用模型 forward 的地方。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3757`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3810`
 
 默认实现只是：
 
@@ -617,11 +621,11 @@ return self.model(...)
 
 如果是 pooling 模型，会走 `_pool()`。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3342`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3392`
 
 如果是生成模型，会在 `execute_model()` 阶段拿到 logits，然后在 `sample_tokens()` 阶段完成采样。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4423`
+源码位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4483`
 
 `sample_tokens()` 还会处理：
 
@@ -640,7 +644,7 @@ return self.model(...)
 
 `ModelRunnerOutput` 是执行层交回 Scheduler 的结果容器。
 
-源码位置：`code/vllm/vllm/v1/outputs.py:231`
+源码位置：`vllm/vllm/v1/outputs.py:234`
 
 它主要包含：
 
@@ -676,7 +680,7 @@ return self.model(...)
 
 执行层完成后，Scheduler 会回收结果并推进请求状态。
 
-对应总入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
+对应总入口：`vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 闭环的核心是：
 
