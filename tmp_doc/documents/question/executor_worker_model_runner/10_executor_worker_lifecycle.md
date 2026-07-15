@@ -6,6 +6,7 @@
 - `code/vllm/vllm/v1/executor/uniproc_executor.py`
 - `code/vllm/vllm/v1/executor/multiproc_executor.py`
 - `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
 - `code/vllm/vllm/v1/worker/worker_base.py`
 - `code/vllm/vllm/v1/engine/core.py`
 
@@ -106,7 +107,7 @@ ExecutorWithExternalLauncher
 5. load_model();
 ```
 
-位置：`uniproc_executor.py:45` 到 `uniproc_executor.py:70`
+位置：`uniproc_executor.py:45` 到 `uniproc_executor.py:69`
 
 #### MultiprocExecutor
 
@@ -116,11 +117,12 @@ ExecutorWithExternalLauncher
 1. 父进程创建 distributed_init_method 和 RPC broadcast queue；
 2. 父进程启动 WorkerProc；
 3. 子进程 WorkerProc.__init__ 中创建 WorkerWrapperBase，并执行 init_worker / init_device / load_model；
-4. 子进程初始化 message queues 后发送 READY；
-5. 父进程等待所有 worker ready，启动 worker monitor，并等待 queues ready。
+4. 子进程在 init_device / load_model 后初始化 message queues；
+5. WorkerProc.worker_main 发送 READY，并等待 MQ ready 后进入 worker_busy_loop；
+6. 父进程等待所有 worker ready，启动 worker monitor，并等待 queues ready。
 ```
 
-位置：`multiproc_executor.py:110` 到 `multiproc_executor.py:236`，以及 `multiproc_executor.py:593` 到 `multiproc_executor.py:653`
+位置：`multiproc_executor.py:110` 到 `multiproc_executor.py:236`，以及 `multiproc_executor.py:606` 到 `multiproc_executor.py:655`、`multiproc_executor.py:875` 到 `multiproc_executor.py:892`
 
 ---
 
@@ -131,16 +133,17 @@ ExecutorWithExternalLauncher
 关键步骤：
 
 ```text
-1. 设置当前 device；
-2. 初始化分布式环境；
-3. 设置随机种子；
-4. 清理缓存；
-5. 建立 workspace manager；
-6. 创建 ModelRunner；
-7. 报告 usage stats。
+1. 设置当前 device，并处理 DP local rank / visible device 映射；
+2. 发布 assigned_physical_gpu_ids 供拓扑查询；
+3. 初始化分布式环境；
+4. 设置随机种子；
+5. 清理缓存并记录 memory snapshot / requested memory；
+6. 建立 workspace manager；
+7. 根据 use_v2_model_runner 创建 V1 或 V2 ModelRunner；
+8. 报告 usage stats。
 ```
 
-位置：`gpu_worker.py:249` 到 `gpu_worker.py:346`
+位置：`gpu_worker.py:296` 到 `gpu_worker.py:420`
 
 其中最关键的是：
 
@@ -148,16 +151,17 @@ ExecutorWithExternalLauncher
 init_worker_distributed_environment(...)
 ```
 
-位置：`gpu_worker.py:294` 到 `gpu_worker.py:300`
+位置：`gpu_worker.py:1326` 到 `gpu_worker.py:1368`
 
 它会：
 
 ```text
-- 初始化 distributed environment；
-- 初始化 model parallel；
-- 初始化 EC transfer；
+- 初始化 batch invariance；
+- 按 EPLB 配置覆盖环境变量；
 - 设置 custom all-reduce；
-- 配置超时。
+- 初始化 distributed environment，并应用分布式超时；
+- 初始化 TP / PP / prefill CP / decode CP model parallel；
+- 初始化 EC transfer。
 ```
 
 ### 4.3 为什么先 init_device 再 load_model
@@ -188,7 +192,7 @@ with (
     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
 ```
 
-位置：`gpu_worker.py:349` 到 `gpu_worker.py:357`
+位置：`gpu_worker.py:424` 到 `gpu_worker.py:431`
 
 这说明模型加载期间还会做：
 
@@ -207,7 +211,7 @@ with (
 self.weight_transfer_engine = WeightTransferEngineFactory.create_engine(...)
 ```
 
-位置：`gpu_worker.py:358` 到 `gpu_worker.py:364`
+位置：`gpu_worker.py:433` 到 `gpu_worker.py:439`
 
 这说明模型加载之后，Worker 还可能参与后续权重热更新。
 
@@ -220,19 +224,29 @@ self.weight_transfer_engine = WeightTransferEngineFactory.create_engine(...)
 在 `EngineCore._initialize_kv_caches()` 中：
 
 ```python
+register_all_kvcache_specs(vllm_config)
 kv_cache_specs = self.model_executor.get_kv_cache_specs()
 available_gpu_memory = self.model_executor.determine_available_memory()
 kv_cache_configs = get_kv_cache_configs(...)
 self.model_executor.initialize_from_config(kv_cache_configs)
 ```
 
-位置：`engine/core.py:239` 到 `engine/core.py:348`
+位置：`engine/core.py:239` 到 `engine/core.py:321`
 
 这说明：
 
 ```text
-EngineCore 先根据 Worker 提供的 KV spec 和可用显存，算出 KV cache 配置；
-然后再把配置下发给 Worker 初始化真正的 KV cache。
+EngineCore 先注册 KV cache specs，读取 Worker 提供的 KV spec 和可用显存；
+再根据这些信息算出 KV cache 配置；
+然后把配置下发给 Worker 初始化真正的 KV cache。
+```
+
+新 commit 中这里还会处理三类初始化边界：
+
+```text
+- 如果存在 non_causal KV cache spec，会禁用 chunked prefill / prefix caching；
+- 如果 auto-fit 调整了 max_model_len，会通过 update_max_model_len 同步到 worker；
+- 会生成 scheduler_kv_cache_config，并回写 cache_config.num_gpu_blocks / block_size / kv_cache_size_tokens / kv_cache_max_concurrency。
 ```
 
 ### 6.2 Worker 侧 initialize_from_config()
@@ -248,7 +262,7 @@ EngineCore 先根据 Worker 提供的 KV spec 和可用显存，算出 KV cache 
 6. 初始化 KV zero metadata。
 ```
 
-位置：`gpu_worker.py:562` 到 `gpu_worker.py:590`
+位置：`gpu_worker.py:717` 到 `gpu_worker.py:743`
 
 ### 6.3 为什么要先初始化 KV transfer
 
@@ -284,12 +298,17 @@ compilation_times = self.collective_rpc("compile_or_warm_up_model")
 ```text
 1. 编译 / warmup 不同 batch size；
 2. kernel warmup；
-3. capture CUDA graph；
-4. 预热 sampler / logits buffer；
-5. 可选启动 spec decode drafter warmup。
+3. capture CUDA graph，并对比实际 / 估算 CUDA graph memory；
+4. 在使用 memory profiling 时给出 kv-cache-memory 建议；
+5. V2 路径执行完整 execute_model + sample_tokens warmup；
+6. V1 last PP rank 预热 sampler / logits buffer；
+7. 重置随机种子；
+8. eager 触发 inductor lazy init；
+9. 启动 JIT monitor；
+10. freeze GC heap 并开启 GPU sync check gate。
 ```
 
-位置：`gpu_worker.py:591` 起
+位置：`gpu_worker.py:745` 到 `gpu_worker.py:921`
 
 这说明 “模型能跑” 和 “模型已 warmup 到适合 serving” 是两件事。
 
@@ -331,7 +350,7 @@ GPU 侧 profiling 逻辑：
 5. 记录日志。
 ```
 
-位置：`gpu_worker.py:901` 到 `gpu_worker.py:953`
+位置：`gpu_worker.py:1095` 到 `gpu_worker.py:1146`
 
 ### 8.3 profile 的生命周期特点
 
@@ -377,31 +396,35 @@ GPUWorker 中：
 ```python
 if level == 2:
     self._sleep_saved_buffers = {name: buffer.cpu().clone() ...}
-allocator.sleep(offload_tags=("weights",) if level == 1 else tuple())
+    self._sleep_rebuild_draft_metadata_buffers = ...
+self._get_sleep_mode_backend().suspend(level)
 ```
 
-位置：`gpu_worker.py:165` 到 `gpu_worker.py:185`
+位置：`gpu_worker.py:192` 到 `gpu_worker.py:225`
 
 这意味着：
 
 ```text
-level 1：主要 offload weights；
-level 2：除了 weights，还会保存 model buffers 的 CPU 副本，便于恢复。
+level 1：由 SleepModeBackend 处理较轻量的 suspend；
+level 2：额外保存 model buffers 的 CPU 副本；
+如果 draft model 有 fused KV metadata buffers，还会标记 wake_up 后重建。
 ```
 
 ### 9.3 wake_up 的恢复逻辑
 
 ```python
-allocator.wake_up(tags)
+self._get_sleep_mode_backend().resume(tags)
 if len(self._sleep_saved_buffers):
     restore model buffers
+if self._sleep_rebuild_draft_metadata_buffers:
+    rebuild draft fused KV metadata buffers
 if tags is None or "kv_cache" in tags:
     self.model_runner.post_kv_cache_wake_up()
 ```
 
-位置：`gpu_worker.py:187` 到 `gpu_worker.py:200`
+位置：`gpu_worker.py:227` 到 `gpu_worker.py:247`
 
-这说明 wake_up 不只是“把内存搬回来”，还要让 ModelRunner 恢复 KV cache 相关状态。
+这说明 wake_up 不只是“把内存搬回来”，还要恢复 level 2 保存的 buffers、必要时重建 draft metadata buffers，并让 ModelRunner 恢复 KV cache 相关状态。
 
 ### 9.4 Executor 的睡眠状态管理
 
@@ -430,10 +453,17 @@ execute_dummy_batch()
 take_draft_token_ids()
 save_sharded_state()
 save_tensorized_model()
+init_weight_transfer_engine()
+start_weight_update()
+start_draft_weight_update()
+update_weights()
+finish_weight_update()
 reinitialize_distributed()
 ```
 
-这些接口本质上都是把生命周期之外的控制操作统一通过 Executor 转发到 Worker / ModelRunner。
+这些接口本质上都是把生命周期之外的控制操作统一通过 Executor 转发到 Worker / ModelRunner；权重更新相关接口还会由 Worker 检查并驱动 `weight_transfer_engine` 的 session 状态。
+
+位置：`abstract.py:249` 到 `abstract.py:358`、`gpu_worker.py:1148` 到 `gpu_worker.py:1292`
 
 ---
 
@@ -462,7 +492,7 @@ self.collective_rpc("shutdown")
 6. 关闭 worker_response_mq / rpc_broadcast_mq / response_mqs。
 ```
 
-位置：`multiproc_executor.py:456` 到 `multiproc_executor.py:489`
+位置：`multiproc_executor.py:459` 到 `multiproc_executor.py:490`
 
 ### 11.3 Worker shutdown
 
@@ -474,26 +504,27 @@ self.collective_rpc("shutdown")
 3. 停止 profiler；
 4. 停止 weight transfer engine；
 5. 调用 model_runner.shutdown()；
-6. 回收 GPU tensor / KV cache / workspace。
+6. 回收 GPU tensor / KV cache / workspace；
+7. CUDA-like 平台释放 kept-alive CuMem pools。
 ```
 
-位置：`gpu_worker.py:1141` 到 `gpu_worker.py:1159`
+位置：`gpu_worker.py:1294` 到 `gpu_worker.py:1320`
 
 ### 11.4 ModelRunner shutdown
 
 `GPUModelRunner.shutdown()` 会：
 
 ```text
-1. 调用 _cleanup_profiling_kv_cache()，同步设备并清理 kv_caches / attn_groups / kv_cache_config / layer.kv_cache；
-2. ROCm 场景额外清理 captured graphs；
+1. 调用 _cleanup_profiling_kv_cache()，同步设备并清理 kv_caches / cross_layers_kv_cache / attn_groups / kv_cache_config / layer.kv_cache / quantized KV scale views；
+2. ROCm 场景额外清理 captured graphs 和 encoder_cudagraph_manager；
 3. 清空 static_forward_context；
 4. 将 self.model 置空；
 5. 清空 RoPE cache；
 6. reset_workspace_manager()；
-7. 在清理过程中执行 gc.collect() 和 empty_cache()。
+7. ROCm / XPU 场景额外 gc.collect()、empty_cache()、synchronize()。
 ```
 
-位置：`gpu_model_runner.py:6340` 到 `gpu_model_runner.py:6396`
+位置：`gpu_model_runner.py:6458` 到 `gpu_model_runner.py:6514`
 
 ### 11.5 关闭顺序为什么重要
 
@@ -561,7 +592,7 @@ register_failure_callback(callback)
 
 EngineCore 在构造 `model_executor` 时可以传入 `executor_fail_callback`。
 
-位置：`engine/core.py:96` 到 `engine/core.py:126`
+位置：`engine/core.py:99` 到 `engine/core.py:125`
 
 这表示：
 
@@ -601,13 +632,15 @@ vLLM V1 的生命周期恢复更偏向：
 `GPUWorker.determine_available_memory()` 会：
 
 ```text
-1. profile / dummy run；
-2. 统计 weights、activation、non-torch、cudagraph memory；
-3. 算出可用于 KV cache 的 bytes；
-4. 返回给 EngineCore。
+1. 如果显式设置 kv_cache_memory_bytes，仍会先跑 profile_run 编译 max_num_batched_tokens 路径，然后按配置预留 KV cache memory；
+2. 否则执行 profile / dummy run；
+3. 统计 weights、activation、non-torch、cudagraph memory；
+4. 算出可用于 KV cache 的 bytes；
+5. 为前端多模态 GPU 解码预留 mm_ipc / decoder 相关显存；
+6. 返回给 EngineCore。
 ```
 
-位置：`gpu_worker.py:372` 到 `gpu_worker.py:524`
+位置：`gpu_worker.py:447` 到 `gpu_worker.py:678`
 
 ### 13.2 EngineCore 为什么需要它
 
@@ -620,7 +653,7 @@ cache_config.num_gpu_blocks
 cache_config.block_size
 ```
 
-位置：`engine/core.py:271` 到 `engine/core.py:348`
+位置：`engine/core.py:271` 到 `engine/core.py:321`
 
 所以 memory profiling 是生命周期初始化的重要一环。
 
@@ -722,9 +755,9 @@ load_model
   → init_device
   → load_model
   → initialize_kv_cache
-  → compile / warmup
+  → compile / warmup / JIT monitor / GC freeze
   → 正常运行
-  → profile / sleep / wake_up
+  → profile / sleep / wake_up / weight update
   → shutdown / failure callback
 ```
 

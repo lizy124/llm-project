@@ -168,7 +168,7 @@ block_ids: tuple[list[int], ...]
 self.block_table = MultiGroupBlockTable(...)
 ```
 
-位置：`gpu_input_batch.py:170` 到 `gpu_input_batch.py:181`
+位置：`gpu_input_batch.py:173` 到 `gpu_input_batch.py:184`
 
 它的作用是：
 
@@ -184,7 +184,7 @@ self.block_table = MultiGroupBlockTable(...)
 self.block_table.add_row(request.block_ids, req_index)
 ```
 
-位置：`gpu_input_batch.py:378`
+位置：`gpu_input_batch.py:380` 到 `gpu_input_batch.py:381`
 
 这一步非常关键，意味着：
 
@@ -201,7 +201,7 @@ self.block_table.add_row(request.block_ids, req_index)
 self.block_table.clear_row(req_index)
 ```
 
-位置：`gpu_input_batch.py:528`
+位置：`gpu_input_batch.py:523` 到 `gpu_input_batch.py:531`
 
 紧缩 batch 时：
 
@@ -209,7 +209,7 @@ self.block_table.clear_row(req_index)
 self.block_table.move_row(last_req_index, empty_index)
 ```
 
-位置：`gpu_input_batch.py:757`
+位置：`gpu_input_batch.py:753` 到 `gpu_input_batch.py:760`
 
 这说明 block table 是 batch 紧凑化过程的一部分，不是独立静态表。
 
@@ -524,26 +524,46 @@ Scheduler 侧在收到 worker 的 `finished_recving` 后，先把请求 ID 记�
 
 ---
 
-## 12. 新 block zero 为什么要放在 Worker 侧
+## 12. 新 block zero 和 CoW copy 为什么要放在 Worker 侧
 
-`Scheduler` 只知道应该分配哪些 block，不负责真正把 GPU memory 清零。
+`Scheduler` 只知道应该分配哪些 block、哪些 block 需要复制，不负责真正操作 GPU KV cache memory。
 
-Worker 侧：
+Scheduler 侧会在每轮构造 `SchedulerOutput` 前 drain 新分配 attention block ids 和 pending CoW copies：
+
+```python
+new_attn_block_ids = self.kv_cache_manager.take_new_block_ids()
+new_block_ids_to_zero = (
+    (new_attn_block_ids or None) if self.needs_kv_cache_zeroing else None
+)
+kv_cache_block_copies, cow_retained_blocks = (
+    self.kv_cache_manager.take_kv_cache_block_copies()
+)
+```
+
+位置：`scheduler.py:1118` 到 `scheduler.py:1133`
+
+Worker 侧在 `_update_states()` 中先 zero 新 block，再执行 pending KV block copy：
 
 ```python
 if scheduler_output.new_block_ids_to_zero:
     self._zero_block_ids(scheduler_output.new_block_ids_to_zero)
+if scheduler_output.kv_cache_block_copies:
+    copy_kv_cache_blocks_inplace(...)
 ```
 
-位置：`gpu_model_runner.py:1153` 到 `gpu_model_runner.py:1156`
+位置：`gpu_model_runner.py:1188` 到 `gpu_model_runner.py:1197`
 
 原因是：
 
 ```text
-zero 是设备侧内存操作；
-Scheduler 只做资源账本；
-Worker 负责物理内存状态。
+zero / copy 都是设备侧 KV cache memory 操作；
+Scheduler 只做资源账本和 copy 计划；
+Worker 负责在 forward 前把物理内存状态落地。
 ```
+
+`SchedulerOutput` 中对应字段也明确说明了这条边界。
+
+位置：`output.py:240` 到 `output.py:246`
 
 ---
 
@@ -635,6 +655,7 @@ Worker 侧 batch 执行不是简单“把 token 拼成一个大张量”，而�
 - prefix cache / external KV / lookahead / encoder budget 的调度决策；
 - 抢占和恢复；
 - 分配 new_block_ids_to_zero；
+- 生成 kv_cache_block_copies 并管理 CoW retained blocks 的延迟释放；
 - 决定哪些请求进入 running / waiting。
 ```
 
@@ -646,7 +667,8 @@ Worker 侧 batch 执行不是简单“把 token 拼成一个大张量”，而�
 - 计算 slot mapping；
 - 在 attention metadata 里使用这些映射；
 - 处理 KV connector 的实际 load/save/finalize；
-- 真正 zero 设备上的新 block。
+- 真正 zero 设备上的新 block；
+- 在 forward 前执行 KV block copy。
 ```
 
 ### 16.3 一句话总结边界
@@ -690,6 +712,10 @@ KV connector 是包在 forward 上下文中的，load/save 和 finalize 都穿�
 
 为了防止残留数据污染 attention / SSM 计算，尤其是新分配显存并不会天然清零。
 
+### 17.6 kv_cache_block_copies 是 Scheduler 还是 Worker 做？
+
+Scheduler 负责从 KV cache manager drain 出 copy 计划和 CoW retained blocks；Worker 在 `_update_states()` 中调用 `copy_kv_cache_blocks_inplace()`，真正把 block 内容复制到设备 KV cache。
+
 ---
 
 ## 18. 总结
@@ -697,7 +723,8 @@ KV connector 是包在 forward 上下文中的，load/save 和 finalize 都穿�
 Worker / ModelRunner 使用 KV cache 的主链路可以压缩成：
 
 ```text
-Scheduler 分配 block
+Scheduler 分配 block / copy 计划
+  → Worker zero 新 block 并应用 CoW block copy
   → Worker 把 block ids 写进 InputBatch.block_table
   → _prepare_inputs() 计算 slot mapping
   → _build_attention_metadata() 组装 block table / slot mapping
