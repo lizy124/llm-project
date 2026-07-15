@@ -168,7 +168,7 @@ coordinator 负责多 KV cache group 的编排：
 
 ### 3.5 SingleTypeKVCacheManager
 
-定义在：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:32`
+定义在：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:36`
 
 它负责每个 group 内的请求到 blocks 映射：
 
@@ -192,7 +192,7 @@ CrossAttentionManager
 
 ## 4. BlockPool 初始化发生了什么
 
-入口在 `BlockPool.__init__()`：`block_pool.py:149`
+入口在 `BlockPool.__init__()`：`vllm/vllm/v1/core/block_pool.py:162`
 
 初始化过程是：
 
@@ -214,7 +214,7 @@ self.null_block = self.free_block_queue.popleft()
 self.null_block.is_null = True
 ```
 
-位置：`block_pool.py:161` 到 `block_pool.py:177`
+位置：`vllm/vllm/v1/core/block_pool.py:175` 到 `vllm/vllm/v1/core/block_pool.py:191`
 
 这意味着：
 
@@ -225,7 +225,7 @@ block_id=0 通常会成为 null_block；
 usage 统计要减掉这个 null block。
 ```
 
-`BlockPool.get_usage()` 里也明确减掉 1：`block_pool.py:504` 到 `block_pool.py:515`
+`BlockPool.get_usage()` 里也明确减掉 1：`vllm/vllm/v1/core/block_pool.py:805` 到 `vllm/vllm/v1/core/block_pool.py:815`
 
 ---
 
