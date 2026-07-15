@@ -133,7 +133,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:867` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:870`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:1061` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:1064`
 
 因此组件关系是：
 
@@ -173,7 +173,7 @@ class GPUModelRunner(
 ):
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:418` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:420`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:445` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:447`
 
 这说明 GPUModelRunner 本身集成了几类能力：
 
@@ -206,7 +206,7 @@ self.speculative_config = vllm_config.speculative_config
 self.observability_config = vllm_config.observability_config
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:426` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:436`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:453` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:463`
 
 ### 4.1 模型和 batch 上限
 
@@ -218,7 +218,7 @@ self.max_num_tokens = scheduler_config.max_num_batched_tokens
 self.max_num_reqs = scheduler_config.max_num_seqs
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:461` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:468`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:491` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:498`
 
 这三个上限会影响：
 
@@ -229,6 +229,8 @@ CUDA graph capture size；
 最大 batch token 数；
 最大并发 request 数。
 ```
+
+当前初始化还会记录 `is_pooling_model`、`enable_prompt_embeds`、routed experts 捕获状态、DCP rank、external launcher PP 输出广播标志和 async scheduling 状态。
 
 ### 4.2 模型相关信息
 
@@ -241,7 +243,7 @@ self.use_alibi = model_config.uses_alibi
 self.cascade_attn_enabled = not self.model_config.disable_cascade_attn
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:479` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:485`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:510` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:516`
 
 这些信息会在 attention metadata 构造、输入准备和 forward 中使用。
 
@@ -256,7 +258,7 @@ self.uses_xdrope_dim = model_config.uses_xdrope_dim
 self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(model_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:488` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:494`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:518` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:524`
 
 如果是 encoder-decoder 模型，还会设置 encoder 长度：
 
@@ -267,7 +269,7 @@ else:
     self.max_encoder_len = 0
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:496` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:501`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:526` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:531`
 
 ### 4.4 Sampler
 
@@ -280,7 +282,7 @@ self.sampler = Sampler(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:506` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:510`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:536` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:540`
 
 这说明：
 
@@ -303,7 +305,7 @@ ModelRunner 保存 worker 侧请求状态：
 self.requests: dict[str, CachedRequestState] = {}
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:637` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:638`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:667` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:671`
 
 这里的 `CachedRequestState` 定义在 `gpu_input_batch.py`，核心字段包括：
 
@@ -321,7 +323,7 @@ class CachedRequestState:
     output_token_ids: list[int]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:32` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:44`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:34` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:65`
 
 它表示：
 
@@ -345,7 +347,7 @@ self.input_batch = InputBatch(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:661` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:689`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:673` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:722`
 
 `InputBatch` 保存当前 persistent batch 的张量和索引状态：
 
@@ -371,7 +373,7 @@ self.num_computed_tokens_cpu_tensor = torch.zeros((max_num_reqs,), ...)
 self.block_table = MultiGroupBlockTable(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:126` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:181`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:126` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:184`
 
 可以这样理解：
 
@@ -391,13 +393,13 @@ self.cross_layers_attn_backend: type[AttentionBackend] | None = None
 self.attn_groups: list[list[AttentionGroup]] = []
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:522` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:530`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:552` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:561`
 
 真正初始化发生在 `initialize_kv_cache()`。
 
 ### 5.4 persistent buffers
 
-ModelRunner 还预分配了一批 GPU buffer，用于 CUDA graph 和减少重复分配：
+ModelRunner 还预分配了一批 GPU buffer，并在 async scheduling 下准备异步输出 copy stream / event，用于 CUDA graph、异步调度和减少重复分配：
 
 ```python
 self.input_ids = self._make_buffer(self.max_num_tokens, dtype=torch.int32)
@@ -408,7 +410,7 @@ self.num_computed_tokens = torch.zeros(self.max_num_reqs, dtype=torch.int32, dev
 self.num_scheduled_tokens = self._make_buffer(self.max_num_reqs, dtype=torch.int32)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:719` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:744`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:754` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:799`
 
 这些 buffer 是 `ModelRunner` 负责高性能执行的关键。
 
@@ -425,7 +427,7 @@ self.num_scheduled_tokens = self._make_buffer(self.max_num_reqs, dtype=torch.int
 def load_model(self, load_dummy_weights: bool = False) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5142` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5143`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5230` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 
 核心模型加载：
 
@@ -436,7 +438,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5163` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5166`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5251` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5254`
 
 如果有 LoRA：
 
@@ -447,7 +449,7 @@ if self.lora_config:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5167` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5170`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5255` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5258`
 
 如果有 speculative decoding drafter：
 
@@ -458,7 +460,7 @@ if hasattr(self, "drafter"):
         self.drafter.load_model(self.model)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5171` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5174`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5259` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5262`
 
 加载后会记录模型内存：
 
@@ -466,7 +468,7 @@ if hasattr(self, "drafter"):
 self.model_memory_usage = m.consumed_memory
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5230` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5320` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5321`
 
 还会处理：
 
@@ -481,7 +483,7 @@ UBatchWrapper；
 offloader post_init。
 ```
 
-相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5200` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5318`
+相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5290` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5408`
 
 所以：
 
@@ -499,7 +501,7 @@ offloader post_init。
 self.model_runner.initialize_kv_cache(kv_cache_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:577` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:578`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:731` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:732`
 
 ModelRunner 侧入口：
 
@@ -511,7 +513,7 @@ def initialize_kv_cache(
 ) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7303` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7307`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7467` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7471`
 
 它做的事情可以拆成：
 
@@ -525,7 +527,8 @@ def initialize_kv_cache(
 7. 创建 attention metadata builders；
 8. 根据 KV cache config 重建 InputBatch；
 9. 分配 KV cache tensors；
-10. 注册 KV transfer group 可访问的 KV cache。
+10. 校验 extract-hidden-states drafter 的 KV cache group；
+11. 注册 KV transfer group 可访问的 KV cache。
 ```
 
 对应代码：
@@ -542,7 +545,7 @@ self.may_reinitialize_input_batch(kv_cache_config, kernel_block_sizes)
 kv_caches = self.initialize_kv_cache_tensors(kv_cache_config, kernel_block_sizes)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7314` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7340`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7478` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7504`
 
 如果有 KV transfer group：
 
@@ -551,7 +554,7 @@ kv_transfer_group.register_kv_caches(kv_caches)
 kv_transfer_group.set_host_xfer_buffer_ops(copy_kv_blocks)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7351` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7360`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7515` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7524`
 
 因此，职责边界是：
 
@@ -572,7 +575,7 @@ ModelRunner 侧：
 def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7459`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7623`
 
 它会遍历模型里的 attention layers：
 
@@ -584,7 +587,7 @@ for layer_name, attn_module in attn_layers.items():
         kv_cache_spec[layer_name] = spec
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7470` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7488`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7631` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7650`
 
 它还会跳过 KV sharing target layer：
 
@@ -596,7 +599,7 @@ if isinstance(attn_module, Attention) and (
     continue
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7472` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7484`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7633` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7648`
 
 所以：
 
@@ -621,28 +624,31 @@ def execute_model(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | IntermediateTensors | None:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4043` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4048`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4096` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4101`
 
 它的主流程可以概括为：
 
 ```text
 1. 检查上一次 execute_model_state 是否已被 sample_tokens 消费；
-2. 处理 ngram_gpu / KV connector 前置逻辑；
-3. _update_states(scheduler_output) 更新请求和 batch 状态；
+2. 处理 ngram_gpu 的 SchedulerOutput 浅拷贝和 KV connector preemption；
+3. _update_states(scheduler_output) 更新请求、batch、KV zero/copy 状态；
 4. 如果是 EC producer，执行 encoder 并返回空 encoder output；
 5. 如果本轮无 token，返回 empty output 或 KV-only output；
 6. 准备 num_scheduled_tokens_np / batch size；
 7. _prepare_inputs()；
 8. 计算 cascade attention prefix；
 9. _determine_batch_execution_and_padding()；
-10. 处理 Mamba preprocess；
-11. _get_slot_mappings()；
-12. _build_attention_metadata()；
-13. _preprocess()；
-14. _model_forward()；
-15. pooling 或 compute_logits；
-16. 保存 execute_model_state；
-17. 返回 None，等待 sample_tokens()。
+10. 准备 DBO / ubatch slices；
+11. 处理 Mamba preprocess；
+12. _get_slot_mappings()；
+13. _build_attention_metadata()；
+14. _preprocess()；
+15. 必要时因 KV scales 或 encoder input 调整 cudagraph / compile；
+16. _model_forward()；
+17. pooling 或 compute_logits；
+18. 保存 execute_model_state；
+19. 执行 deferred state corrections；
+20. 返回 None，等待 sample_tokens()。
 ```
 
 这条链路是 ModelRunner 的核心。
@@ -661,7 +667,7 @@ if self.execute_model_state is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4049` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4053`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4102` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4106`
 
 这说明：
 
@@ -687,7 +693,7 @@ self.execute_model_state
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4085` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4086`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4138` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4139`
 
 `_update_states()` 的注释说明：
 
@@ -703,13 +709,15 @@ new/resumed/paused/finished request in the batch.
 """
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1127` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1135`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1162` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1171`
 
 它主要做：
 
 ```text
 删除 finished requests；
+通知 late interaction runner 清理 finished requests；
 清零新分配 KV block；
+应用 CoW KV block copy；
 释放 encoder cache；
 移除本轮未调度的 cached requests；
 添加 scheduled_new_reqs；
@@ -735,7 +743,7 @@ for req_id in scheduler_output.finished_req_ids:
     self.input_batch.remove_request(req_id)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1138` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1151`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1172` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1186`
 
 移除本轮未调度请求：
 
@@ -749,7 +757,7 @@ for req_id in unscheduled_req_ids:
     self.input_batch.remove_request(req_id)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1167` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1182`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1203` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1223`
 
 添加新请求：
 
@@ -771,7 +779,7 @@ req_state = CachedRequestState(
 self.requests[req_id] = req_state
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1224` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1238`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1235` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1279`
 
 更新 cached / running 请求：
 
@@ -785,7 +793,7 @@ for i, req_id in enumerate(req_data.req_ids):
     req_index = self.input_batch.req_id_to_index.get(req_id)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1284` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1290`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1302` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1331`
 
 这就是 SchedulerOutput 到 worker-local state 的桥。
 
@@ -810,7 +818,7 @@ class SchedulerOutput:
     ...
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:180` 到 `code/vllm/vllm/v1/core/sched/output.py:245`
+位置：`code/vllm/vllm/v1/core/sched/output.py:182` 到 `code/vllm/vllm/v1/core/sched/output.py:250`
 
 ModelRunner 主要消费这些字段：
 
@@ -828,6 +836,11 @@ ModelRunner 主要消费这些字段：
 | `kv_connector_metadata` | KV transfer 处理 |
 | `ec_connector_metadata` | encoder cache transfer 处理 |
 | `new_block_ids_to_zero` | 清零新分配 KV blocks |
+| `kv_cache_block_copies` | 应用 CoW KV block copy |
+| `preempted_req_ids` | V2 runner 使用的 preemption 信息 |
+| `pending_structured_output_tokens` | batch queue 中决定是否延后 sample_tokens |
+| `num_invalid_spec_tokens` | 修正 spec decode 接受率统计 |
+| `num_spec_tokens_to_schedule` | dynamic speculative decoding 的下一步 K |
 
 所以对于 ModelRunner 来说：
 
@@ -851,7 +864,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4181` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4184`
 
 `_prepare_inputs()` 做的事情可以概括为：
 
@@ -882,7 +895,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 ) = self._determine_batch_execution_and_padding(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4143` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4156`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4196` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4209`
 
 输入包括：
 
@@ -902,7 +915,7 @@ encoder request 数量
 是否 padding 到 graph capture size；
 是否使用 ubatching；
 DP 之间 token 数如何协调；
-返回 batch descriptor。
+返回 batch descriptor，并为 DBO / microbatching 准备 ubatch slices。
 ```
 
 所以 ModelRunner 不只是准备 token，它还负责决定“这一批怎么跑得更快”。
@@ -922,7 +935,7 @@ slot_mappings_by_group, slot_mappings = self._get_slot_mappings(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4244` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4253`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4297` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4306`
 
 然后构造 attention metadata：
 
@@ -944,7 +957,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4269`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4308` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4322`
 
 这一步是 attention backend 的关键入口。
 
@@ -974,7 +987,7 @@ attention metadata 构造后，ModelRunner 调用：
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4271` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4280`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4324` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4333`
 
 `_preprocess()` 可以理解为：
 
@@ -1011,7 +1024,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4320` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4326`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4380` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 forward 外面包了 forward context：
 
@@ -1029,7 +1042,7 @@ set_forward_context(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4303` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4313`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4362` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4378`
 
 这说明模型 forward 不只是传 `input_ids`，还依赖全局 forward context 中的：
 
@@ -1040,6 +1053,7 @@ batch descriptor；
 slot mapping；
 ubatch slices；
 DP token 数；
+encoder-decoder 有 encoder input 时跳过 compiled forward；
 ```
 
 因此：
@@ -1065,7 +1079,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4337` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4343`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4397` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 这表示当前 rank 只负责模型的一部分层，输出中间张量给下一个 PP stage。
 
@@ -1083,7 +1097,7 @@ if self.is_pooling_model:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4345` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4352`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4405` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4412`
 
 这类请求不走 token sampling，而是直接返回 pooling output。
 
@@ -1096,7 +1110,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4355`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 这里说明：
 
@@ -1130,7 +1144,7 @@ self.execute_model_state = ExecuteModelState(
 self.kv_connector_output = kv_connector_output
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4386` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4398`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4446` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4458`
 
 然后：
 
@@ -1138,7 +1152,7 @@ self.kv_connector_output = kv_connector_output
 return None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4405`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4465`
 
 为什么？
 
@@ -1168,7 +1182,7 @@ def sample_tokens(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput | IntermediateTensors:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4422` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4425`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4482` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4485`
 
 如果没有 `execute_model_state`，则只返回 KV connector output：
 
@@ -1180,7 +1194,7 @@ if self.execute_model_state is None:
     return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4426` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4434`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4486` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4494`
 
 正常 generation 路径会取出 `execute_model_state`：
 
@@ -1200,7 +1214,7 @@ if self.execute_model_state is None:
 self.execute_model_state = None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4436` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4450`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4496` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4510`
 
 如果有结构化输出 grammar bitmask：
 
@@ -1211,7 +1225,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4456`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 然后采样：
 
@@ -1219,7 +1233,7 @@ if grammar_output is not None:
 sampler_output = self._sample(logits, spec_decode_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4458` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4518` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4519`
 
 采样后更新状态：
 
@@ -1229,7 +1243,7 @@ self._update_states_after_model_execute(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4461` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4463`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4521` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4523`
 
 后续还会处理：
 
@@ -1237,12 +1251,14 @@ self._update_states_after_model_execute(
 async scheduling 下 PP sampled token 广播；
 speculative decoding drafter 提案；
 bookkeeping；
+spec decode 后 finalize KV connector；
 logprobs / prompt logprobs；
 NaN 统计；
-ModelRunnerOutput 构造。
+ModelRunnerOutput 构造；
+async scheduling 下构造 AsyncGPUModelRunnerOutput。
 ```
 
-相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4464` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4589`
+相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4524` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4770`
 
 ---
 
@@ -1266,7 +1282,7 @@ class ModelRunnerOutput:
     routed_experts: RoutedExpertsLists | None = None
 ```
 
-位置：`code/vllm/vllm/v1/outputs.py:231` 到 `code/vllm/vllm/v1/outputs.py:281`
+位置：`code/vllm/vllm/v1/outputs.py:231` 到 `code/vllm/vllm/v1/outputs.py:290`
 
 它是 Worker / ModelRunner 返回给 Scheduler 的 batch 级执行结果。
 
@@ -1409,7 +1425,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4456`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 这说明结构化输出不是 OutputProcessor 后处理，而是在采样前限制 logits。
 
@@ -1425,7 +1441,7 @@ if self.speculative_config and get_pp_group().is_last_rank:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:545` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:620`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:575` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:650`
 
 采样后可能提出 draft tokens：
 
@@ -1434,7 +1450,7 @@ self._draft_token_ids = self.propose_draft_token_ids(...)
 self._copy_draft_token_ids_to_cpu(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4481` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4495`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4541` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4555`
 
 ### 25.3 Mamba / hybrid model
 
@@ -1446,7 +1462,7 @@ if self.cache_config.mamba_cache_mode == "align":
     mamba_utils.preprocess_mamba(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4198` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4216`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4251` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4292`
 
 Mamba postprocess 在采样后：
 
@@ -1455,7 +1471,7 @@ if self.cache_config.mamba_cache_mode == "align":
     mamba_utils.postprocess_mamba_align_gpu(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1517` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1537`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1538` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1583`
 
 ### 25.4 KV Connector
 
@@ -1468,7 +1484,7 @@ if has_kv_transfer_group():
     get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4075` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4078`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
 
 forward 时收集 KV connector output：
 
@@ -1476,7 +1492,7 @@ forward 时收集 KV connector output：
 self.maybe_get_kv_connector_output(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4315` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4318`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4374` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4378`
 
 ### 25.5 EC Connector / Encoder
 
@@ -1489,7 +1505,7 @@ if has_ec_transfer() and not get_ec_transfer().is_consumer:
         return make_empty_encoder_model_runner_output(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4088` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4094`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4141` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4147`
 
 这表示 encoder cache disaggregation 也插在 ModelRunner 主链路里。
 
@@ -1546,7 +1562,7 @@ ModelRunner 侧链路：
 self.is_pooling_model = model_config.runner_type == "pooling"
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:450`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:480`
 
 forward 后不走 logits / sampling，而是：
 
@@ -1560,7 +1576,7 @@ if self.is_pooling_model:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4345` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4352`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4405` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4412`
 
 因此 pooling 请求链路是：
 
@@ -1588,7 +1604,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4339` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4343`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4399` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 然后 Worker 会把这些中间张量发给下一个 PP rank。
 

@@ -2,10 +2,16 @@
 
 源码位置：
 
-- `vllm/vllm/v1/executor/`
-- `vllm/vllm/v1/worker/`
+- `vllm/vllm/v1/executor/abstract.py:37`：Executor 抽象接口与后端选择。
+- `vllm/vllm/v1/executor/uniproc_executor.py:45`、`multiproc_executor.py:103`、`ray_executor.py:64`、`ray_executor_v2.py:219`：主要执行后端。
+- `vllm/vllm/v1/worker/worker_base.py:39`、`worker_base.py:142`、`worker_base.py:153`：`WorkerBase` 抽象层与 execute_model / sample_tokens 接口。
+- `vllm/vllm/v1/worker/gpu_worker.py:297`、`gpu_worker.py:1002`：GPUWorker 初始化与执行入口。
+- `vllm/vllm/v1/worker/cpu_worker.py:33`、`xpu_worker.py:24`：CPU / XPU Worker 入口。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:445`、`gpu_model_runner.py:4097`、`gpu_model_runner.py:4483`：GPUModelRunner 主类、execute_model 与 sample_tokens。
+- `vllm/vllm/v1/worker/gpu/`：GPU 输入 batch、attention、sampling、spec decode、structured output 等拆分实现。
+- `vllm/vllm/v1/outputs.py:196`、`outputs.py:225`、`outputs.py:234`：`KVConnectorOutput` / `ECConnectorOutput` / `ModelRunnerOutput` 等执行层输出结构。
 
-这个目录按问题拆解 vLLM V1 的执行层，重点回答：`Executor` 负责什么、`Worker` 负责什么、`ModelRunner` 负责什么、`SchedulerOutput` 如何进入真正的模型执行、`ModelRunnerOutput` 如何产生，以及执行层如何和 KV Cache / Attention / Sampling / 生命周期管理协同。
+这个目录按问题拆解 vLLM V1 的执行层，重点回答：`Executor` 负责什么、`Worker` 负责什么、`ModelRunner` 负责什么、`SchedulerOutput` 如何进入真正的模型执行、`ModelRunnerOutput` / `AsyncModelRunnerOutput` 如何产生，以及执行层如何和 KV Cache / Encoder Cache Connector、Attention、Sampling、structured output、spec decode、生命周期管理协同。
 
 ---
 
@@ -23,9 +29,9 @@ EngineCore
   → Executor.execute_model()
   → Worker.execute_model()
   → ModelRunner.execute_model()
-  → forward / logits / pooling
-  → sample_tokens()
-  → ModelRunnerOutput
+  → prepare inputs / forward / logits / pooling / KV&EC connector hooks
+  → sample_tokens()（部分路径 execute_model 先返回 None，再由 sample_tokens 完成采样）
+  → ModelRunnerOutput / AsyncModelRunnerOutput
   → Scheduler.update_from_output()
 ```
 

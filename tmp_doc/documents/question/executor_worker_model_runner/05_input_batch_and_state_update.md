@@ -30,12 +30,12 @@ InputBatch：
 
 ```text
 1. 删除 finished 请求；
-2. 清理 encoder cache / 新分配 block zero；
+2. zero 新分配 block / 执行 KV block CoW copy / 清理 encoder cache；
 3. 从 InputBatch 移除本轮未调度请求；
 4. 把 scheduled_new_reqs 加入 Worker 缓存；
 5. 更新 scheduled_cached_reqs 的 token / block / computed 状态；
 6. 把本轮要执行的请求加入 InputBatch；
-7. 刷新 sampling metadata。
+7. condense / 可选 batch reorder / 刷新 sampling metadata。
 ```
 
 所以：
@@ -73,7 +73,7 @@ InputBatch：
 
 ## 3. SchedulerOutput 提供哪些状态更新信息
 
-`SchedulerOutput` 定义在：`output.py:180`
+`SchedulerOutput` 定义在：`output.py:183`
 
 关键字段：
 
@@ -89,10 +89,13 @@ class SchedulerOutput:
     num_common_prefix_blocks: list[int]
     finished_req_ids: set[str]
     free_encoder_mm_hashes: list[str]
+    new_block_ids_to_zero: list[int] | None = None
+    kv_cache_block_copies: list[KVCacheBlockCopy] | None = None
+    num_spec_tokens_to_schedule: int = 0
     ...
 ```
 
-位置：`output.py:180` 到 `output.py:245`
+位置：`output.py:183` 到 `output.py:250`
 
 这些字段在 Worker 侧的作用是：
 
@@ -107,12 +110,14 @@ class SchedulerOutput:
 | `finished_req_ids` | 通知 Worker 清理请求缓存和 batch |
 | `free_encoder_mm_hashes` | 清理 encoder cache |
 | `new_block_ids_to_zero` | 新分配 KV block 需要先 zero，避免脏数据 |
+| `kv_cache_block_copies` | 新 block zero 后、forward 前执行 KV block CoW copy |
+| `num_spec_tokens_to_schedule` | dynamic speculative decoding 下给下一步使用的 spec token 数 |
 
 ---
 
 ## 4. CachedRequestState 是什么
 
-定义在：`gpu_input_batch.py:33`
+定义在：`gpu_input_batch.py:35`
 
 ```python
 @dataclass
@@ -128,7 +133,7 @@ class CachedRequestState:
     ...
 ```
 
-位置：`gpu_input_batch.py:33` 到 `gpu_input_batch.py:64`
+位置：`gpu_input_batch.py:35` 到 `gpu_input_batch.py:65`
 
 它保存的是单个请求在 Worker 侧需要反复使用的状态，包括：
 
@@ -154,7 +159,7 @@ def num_tokens(self) -> int:
     return self.num_prompt_tokens + len(self.output_token_ids)
 ```
 
-位置：`gpu_input_batch.py:74` 到 `gpu_input_batch.py:76`
+位置：`gpu_input_batch.py:75` 到 `gpu_input_batch.py:77`
 
 也就是说，Worker 侧认为请求当前 token 总数是：
 
@@ -166,7 +171,7 @@ prompt tokens + 已生成 output tokens
 
 ## 5. InputBatch 是什么
 
-定义在：`gpu_input_batch.py:91`
+定义在：`gpu_input_batch.py:92`
 
 ```python
 class InputBatch:
@@ -199,12 +204,13 @@ self.token_ids_cpu_tensor
 self.token_ids_cpu
 self.is_token_ids_tensor
 self.is_token_ids
+self.req_prompt_embeds
 self.num_tokens_no_spec_cpu_tensor
 self.num_prompt_tokens_cpu_tensor
 self.num_computed_tokens_cpu_tensor
 ```
 
-位置：`gpu_input_batch.py:129` 到 `gpu_input_batch.py:168`
+位置：`gpu_input_batch.py:129` 到 `gpu_input_batch.py:171`
 
 它们保存：
 
@@ -222,7 +228,7 @@ prompt_embeds / mixed input 的 token mask。
 self.block_table = MultiGroupBlockTable(...)
 ```
 
-位置：`gpu_input_batch.py:170` 到 `gpu_input_batch.py:181`
+位置：`gpu_input_batch.py:173` 到 `gpu_input_batch.py:184`
 
 这是 Worker 侧把请求映射到 KV cache blocks 的关键结构。
 
@@ -244,7 +250,7 @@ num_logprobs
 logprob_token_ids
 ```
 
-位置：`gpu_input_batch.py:183` 到 `gpu_input_batch.py:287`
+位置：`gpu_input_batch.py:186` 到 `gpu_input_batch.py:288`
 
 这些最后会构造为 `SamplingMetadata`。
 
@@ -288,7 +294,7 @@ scheduled_cached_reqs：
   之前调度过的请求，只发送增量 diff。
 ```
 
-注释位置：`output.py:181` 到 `output.py:189`
+注释位置：`output.py:184` 到 `output.py:190`
 
 这样做的目的：
 
@@ -309,7 +315,7 @@ self.input_batch：当前执行 batch。
 
 ## 7. _update_states() 的入口
 
-入口在：`gpu_model_runner.py:1127`
+入口在：`gpu_model_runner.py:1162`
 
 ```python
 def _update_states(self, scheduler_output: "SchedulerOutput") -> Callable | None:
@@ -329,7 +335,7 @@ new/resumed/paused/finished request in the batch.
 """
 ```
 
-位置：`gpu_model_runner.py:1127` 到 `gpu_model_runner.py:1136`
+位置：`gpu_model_runner.py:1162` 到 `gpu_model_runner.py:1171`
 
 这说明 `_update_states()` 的产物直接服务于后面的：
 
@@ -350,7 +356,7 @@ for req_id in scheduler_output.finished_req_ids:
     self.num_prompt_logprobs.pop(req_id, None)
 ```
 
-位置：`gpu_model_runner.py:1137` 到 `gpu_model_runner.py:1140`
+位置：`gpu_model_runner.py:1172` 到 `gpu_model_runner.py:1175`
 
 然后通知 late interaction runner：
 
@@ -360,7 +366,7 @@ self.late_interaction_runner.on_requests_finished(
 )
 ```
 
-位置：`gpu_model_runner.py:1141` 到 `gpu_model_runner.py:1143`
+位置：`gpu_model_runner.py:1176` 到 `gpu_model_runner.py:1178`
 
 再从持久 batch 中删除：
 
@@ -369,7 +375,7 @@ for req_id in scheduler_output.finished_req_ids:
     self.input_batch.remove_request(req_id)
 ```
 
-位置：`gpu_model_runner.py:1150` 到 `gpu_model_runner.py:1151`
+位置：`gpu_model_runner.py:1185` 到 `gpu_model_runner.py:1186`
 
 状态变化：
 
@@ -388,11 +394,11 @@ finished_req_ids 和 scheduled_req_ids 可能重叠。
 
 例如一个请求被 abort 后，又用同一个 request id 重新提交。Worker 会把它当成两个不同请求：先清理旧请求，再按新请求重新加入。
 
-位置：`gpu_model_runner.py:1144` 到 `gpu_model_runner.py:1149`
+位置：`gpu_model_runner.py:1179` 到 `gpu_model_runner.py:1184`
 
 ---
 
-## 9. 第二步：zero 新 KV block，释放 encoder cache
+## 9. 第二步：zero 新 KV block、执行 KV block copy，释放 encoder cache
 
 ### 9.1 zero 新分配 block
 
@@ -401,7 +407,7 @@ if scheduler_output.new_block_ids_to_zero:
     self._zero_block_ids(scheduler_output.new_block_ids_to_zero)
 ```
 
-位置：`gpu_model_runner.py:1153` 到 `gpu_model_runner.py:1156`
+位置：`gpu_model_runner.py:1188` 到 `gpu_model_runner.py:1191`
 
 作用：
 
@@ -411,14 +417,29 @@ Worker 在使用前先清零 GPU memory；
 避免 stale NaN / 脏数据污染 attention 或 SSM 计算。
 ```
 
-### 9.2 释放 encoder cache
+### 9.2 执行 KV block CoW copy
+
+```python
+if scheduler_output.kv_cache_block_copies:
+    copy_kv_cache_blocks_inplace(
+        self.kv_caches,
+        self.kv_cache_config.num_blocks,
+        scheduler_output.kv_cache_block_copies,
+    )
+```
+
+位置：`gpu_model_runner.py:1192` 到 `gpu_model_runner.py:1197`
+
+这一步在 zero 新 block 之后、释放 encoder cache 和 forward 之前执行，用于把 Scheduler 侧记录的 CoW block copy 应用到 Worker 的 KV cache。
+
+### 9.3 释放 encoder cache
 
 ```python
 for mm_hash in scheduler_output.free_encoder_mm_hashes:
     self.encoder_cache.pop(mm_hash, None)
 ```
 
-位置：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+位置：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 这和多模态 / encoder-decoder 请求有关。
 
@@ -441,7 +462,7 @@ for req_id in unscheduled_req_ids:
     self.input_batch.remove_request(req_id)
 ```
 
-位置：`gpu_model_runner.py:1162` 到 `gpu_model_runner.py:1182`
+位置：`gpu_model_runner.py:1203` 到 `gpu_model_runner.py:1223`
 
 含义：
 
@@ -469,7 +490,7 @@ InputBatch 中已有的请求
 因为未来还可能再次被调度。
 ```
 
-位置：`gpu_model_runner.py:1162` 到 `gpu_model_runner.py:1166`
+位置：`gpu_model_runner.py:1203` 到 `gpu_model_runner.py:1207`
 
 ---
 
@@ -481,7 +502,7 @@ InputBatch 中已有的请求
 scheduler_output.scheduled_new_reqs
 ```
 
-位置：`gpu_model_runner.py:1195`
+位置：`gpu_model_runner.py:1236`
 
 ### 11.1 streaming session 特殊情况
 
@@ -494,7 +515,7 @@ if req_id in self.requests:
     continue
 ```
 
-位置：`gpu_model_runner.py:1195` 到 `gpu_model_runner.py:1201`
+位置：`gpu_model_runner.py:1236` 到 `gpu_model_runner.py:1242`
 
 这通常是 streaming input 场景。
 
@@ -503,12 +524,13 @@ if req_id in self.requests:
 ```text
 1. 从 InputBatch 移除旧请求；
 2. 更新 prompt_token_ids / mm_features / prompt_embeds；
-3. 更新 sampling_params / pooling_params；
-4. 更新 block_ids / num_computed_tokens；
-5. 清空 output_token_ids，因为之前 output tokens 现在变成 prompt 的一部分。
+3. 更新 sampling_params / pooling_params，并重新注册 late interaction runner；
+4. 更新 block_ids / num_computed_tokens / num_prompt_tokens；
+5. 清空 output_token_ids，因为之前 output tokens 现在变成 prompt 的一部分；
+6. 如模型使用 M-RoPE，重新初始化 M-RoPE positions。
 ```
 
-位置：`gpu_model_runner.py:1555` 到 `gpu_model_runner.py:1588`
+位置：`gpu_model_runner.py:1596` 到 `gpu_model_runner.py:1629`
 
 状态变化：
 
@@ -539,7 +561,7 @@ req_state = CachedRequestState(
 )
 ```
 
-位置：`gpu_model_runner.py:1224` 到 `gpu_model_runner.py:1237`
+位置：`gpu_model_runner.py:1265` 到 `gpu_model_runner.py:1278`
 
 然后加入 Worker 请求缓存：
 
@@ -547,7 +569,7 @@ req_state = CachedRequestState(
 self.requests[req_id] = req_state
 ```
 
-位置：`gpu_model_runner.py:1238`
+位置：`gpu_model_runner.py:1279`
 
 如果需要 prompt logprobs，会记录：
 
@@ -555,7 +577,7 @@ self.requests[req_id] = req_state
 self.num_prompt_logprobs[req_id] = ...
 ```
 
-位置：`gpu_model_runner.py:1241` 到 `gpu_model_runner.py:1246`
+位置：`gpu_model_runner.py:1282` 到 `gpu_model_runner.py:1287`
 
 如果模型需要特殊位置编码，也会初始化：
 
@@ -564,7 +586,7 @@ M-RoPE positions
 XD-RoPE positions
 ```
 
-位置：`gpu_model_runner.py:1248` 到 `gpu_model_runner.py:1254`
+位置：`gpu_model_runner.py:1289` 到 `gpu_model_runner.py:1295`
 
 ---
 
@@ -576,7 +598,7 @@ XD-RoPE positions
 req_data = scheduler_output.scheduled_cached_reqs
 ```
 
-位置：`gpu_model_runner.py:1261` 到 `gpu_model_runner.py:1264`
+位置：`gpu_model_runner.py:1302` 到 `gpu_model_runner.py:1305`
 
 它包含的是增量信息，而不是完整请求数据。
 
@@ -592,7 +614,7 @@ for i, req_id in enumerate(req_data.req_ids):
     req_index = self.input_batch.req_id_to_index.get(req_id)
 ```
 
-位置：`gpu_model_runner.py:1284` 到 `gpu_model_runner.py:1290`
+位置：`gpu_model_runner.py:1325` 到 `gpu_model_runner.py:1331`
 
 这一步主要更新：
 
@@ -611,7 +633,7 @@ async scheduling 下的 draft token 修正
 req_state.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`gpu_model_runner.py:1334` 到 `gpu_model_runner.py:1335`
+位置：`gpu_model_runner.py:1375` 到 `gpu_model_runner.py:1376`
 
 这是 Worker 侧和 Scheduler 侧 token 进度同步的关键。
 
@@ -625,7 +647,7 @@ req_state.num_computed_tokens = num_computed_tokens
 scheduled_spec_tokens = scheduler_output.scheduled_spec_decode_tokens
 ```
 
-位置：`gpu_model_runner.py:1263` 到 `gpu_model_runner.py:1264`
+位置：`gpu_model_runner.py:1304` 到 `gpu_model_runner.py:1305`
 
 InputBatch 侧有：
 
@@ -633,24 +655,27 @@ InputBatch 侧有：
 def update_req_spec_token_ids(...)
 ```
 
-位置：`gpu_input_batch.py:483`
+位置：`gpu_input_batch.py:486`
 
 它会：
 
 ```text
 1. 清空当前 req_index 的 spec_token_ids；
 2. 读取 scheduler_output.scheduled_spec_decode_tokens[req_id]；
-3. 写入 token_ids_cpu 的 spec token 区间；
-4. 更新 request.prev_num_draft_len。
+3. 更新 request.prev_num_draft_len；
+4. 如果本轮没有 spec tokens，直接返回；
+5. 否则写入 token_ids_cpu 的 spec token 区间，并同步 is_token_ids / cur_spec_token_ids。
 ```
 
-位置：`gpu_input_batch.py:483` 到 `gpu_input_batch.py:508`
+如果 speculative decoding 搭配 structured output，Scheduler 可能丢弃不符合 schema 的 draft tokens，因此即使开启 spec decode，`scheduled_spec_decode_tokens` 也可能没有该请求。
+
+位置：`gpu_input_batch.py:486` 到 `gpu_input_batch.py:511`
 
 ### 12.3 async spec decode 的延迟修正
 
 在 async scheduling + spec decode 场景，Worker 可能先乐观认为 draft tokens 都被接受，后续再修正。
 
-源码注释从：`gpu_model_runner.py:1292` 开始说明。
+源码注释从：`gpu_model_runner.py:1333` 开始说明。
 
 关键逻辑：
 
@@ -661,13 +686,14 @@ prev_num_draft_len > 0
   → 等模型 forward 后再纠正
 ```
 
-位置：`gpu_model_runner.py:1292` 到 `gpu_model_runner.py:1333`
+位置：`gpu_model_runner.py:1333` 到 `gpu_model_runner.py:1373`
 
 这部分容易混淆，核心是：
 
 ```text
 异步调度下 Scheduler 可能提前调度下一步，
-Worker 侧需要在不阻塞 forward 的情况下维护 token 计数一致性。
+Worker 侧先乐观推进 token 计数；batch launch 后再执行 deferred correction，
+避免在 forward 前等待上一轮采样统计。
 ```
 
 ---
@@ -682,7 +708,7 @@ InputBatch 的添加入口：
 def add_request(self, request: CachedRequestState) -> int:
 ```
 
-位置：`gpu_input_batch.py:335`
+位置：`gpu_input_batch.py:338`
 
 ### 13.1 分配 req_index
 
@@ -690,11 +716,11 @@ def add_request(self, request: CachedRequestState) -> int:
 req_index = self._register_add_request(request)
 ```
 
-位置：`gpu_input_batch.py:339`
+位置：`gpu_input_batch.py:342`
 
 `_register_add_request()` 会优先复用刚删除请求留下的空位；没有空位则追加到 batch 尾部。
 
-位置：`gpu_input_batch.py:309` 到 `gpu_input_batch.py:333`
+位置：`gpu_input_batch.py:312` 到 `gpu_input_batch.py:336`
 
 ### 13.2 更新 req_id 映射
 
@@ -703,7 +729,7 @@ self._req_ids.append(req_id) 或 self._req_ids[req_index] = req_id
 self.req_id_to_index[req_id] = req_index
 ```
 
-位置：`gpu_input_batch.py:341` 到 `gpu_input_batch.py:351`
+位置：`gpu_input_batch.py:344` 到 `gpu_input_batch.py:354`
 
 这就是：
 
@@ -717,12 +743,15 @@ request_id → batch row index
 
 ```python
 self.token_ids_cpu[req_index, :num_prompt_tokens] = request.prompt_token_ids
+self.is_token_ids[req_index, :num_prompt_tokens] = ...
+self.req_prompt_embeds[req_index] = request.prompt_embeds
 self.token_ids_cpu[req_index, start_idx:end_idx] = request.output_token_ids
+self.is_token_ids[req_index, start_idx:end_idx] = True
 self.num_tokens_no_spec[req_index] = request.num_tokens
 self.num_computed_tokens_cpu[req_index] = request.num_computed_tokens
 ```
 
-位置：`gpu_input_batch.py:353` 到 `gpu_input_batch.py:377`
+位置：`gpu_input_batch.py:356` 到 `gpu_input_batch.py:380`
 
 这一步把单请求状态展开到 batch 矩阵里。
 
@@ -732,7 +761,7 @@ self.num_computed_tokens_cpu[req_index] = request.num_computed_tokens
 self.block_table.add_row(request.block_ids, req_index)
 ```
 
-位置：`gpu_input_batch.py:378`
+位置：`gpu_input_batch.py:381`
 
 这把请求的 KV block ids 写入当前 batch 的 block table。
 
@@ -755,7 +784,7 @@ allowed token ids
 bad words
 ```
 
-位置：`gpu_input_batch.py:380` 到 `gpu_input_batch.py:452`
+位置：`gpu_input_batch.py:383` 到 `gpu_input_batch.py:455`
 
 ### 13.6 更新 pooling 状态
 
@@ -767,7 +796,7 @@ pooling_states
 logits_processing_needs_token_ids
 ```
 
-位置：`gpu_input_batch.py:453` 到 `gpu_input_batch.py:463`
+位置：`gpu_input_batch.py:456` 到 `gpu_input_batch.py:464`
 
 ### 13.7 更新 LoRA 映射
 
@@ -777,11 +806,11 @@ self.lora_id_to_request_ids[lora_id].add(request.req_id)
 self.lora_id_to_lora_request[lora_id] = request.lora_request
 ```
 
-位置：`gpu_input_batch.py:468` 到 `gpu_input_batch.py:480`
+位置：`gpu_input_batch.py:471` 到 `gpu_input_batch.py:482`
 
 ---
 
-## 14. 第七步：删除请求后的 condense
+## 14. 第七步：删除请求后的 condense / batch reorder
 
 `InputBatch.remove_request()` 会把请求所在位置标记为空，但不会立刻把整个 batch 紧凑化。
 
@@ -791,7 +820,7 @@ self.lora_id_to_lora_request[lora_id] = request.lora_request
 def remove_request(self, req_id: str) -> int | None:
 ```
 
-位置：`gpu_input_batch.py:510`
+位置：`gpu_input_batch.py:513`
 
 它会：
 
@@ -800,11 +829,11 @@ def remove_request(self, req_id: str) -> int | None:
 2. 把 _req_ids[req_index] 设为 None；
 3. 清理 req_output_token_ids / spec_token_ids；
 4. 清理 block table row；
-5. 清理 LoRA / sampling / pooling 状态；
+5. 清理 LoRA / sampling / pooling / prev_req_id_to_index / thinking budget 状态；
 6. 记录 batch_update_builder.removed。
 ```
 
-位置：`gpu_input_batch.py:520` 到 `gpu_input_batch.py:564`
+位置：`gpu_input_batch.py:523` 到 `gpu_input_batch.py:567`
 
 注意注释：
 
@@ -812,7 +841,7 @@ def remove_request(self, req_id: str) -> int | None:
 """This method must always be followed by a call to condense()."""
 ```
 
-位置：`gpu_input_batch.py:510` 到 `gpu_input_batch.py:512`
+位置：`gpu_input_batch.py:513` 到 `gpu_input_batch.py:515`
 
 ### 14.1 condense 做什么
 
@@ -820,7 +849,7 @@ def remove_request(self, req_id: str) -> int | None:
 def condense(self) -> None:
 ```
 
-位置：`gpu_input_batch.py:683`
+位置：`gpu_input_batch.py:686`
 
 它会把后面的非空请求向前移动，填补空洞。
 
@@ -835,13 +864,25 @@ def condense(self) -> None:
 最后裁剪 _req_ids / req_output_token_ids / spec_token_ids。
 ```
 
-位置：`gpu_input_batch.py:683` 到 `gpu_input_batch.py:810`
+位置：`gpu_input_batch.py:686` 到 `gpu_input_batch.py:812`
 
 所以 InputBatch 会尽量保持：
 
 ```text
 当前 batch 的请求行是紧凑排列的。
 ```
+
+### 14.2 attention backend 可选 reorder
+
+`_update_states()` 在 `condense()` 之后还会调用：
+
+```python
+self._may_reorder_batch(scheduler_output)
+```
+
+位置：`gpu_model_runner.py:1485` 到 `gpu_model_runner.py:1488`
+
+如果 attention backend 有排序需求，例如 MLA backend 希望按 decode / prefill 计算形态拆分 batch，`_may_reorder_batch()` 会通过 `reorder_batch_to_split_decodes_and_prefills()` 调整请求顺序。
 
 ---
 
@@ -853,7 +894,7 @@ InputBatch 有 batch update 记录器：
 self.batch_update_builder = BatchUpdateBuilder()
 ```
 
-位置：`gpu_input_batch.py:260` 到 `gpu_input_batch.py:263`
+位置：`gpu_input_batch.py:263` 到 `gpu_input_batch.py:266`
 
 它会记录：
 
@@ -870,7 +911,7 @@ batch_changed
 def refresh_metadata(self):
 ```
 
-位置：`gpu_input_batch.py:811`
+位置：`gpu_input_batch.py:814`
 
 对非 pooling 模型：
 
@@ -883,11 +924,11 @@ if batch_update:
     self.sampling_metadata = self._make_sampling_metadata()
 ```
 
-位置：`gpu_input_batch.py:820` 到 `gpu_input_batch.py:829`
+位置：`gpu_input_batch.py:823` 到 `gpu_input_batch.py:832`
 
 `_make_sampling_metadata()` 会把 CPU 侧的采样参数同步到 GPU tensor，并构造采样需要的 metadata。
 
-位置：`gpu_input_batch.py:831` 起
+位置：`gpu_input_batch.py:834` 起
 
 ---
 
@@ -901,9 +942,9 @@ self._update_states_after_model_execute(
 )
 ```
 
-位置：`gpu_model_runner.py:4461` 到 `gpu_model_runner.py:4463`
+位置：`gpu_model_runner.py:4521` 到 `gpu_model_runner.py:4523`
 
-定义在：`gpu_model_runner.py:1497`
+定义在：`gpu_model_runner.py:1538`
 
 ```python
 def _update_states_after_model_execute(
@@ -923,10 +964,11 @@ speculative decoding + hybrid models / Mamba 等场景。
 1. 统计每个请求实际 accepted token 数；
 2. 把 accepted count 写入 num_accepted_tokens；
 3. 对 Mamba / hybrid state 做 postprocess；
-4. 记录 event，供后续异步读取。
+4. align 模式走 fused GPU postprocess，all 模式走 `postprocess_mamba_all()`；
+5. 记录 event，供后续异步读取。
 ```
 
-位置：`gpu_model_runner.py:1497` 到 `gpu_model_runner.py:1553`
+位置：`gpu_model_runner.py:1538` 到 `gpu_model_runner.py:1595`
 
 普通非 spec / 非 hybrid 模型会直接返回：
 
@@ -935,7 +977,7 @@ if not self.speculative_config or not self.model_config.is_hybrid:
     return
 ```
 
-位置：`gpu_model_runner.py:1508` 到 `gpu_model_runner.py:1509`
+位置：`gpu_model_runner.py:1549` 到 `gpu_model_runner.py:1550`
 
 ---
 
@@ -947,7 +989,7 @@ if not self.speculative_config or not self.model_config.is_hybrid:
 更新后的状态会被 _prepare_inputs() 用来创建模型输入 GPU tensors。
 ```
 
-位置：`gpu_model_runner.py:1131` 到 `gpu_model_runner.py:1132`
+位置：`gpu_model_runner.py:1166` 到 `gpu_model_runner.py:1167`
 
 也就是说：
 
@@ -1079,6 +1121,7 @@ SchedulerOutput
   → 更新 scheduled_cached_reqs
   → add_request 到 InputBatch
   → condense 紧凑 batch
+  → 可选 attention backend batch reorder
   → refresh_metadata 刷新采样状态
   → _prepare_inputs / forward / sample
 ```

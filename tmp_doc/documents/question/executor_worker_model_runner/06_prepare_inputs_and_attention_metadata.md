@@ -8,7 +8,7 @@
 - `code/vllm/vllm/v1/worker/block_table.py`
 - `code/vllm/vllm/v1/worker/gpu/block_table.py`
 - `code/vllm/vllm/forward_context.py`
-- `code/vllm/vllm/v1/attention/backends/abstract.py`
+- `code/vllm/vllm/v1/attention/backend.py`
 
 本问题关注：`SchedulerOutput` 进入 `GPUModelRunner.execute_model()` 之后，`ModelRunner` 如何把请求级状态变成本轮 forward 需要的张量和 metadata，具体包括 `input_ids / inputs_embeds / positions / slot_mapping / block_table / attention metadata / spec decode metadata / multimodal metadata` 等；这些数据分别从哪里来、在哪一层组装、哪些字段只为某些模型或 attention backend 服务。
 
@@ -64,7 +64,7 @@ SchedulerOutput
 - `spec_token_ids`：spec decode 相关 token 占位
 - `pooling_params` / `pooling_states`：池化模型状态
 
-对应实现见 `gpu_input_batch.py:91` 开始，以及 `CachedRequestState` 在 `gpu_input_batch.py:34`。
+对应实现见 `gpu_input_batch.py:92` 开始，以及 `CachedRequestState` 在 `gpu_input_batch.py:35`。
 
 ### 2.2 _prepare_inputs() 负责把持久状态压成本轮输入
 
@@ -108,6 +108,7 @@ attention backend 不直接读 `InputBatch`，它们读的是 `CommonAttentionMe
 - `positions`
 - `is_prefilling`
 - `mm_req_doc_ranges`
+- `rswa_prefix_lens`
 
 随后在每个 KV cache group 的浅拷贝上补充或替换：
 
@@ -175,7 +176,7 @@ SchedulerOutput
 
 这一层不负责真正构造 forward 输入，但它决定了后面准备什么。
 
-位置：`gpu_model_runner.py:1127`
+位置：`gpu_model_runner.py:1162`
 
 ### 4.1 清理结束请求
 
@@ -227,7 +228,7 @@ InputBatch 不是 SchedulerOutput 的原始副本，
 
 ## 5. _prepare_inputs() 如何生成本轮 token 级输入
 
-位置：`gpu_model_runner.py:1889`
+位置：`gpu_model_runner.py:1930`
 
 它的职责可以概括成一句话：
 
@@ -283,6 +284,10 @@ positions_np = num_computed_tokens_cpu[req_indices] + query_pos
 - `_calc_mrope_positions()`
 - `_calc_xdrope_positions()`
 
+注意新 commit 中 `positions_np` 先用于 token cache 索引；真正写入 `self.positions` 时，会先把 `num_computed_tokens` 同步到 GPU。async spec decode 下如果上一轮 draft 接受数需要修正，会通过 `update_num_computed_tokens_for_batch_change()` 用 `prev_positions / valid_sampled_token_count_gpu / prev_num_draft_tokens` 修正 GPU 侧 `num_computed_tokens`，然后再计算 `positions` 和 `seq_lens`。
+
+位置：`gpu_model_runner.py:2122` 到 `gpu_model_runner.py:2165`
+
 ### 5.4 从 token 缓存里取出 input_ids
 
 `InputBatch.token_ids_cpu_tensor` 是二维缓存：
@@ -301,6 +306,10 @@ self.input_ids.cpu[:total_num_scheduled_tokens]
 
 - `self.is_token_ids`
 - `self.inputs_embeds`
+
+新 commit 中没有在 `InputBatch` 里预分配巨大 prompt_embeds 矩阵，而是把每个请求的 `req_prompt_embeds` 存在字典里；`_prepare_inputs()` 会按本轮调度窗口把需要的 embedding 切片拷到 `GPUModelRunner.inputs_embeds.cpu` 对应位置。
+
+位置：`gpu_model_runner.py:1995` 到 `gpu_model_runner.py:2040`
 
 ### 5.5 计算 query_start_loc
 
@@ -384,13 +393,15 @@ logits_indices = draft + bonus token 对应的一组位置
 
 `MultiGroupBlockTable` 维护多个 KV cache group 的 block 表。
 
-位置：`worker/block_table.py:223`（`InputBatch` 当前导入并持有的是 `MultiGroupBlockTable`；`worker/gpu/block_table.py` 是另一套 GPU block table 辅助实现）
+位置：`worker/block_table.py:243`（`InputBatch` 当前导入并持有的是 `MultiGroupBlockTable`；`worker/gpu/block_table.py` 是 V2 / GPU staged-write 路径的另一套 block table 辅助实现）
 
 核心职责：
 
 - `append_row()` / `add_row()`：更新每个请求的 block ids
 - `commit_block_table()`：把各 KV cache group 的 CPU 侧 block table 提交到 GPU
 - `compute_slot_mapping()`：根据 `query_start_loc` 和 `positions` 为每个 KV cache group 计算 slot mapping
+
+`BlockTable.compute_slot_mapping()` 位于 `worker/block_table.py:153` 到 `worker/block_table.py:184`。如果该 KV cache group 的 `slot_mapping_mode` 是 `NONE`，例如 Mamba / GDN 这类 recurrent state cache，它会跳过 token-to-slot 映射。
 
 ### 6.2 slot mapping 的语义
 
@@ -410,7 +421,7 @@ block_id + block 内 offset
 
 ### 6.3 slot mapping 先在 _prepare_inputs() 中计算，再由 _get_slot_mappings() 整理视图
 
-位置：`gpu_model_runner.py:2118`、`gpu_model_runner.py:3960`
+位置：`gpu_model_runner.py:2167`、`gpu_model_runner.py:4013`
 
 `_prepare_inputs()` 先调用：
 
@@ -432,6 +443,7 @@ self.input_batch.block_table.compute_slot_mapping(
 - encoder-only attention：slot mapping 直接置零
 - 其他 attention：从 `self.input_batch.block_table[kv_cache_gid].slot_mapping.gpu` 取已计算好的结果
 - padded 区域填 `-1`，给 CUDA graph / 独立 KV update 路径兼容使用
+- 如果 attention backend 的 `forward_includes_kv_cache_update=False`，slot mapping 会按 padded token / req 维度准备，以匹配独立 KV update 的 key/value tensor
 - ubatch 场景下，layer 级 slot mapping 还会按 `ubatch.token_slice` 切片
 
 ### 6.4 为什么还要区分 by-gid 和 by-layer
@@ -448,7 +460,7 @@ gid 级 slot mapping → layer 级映射
 
 ## 7. _build_attention_metadata() 如何组装 attention backend 所需信息
 
-位置：`gpu_model_runner.py:2208`
+位置：`gpu_model_runner.py:2254`
 
 这是整条链路里最容易混淆的部分，因为它连接了：
 
@@ -460,7 +472,7 @@ gid 级 slot mapping → layer 级映射
 
 ### 7.1 先构造 CommonAttentionMetadata
 
-`attn_utils.build_attn_metadata()` 定义了公共结构：
+`CommonAttentionMetadata` 定义在 `attention/backend.py:395`，`GPUModelRunner._build_attention_metadata()` 负责为当前 batch 构造实例：
 
 ```python
 CommonAttentionMetadata(
@@ -480,10 +492,11 @@ CommonAttentionMetadata(
     is_prefilling=is_prefilling,
     positions=self.positions[:num_tokens_padded],
     mm_req_doc_ranges=req_doc_ranges,
+    rswa_prefix_lens=rswa_prefix_lens,
 )
 ```
 
-位置：`attn_utils.py:384`
+结构定义位置：`attention/backend.py:395` 到 `attention/backend.py:577`；本处构造位置：`gpu_model_runner.py:2394` 到 `gpu_model_runner.py:2412`
 
 它可以理解为：
 
@@ -493,7 +506,7 @@ CommonAttentionMetadata(
 
 ### 7.2 per-layer metadata 由 builder 构造
 
-`AttentionMetadataBuilder` 是抽象基类，每种 backend 都会实现自己的 builder。
+`AttentionMetadataBuilder` 是抽象基类，定义在 `attention/backend.py:600`。每种 backend 都会实现自己的 builder。
 
 它通常接收：
 
@@ -504,7 +517,7 @@ CommonAttentionMetadata(
 
 ### 7.3 按 KV cache group / attention group 构造
 
-`_build_attention_metadata()` 先用 gid 0 的 block table 和 slot mapping 构造 `cm_base`，然后对每个 KV cache group 做浅拷贝 `cm = copy(cm_base)`，再替换该 group 自己的 `encoder_seq_lens`、`block_table_tensor` 和 `slot_mapping`。
+`_build_attention_metadata()` 先用 gid 0 的 block table 和 slot mapping 构造 `cm_base`，并在需要时补充 routed experts 的 slot mapping 稳定快照与 R-SWA prefix 长度；然后对每个 KV cache group 做浅拷贝 `cm = copy(cm_base)`，再替换该 group 自己的 `encoder_seq_lens`、`block_table_tensor` 和 `slot_mapping`。
 
 随后它会按组内 attention group 调用对应 builder，并把同一个 builder 产物挂到该 attention group 的所有 layer name 上。
 

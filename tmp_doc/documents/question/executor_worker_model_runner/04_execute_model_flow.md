@@ -66,7 +66,7 @@ scheduler.schedule()
   → scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-对应源码：`core.py:479` 到 `core.py:508`
+对应源码：`core.py:488` 到 `core.py:517`
 
 关键点：
 
@@ -97,7 +97,7 @@ scheduler.schedule()
 def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
 ```
 
-位置：`core.py:479`
+位置：`core.py:488`
 
 核心代码：
 
@@ -111,7 +111,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`core.py:490` 到 `core.py:500`
+位置：`core.py:499` 到 `core.py:508`
 
 这里有几个重要细节。
 
@@ -135,9 +135,9 @@ self.model_executor = executor_class(vllm_config)
 self.model_executor.execute_model(scheduler_output, non_block=True)
 ```
 
-位置：`core.py:491`
+位置：`core.py:500`
 
-这说明 EngineCore 希望执行层可以异步启动模型执行，然后自己继续准备 grammar bitmask 等内容。
+这说明 EngineCore 希望执行层可以异步启动模型执行，然后自己继续准备 grammar bitmask 等内容。在 `step_with_batch_queue()` 路径中，EngineCore 还会根据 `pending_structured_output_tokens` 决定是否立即调用 `sample_tokens(non_block=True)`，或者把 sampling 延后到上一批输出处理后再做。
 
 时间线可以理解为：
 
@@ -159,7 +159,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`core.py:504` 到 `core.py:506`
+位置：`core.py:513` 到 `core.py:515`
 
 说明 `SchedulerOutput` 不只是发给 Worker 的执行计划，也是回收阶段的对账凭证。
 
@@ -316,7 +316,7 @@ def execute_model(self, scheduler_output, non_block=False):
     )
 ```
 
-位置：`multiproc_executor.py:307` 到 `multiproc_executor.py:317`
+位置：`multiproc_executor.py:310` 到 `multiproc_executor.py:320`
 
 和抽象层相比，多进程路径多了几个关键参数。
 
@@ -334,7 +334,7 @@ def execute_model(self, scheduler_output, non_block=False):
 只从最后一个 PP stage 的第一个 TP rank 返回 ModelRunnerOutput。
 ```
 
-位置：`multiproc_executor.py:495` 到 `multiproc_executor.py:509`
+位置：`multiproc_executor.py:498` 到 `multiproc_executor.py:512`
 
 ### 6.3 `kv_output_aggregator`
 
@@ -342,7 +342,7 @@ def execute_model(self, scheduler_output, non_block=False):
 
 所以这时不能简单只看一个 rank，需要由 `KVOutputAggregator` 聚合。
 
-位置：`multiproc_executor.py:361` 到 `multiproc_executor.py:368`
+位置：`multiproc_executor.py:364` 到 `multiproc_executor.py:368`
 
 ### 6.4 collective_rpc 的核心流程
 
@@ -354,7 +354,7 @@ def execute_model(self, scheduler_output, non_block=False):
 5. 用 FutureWrapper 支持 non_block。
 ```
 
-对应源码：`multiproc_executor.py:340` 到 `multiproc_executor.py:402`
+对应源码：`multiproc_executor.py:343` 到 `multiproc_executor.py:405`
 
 核心发送：
 
@@ -362,7 +362,7 @@ def execute_model(self, scheduler_output, non_block=False):
 self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))
 ```
 
-位置：`multiproc_executor.py:374`
+位置：`multiproc_executor.py:377`
 
 核心接收：
 
@@ -370,7 +370,7 @@ self.rpc_broadcast_mq.enqueue((send_method, args, kwargs, output_rank))
 status, result = mq.dequeue(timeout=dequeue_timeout)
 ```
 
-位置：`multiproc_executor.py:387`
+位置：`multiproc_executor.py:390`
 
 ---
 
@@ -394,7 +394,7 @@ def execute_model(self, scheduler_output, non_block=False):
     return COMPLETED_NONE_FUTURE if non_block else None
 ```
 
-位置：`ray_executor.py:399` 到 `ray_executor.py:416`
+位置：`ray_executor.py:390` 到 `ray_executor.py:407`
 
 含义：
 
@@ -414,7 +414,7 @@ def sample_tokens(self, grammar_output, non_block=False):
     return self._execute_dag(scheduler_output, grammar_output, non_block)
 ```
 
-位置：`ray_executor.py:418` 到 `ray_executor.py:441`
+位置：`ray_executor.py:409` 到 `ray_executor.py:432`
 
 所以 Ray 路径的语义是：
 
@@ -432,7 +432,7 @@ sample_tokens() 带着 grammar_output 触发真正 DAG 执行并返回结果。
 4. 有 KV connector 时，聚合多个输出。
 ```
 
-位置：`ray_executor.py:443` 到 `ray_executor.py:477`
+位置：`ray_executor.py:434` 到 `ray_executor.py:468`
 
 ---
 
@@ -458,7 +458,7 @@ worker_class = resolve_obj_by_qualname(parallel_config.worker_cls)
 self.worker = worker_class(**kwargs)
 ```
 
-位置：`worker_base.py:311` 到 `worker_base.py:313`
+位置：`worker_base.py:317` 到 `worker_base.py:319`
 
 ### 8.2 execute_model 包装
 
@@ -468,7 +468,7 @@ def execute_model(self, scheduler_output):
     return self.worker.execute_model(scheduler_output)
 ```
 
-位置：`worker_base.py:340` 到 `worker_base.py:345`
+位置：`worker_base.py:346` 到 `worker_base.py:351`
 
 这里有一个细节：
 
@@ -490,7 +490,7 @@ def execute_model(self, scheduler_output):
 def execute_model(self, scheduler_output):
 ```
 
-位置：`gpu_worker.py:807`
+位置：`gpu_worker.py:1002`
 
 ### 9.1 前置：等待上一次 PP send 完成
 
@@ -501,7 +501,7 @@ if self._pp_send_work:
     self._pp_send_work = []
 ```
 
-位置：`gpu_worker.py:811` 到 `gpu_worker.py:815`
+位置：`gpu_worker.py:1005` 到 `gpu_worker.py:1009`
 
 说明 pipeline parallel 下，上一轮异步发送的 intermediate tensors 需要先完成。
 
@@ -511,7 +511,7 @@ if self._pp_send_work:
 forward_pass = scheduler_output.total_num_scheduled_tokens > 0
 ```
 
-位置：`gpu_worker.py:817` 到 `gpu_worker.py:819`
+位置：`gpu_worker.py:1011` 到 `gpu_worker.py:1014`
 
 如果没有 scheduled tokens，后面可能走空输出或 connector-only 路径。
 
@@ -524,7 +524,7 @@ tensor_dict, comm_handles, comm_postprocess = get_pp_group().irecv_tensor_dict(.
 intermediate_tensors = AsyncIntermediateTensors(...)
 ```
 
-位置：`gpu_worker.py:853` 到 `gpu_worker.py:865`
+位置：`gpu_worker.py:1047` 到 `gpu_worker.py:1059`
 
 这说明：
 
@@ -540,7 +540,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-位置：`gpu_worker.py:867` 到 `gpu_worker.py:870`
+位置：`gpu_worker.py:1061` 到 `gpu_worker.py:1064`
 
 如果返回的是：
 
@@ -550,7 +550,7 @@ ModelRunnerOutput / AsyncModelRunnerOutput / None
 
 则直接返回给 Executor。
 
-位置：`gpu_worker.py:871` 到 `gpu_worker.py:880`
+位置：`gpu_worker.py:1065` 到 `gpu_worker.py:1074`
 
 ### 9.5 如果返回 IntermediateTensors
 
@@ -561,7 +561,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(output.tensors, ...)
 return None
 ```
 
-位置：`gpu_worker.py:882` 到 `gpu_worker.py:896`
+位置：`gpu_worker.py:1076` 到 `gpu_worker.py:1090`
 
 状态可以理解为：
 
@@ -583,7 +583,7 @@ return None
 def execute_model(self, scheduler_output, intermediate_tensors=None)
 ```
 
-位置：`gpu_model_runner.py:4044`
+位置：`gpu_model_runner.py:4097`
 
 它是执行链路最核心的函数。
 
@@ -600,7 +600,7 @@ if self.execute_model_state is not None:
     )
 ```
 
-位置：`gpu_model_runner.py:4049` 到 `gpu_model_runner.py:4053`
+位置：`gpu_model_runner.py:4102` 到 `gpu_model_runner.py:4106`
 
 这说明：
 
@@ -612,7 +612,7 @@ if self.execute_model_state is not None:
 
 如果启用 ngram GPU speculative decoding，会复制 `num_scheduled_tokens` 和 `scheduled_spec_decode_tokens`。
 
-位置：`gpu_model_runner.py:4058` 到 `gpu_model_runner.py:4073`
+位置：`gpu_model_runner.py:4111` 到 `gpu_model_runner.py:4126`
 
 原因是避免 Worker 侧修改影响 EngineCore 进程里的原始 `SchedulerOutput`。
 
@@ -624,7 +624,7 @@ if self.execute_model_state is not None:
 get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`gpu_model_runner.py:4075` 到 `gpu_model_runner.py:4078`
+位置：`gpu_model_runner.py:4128` 到 `gpu_model_runner.py:4131`
 
 这说明执行层也要消费 SchedulerOutput 中携带的 KV connector metadata。
 
@@ -636,7 +636,7 @@ get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:4085` 到 `gpu_model_runner.py:4087`
+位置：`gpu_model_runner.py:4138` 到 `gpu_model_runner.py:4139`
 
 这一步很关键：
 
@@ -669,7 +669,7 @@ if not num_scheduled_tokens:
     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`gpu_model_runner.py:4096` 到 `gpu_model_runner.py:4112`
+位置：`gpu_model_runner.py:4149` 到 `gpu_model_runner.py:4165`
 
 这表示：
 
@@ -701,7 +701,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 )
 ```
 
-位置：`gpu_model_runner.py:4128` 到 `gpu_model_runner.py:4131`
+位置：`gpu_model_runner.py:4181` 到 `gpu_model_runner.py:4184`
 
 这一步会把 SchedulerOutput 中的 token 调度信息转成模型输入所需的索引和 spec decode 元数据。
 
@@ -717,7 +717,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 ) = self._determine_batch_execution_and_padding(...)
 ```
 
-位置：`gpu_model_runner.py:4143` 到 `gpu_model_runner.py:4156`
+位置：`gpu_model_runner.py:4196` 到 `gpu_model_runner.py:4209`
 
 这一步决定：
 
@@ -726,7 +726,8 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 - batch 是否需要 padding；
 - 是否需要 microbatch / ubatch；
 - DP 维度上的 token 数；
-- cudagraph 统计信息。
+- cudagraph 统计信息；
+- 后续是否需要生成 DBO / ubatch slices。
 ```
 
 ### 14.3 计算 slot mapping
@@ -735,7 +736,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 slot_mappings_by_group, slot_mappings = self._get_slot_mappings(...)
 ```
 
-位置：`gpu_model_runner.py:4244` 到 `gpu_model_runner.py:4253`
+位置：`gpu_model_runner.py:4297` 到 `gpu_model_runner.py:4306`
 
 `slot_mapping` 是 KV Cache 写入位置的重要桥梁。
 
@@ -745,7 +746,7 @@ slot_mappings_by_group, slot_mappings = self._get_slot_mappings(...)
 attn_metadata, spec_decode_common_attn_metadata = self._build_attention_metadata(...)
 ```
 
-位置：`gpu_model_runner.py:4255` 到 `gpu_model_runner.py:4268`
+位置：`gpu_model_runner.py:4308` 到 `gpu_model_runner.py:4322`
 
 这一步会把：
 
@@ -774,7 +775,7 @@ num_common_prefix_blocks
 ) = self._preprocess(...)
 ```
 
-位置：`gpu_model_runner.py:4271` 到 `gpu_model_runner.py:4280`
+位置：`gpu_model_runner.py:4324` 到 `gpu_model_runner.py:4333`
 
 这一步准备真正传给模型的输入。
 
@@ -794,7 +795,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`gpu_model_runner.py:4320` 到 `gpu_model_runner.py:4326`
+位置：`gpu_model_runner.py:4380` 到 `gpu_model_runner.py:4386`
 
 forward 外面包了 `set_forward_context()`：
 
@@ -812,7 +813,7 @@ set_forward_context(
 )
 ```
 
-位置：`gpu_model_runner.py:4303` 到 `gpu_model_runner.py:4313`
+位置：`gpu_model_runner.py:4362` 到 `gpu_model_runner.py:4378`
 
 这说明模型 forward 不是裸调用，而是在一个包含 attention metadata、CUDA graph、batch descriptor、slot mapping 的上下文中执行。
 
@@ -831,7 +832,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`gpu_model_runner.py:4337` 到 `gpu_model_runner.py:4343`
+位置：`gpu_model_runner.py:4397` 到 `gpu_model_runner.py:4403`
 
 这表示当前 rank 只完成中间层计算，输出要交给下一个 PP stage。
 
@@ -842,7 +843,7 @@ if self.is_pooling_model:
     return self._pool(...)
 ```
 
-位置：`gpu_model_runner.py:4345` 到 `gpu_model_runner.py:4352`
+位置：`gpu_model_runner.py:4405` 到 `gpu_model_runner.py:4412`
 
 Pooling / embedding 类任务不走 token sampling。
 
@@ -853,7 +854,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu_model_runner.py:4354` 到 `gpu_model_runner.py:4355`
+位置：`gpu_model_runner.py:4414` 到 `gpu_model_runner.py:4415`
 
 然后保存临时状态：
 
@@ -863,7 +864,7 @@ self.kv_connector_output = kv_connector_output
 return None
 ```
 
-位置：`gpu_model_runner.py:4386` 到 `gpu_model_runner.py:4405`
+位置：`gpu_model_runner.py:4446` 到 `gpu_model_runner.py:4465`
 
 这就是生成类模型中 `execute_model()` 经常返回 `None` 的根本原因：
 
@@ -882,7 +883,7 @@ forward 和 logits 已经完成；
 def sample_tokens(self, grammar_output)
 ```
 
-位置：`gpu_model_runner.py:4423`
+位置：`gpu_model_runner.py:4483`
 
 ### 17.1 没有 execute_model_state 的情况
 
@@ -892,7 +893,7 @@ def sample_tokens(self, grammar_output)
 return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`gpu_model_runner.py:4426` 到 `gpu_model_runner.py:4434`
+位置：`gpu_model_runner.py:4486` 到 `gpu_model_runner.py:4494`
 
 这通常表示没有可采样的 forward 状态，只需要把 KV connector output 传回。
 
@@ -915,7 +916,7 @@ return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ) = self.execute_model_state
 ```
 
-位置：`gpu_model_runner.py:4436` 到 `gpu_model_runner.py:4448`
+位置：`gpu_model_runner.py:4496` 到 `gpu_model_runner.py:4508`
 
 然后清掉状态：
 
@@ -923,7 +924,7 @@ return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 self.execute_model_state = None
 ```
 
-位置：`gpu_model_runner.py:4449` 到 `gpu_model_runner.py:4450`
+位置：`gpu_model_runner.py:4509` 到 `gpu_model_runner.py:4510`
 
 ### 17.3 应用 grammar bitmask
 
@@ -934,7 +935,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`gpu_model_runner.py:4452` 到 `gpu_model_runner.py:4456`
+位置：`gpu_model_runner.py:4512` 到 `gpu_model_runner.py:4516`
 
 这解释了为什么 EngineCore 要先执行 `get_grammar_bitmask()`，然后在 `execute_model()` 返回 None 时传给 `sample_tokens()`。
 
@@ -944,7 +945,7 @@ if grammar_output is not None:
 sampler_output = self._sample(logits, spec_decode_metadata)
 ```
 
-位置：`gpu_model_runner.py:4458` 到 `gpu_model_runner.py:4459`
+位置：`gpu_model_runner.py:4518` 到 `gpu_model_runner.py:4519`
 
 ### 17.5 更新 Worker 侧状态
 
@@ -954,11 +955,13 @@ self._update_states_after_model_execute(
 )
 ```
 
-位置：`gpu_model_runner.py:4461` 到 `gpu_model_runner.py:4463`
+位置：`gpu_model_runner.py:4521` 到 `gpu_model_runner.py:4523`
 
 这一步更新 Worker / InputBatch 侧的 sampled token 状态。
 
 ### 17.6 构造 ModelRunnerOutput
+
+在构造输出前，spec decode 路径会先 finalize KV connector，并执行 EPLB step；async scheduling 路径还会为 routed experts 创建设备侧快照，避免异步 D2H copy 读到下一步覆盖后的共享 buffer。
 
 ```python
 output = ModelRunnerOutput(
@@ -975,7 +978,7 @@ output = ModelRunnerOutput(
 )
 ```
 
-位置：`gpu_model_runner.py:4609` 到 `gpu_model_runner.py:4623`
+位置：`gpu_model_runner.py:4696` 到 `gpu_model_runner.py:4710`
 
 如果不是 async scheduling，直接返回：
 
@@ -983,7 +986,7 @@ output = ModelRunnerOutput(
 return output
 ```
 
-位置：`gpu_model_runner.py:4625` 到 `gpu_model_runner.py:4635`
+位置：`gpu_model_runner.py:4712` 到 `gpu_model_runner.py:4722`
 
 如果是 async scheduling，则包装成 `AsyncGPUModelRunnerOutput`：
 
@@ -992,7 +995,7 @@ async_output = AsyncGPUModelRunnerOutput(...)
 return async_output
 ```
 
-位置：`gpu_model_runner.py:4637` 到 `gpu_model_runner.py:4682`
+位置：`gpu_model_runner.py:4724` 到 `gpu_model_runner.py:4770`
 
 ---
 
@@ -1023,7 +1026,7 @@ GPU Worker 如果收到 `IntermediateTensors`，会发送给下一个 PP stage�
   Worker 返回 None
 ```
 
-位置：`gpu_worker.py:882` 到 `gpu_worker.py:896`
+位置：`gpu_worker.py:1076` 到 `gpu_worker.py:1090`
 
 ### 18.3 Ray 后端需要 sample_tokens 触发 DAG
 
@@ -1035,7 +1038,7 @@ execute_model() 保存 scheduler_output
 sample_tokens() 再执行 DAG
 ```
 
-位置：`ray_executor.py:399` 到 `ray_executor.py:441`
+位置：`ray_executor.py:390` 到 `ray_executor.py:432`
 
 ### 18.4 没有可执行 token
 
@@ -1048,7 +1051,7 @@ EMPTY_MODEL_RUNNER_OUTPUT
 
 不一定是 None。
 
-位置：`gpu_model_runner.py:4096` 到 `gpu_model_runner.py:4112`
+位置：`gpu_model_runner.py:4149` 到 `gpu_model_runner.py:4165`
 
 ---
 

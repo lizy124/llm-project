@@ -268,7 +268,7 @@ VllmConfig.parallel_config.distributed_executor_backend
 - 面向更复杂的分布式部署。
 ```
 
-位置：`ray_executor_v2.py:205` 起
+位置：`ray_executor_v2.py:219` 起
 
 ### 5.5 ExecutorWithExternalLauncher
 
@@ -363,6 +363,8 @@ Executor 还统一提供：
 
 ```text
 profile()
+execute_dummy_batch()
+save_sharded_state()
 sleep()
 wake_up()
 shutdown()
@@ -689,9 +691,11 @@ profile(is_start=True, profile_prefix=None)
 
 对 worker 统一开启或关闭 profiler。
 
-### 12.4 sleep / wake_up
+### 12.4 save_sharded_state / sleep / wake_up
 
-位置：`abstract.py:318` 到 `abstract.py:357`
+`save_sharded_state()` 位于 `abstract.py:259` 到 `abstract.py:268`，通过 collective RPC 转发到 worker 保存分片权重状态。
+
+`sleep()` / `wake_up()` 位于 `abstract.py:318` 到 `abstract.py:357`
 
 Executor 的睡眠逻辑是：
 
@@ -757,7 +761,7 @@ shutdown()
 - 支持 FutureWrapper 异步返回。
 ```
 
-位置：`multiproc_executor.py:340` 到 `multiproc_executor.py:402`
+位置：`multiproc_executor.py:343` 到 `multiproc_executor.py:405`
 
 ### 13.3 为什么要有 output_rank
 
@@ -829,6 +833,7 @@ initialize_from_config()
 execute_model()
 sample_tokens()
 get_kv_connector_handshake_metadata()
+execute_dummy_batch()
 take_draft_token_ids()
 ```
 

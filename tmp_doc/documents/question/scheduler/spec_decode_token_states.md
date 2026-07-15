@@ -2,9 +2,15 @@
 
 源码相关位置：
 
-- `vllm/vllm/v1/request.py`
-- `vllm/vllm/v1/core/sched/scheduler.py`
-- `vllm/vllm/v1/core/sched/async_scheduler.py`
+- `vllm/vllm/v1/request.py:131`：Request token 字段、spec token 字段与长度属性。
+- `vllm/vllm/v1/core/sched/scheduler.py:121`：`num_sampled_tokens_per_step`，diffusion 场景可为 0。
+- `vllm/vllm/v1/core/sched/scheduler.py:510`：running 请求的 `num_new_tokens` 公式。
+- `vllm/vllm/v1/core/sched/scheduler.py:631`：running spec token 调度、裁剪与清空。
+- `vllm/vllm/v1/core/sched/scheduler.py:1029`：new decode 请求的 `[-1]` spec padding。
+- `vllm/vllm/v1/core/sched/scheduler.py:1225`：`_update_after_schedule()` 乐观推进 computed / in-flight 进度。
+- `vllm/vllm/v1/core/sched/scheduler.py:1637`：`update_from_output()` 计算 accepted / rejected 并修正状态。
+- `vllm/vllm/v1/core/sched/scheduler.py:2005`：draft token 更新与 structured output grammar validate。
+- `vllm/vllm/v1/core/sched/async_scheduler.py:19`：async placeholder、spec placeholder 与 stale output frame 处理。
 
 这份文档专门解释 speculative decoding / async scheduling 里容易混淆的几个概念：
 
@@ -15,11 +21,12 @@ spec_token_ids
 scheduled_spec_decode_tokens
 num_output_placeholders
 num_computed_tokens
+num_in_flight_tokens
 num_scheduled_tokens
 accepted draft tokens
 rejected draft tokens
-target-sampled token
-bonus token
+target-sampled token / replacement token / bonus token
+async_tokens_to_discard
 ```
 
 核心目标是回答：
@@ -62,9 +69,11 @@ num_tokens_with_spec 包含的是“当前挂在 request 上、准备被 Schedul
    → 状态：Worker 已经验证，结果回到 Scheduler
 
 5. Scheduler.update_from_output()
+   → 先按 num_scheduled_tokens 回收 num_in_flight_tokens
    → 计算 accepted / rejected
    → append 真实输出 token
-   → 回退 rejected draft 对应的 num_computed_tokens
+   → 回退 rejected draft 对应的 num_computed_tokens / num_output_placeholders
+   → structured output 场景还会校验/推进 grammar token
    → 状态：验证结果正式落到 request
 ```
 
@@ -88,7 +97,7 @@ def num_tokens(self) -> int:
     return len(self._all_token_ids)
 ```
 
-位置：`request.py:247`
+位置：`request.py:262`
 
 含义：
 
@@ -130,7 +139,7 @@ num_tokens = 103
 self.spec_token_ids: list[int] = []
 ```
 
-位置：`request.py:152`
+位置：`request.py:167`
 
 含义：
 
@@ -172,7 +181,7 @@ def num_tokens_with_spec(self) -> int:
     return len(self._all_token_ids) + len(self.spec_token_ids)
 ```
 
-位置：`request.py:251`
+位置：`request.py:266`
 
 含义：
 
@@ -215,13 +224,23 @@ d1~d4 当前挂在 request 上，下一轮调度时要考虑进去。
 
 ## 5. `scheduled_spec_decode_tokens`：本轮真正调度出去的 draft token
 
-在 `schedule()` 里，如果 running 请求带有 `spec_token_ids`，Scheduler 会把它们放入本轮输出：
+在 `schedule()` 里，如果 running 请求带有 `spec_token_ids`，Scheduler 会先算本轮真正能调度多少个 spec token，再裁剪后放入本轮输出：
 
 ```python
-scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
+num_scheduled_spec_tokens = (
+    num_new_tokens
+    + request.num_computed_tokens
+    - request.num_tokens
+    - request.num_output_placeholders
+)
+if num_scheduled_spec_tokens > 0:
+    spec_token_ids = request.spec_token_ids
+    if len(spec_token_ids) > num_scheduled_spec_tokens:
+        spec_token_ids = spec_token_ids[:num_scheduled_spec_tokens]
+    scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-位置：`scheduler.py:593`
+位置：`scheduler.py:631`
 
 随后：
 
@@ -229,7 +248,7 @@ scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:597`
+位置：`scheduler.py:646`
 
 这一步非常关键。
 
@@ -259,6 +278,30 @@ spec_token_ids 从 request 上被取走，进入 SchedulerOutput。
 当前还挂在 request 上、准备参与本轮调度的 spec token。
 ```
 
+另外，waiting 请求刚进入 decode 且需要固定 spec decode 图形时，Scheduler 也可能直接给本轮 `scheduled_spec_decode_tokens` 填入：
+
+```python
+scheduled_spec_decode_tokens[request_id] = [-1] * self.num_spec_tokens
+```
+
+位置：`scheduler.py:1029`
+
+这些 `-1` 是 spec padding / placeholder，不是真实 draft token id。
+
+Worker / drafter 后续更新 draft token 时还有两条路径：
+
+```text
+update_draft_token_ids()
+  → 把下一批 draft token 写回 request.spec_token_ids；prefill chunk 会忽略并清空。
+
+update_draft_token_ids_in_output()
+  → 把真实 draft token 回填到已经发出的 scheduler_output.scheduled_spec_decode_tokens；
+     会裁剪到原本 scheduled 的数量，structured output 场景会先 validate_tokens()，
+     不足的部分再用 -1 pad 回原长度，并记录 num_invalid_spec_tokens。
+```
+
+位置：`scheduler.py:2005`、`scheduler.py:2027`
+
 ---
 
 ## 6. `num_scheduled_tokens`：本轮每个请求实际安排计算多少 token
@@ -287,9 +330,10 @@ spec decode：num_scheduled_tokens 可能 = 1 + draft token 数
 
 ```python
 request.num_computed_tokens += num_scheduled_token
+request.num_in_flight_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1139`
+位置：`scheduler.py:1226`
 
 注意：这里的 `num_scheduled_token` 是遍历字典时单个请求的值，不是全局总数。
 
@@ -300,10 +344,12 @@ request.num_computed_tokens += num_scheduled_token
 源码初始化：
 
 ```python
+self.num_in_flight_tokens = 0
+self.spec_token_ids: list[int] = []
 self.num_computed_tokens = 0
 ```
 
-位置：`request.py:153`
+位置：`request.py:157`、`request.py:167`、`request.py:168`
 
 它表示：
 
@@ -317,17 +363,19 @@ Scheduler 认为这个请求已经计算到哪里了。
 
 ```python
 request.num_computed_tokens += num_scheduled_token
+request.num_in_flight_tokens += num_scheduled_token
 ```
 
 所以：
 
 ```text
 num_computed_tokens 更像是 Scheduler 侧的“已安排计算进度”。
+num_in_flight_tokens 则记录这条乐观进度里还有多少 token 的 Worker 输出没被 Scheduler 回收。
 ```
 
 它的作用是避免下一轮重复调度同一段 token。
 
-如果后续发现 spec token 被拒绝，再回退。
+如果后续发现 spec token 被拒绝，再回退；如果只是 Worker 输出回来，`update_from_output()` 会按 `num_scheduled_tokens` 先扣回 `num_in_flight_tokens`。
 
 ---
 
@@ -339,7 +387,7 @@ num_computed_tokens 更像是 Scheduler 侧的“已安排计算进度”。
 self.num_output_placeholders = 0
 ```
 
-位置：`request.py:141`
+位置：`request.py:151`
 
 在 async scheduler 中，本轮调度后会增加：
 
@@ -349,7 +397,7 @@ request.num_output_placeholders += (
 )
 ```
 
-位置：`async_scheduler.py:39`
+位置：`async_scheduler.py:38`
 
 含义：
 
@@ -368,18 +416,29 @@ num_output_placeholders += 1
 spec decode，假设 4 个 draft：
 
 ```text
-num_sampled_tokens_per_step = 1
-cur_num_spec_tokens = 4
-num_output_placeholders += 5
+num_output_placeholders += num_sampled_tokens_per_step + 4
 ```
 
-这 5 个占位表示：
+普通 AR 模型中 `num_sampled_tokens_per_step = 1`，所以通常加 5；diffusion 模型中 `num_sampled_tokens_per_step = 0`，只按 spec / canvas token 数增加。
+
+普通 AR spec decode 的 5 个占位表示：
 
 ```text
 最多可能产生 4 个 accepted draft token + 1 个 target-sampled token
 ```
 
 但它们还没真正写入 `_all_token_ids`。
+
+如果 reset prefix cache 或 force-preempt 发生在 async 输出返回前，Scheduler 会把当前 output placeholder 转成待丢弃帧：
+
+```python
+request.async_tokens_to_discard = request.num_output_placeholders
+request.num_output_placeholders = 0
+```
+
+之后 stale async output frame 回来时，`AsyncScheduler._update_request_with_output()` 会先递减 `async_tokens_to_discard` 并返回空输出，不 append token，也不继续扣 placeholder。
+
+位置：`scheduler.py:2295`、`async_scheduler.py:54`
 
 ---
 
@@ -447,7 +506,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:462`
+位置：`scheduler.py:510`
 
 这个公式回答的是：
 
@@ -721,7 +780,8 @@ num_computed_tokens
 ```text
 num_tokens_with_spec：现在 request 上已经有多少“真实 + 新 draft” token 需要考虑；
 num_output_placeholders：过去已经发出去、但还没落到 request 上的输出占位；
-num_computed_tokens：Scheduler 已经认为计算进度走到哪里。
+num_computed_tokens：Scheduler 已经认为计算进度走到哪里；
+num_in_flight_tokens：这条 computed 进度里还有多少 token 没被 output 回收，不直接参与 num_new_tokens 公式。
 ```
 
 所以：
@@ -737,7 +797,7 @@ num_new_tokens
 
 ```text
 这个公式不是在数“真实 token 有多少”，而是在对齐三个时间阶段：
-已经落到 request 的 token、当前准备调度的 draft token、已经发出去但还没回来的 output placeholder，最后减掉 Scheduler 已经安排过的计算进度。
+已经落到 request 的 token、当前准备调度的 draft token、已经发出去但还没回来的 output placeholder，最后减掉 Scheduler 已经安排过的计算进度；`num_in_flight_tokens` 只用于回收和安全释放判断。
 ```
 
 ---
@@ -794,8 +854,10 @@ d1、d2 接受，d3 被拒绝：
 所以：
 
 ```text
-无论接受多少 draft，通常至少会有 1 个 target model 自己采样出来的 token。
+普通 AR spec decode 中，无论接受多少 draft，通常至少会有 1 个 target model 自己采样出来的 token。
 ```
+
+这个数量在源码里由 `num_sampled_tokens_per_step` 表示；普通 AR 是 1，diffusion denoising step 可以是 0。
 
 如果某个 draft 被拒绝，这个 token 是 replacement token。
 
@@ -811,16 +873,21 @@ d1、d2 接受，d3 被拒绝：
 scheduled_spec_token_ids = scheduler_output.scheduled_spec_decode_tokens.get(req_id)
 ```
 
-如果本轮有 spec token，Scheduler 会计算：
+如果本轮有 spec token、并且不是 reset / preempt 后待丢弃的 stale async frame，Scheduler 会计算：
 
 ```python
-num_draft_tokens = len(scheduled_spec_token_ids)
-num_sampled = self.num_sampled_tokens_per_step
-num_accepted = max(len(generated_token_ids) - num_sampled, 0)
-num_rejected = num_draft_tokens - num_accepted
+if (
+    scheduled_spec_token_ids
+    and (generated_token_ids or self.num_sampled_tokens_per_step == 0)
+    and request.async_tokens_to_discard == 0
+):
+    num_draft_tokens = len(scheduled_spec_token_ids)
+    num_sampled = self.num_sampled_tokens_per_step
+    num_accepted = max(len(generated_token_ids) - num_sampled, 0)
+    num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`scheduler.py:1553`
+位置：`scheduler.py:1637`
 
 理解：
 
@@ -837,7 +904,7 @@ num_rejected = draft 总数 - accepted draft 数
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1562`
+位置：`scheduler.py:1656`
 
 async 场景还会：
 
@@ -845,13 +912,14 @@ async 场景还会：
 request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1566`
+位置：`scheduler.py:1660`
 
 含义：
 
 ```text
 调度时先乐观认为 draft token 都参与计算；
 输出回来后，如果 draft 被拒绝，就把 rejected token 的进度回退。
+如果 `scheduler_output.num_invalid_spec_tokens` 记录了 grammar validate 过滤掉的 spec token，`make_spec_decoding_stats()` 还会从统计用的 draft token 数中扣掉这些 invalid token。
 ```
 
 ---
@@ -860,11 +928,11 @@ request.num_output_placeholders -= num_rejected
 
 | 阶段 | token 在哪里 | 表示什么 | 是否真实输出 |
 |---|---|---|---|
-| Draft 生成后 | `request.spec_token_ids` | 准备被验证的 draft token | 否 |
-| schedule 前 | `num_tokens_with_spec` 包含它们 | 目标长度临时包含 draft | 否 |
-| schedule 后 | `scheduler_output.scheduled_spec_decode_tokens` | 已调度给 Worker 验证 | 否 |
+| Draft 生成后 | `request.spec_token_ids` | 准备被验证的 draft token；async 下也可能先是 `[-1]` placeholder | 否 |
+| schedule 前 | `num_tokens_with_spec` 包含它们 | 目标长度临时包含 draft / placeholder | 否 |
+| schedule 后 | `scheduler_output.scheduled_spec_decode_tokens` | 已调度给 Worker 验证；可能被裁剪或用 `-1` padding | 否 |
 | Worker forward 中 | Worker / ModelRunner 内部 | target model 正在一次 forward 验证 | 否 |
-| update_from_output 后 | `request._all_token_ids` | accepted draft + target-sampled token 成为真实输出 | 是 |
+| update_from_output 后 | `request._all_token_ids` | accepted draft + target-sampled / replacement token 成为真实输出；invalid / rejected draft 不会落入 request | 是 |
 
 ---
 
@@ -893,9 +961,18 @@ num_output_placeholders：已经发出去但还没回来的输出占位
 
 不是。
 
-在 async / PP 场景下，它可能只是 Scheduler 已经把这些 token 调度出去了，因此提前推进了计算进度。
+在 async / PP 场景下，它可能只是 Scheduler 已经把这些 token 调度出去了，因此提前推进了计算进度。当前还有 `num_in_flight_tokens` 专门记录其中尚未被 Worker 输出回收的 token 数。
 
-### 14.4 draft token 被拒绝后怎么办？
+### 14.4 `num_in_flight_tokens` 和 `num_output_placeholders` 是不是一回事？
+
+不是。
+
+```text
+num_in_flight_tokens：已调度但 update_from_output() 还没回收的计算 token 数。
+num_output_placeholders：async 下已发出去但还没写回 request 的输出位置数。
+```
+
+### 14.5 draft token 被拒绝后怎么办？
 
 被拒绝的 draft token 不会成为真实输出。
 
@@ -907,7 +984,7 @@ Scheduler 会：
 只把 generated_token_ids 中真实接受/采样出来的 token append 到 request
 ```
 
-### 14.5 bonus token 和 replacement token 是一回事吗？
+### 14.6 bonus token 和 replacement token 是一回事吗？
 
 不是严格一回事。
 
@@ -921,8 +998,10 @@ Scheduler 会：
 ## 15. 最终一句话
 
 ```text
-num_tokens_with_spec 关心“当前准备验证哪些 draft token”；
+num_tokens_with_spec 关心“当前准备验证哪些 draft token / spec placeholder”；
 num_output_placeholders 关心“哪些输出位置已经异步发出去但还没回来”；
 num_computed_tokens 关心“Scheduler 认为计算进度已经推进到哪里”；
+num_in_flight_tokens 关心“这条乐观进度里还有多少 token 的 Worker 输出没被回收”；
+async_tokens_to_discard 关心“reset / force-preempt 后哪些 stale async output frame 要丢弃”；
 真正哪些 draft 被接受，要等 Worker 返回后由 update_from_output() 计算 accepted/rejected 才知道。
 ```
