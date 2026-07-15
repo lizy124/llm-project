@@ -397,9 +397,11 @@ output.kv_cache_events = kv_connector.get_kv_connector_kv_cache_events()
 output.kv_connector_worker_meta = kv_connector.build_connector_worker_meta()
 ```
 
-位置：`kv_connector_model_runner_mixin.py:99` 到 `kv_connector_model_runner_mixin.py:110`
+位置：`kv_connector_model_runner_mixin.py:99` 到 `kv_connector_model_runner_mixin.py:112`
 
-所以 KV connector 的输出最终会被塞进 `ModelRunnerOutput.kv_connector_output`，然后传回 Scheduler。
+所以 KV connector 的输出最终会被塞进 `ModelRunnerOutput.kv_connector_output`，然后传回 Scheduler。`KVConnectorOutput` 还带有 `expected_finished_count`，用于多 worker 聚合 finished sending / recving 通知。
+
+位置：`outputs.py:195` 到 `outputs.py:221`
 
 ---
 
@@ -444,7 +446,7 @@ with self.maybe_get_kv_connector_output(
     model_output = self._model_forward(...)
 ```
 
-位置：`gpu_model_runner.py:4315` 到 `gpu_model_runner.py:4318`
+位置：`gpu_model_runner.py:4375` 到 `gpu_model_runner.py:4378`
 
 这说明 KV connector 是包在 forward 周围的上下文，不是 forward 后单独补一次。
 
@@ -456,7 +458,7 @@ with self.maybe_get_kv_connector_output(
 defer_kv_connector_finalize = self.speculative_config is not None
 ```
 
-位置：`gpu_model_runner.py:4300` 到 `gpu_model_runner.py:4301`
+位置：`gpu_model_runner.py:4351` 到 `gpu_model_runner.py:4354`
 
 原因是：
 
@@ -473,7 +475,7 @@ draft model 可能也要用 KV connector；
 self.finalize_kv_connector()
 ```
 
-位置：`gpu_model_runner.py:4599` 到 `gpu_model_runner.py:4600`
+位置：`gpu_model_runner.py:4683` 到 `gpu_model_runner.py:4687`
 
 它会：
 
@@ -512,7 +514,13 @@ kv_connector_metadata
 finished_req_ids
 ```
 
-Worker / ModelRunner 通过 KV connector mixin 把这条链路串起来。
+Worker / ModelRunner 通过 KV connector mixin 把这条链路串起来；`execute_model()` 在 0-token step 且存在 KV transfer group 时会调用 `kv_connector_no_forward()`，否则才返回空输出。
+
+位置：`gpu_model_runner.py:4149` 到 `gpu_model_runner.py:4165`
+
+Scheduler 侧在收到 worker 的 `finished_recving` 后，先把请求 ID 记入 `finished_recving_kv_req_ids`，后续 `_try_promote_blocked_waiting_request()` 才会调用 `_update_waiting_for_remote_kv()`，把请求从 `WAITING_FOR_REMOTE_KVS` 恢复到可调度状态。
+
+位置：`scheduler.py:2488` 到 `scheduler.py:2541`、`scheduler.py:2559` 到 `scheduler.py:2586`
 
 ---
 
