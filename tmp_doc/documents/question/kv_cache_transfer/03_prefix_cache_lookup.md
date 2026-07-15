@@ -2,15 +2,15 @@
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/core.py`
-- `code/vllm/vllm/v1/request.py`
-- `code/vllm/vllm/v1/core/kv_cache_utils.py`
-- `code/vllm/vllm/v1/core/kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
-- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/block_pool.py`
-- `code/vllm/vllm/v1/core/sched/scheduler.py`
-- `code/vllm/vllm/v1/core/sched/output.py`
+- `vllm/vllm/v1/engine/core.py`
+- `vllm/vllm/v1/request.py`
+- `vllm/vllm/v1/core/kv_cache_utils.py`
+- `vllm/vllm/v1/core/kv_cache_manager.py`
+- `vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `vllm/vllm/v1/core/block_pool.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/v1/core/sched/output.py`
 
 本文梳理 vLLM V1 中本地 prefix cache 的命中链路：`Request.block_hashes` 如何生成，Scheduler 什么时候调用 `KVCacheManager.get_computed_blocks()`，命中结果如何变成 `num_computed_tokens`，以及为什么 prompt 全命中时仍然要保留最后 token 的 forward。
 
@@ -94,7 +94,7 @@ block hash 找到已缓存 full blocks；命中的 block 数换算成已计算 t
 
 `EngineCore` 初始化时，如果启用了 prefix caching，或者配置了 KV connector，就会创建 `request_block_hasher`。
 
-关键代码位置：`code/vllm/vllm/v1/engine/core.py:210`
+关键代码位置：`vllm/vllm/v1/engine/core.py:210`
 
 ```python
 self.request_block_hasher: Callable[[Request], list[BlockHash]] | None = None
@@ -109,7 +109,7 @@ if vllm_config.cache_config.enable_prefix_caching or kv_connector is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:210` 到 `code/vllm/vllm/v1/engine/core.py:219`
+位置：`vllm/vllm/v1/engine/core.py:210` 到 `vllm/vllm/v1/engine/core.py:219`
 
 含义：
 
@@ -127,11 +127,11 @@ EngineCore 先根据 hash_block_size 和 hash 算法构造一个 block_hasher；
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:867`
+位置：`vllm/vllm/v1/engine/core.py:878`
 
 `Request.from_engine_core_request()` 会把 `block_hasher` 传给 `Request.__init__()`。
 
-位置：`code/vllm/vllm/v1/request.py:198` 到 `code/vllm/vllm/v1/request.py:217`
+位置：`vllm/vllm/v1/request.py:213` 到 `vllm/vllm/v1/request.py:248`
 
 ### 4.3 Request 内部保存 block_hashes
 
@@ -143,7 +143,7 @@ self._block_hasher: Callable[[Request], list[BlockHash]] | None = block_hasher
 self.update_block_hashes()
 ```
 
-位置：`code/vllm/vllm/v1/request.py:179` 到 `code/vllm/vllm/v1/request.py:184`
+位置：`vllm/vllm/v1/request.py:194` 到 `vllm/vllm/v1/request.py:201`
 
 `update_block_hashes()` 只负责增量补齐新产生的 full block hash：
 
@@ -154,7 +154,7 @@ def update_block_hashes(self) -> None:
         self.block_hashes.extend(self._block_hasher(self))
 ```
 
-位置：`code/vllm/vllm/v1/request.py:237` 到 `code/vllm/vllm/v1/request.py:240`
+位置：`vllm/vllm/v1/request.py:252` 到 `vllm/vllm/v1/request.py:255`
 
 注意：
 
@@ -169,7 +169,7 @@ block_hashes 只覆盖“完整 block”；
 
 ### 5.1 get_request_block_hasher
 
-block hasher 定义在：`code/vllm/vllm/v1/core/kv_cache_utils.py:659`
+block hasher 定义在：`vllm/vllm/v1/core/kv_cache_utils.py:692`
 
 核心逻辑：
 
@@ -181,7 +181,7 @@ if start_token_idx + block_size > num_tokens:
     return []
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:667` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:673`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:700` 到 `vllm/vllm/v1/core/kv_cache_utils.py:706`
 
 含义：
 
@@ -205,7 +205,7 @@ block_hash = hash_block_tokens(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:683` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:702`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:716` 到 `vllm/vllm/v1/core/kv_cache_utils.py:735`
 
 `hash_block_tokens()` 中：
 
@@ -215,7 +215,7 @@ return BlockHash(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:563` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:590`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:596` 到 `vllm/vllm/v1/core/kv_cache_utils.py:623`
 
 这意味着：
 
@@ -231,7 +231,7 @@ return BlockHash(
 
 相关函数：`generate_block_hash_extra_keys()`
 
-位置：`code/vllm/vllm/v1/core/kv_cache_utils.py:525` 到 `code/vllm/vllm/v1/core/kv_cache_utils.py:560`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:558` 到 `vllm/vllm/v1/core/kv_cache_utils.py:593`
 
 额外 key 来源：
 
@@ -263,13 +263,13 @@ prompt_embeds：当前 block embedding 数据的 sha256
 self.cached_block_hash_to_block: BlockHashToBlockMap = BlockHashToBlockMap()
 ```
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:170` 到 `code/vllm/vllm/v1/core/block_pool.py:171`
+位置：`vllm/vllm/v1/core/block_pool.py:198`
 
 当 `KVCacheManager.allocate_slots()` 或 connector 收包完成后调用 `cache_blocks()` 时，会把当前请求中已经拥有 KV、可复用的 full blocks 继续下钻到 `BlockPool.cache_full_blocks()`，由它把 block hash 写到 block 元数据和 hash 表中。
 
-入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:442` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:456`
+入口：`vllm/vllm/v1/core/kv_cache_manager.py:474` 到 `vllm/vllm/v1/core/kv_cache_manager.py:488`
 
-下钻入口：`code/vllm/vllm/v1/core/block_pool.py:211`
+下钻入口：`vllm/vllm/v1/core/block_pool.py:225`
 
 核心代码：
 
@@ -281,7 +281,7 @@ blk.block_hash = block_hash_with_group_id
 self.cached_block_hash_to_block.insert(block_hash_with_group_id, blk)
 ```
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:276` 到 `code/vllm/vllm/v1/core/block_pool.py:281`
+位置：`vllm/vllm/v1/core/block_pool.py:281` 到 `vllm/vllm/v1/core/block_pool.py:297`
 
 这里有几个关键点：
 
@@ -312,7 +312,7 @@ if request.num_computed_tokens == 0:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:775`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:730` 到 `vllm/vllm/v1/core/sched/scheduler.py:799`
 
 这说明：
 
@@ -321,6 +321,8 @@ if request.num_computed_tokens == 0:
 典型场景是新请求第一次从 waiting 开始本地 prefill；
 如果请求已经跑过一部分 prefill，或者 async remote KV load 完成后已经带着 num_computed_tokens 回到 WAITING，Scheduler 会走 `request.num_computed_tokens > 0` 分支，不会再次调用 `get_computed_blocks()`。
 ```
+
+Hybrid / Mamba 场景下，Scheduler 可能直接走 coordinator 的 `find_longest_cache_hit_per_group()` 特化路径，并把 FA group 的命中长度作为 `num_new_local_computed_tokens` 传给 connector，避免重复加载本地已命中的 FA blocks。
 
 ### 7.2 running 请求不会走 get_computed_blocks
 
@@ -334,11 +336,11 @@ num_new_tokens = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:462` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:466`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:478` 到 `vllm/vllm/v1/core/sched/scheduler.py:485`
 
 然后直接 `allocate_slots()`。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:521` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:528`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:572` 到 `vllm/vllm/v1/core/sched/scheduler.py:576`
 
 因此：
 
@@ -356,7 +358,7 @@ request.status = RequestStatus.PREEMPTED
 request.num_computed_tokens = 0
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1117` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1118`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1203` 到 `vllm/vllm/v1/core/sched/scheduler.py:1204`
 
 因此 preempted 请求再次从 waiting 被调度时，满足：
 
@@ -377,7 +379,7 @@ request.num_computed_tokens == 0
 
 ## 8. KVCacheManager.get_computed_blocks() 做什么
 
-入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:202`
+入口：`vllm/vllm/v1/core/kv_cache_manager.py:207`
 
 ```python
 def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
@@ -397,7 +399,7 @@ if not self.enable_caching or request.skip_reading_prefix_cache:
     return self.empty_kv_cache_blocks, 0
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:214` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:219`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:219` 到 `vllm/vllm/v1/core/kv_cache_manager.py:224`
 
 会跳过本地 prefix cache 的情况：
 
@@ -416,13 +418,13 @@ elif self.pooling_params is not None and self.pooling_params.skip_reading_prefix
 return False
 ```
 
-位置：`code/vllm/vllm/v1/request.py:266` 到 `code/vllm/vllm/v1/request.py:277`
+位置：`vllm/vllm/v1/request.py:281` 到 `vllm/vllm/v1/request.py:292`
 
 默认值在参数校验阶段设置：generation 请求带 `prompt_logprobs` 时会默认跳过读取 prefix cache，pooling 的 `token_embed` / `token_classify` 也会默认跳过；普通 generation / pooling 请求通常不跳过。
 
-位置：`code/vllm/vllm/sampling_params.py:481` 到 `code/vllm/vllm/sampling_params.py:485`
+位置：`vllm/vllm/sampling_params.py:500` 到 `vllm/vllm/sampling_params.py:504`
 
-位置：`code/vllm/vllm/pooling_params.py:124` 到 `code/vllm/vllm/pooling_params.py:131`
+位置：`vllm/vllm/pooling_params.py:124` 到 `vllm/vllm/pooling_params.py:131`
 
 ### 8.2 full hit 也最多按 request.num_tokens - 1 查
 
@@ -432,7 +434,7 @@ return False
 max_cache_hit_length = request.num_tokens - 1
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:221` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:227`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:226` 到 `vllm/vllm/v1/core/kv_cache_manager.py:232`
 
 源码注释说明：
 
@@ -467,7 +469,9 @@ computed_blocks, num_new_computed_tokens = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:228` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:232`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:233` 到 `vllm/vllm/v1/core/kv_cache_manager.py:237`
+
+如果开启 KV cache events 且请求的 `kv_cache_report_mode` 为 `full`，复用的 prefix cache blocks 还会通过 `emit_cached_block_events()` 补发 `BlockStored` 事件。
 
 最后包装成 `KVCacheBlocks`：
 
@@ -475,7 +479,7 @@ computed_blocks, num_new_computed_tokens = (
 return self.create_kv_cache_blocks(computed_blocks), num_new_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:242`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:267`
 
 ---
 
@@ -483,7 +487,7 @@ return self.create_kv_cache_blocks(computed_blocks), num_new_computed_tokens
 
 ### 9.1 Coordinator 负责跨 KV cache group 收敛
 
-入口：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:621`
+入口：`vllm/vllm/v1/core/kv_cache_coordinator.py:674`
 
 ```python
 def find_longest_cache_hit(
@@ -523,13 +527,13 @@ num_uncached_common_prefix_tokens 统计
 必要时重新检查，直到不再变短。
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:667` 到 `code/vllm/vllm/v1/core/kv_cache_coordinator.py:731`
+位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:674` 到 `vllm/vllm/v1/core/kv_cache_coordinator.py:802`
 
 ### 9.2 FullAttentionManager 的普通前缀查找
 
 普通 full attention 的查找最直观。
 
-入口：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:540`
+入口：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:645`
 
 核心逻辑：
 
@@ -545,7 +549,7 @@ for block_hash in itertools.islice(block_hashes, max_num_blocks):
         break
 ```
 
-位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:561` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:575`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:666` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:693`
 
 特点：
 
@@ -557,7 +561,7 @@ for block_hash in itertools.islice(block_hashes, max_num_blocks):
 
 ### 9.3 BlockPool.get_cached_block 真正查 hash 表
 
-入口：`code/vllm/vllm/v1/core/block_pool.py:184`
+入口：`vllm/vllm/v1/core/block_pool.py:198`
 
 ```python
 def get_cached_block(
@@ -579,7 +583,7 @@ if not block:
 cached_blocks.append(block)
 ```
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:198` 到 `code/vllm/vllm/v1/core/block_pool.py:209`
+位置：`vllm/vllm/v1/core/block_pool.py:198` 到 `vllm/vllm/v1/core/block_pool.py:223`
 
 含义：
 
@@ -596,7 +600,7 @@ Coordinator 在每个 manager 返回 blocks 后，用：
 _new_hit_length = len(hit_blocks[0]) * spec.block_size
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:700`
+位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:753`
 
 所以普通情况下：
 
@@ -625,7 +629,7 @@ num_computed_tokens = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:744` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:747`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:797` 到 `vllm/vllm/v1/core/sched/scheduler.py:800`
 
 如果没有 connector，则：
 
@@ -644,7 +648,7 @@ ext_tokens, load_kv_async = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:721` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:727`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:773` 到 `vllm/vllm/v1/core/sched/scheduler.py:789`
 
 这表示：
 
@@ -661,11 +665,11 @@ external KV connector 再基于“本地已经命中的 token 数”继续判断
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:781` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:795`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:834` 到 `vllm/vllm/v1/core/sched/scheduler.py:847`
 
 如果是 async remote KV load，则这一步 `num_new_tokens = 0`，只先为外部 computed tokens 分配/登记 slots，等待 connector 收包完成后再继续本地计算。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:781` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:785`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:834` 到 `vllm/vllm/v1/core/sched/scheduler.py:837`
 
 于是：
 
@@ -743,7 +747,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:873` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:885`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:942` 到 `vllm/vllm/v1/core/sched/scheduler.py:954`
 
 `allocate_slots()` 的注释把 token 区间分成：
 
@@ -751,7 +755,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 < comp > | < new_comp > | < ext_comp > | < new > | < lookahead >
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:290` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:322`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:315` 到 `vllm/vllm/v1/core/kv_cache_manager.py:347`
 
 其中：
 
@@ -775,7 +779,7 @@ total_computed_tokens = min(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:353` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:361`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:378` 到 `vllm/vllm/v1/core/kv_cache_manager.py:386`
 
 对新 waiting 请求来说，`request.num_computed_tokens` 通常是 0，所以：
 
@@ -796,11 +800,11 @@ self.coordinator.allocate_new_computed_blocks(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:422` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:433`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:454` 到 `vllm/vllm/v1/core/kv_cache_manager.py:465`
 
 `allocate_new_computed_blocks()` 内部会先对所有 group 的本地命中 blocks 执行 `add_local_computed_blocks()`，再为 external computed tokens 分配 blocks，避免某个 group 的 external allocation 先发生时把另一个 group 尚未 touch 的命中 block 驱逐。
 
-位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:186` 到 `code/vllm/vllm/v1/core/kv_cache_coordinator.py:230`
+位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:192` 到 `vllm/vllm/v1/core/kv_cache_coordinator.py:236`
 
 含义：
 
@@ -822,7 +826,7 @@ new_blocks = self.coordinator.allocate_new_blocks(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:435` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:440`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:467` 到 `vllm/vllm/v1/core/kv_cache_manager.py:472`
 
 所以 request 的 block table 会包含：
 
@@ -835,9 +839,9 @@ external KV 对应的 blocks；
 
 随后如果 `enable_caching` 开启且不是 `delay_cache_blocks`，`allocate_slots()` 会把 `total_computed_tokens + num_new_tokens`（再按 `request.num_tokens` 截断）范围内的 full blocks 写入本地 prefix cache；async remote KV load 场景则延迟到收包完成后再 cache。
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:442` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:456`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:474` 到 `vllm/vllm/v1/core/kv_cache_manager.py:488`
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2350` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2380`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2492` 到 `vllm/vllm/v1/core/sched/scheduler.py:2522`
 
 ---
 
@@ -855,7 +859,7 @@ NewRequestData.from_request(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1024` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1028`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1089` 到 `vllm/vllm/v1/core/sched/scheduler.py:1098`
 
 `NewRequestData` 里包含：
 
@@ -864,7 +868,7 @@ block_ids: tuple[list[int], ...]
 num_computed_tokens: int
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:30` 到 `code/vllm/vllm/v1/core/sched/output.py:65`
+位置：`vllm/vllm/v1/core/sched/output.py:33` 到 `vllm/vllm/v1/core/sched/output.py:82`
 
 这两个字段就是 Worker 侧理解 prefix cache 的关键：
 
@@ -884,7 +888,7 @@ new_block_ids: list[tuple[list[int], ...] | None]
 num_computed_tokens: list[int]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:111` 到 `code/vllm/vllm/v1/core/sched/output.py:126`
+位置：`vllm/vllm/v1/core/sched/output.py:114` 到 `vllm/vllm/v1/core/sched/output.py:127`
 
 这表示：
 
@@ -901,7 +905,7 @@ WAITING 请求成功调度后：
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:959`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1028`
 
 随后 `_update_after_schedule()` 会把本轮真正调度的 token 数也加上：
 
@@ -909,7 +913,7 @@ request.num_computed_tokens = num_computed_tokens
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1138` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1142`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1225` 到 `vllm/vllm/v1/core/sched/scheduler.py:1229`
 
 所以有两个阶段：
 
@@ -925,7 +929,7 @@ update_after_schedule 时：再把本轮安排 forward 的 token 也预推进到
 如果后续 spec tokens 被拒绝，再在 update_from_output 中修正。
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1128` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1137`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1215` 到 `vllm/vllm/v1/core/sched/scheduler.py:1224`
 
 ---
 
@@ -940,7 +944,7 @@ block_ids=new_req_data.block_ids,
 num_computed_tokens=new_req_data.num_computed_tokens,
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1224` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1237`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1265` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:1275`
 
 然后加入 `InputBatch` 时，会写入：
 
@@ -949,7 +953,7 @@ self.num_computed_tokens_cpu[req_index] = request.num_computed_tokens
 self.block_table.add_row(request.block_ids, req_index)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:353` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:378`
+位置：`vllm/vllm/v1/worker/gpu_input_batch.py:338` 到 `vllm/vllm/v1/worker/gpu_input_batch.py:381`
 
 所以 Worker 侧看到的是：
 
@@ -977,7 +981,7 @@ ModelRunner 只按调度计划准备 input_ids / positions / slot_mapping / atte
 2. 外部 KV connector：connector.get_num_new_matched_tokens(request, local_hits)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:747`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:730` 到 `vllm/vllm/v1/core/sched/scheduler.py:800`
 
 本地命中先发生，external KV 后发生。
 
@@ -997,7 +1001,7 @@ connector_prefix_cache_queries = (
 connector_prefix_cache_hits = num_external_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:739` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:742`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:791` 到 `vllm/vllm/v1/core/sched/scheduler.py:795`
 
 含义：
 
@@ -1024,7 +1028,7 @@ external hits 只统计本地之后补上的 token。
 最多命中 request.num_tokens - 1。
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:221` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:227`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:226` 到 `vllm/vllm/v1/core/kv_cache_manager.py:232`
 
 ### 15.2 为什么可能让整个 block 参与 forward
 
@@ -1035,7 +1039,7 @@ This can trigger recomputation of an entire block, rather than just the single l
 because allocate_slots() requires num_computed_tokens to be block-size aligned.
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:223` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:226`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:228` 到 `vllm/vllm/v1/core/kv_cache_manager.py:231`
 
 原因：
 
@@ -1190,7 +1194,7 @@ request.num_computed_tokens：Scheduler 维护的请求当前已计算进度。
 
 命中的 cached blocks 会被挂到当前 request 的 block table，并增加引用 / 访问状态，避免仍在使用时被回收。
 
-相关逻辑在 `BlockPool.touch()`：`code/vllm/vllm/v1/core/block_pool.py:402`
+相关逻辑在 `BlockPool.touch()`：`vllm/vllm/v1/core/block_pool.py:702`
 
 ### 17.7 prefix cache 命中是否一定等于性能提升？
 
