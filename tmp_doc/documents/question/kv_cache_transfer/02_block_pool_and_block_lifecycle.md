@@ -263,7 +263,7 @@ usage 统计要减掉这个 null block。
 
 ## 6. free_block_queue 是什么
 
-`FreeKVCacheBlockQueue` 定义在：`kv_cache_utils.py:165`
+`FreeKVCacheBlockQueue` 定义在：`vllm/vllm/v1/core/kv_cache_utils.py:184`
 
 它是一个双向链表，不是 Python `deque`。原因是：
 
@@ -296,7 +296,7 @@ prepend_n()                放到头部
 有 hash block：append 到队尾，尽量保留 prefix cache。
 ```
 
-位置：`block_pool.py:419` 到 `block_pool.py:440`
+位置：`vllm/vllm/v1/core/block_pool.py:719` 到 `vllm/vllm/v1/core/block_pool.py:740`
 
 这就是为什么 prefix cache 可以在请求结束后继续保留：
 
@@ -309,7 +309,7 @@ ref_cnt=0 + block_hash 不为空 + 位于 free queue 尾部
 
 ## 7. prefix cache hash map 如何工作
 
-`BlockHashToBlockMap` 定义在：`block_pool.py:34`
+`BlockHashToBlockMap` 定义在：`vllm/vllm/v1/core/block_pool.py:33`
 
 它维护：
 
@@ -331,11 +331,11 @@ BlockHashWithGroupId → KVCacheBlock 或 {block_id → KVCacheBlock}
 不会因为发现重复内容就把请求的 block id 替换掉。
 ```
 
-位置：`block_pool.py:48` 到 `block_pool.py:55`
+位置：`vllm/vllm/v1/core/block_pool.py:44` 到 `vllm/vllm/v1/core/block_pool.py:51`
 
 ### 7.1 hash key 为什么包含 group id
 
-`make_block_hash_with_group_id()` 定义在：`kv_cache_utils.py:56`
+`make_block_hash_with_group_id()` 定义在：`vllm/vllm/v1/core/kv_cache_utils.py:57`
 
 它把：
 
@@ -349,7 +349,7 @@ block_hash + kv_cache_group_id
 
 ### 7.2 get_cached_block()
 
-`BlockPool.get_cached_block()`：`block_pool.py:184`
+`BlockPool.get_cached_block()`：`vllm/vllm/v1/core/block_pool.py:198`
 
 它输入：
 
@@ -381,13 +381,13 @@ kv_cache_group_ids
 KVCacheManager.allocate_slots(...)
 ```
 
-位置：`kv_cache_manager.py:244`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:269`
 
 Scheduler 在两类路径调用它。
 
 ### 8.1 RUNNING 请求继续执行
 
-在 `Scheduler.schedule()` 的 RUNNING 阶段：`scheduler.py:429` 起
+在 `Scheduler.schedule()` 的 RUNNING 阶段：`vllm/vllm/v1/core/sched/scheduler.py:428` 起
 
 关键流程：
 
@@ -400,7 +400,7 @@ Scheduler 在两类路径调用它。
 6. 重试 allocate_slots()。
 ```
 
-对应位置：`scheduler.py:521` 到 `scheduler.py:571`
+对应位置：`vllm/vllm/v1/core/sched/scheduler.py:572` 到 `vllm/vllm/v1/core/sched/scheduler.py:626`
 
 这说明 RUNNING 请求不是一次性拿满所有 blocks，而是随着 `num_computed_tokens` 推进逐步补 block。
 
@@ -427,7 +427,7 @@ allocate_slots(
 )
 ```
 
-位置：`scheduler.py:671` 到 `scheduler.py:885`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:730` 到 `vllm/vllm/v1/core/sched/scheduler.py:954`
 
 这条路径会同时处理：
 
@@ -444,7 +444,7 @@ allocate_slots(
 
 ## 9. allocate_slots() 分成哪几步
 
-`KVCacheManager.allocate_slots()` 的源码注释已经给出了三阶段模型：`kv_cache_manager.py:328` 到 `kv_cache_manager.py:335`
+`KVCacheManager.allocate_slots()` 的源码注释已经给出了三阶段模型：`vllm/vllm/v1/core/kv_cache_manager.py:353` 到 `vllm/vllm/v1/core/kv_cache_manager.py:360`
 
 可以理解为：
 
@@ -476,24 +476,28 @@ required_blocks > available_blocks
 
 就返回 `None`，Scheduler 会决定是否抢占其他请求。
 
-位置：`kv_cache_manager.py:404` 到 `kv_cache_manager.py:420`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:435` 到 `vllm/vllm/v1/core/kv_cache_manager.py:452`
 
 ### 9.2 先 remove_skipped_blocks()
 
 在真正分配前，会调用：
 
 ```python
-self.coordinator.remove_skipped_blocks(request.request_id, total_computed_tokens)
+self.coordinator.remove_skipped_blocks(
+    request.request_id,
+    max(0, total_computed_tokens - request.num_in_flight_tokens),
+    num_prompt_tokens=request.num_prompt_tokens,
+)
 ```
 
-位置：`kv_cache_manager.py:394` 到 `kv_cache_manager.py:402`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:420` 到 `vllm/vllm/v1/core/kv_cache_manager.py:433`
 
 原因是：
 
 ```text
 对于 sliding window / chunked local / Mamba，
 有些旧 block 已经不再参与 attention，
-可以先释放，减少后续新 block 分配时的驱逐压力。
+可以先按已处理且安全提交的 token 边界释放，减少后续新 block 分配时的驱逐压力；这里会扣除 `request.num_in_flight_tokens`，避免异步执行或 spec 回退仍可能读取的 block 被过早释放。
 ```
 
 Full attention 默认不会 skip token，因此通常不会在这里释放。
@@ -506,7 +510,7 @@ Full attention 默认不会 skip token，因此通常不会在这里释放。
 coordinator.allocate_new_computed_blocks(...)
 ```
 
-位置：`kv_cache_manager.py:422` 到 `kv_cache_manager.py:433`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:454` 到 `vllm/vllm/v1/core/kv_cache_manager.py:465`
 
 本地 prefix cache hit 的 block 会走：
 
@@ -517,7 +521,7 @@ SingleTypeKVCacheManager.add_local_computed_blocks()
   → num_cached_block[request_id] = len(req_blocks)
 ```
 
-位置：`single_type_kv_cache_manager.py:182` 到 `single_type_kv_cache_manager.py:233`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:223` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:281`
 
 `touch()` 很关键：
 
@@ -527,7 +531,7 @@ touch() 会把它从 free queue 移除；
 然后 ref_cnt++，表示新请求引用了它。
 ```
 
-位置：`block_pool.py:402` 到 `block_pool.py:417`
+位置：`vllm/vllm/v1/core/block_pool.py:702` 到 `vllm/vllm/v1/core/block_pool.py:717`
 
 ### 9.4 处理外部 KV computed tokens
 
@@ -542,11 +546,11 @@ SingleTypeKVCacheManager.allocate_external_computed_blocks()
   → new_block_ids 记录需要 zero 的 attention blocks
 ```
 
-位置：`single_type_kv_cache_manager.py:234` 到 `single_type_kv_cache_manager.py:276`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:282` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:320`
 
 如果是 async KV load，`delay_cache_blocks=True`，`allocate_slots()` 会先返回，不立刻把这些 blocks 放入 prefix cache。
 
-位置：`kv_cache_manager.py:442` 到 `kv_cache_manager.py:445`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:474` 到 `vllm/vllm/v1/core/kv_cache_manager.py:477`
 
 ### 9.5 分配本轮新 token blocks
 
@@ -556,7 +560,7 @@ SingleTypeKVCacheManager.allocate_external_computed_blocks()
 coordinator.allocate_new_blocks(...)
 ```
 
-位置：`kv_cache_manager.py:435` 到 `kv_cache_manager.py:440`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:467` 到 `vllm/vllm/v1/core/kv_cache_manager.py:472`
 
 对于普通 manager，最后会到：
 
@@ -567,13 +571,13 @@ SingleTypeKVCacheManager.allocate_new_blocks()
   → req_to_blocks[request_id].extend(new_blocks)
 ```
 
-位置：`single_type_kv_cache_manager.py:277` 到 `single_type_kv_cache_manager.py:308`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:321` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:361`
 
 ---
 
 ## 10. get_new_blocks() 做了什么
 
-`BlockPool.get_new_blocks()`：`block_pool.py:333`
+`BlockPool.get_new_blocks()`：`vllm/vllm/v1/core/block_pool.py:647`
 
 它的语义是：
 
@@ -594,7 +598,7 @@ SingleTypeKVCacheManager.allocate_new_blocks()
 6. 记录 metrics。
 ```
 
-位置：`block_pool.py:344` 到 `block_pool.py:363`
+位置：`vllm/vllm/v1/core/block_pool.py:657` 到 `vllm/vllm/v1/core/block_pool.py:677`
 
 ### 10.1 为什么分配时才 evict hash
 
@@ -610,7 +614,7 @@ block.reset_hash()；
 
 这就是 `_maybe_evict_cached_block()` 的职责。
 
-位置：`block_pool.py:365` 到 `block_pool.py:400`
+位置：`vllm/vllm/v1/core/block_pool.py:679` 到 `vllm/vllm/v1/core/block_pool.py:700`
 
 ### 10.2 block_id 为什么稳定
 
@@ -628,7 +632,7 @@ prefix cache 查询入口：
 KVCacheManager.get_computed_blocks(request)
 ```
 
-位置：`kv_cache_manager.py:202`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:207`
 
 它会：
 
@@ -645,7 +649,7 @@ KVCacheManager.get_computed_blocks(request)
 即使 prompt 全部命中，也要重算最后一个 token 来获得 logits。
 ```
 
-位置：`kv_cache_manager.py:221` 到 `kv_cache_manager.py:227`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:226` 到 `vllm/vllm/v1/core/kv_cache_manager.py:232`
 
 ### 11.1 Full attention 的命中
 
@@ -660,7 +664,7 @@ block_hash[2]
 
 只要某个 block miss，后续必然不能作为连续 prefix 命中，因此停止。
 
-位置：`single_type_kv_cache_manager.py:538` 到 `single_type_kv_cache_manager.py:586`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:645` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:738`
 
 ### 11.2 Sliding window 的命中
 
@@ -668,7 +672,7 @@ block_hash[2]
 
 原因是 sliding window 只需要窗口内连续 block 命中，窗口左侧的历史 token 已经不参与 attention。
 
-位置：`single_type_kv_cache_manager.py:599` 到 `single_type_kv_cache_manager.py:702`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:858` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:1062`
 
 ### 11.3 Hybrid KV cache 的命中
 
@@ -681,7 +685,7 @@ Sliding window / Mamba 可能只能接受更短长度；
 直到所有 group 对同一个 hit length 达成一致。
 ```
 
-位置：`kv_cache_coordinator.py:621` 到 `kv_cache_coordinator.py:731`
+位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:674` 到 `vllm/vllm/v1/core/kv_cache_coordinator.py:802`
 
 所以 hybrid 场景下，prefix cache hit 不是简单看一个 hash 链，而是多个 KV group 的共同结果。
 
@@ -701,7 +705,7 @@ KVCacheManager.cache_blocks(request, num_computed_tokens)
 self.coordinator.cache_blocks(request, num_tokens_to_cache)
 ```
 
-位置：`kv_cache_manager.py:447` 到 `kv_cache_manager.py:456`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:479` 到 `vllm/vllm/v1/core/kv_cache_manager.py:488`
 
 ### 12.1 只 cache full blocks
 
@@ -713,7 +717,7 @@ num_full_blocks = num_tokens // block_size
 
 只有完整 block 会进入 prefix cache。
 
-位置：`single_type_kv_cache_manager.py:334` 到 `single_type_kv_cache_manager.py:359`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:398` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:481`
 
 ### 12.2 只 cache 已 finalized 的 token
 
@@ -723,13 +727,13 @@ num_full_blocks = num_tokens // block_size
 num_tokens_to_cache = min(total_computed_tokens + num_new_tokens, request.num_tokens)
 ```
 
-位置：`kv_cache_manager.py:447` 到 `kv_cache_manager.py:455`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:479` 到 `vllm/vllm/v1/core/kv_cache_manager.py:487`
 
 这是为了排除还可能被拒绝的 draft tokens。spec decode 的 lookahead / unverified draft token 不应该提前进入 prefix cache。
 
 ### 12.3 cache_full_blocks() 具体做什么
 
-`BlockPool.cache_full_blocks()`：`block_pool.py:211`
+`BlockPool.cache_full_blocks()`：`vllm/vllm/v1/core/block_pool.py:225`
 
 它会：
 
@@ -739,10 +743,12 @@ num_tokens_to_cache = min(total_computed_tokens + num_new_tokens, request.num_to
 3. 加上 kv_cache_group_id 构成 BlockHashWithGroupId；
 4. 写入 blk.block_hash；
 5. 插入 cached_block_hash_to_block；
-6. 可选地产生 BlockStored event。
+6. 可选地产生 BlockStored event，并为每个 block 生成 extra_keys；
+7. 对 sliding window / Mamba 等 block_mask=False 或 null block 跳过写入 hash map；
+8. 如果是 partial→full promotion，会先移除旧 hash 再插入新 hash。
 ```
 
-位置：`block_pool.py:245` 到 `block_pool.py:331`
+位置：`vllm/vllm/v1/core/block_pool.py:276` 到 `vllm/vllm/v1/core/block_pool.py:645`
 
 注意：
 
@@ -766,7 +772,7 @@ _handle_stopped_request()
 _free_request()
 ```
 
-位置：`scheduler.py:1655` 到 `scheduler.py:1663`（调用点），`_handle_stopped_request()` 定义在 `scheduler.py:1830`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1761` 到 `vllm/vllm/v1/core/sched/scheduler.py:1764`（调用点），`_handle_stopped_request()` 定义在 `vllm/vllm/v1/core/sched/scheduler.py:1936`
 
 `_free_request()` 做：
 
@@ -777,7 +783,7 @@ _free_request()
 4. 如果不需要 delay_free_blocks，则 _free_blocks(request)。
 ```
 
-位置：`scheduler.py:2046` 到 `scheduler.py:2063`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2156` 到 `vllm/vllm/v1/core/sched/scheduler.py:2183`
 
 最终：
 
@@ -793,12 +799,12 @@ _free_blocks()
 对应位置：
 
 ```text
-scheduler.py:2065
-scheduler.py:2077
-kv_cache_manager.py:460
-kv_cache_coordinator.py:284
-single_type_kv_cache_manager.py:399
-block_pool.py:419
+vllm/vllm/v1/core/sched/scheduler.py:2185
+vllm/vllm/v1/core/sched/scheduler.py:2197
+vllm/vllm/v1/core/kv_cache_manager.py:492
+vllm/vllm/v1/core/kv_cache_coordinator.py:290
+vllm/vllm/v1/core/single_type_kv_cache_manager.py:482
+vllm/vllm/v1/core/block_pool.py:719
 ```
 
 ### 13.2 请求被抢占
@@ -809,7 +815,7 @@ block_pool.py:419
 self._preempt_request(preempted_req, scheduled_timestamp)
 ```
 
-位置：`scheduler.py:534` 到 `scheduler.py:564`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:582` 到 `vllm/vllm/v1/core/sched/scheduler.py:615`
 
 `_preempt_request()` 会：
 
@@ -824,7 +830,7 @@ self._preempt_request(preempted_req, scheduled_timestamp)
 8. 放回 waiting 队列头部。
 ```
 
-位置：`scheduler.py:1105` 到 `scheduler.py:1127`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1191` 到 `vllm/vllm/v1/core/sched/scheduler.py:1224`
 
 重点是：
 
@@ -846,7 +852,7 @@ self._preempt_request(preempted_req, scheduled_timestamp)
 req_to_blocks 中的位置替换成 null_block。
 ```
 
-位置：`single_type_kv_cache_manager.py:477` 到 `single_type_kv_cache_manager.py:518`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:806` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:837`
 
 这样一个长请求不一定一直持有从 token 0 开始的所有 physical blocks。
 
@@ -854,7 +860,7 @@ req_to_blocks 中的位置替换成 null_block。
 
 ## 14. free_blocks() 的精确语义
 
-`BlockPool.free_blocks()`：`block_pool.py:419`
+`BlockPool.free_blocks()`：`vllm/vllm/v1/core/block_pool.py:719`
 
 它不是“无条件清空 block”，而是：
 
@@ -887,7 +893,7 @@ get_new_blocks()
   → block.ref_cnt 从 0 变成 1
 ```
 
-位置：`block_pool.py:333` 到 `block_pool.py:363`
+位置：`vllm/vllm/v1/core/block_pool.py:647` 到 `vllm/vllm/v1/core/block_pool.py:677`
 
 ### 15.2 prefix cache 命中
 
@@ -898,7 +904,7 @@ add_local_computed_blocks()
   → ref_cnt++
 ```
 
-位置：`single_type_kv_cache_manager.py:182` 到 `single_type_kv_cache_manager.py:233`，`block_pool.py:402` 到 `block_pool.py:417`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:223` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:281`，`vllm/vllm/v1/core/block_pool.py:702` 到 `vllm/vllm/v1/core/block_pool.py:717`
 
 ### 15.3 请求释放
 
@@ -908,13 +914,13 @@ free_blocks()
   → ref_cnt == 0 时回到 free queue
 ```
 
-位置：`block_pool.py:419` 到 `block_pool.py:440`
+位置：`vllm/vllm/v1/core/block_pool.py:719` 到 `vllm/vllm/v1/core/block_pool.py:740`
 
 ### 15.4 reset hash 不影响 ref_cnt
 
 `_maybe_evict_cached_block()` 只负责从 prefix cache hash map 中移除映射并 `reset_hash()`，它不改变引用计数。
 
-位置：`block_pool.py:365` 到 `block_pool.py:400`
+位置：`vllm/vllm/v1/core/block_pool.py:679` 到 `vllm/vllm/v1/core/block_pool.py:700`
 
 ---
 
@@ -973,7 +979,7 @@ scheduled_cached_reqs
 NewRequestData.from_request(req, req_to_new_blocks[req.request_id].get_block_ids())
 ```
 
-位置：`scheduler.py:1015` 到 `scheduler.py:1029`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1089` 到 `vllm/vllm/v1/core/sched/scheduler.py:1098`
 
 已在 batch 中的请求：
 
@@ -981,7 +987,7 @@ NewRequestData.from_request(req, req_to_new_blocks[req.request_id].get_block_ids
 CachedRequestData(..., new_block_ids=...)
 ```
 
-位置：`scheduler.py:1219` 到 `scheduler.py:1277`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1315` 到 `vllm/vllm/v1/core/sched/scheduler.py:1357`
 
 也就是说，Worker 不接收 `KVCacheBlock` 对象，而是接收：
 
@@ -998,7 +1004,7 @@ tuple[list[int], ...]
 
 这也是 `KVCacheBlocks.get_block_ids()` 的作用。
 
-位置：`kv_cache_manager.py:57` 到 `kv_cache_manager.py:84`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:62` 到 `vllm/vllm/v1/core/kv_cache_manager.py:88`
 
 ---
 
@@ -1020,16 +1026,16 @@ new_block_ids_to_zero = (
 )
 ```
 
-位置：`scheduler.py:1044` 到 `scheduler.py:1048`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1120` 到 `vllm/vllm/v1/core/sched/scheduler.py:1129`
 
 `KVCacheManager.take_new_block_ids()` 会收集各 single-type manager 的 `new_block_ids`。
 
-位置：`kv_cache_manager.py:605` 到 `kv_cache_manager.py:610`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:663` 到 `vllm/vllm/v1/core/kv_cache_manager.py:668`
 
 普通 attention manager 在新分配 FullAttention / TQFullAttention / MLA blocks 时记录这些 ids：
 
 ```text
-single_type_kv_cache_manager.py:302 到 single_type_kv_cache_manager.py:307
+vllm/vllm/v1/core/single_type_kv_cache_manager.py:354 到 vllm/vllm/v1/core/single_type_kv_cache_manager.py:360
 ```
 
 也就是说，`new_block_ids_to_zero` 是面向需要 zero 的 attention KV blocks 的列表，不是所有 KV cache spec 分配都会进入这个列表。
@@ -1040,6 +1046,8 @@ Worker 侧再根据 `scheduler_output.new_block_ids_to_zero` 真正清 GPU KV ca
 Scheduler 只知道 block id；
 清零是设备侧内存操作，必须由 Worker / ModelRunner 执行。
 ```
+
+当前源码还会在同一段 drain `KVCacheManager.take_kv_cache_block_copies()`，把 pending CoW copy 写入 `SchedulerOutput.kv_cache_block_copies`，并把 source / destination blocks retain 到安全 fence 后再释放，避免 copy 还没在 Worker 侧执行就被 BlockPool 复用。
 
 ---
 
@@ -1064,7 +1072,7 @@ request.status = WAITING_FOR_REMOTE_KVS
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:916` 到 `scheduler.py:937`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:985` 到 `vllm/vllm/v1/core/sched/scheduler.py:1006`
 
 此时 block 已经分配，但请求还不进入 RUNNING。
 
@@ -1080,7 +1088,7 @@ async load 时 `allocate_slots(..., delay_cache_blocks=True)`。
 因为 Worker 还没把远端 KV 真正加载完成。
 ```
 
-位置：`kv_cache_manager.py:442` 到 `kv_cache_manager.py:445`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:474` 到 `vllm/vllm/v1/core/kv_cache_manager.py:477`
 
 等 Worker 报告 `finished_recving` 后，Scheduler 调用：
 
@@ -1089,7 +1097,7 @@ _update_waiting_for_remote_kv()
   → kv_cache_manager.cache_blocks(request, request.num_computed_tokens)
 ```
 
-位置：`scheduler.py:2350` 到 `scheduler.py:2383`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2492` 到 `vllm/vllm/v1/core/sched/scheduler.py:2522`
 
 ### 19.3 finished_sending 后再释放
 
@@ -1102,7 +1110,7 @@ connector_delay_free_blocks
 kv_xfer_params
 ```
 
-位置：`scheduler.py:2299` 到 `scheduler.py:2328`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2434` 到 `vllm/vllm/v1/core/sched/scheduler.py:2476`
 
 如果需要延迟释放，`_free_request()` 不会立即 `_free_blocks()`。
 
@@ -1119,7 +1127,7 @@ _update_from_kv_xfer_finished()
   → _free_blocks(request)
 ```
 
-位置：`scheduler.py:2417` 到 `scheduler.py:2445`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2559` 到 `vllm/vllm/v1/core/sched/scheduler.py:2589`
 
 ---
 
@@ -1146,7 +1154,7 @@ max_concurrent_batches > 1
 self.defer_block_free = True
 ```
 
-位置：`scheduler.py:145` 到 `scheduler.py:151`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:147` 到 `vllm/vllm/v1/core/sched/scheduler.py:151`
 
 ### 20.1 为什么需要 deferred free
 
@@ -1171,7 +1179,7 @@ processed_step_seq
 deferred_frees: deque[(fence_seq, blocks)]
 ```
 
-位置：`scheduler.py:292` 到 `scheduler.py:299`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:312` 到 `vllm/vllm/v1/core/sched/scheduler.py:316`
 
 调度非空 step 时：
 
@@ -1179,7 +1187,7 @@ deferred_frees: deque[(fence_seq, blocks)]
 sched_step_seq += 1
 ```
 
-位置：`scheduler.py:1091` 到 `scheduler.py:1094`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1180` 到 `vllm/vllm/v1/core/sched/scheduler.py:1184`
 
 `_update_after_schedule()` 会把当前 step 序号记录到 request：
 
@@ -1187,7 +1195,7 @@ sched_step_seq += 1
 request.last_sched_seq = self.sched_step_seq
 ```
 
-位置：`scheduler.py:1142` 到 `scheduler.py:1144`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1232` 到 `vllm/vllm/v1/core/sched/scheduler.py:1234`
 
 释放请求时，如果 last scheduled step 还没 processed：
 
@@ -1198,7 +1206,7 @@ pop_blocks_for_free(request)
   → blocks 放入 deferred_frees
 ```
 
-位置：`scheduler.py:2077` 到 `scheduler.py:2091`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2197` 到 `vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 等 `update_from_output()` 处理完对应 step：
 
@@ -1207,7 +1215,7 @@ processed_step_seq += 1
 _drain_deferred_frees()
 ```
 
-位置：`scheduler.py:1477` 到 `scheduler.py:1482`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1568` 到 `vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 真正归还 block：
 
@@ -1215,7 +1223,9 @@ _drain_deferred_frees()
 kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`scheduler.py:2092` 到 `scheduler.py:2105`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2218` 到 `vllm/vllm/v1/core/sched/scheduler.py:2236`
+
+同一机制也用于 CoW copy 的 retained blocks：Scheduler 构造输出时把 `take_kv_cache_block_copies()` 返回的 source / destination blocks 按 fence 放入 `_free_cow_retained_blocks()`，等对应 step processed 后再归还。
 
 ---
 
@@ -1257,7 +1267,7 @@ kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 Scheduler.reset_prefix_cache(...)
 ```
 
-位置：`scheduler.py:2143`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2275`
 
 最终调用：
 
@@ -1265,7 +1275,7 @@ Scheduler.reset_prefix_cache(...)
 BlockPool.reset_prefix_cache()
 ```
 
-位置：`block_pool.py:461`
+位置：`vllm/vllm/v1/core/block_pool.py:761`
 
 它只在除了 null block 之外没有 block 被使用时才能成功：
 
@@ -1275,7 +1285,7 @@ if num_used_blocks != 1:
     return False
 ```
 
-位置：`block_pool.py:470` 到 `block_pool.py:477`
+位置：`vllm/vllm/v1/core/block_pool.py:770` 到 `vllm/vllm/v1/core/block_pool.py:777`
 
 成功后会：
 
@@ -1286,11 +1296,11 @@ if num_used_blocks != 1:
 4. 可选地产生 AllBlocksCleared event。
 ```
 
-位置：`block_pool.py:479` 到 `block_pool.py:494`
+位置：`vllm/vllm/v1/core/block_pool.py:780` 到 `vllm/vllm/v1/core/block_pool.py:797`
 
 如果调用方传入 `reset_running_requests=True`，Scheduler 会先把所有 running 请求抢占回 waiting，再 reset prefix cache。
 
-位置：`scheduler.py:2153` 到 `scheduler.py:2179`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2285` 到 `vllm/vllm/v1/core/sched/scheduler.py:2320`
 
 ---
 
@@ -1307,14 +1317,14 @@ AllBlocksCleared prefix cache reset
 相关位置：
 
 ```text
-BlockStored：block_pool.py:315 到 block_pool.py:331
-BlockRemoved：block_pool.py:392 到 block_pool.py:399
-AllBlocksCleared：block_pool.py:491 到 block_pool.py:492
+BlockStored：vllm/vllm/v1/core/block_pool.py:331 到 vllm/vllm/v1/core/block_pool.py:342
+BlockRemoved：vllm/vllm/v1/core/block_pool.py:693 到 vllm/vllm/v1/core/block_pool.py:700
+AllBlocksCleared：vllm/vllm/v1/core/block_pool.py:794 到 vllm/vllm/v1/core/block_pool.py:795
 ```
 
 `KVCacheManager.take_events()` 会给 `BlockStored` 补充 KV cache spec kind / sliding window 等语义信息。
 
-位置：`kv_cache_manager.py:554` 到 `kv_cache_manager.py:578`
+位置：`vllm/vllm/v1/core/kv_cache_manager.py:592` 到 `vllm/vllm/v1/core/kv_cache_manager.py:616`
 
 Scheduler 在 `update_from_output()` 中收集并发布事件：
 
@@ -1324,7 +1334,7 @@ connector.take_events()
 kv_event_publisher.publish(KVEventBatch(...))
 ```
 
-位置：`scheduler.py:1752` 到 `scheduler.py:1767`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1859` 到 `vllm/vllm/v1/core/sched/scheduler.py:1874`
 
 metrics 方面，BlockPool 在这些动作上通知 collector：
 
@@ -1462,7 +1472,7 @@ ref_cnt=0 的 cached block 可以在 free_block_queue 中，
 
 `free_blocks()` 要求传入的 blocks 按 eviction priority 排序；请求释放时反向释放，使序列尾部 block 优先被驱逐。
 
-位置：`single_type_kv_cache_manager.py:406` 到 `single_type_kv_cache_manager.py:407`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:489` 到 `vllm/vllm/v1/core/single_type_kv_cache_manager.py:490`
 
 ### 26.6 为什么 cached block 不立即从 hash map 删除？
 
