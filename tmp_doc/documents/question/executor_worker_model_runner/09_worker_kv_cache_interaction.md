@@ -82,7 +82,7 @@ self.model_runner.initialize_kv_cache(kv_cache_config)
 
 完成。
 
-位置：`gpu_worker.py:563` 到 `gpu_worker.py:590`
+位置：`gpu_worker.py:717` 到 `gpu_worker.py:743`
 
 这里的顺序是：
 
@@ -92,6 +92,10 @@ self.model_runner.initialize_kv_cache(kv_cache_config)
 3. 进入 memory pool；
 4. 调用 model_runner.initialize_kv_cache()；
 5. 初始化 routed experts / KV zero metadata 等辅助结构。
+
+`GPUModelRunner.initialize_kv_cache()` 还会初始化 attention backend、metadata builders、按真实 KV cache group 重新初始化 InputBatch、绑定/注册 KV cache tensors；如果存在 KV transfer group，会注册统一 cross-layer KV cache 或普通 kv_caches，并设置 host transfer buffer ops。
+
+位置：`gpu_model_runner.py:7467` 到 `gpu_model_runner.py:7524`
 ```
 
 ### 3.2 KV zero metadata
@@ -102,7 +106,7 @@ self.model_runner.initialize_kv_cache(kv_cache_config)
 self._init_kv_zero_meta()
 ```
 
-位置：`gpu_model_runner.py:1090` 到 `gpu_model_runner.py:1103`
+位置：`gpu_model_runner.py:1124` 到 `gpu_model_runner.py:1138`
 
 之后真正需要 zero 的 block id 会通过：
 
@@ -110,7 +114,7 @@ self._init_kv_zero_meta()
 self._zero_block_ids(block_ids)
 ```
 
-位置：`gpu_model_runner.py:1105` 到 `gpu_model_runner.py:1108`
+位置：`gpu_model_runner.py:1140` 到 `gpu_model_runner.py:1143`
 
 结合 `GPUModelRunner._update_states()` 中：
 

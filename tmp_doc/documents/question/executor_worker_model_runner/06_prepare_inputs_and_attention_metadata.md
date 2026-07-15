@@ -560,6 +560,7 @@ CommonAttentionMetadata(
 - `dcp_local_seq_lens`
 - `encoder_seq_lens`
 - `mm_req_doc_ranges`
+- `rswa_prefix_lens`
 
 这些字段最终会决定：
 
@@ -574,9 +575,11 @@ attention kernel 该看哪些 token、
 
 ## 8. _preprocess() 如何把特殊输入路径合并成最终 forward 输入
 
-位置：`gpu_model_runner.py:3426`
+位置：`gpu_model_runner.py:3476`
 
-这一层是“模型输入整形层”。它决定 forward 最终拿到的是 `input_ids` 还是 `inputs_embeds`，以及要不要附带 `encoder_outputs`、`mm kwargs`、`intermediate_tensors`。
+这一层是“模型输入整形层”。它决定 forward 最终拿到的是 `input_ids` 还是 `inputs_embeds`，以及要不要附带 `encoder_outputs`、`mm kwargs`、`intermediate_tensors`。如果开启 speculative decoding，它还会先把 Scheduler placeholder `-1` clamp 到非负值，避免 embedding lookup 读到非法 token id。
+
+位置：`gpu_model_runner.py:3489` 到 `gpu_model_runner.py:3495`
 
 ### 8.1 文本模型
 
@@ -604,9 +607,11 @@ inputs_embeds = None
 
 ### 8.3 prompt_embeds
 
-如果某些 prompt token 直接由外部 embedding 提供，那么 `_preprocess()` 会只对 token-id 位置做 embedding lookup，并保留 prompt_embeds 位置的已有值。
+如果某些 prompt token 直接由外部 embedding 提供，那么 `_preprocess()` 会只对 token-id 位置做 embedding lookup，并保留 prompt_embeds 位置的已有值。多模态路径下它用 `torch.where(is_token_ids, embed(token_ids), existing_prompt_embeds)` 合并；纯 prompt_embeds 文本路径下则只对 `is_token_ids=True` 的位置查 embedding，并把结果写回 `inputs_embeds`。
 
 这也是为什么 `_prepare_inputs()` 里会维护 `is_token_ids`。
+
+位置：`gpu_model_runner.py:3513` 到 `gpu_model_runner.py:3578`
 
 ### 8.4 encoder-decoder
 
@@ -635,7 +640,7 @@ input_ids, inputs_embeds, positions, intermediate_tensors, model_kwargs, ec_conn
 
 ## 9. forward context 里为什么还要放 attention metadata 和 slot mapping
 
-`set_forward_context()` 在 `forward_context.py` 里定义。
+`set_forward_context()` 在 `forward_context.py:260` 定义。
 
 它把这些信息放进一个线程/作用域级上下文中：
 
@@ -646,6 +651,8 @@ input_ids, inputs_embeds, positions, intermediate_tensors, model_kwargs, ec_conn
 - `cudagraph_runtime_mode`
 - `dp_metadata`
 - `skip_compiled`
+- `is_padding`
+- `additional_kwargs`
 
 这样模型层在执行 attention op 时，不需要把这些参数层层手传。
 

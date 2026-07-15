@@ -60,7 +60,7 @@ GPUModelRunner 中的主链路在：
 def sample_tokens(self, grammar_output: "GrammarOutput | None")
 ```
 
-位置：`gpu_model_runner.py:4422`
+位置：`gpu_model_runner.py:4483`
 
 核心步骤：
 
@@ -72,12 +72,13 @@ def sample_tokens(self, grammar_output: "GrammarOutput | None")
 5. 处理 async scheduling / PP 广播；
 6. 处理 speculative decoding draft tokens；
 7. 如果 spec decode 延迟了 KV connector finalize，则在 draft model 之后 finalize；
-8. 可选附加 routed experts；
-9. 构造 ModelRunnerOutput；
-10. 如果是 async scheduling，则包装成 AsyncGPUModelRunnerOutput。
+8. 执行 EPLB step；
+9. 可选附加 routed experts；
+10. 构造 ModelRunnerOutput；
+11. 如果是 async scheduling，则包装成 AsyncGPUModelRunnerOutput，并可携带 EP all2all fault 检查。
 ```
 
-对应源码：`gpu_model_runner.py:4436` 到 `gpu_model_runner.py:4682`
+对应源码：`gpu_model_runner.py:4496` 到 `gpu_model_runner.py:4770`
 
 ---
 
@@ -100,7 +101,7 @@ cudagraph_stats
 slot_mappings
 ```
 
-位置：`gpu_model_runner.py:4386` 到 `gpu_model_runner.py:4397`
+位置：`gpu_model_runner.py:4446` 到 `gpu_model_runner.py:4457`
 
 ### 3.1 为什么要先暂存
 
@@ -130,7 +131,7 @@ if self.execute_model_state is None:
     return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`gpu_model_runner.py:4426` 到 `gpu_model_runner.py:4434`
+位置：`gpu_model_runner.py:4486` 到 `gpu_model_runner.py:4494`
 
 这时只可能返回一个带 KV connector 信息的空输出，或者更一般地说，说明前一步 forward 没有留下可采样状态。
 
@@ -147,7 +148,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`gpu_model_runner.py:4452` 到 `gpu_model_runner.py:4456`
+位置：`gpu_model_runner.py:4512` 到 `gpu_model_runner.py:4516`
 
 ### 4.1 grammar_output 是什么
 
@@ -157,7 +158,7 @@ if grammar_output is not None:
 self.scheduler.get_grammar_bitmask(scheduler_output)
 ```
 
-位置：`engine/core.py:492`
+位置：`engine/core.py:501`
 
 它告诉采样器：
 
@@ -204,7 +205,7 @@ def _sample(
 ) -> SamplerOutput:
 ```
 
-位置：`gpu_model_runner.py:3570`
+位置：`gpu_model_runner.py:3623`
 
 它负责把 logits 交给 `Sampler`，得到：
 
@@ -270,7 +271,7 @@ Sampler 的核心步骤如下。
 raw_logprobs = logits.log_softmax(dim=-1, dtype=torch.float32)
 ```
 
-位置：`sampler.py:85` 到 `sampler.py:94`，以及 `sampler.py:305` 到 `sampler.py:306`
+位置：`sampler.py:84` 到 `sampler.py:94`，以及 `sampler.py:304` 到 `sampler.py:306`
 
 如果 `logprobs_mode == raw_logits`，则直接保留 logits 作为“原始 logprobs 载体”。
 
@@ -333,7 +334,7 @@ sampled_token_ids: torch.Tensor
 logprobs_tensors: LogprobsTensors | None
 ```
 
-位置：`outputs.py:189` 到 `outputs.py:193`
+位置：`outputs.py:185` 到 `outputs.py:193`
 
 而 `sample_tokens()` 里最终要产出的是：
 
@@ -355,7 +356,7 @@ self._update_states_after_model_execute(
 )
 ```
 
-位置：`gpu_model_runner.py:4461` 到 `gpu_model_runner.py:4463`
+位置：`gpu_model_runner.py:4521` 到 `gpu_model_runner.py:4523`
 
 这是为了处理：
 
@@ -385,7 +386,7 @@ self.valid_sampled_token_count_gpu = None
 self.input_batch.prev_sampled_token_ids = None
 ```
 
-位置：`gpu_model_runner.py:4474` 到 `gpu_model_runner.py:4479`
+位置：`gpu_model_runner.py:4534` 到 `gpu_model_runner.py:4539`
 
 ### 9.2 生成 draft tokens 的辅助函数
 
@@ -398,7 +399,7 @@ def propose_draft_token_ids(sampled_token_ids):
     self._copy_draft_token_ids_to_cpu(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:4481` 到 `gpu_model_runner.py:4496`
+位置：`gpu_model_runner.py:4541` 到 `gpu_model_runner.py:4556`
 
 ### 9.3 draft model / ngram GPU / Eagle 等分支
 
@@ -410,14 +411,19 @@ ngram GPU
 其他方法
 ```
 
-位置：`gpu_model_runner.py:4497` 到 `gpu_model_runner.py:4573`
+位置：`gpu_model_runner.py:4557` 到 `gpu_model_runner.py:4644`
 
 核心目标是：
 
 ```text
 生成下一轮 draft tokens；
-如果输入不适合 drafter，则清零 draft tokens，避免调度到旧 draft。
+如果输入不适合 drafter，则清零 draft tokens，避免调度到旧 draft；
+把 valid sampled token count / draft token ids 按需异步拷到 CPU，供 Scheduler 和下一轮 async spec 修正使用。
 ```
+
+`propose_draft_token_ids()` 会读取 `scheduler_output.num_spec_tokens_to_schedule` 作为本轮动态选择的 draft 长度；async scheduling 下只有 structured output、penalties 或 bad words 等需要 CPU 侧 token ids 时，才会把 draft token ids 拷回 CPU。
+
+位置：`gpu_model_runner.py:4940` 到 `gpu_model_runner.py:4957`，`gpu_model_runner.py:4825` 到 `gpu_model_runner.py:4860`
 
 ### 9.4 为什么 spec decode 需要在 bookkeeping 前后分支
 
@@ -427,10 +433,10 @@ ngram GPU
 所以代码里有：
 
 ```python
-propose_drafts_after_bookkeeping = True/False
+draft_after_bookkeeping = True/False
 ```
 
-位置：`gpu_model_runner.py:4498` 到 `gpu_model_runner.py:4594`
+位置：`gpu_model_runner.py:4558` 到 `gpu_model_runner.py:4681`
 
 ---
 
@@ -451,7 +457,7 @@ with record_function_or_nullcontext("gpu_model_runner: bookkeep"):
     ) = self._bookkeeping_sync(...)
 ```
 
-位置：`gpu_model_runner.py:4574` 到 `gpu_model_runner.py:4589`
+位置：`gpu_model_runner.py:4646` 到 `gpu_model_runner.py:4661`
 
 它负责：
 
@@ -464,7 +470,7 @@ with record_function_or_nullcontext("gpu_model_runner: bookkeep"):
 - 标记 invalid request indices。
 ```
 
-bookkeeping 是从 GPU 采样结果到结构化输出对象之间的重要桥梁。
+bookkeeping 是从 GPU 采样结果到结构化输出对象之间的重要桥梁。其实现定义在 `gpu_model_runner.py:3654` 到 `gpu_model_runner.py:3793`：同步调度会在这里把 sampled tokens / logprobs 转成 CPU 结构；async scheduling 则保留 GPU sampled tokens，记录 `invalid_req_indices` 和 `prev_req_id_to_index`，让异步包装和下一轮输入准备继续使用。同步路径如果启用 routed experts，也会在这里发起 routed experts D2H 拷贝。
 
 ---
 
@@ -478,7 +484,7 @@ prompt_logprobs_dict: dict[str, LogprobsTensors | None]
 
 位置：`outputs.py:251` 到 `outputs.py:257`
 
-在 V1 GPUModelRunner 中，这部分通常在 bookkeeping 阶段计算并填充。
+在 V1 GPUModelRunner 中，这部分通常在 bookkeeping 阶段通过 `_get_prompt_logprobs_dict()` 计算并填充。位置：`gpu_model_runner.py:5548` 到 `gpu_model_runner.py:5650`。
 
 在 sampler / logprobs 侧，`SamplingMetadata` 会携带：
 
@@ -562,7 +568,7 @@ sampled_token_ranks
 cu_num_generated_tokens
 ```
 
-位置：`outputs.py:27` 到 `outputs.py:46`
+位置：`outputs.py:27` 到 `outputs.py:49`
 
 ### 12.4 prompt_logprobs_dict
 
@@ -618,7 +624,7 @@ cudagraph_stats: CUDAGraphStat | None
 routed_experts: RoutedExpertsLists | None
 ```
 
-用于 MoE / routed experts 的逐步路由输出。
+用于 MoE / routed experts 的逐步路由输出。其 `routing_data` 的第一维是本 step 全部 scheduled tokens 的总数，不是每个请求一个元素；`slot_mapping` 表示每行 routed experts 数据对应的物理 KV cache slot。位置：`outputs.py:272` 到 `outputs.py:281`。
 
 ---
 
@@ -635,10 +641,11 @@ AsyncGPUModelRunnerOutput(
     async_output_copy_stream=self._get_or_create_async_output_copy_stream(),
     vocab_size=self.input_batch.vocab_size,
     routed_experts=routed_experts_snapshot,
+    check_ep_fault=self.check_ep_fault,
 )
 ```
 
-位置：`gpu_model_runner.py:4663` 到 `gpu_model_runner.py:4671`
+位置：`gpu_model_runner.py:4750` 到 `gpu_model_runner.py:4759`
 
 ### 13.1 为什么需要包装
 
@@ -649,11 +656,11 @@ GPU tensor 的 D2H copy 可以和下一步 compute 重叠；
 不能等所有拷贝完再继续调度。
 ```
 
-所以先返回一个异步包装对象，真正的 CPU 结果由 `get_output()` 取出。
+所以先返回一个异步包装对象，真正的 CPU 结果由 `get_output()` 取出。构造 wrapper 后，`sample_tokens()` 还会调用 `self.input_batch.set_async_sampled_token_ids(async_output.sampled_token_ids_cpu, async_output.async_copy_ready_event)`，让下一轮需要 output ids 的 sampling params 可以等待并读取这份 CPU sampled tokens。位置：`gpu_model_runner.py:4760` 到 `gpu_model_runner.py:4768`。
 
 ### 13.2 AsyncGPUModelRunnerOutput 的工作方式
 
-定义在：`gpu_model_runner.py:239`
+定义在：`gpu_model_runner.py:251`
 
 它会：
 
@@ -662,10 +669,11 @@ GPU tensor 的 D2H copy 可以和下一步 compute 重叠；
 2. 用 event 标记 copy 完成；
 3. get_output() 时等待 event；
 4. 转成 list / numpy / Python 结构；
-5. 回填到 ModelRunnerOutput。
+5. 回填到 ModelRunnerOutput；
+6. 如果开启 EP fault 检查，发现 all2all fault 时在 `get_output()` 中抛出 RuntimeError。
 ```
 
-位置：`gpu_model_runner.py:239` 到 `gpu_model_runner.py:316`
+位置：`gpu_model_runner.py:251` 到 `gpu_model_runner.py:342`
 
 ### 13.3 sampled_token_ids 和 logprobs 的 CPU 化
 
@@ -678,7 +686,7 @@ GPU tensor 的 D2H copy 可以和下一步 compute 重叠；
 - 把 routed_experts 回填到 output。
 ```
 
-位置：`gpu_model_runner.py:282` 到 `gpu_model_runner.py:316`
+位置：`gpu_model_runner.py:300` 到 `gpu_model_runner.py:342`
 
 ---
 
@@ -742,9 +750,10 @@ sample_tokens() 可能只负责接收 / 转发 / kv connector output
 6. _update_states_after_model_execute()；
 7. speculative decoding 处理；
 8. bookkeeping；
-9. 构造 ModelRunnerOutput；
-10. 必要时包装为 AsyncGPUModelRunnerOutput；
-11. Scheduler.update_from_output()。
+9. spec decode 场景 finalize KV connector，并执行 EPLB step；
+10. 构造 ModelRunnerOutput；
+11. 必要时包装为 AsyncGPUModelRunnerOutput；
+12. Scheduler.update_from_output()。
 ```
 
 ---
@@ -764,6 +773,7 @@ bookkeeping
 spec decode 场景下延迟的 KV connector finalize
 routed experts
 async output packaging
+EP all2all fault check
 ```
 
 ### 17.2 为什么 sampled_token_ids 是 list[list[int]]？

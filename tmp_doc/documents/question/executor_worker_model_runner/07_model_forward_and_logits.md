@@ -25,7 +25,7 @@ self.model(
 )
 ```
 
-位置：`gpu_model_runner.py:3757` 到 `gpu_model_runner.py:3787`
+位置：`gpu_model_runner.py:3810` 到 `gpu_model_runner.py:3840`
 
 forward 之后：
 
@@ -74,7 +74,7 @@ _update_states(scheduler_output)
   → postprocess hidden_states / logits / pooling
 ```
 
-真正调用位置在：`gpu_model_runner.py:4297` 到 `gpu_model_runner.py:4326`
+真正调用位置在：`gpu_model_runner.py:4350` 到 `gpu_model_runner.py:4386`
 
 核心代码：
 
@@ -93,7 +93,7 @@ with (
     )
 ```
 
-位置：`gpu_model_runner.py:4302` 到 `gpu_model_runner.py:4326`
+位置：`gpu_model_runner.py:4362` 到 `gpu_model_runner.py:4386`
 
 这说明：
 
@@ -119,7 +119,7 @@ def _model_forward(
 ) -> Any:
 ```
 
-位置：`gpu_model_runner.py:3757`
+位置：`gpu_model_runner.py:3810`
 
 实现非常直接：
 
@@ -133,7 +133,7 @@ return self.model(
 )
 ```
 
-位置：`gpu_model_runner.py:3781` 到 `gpu_model_runner.py:3787`
+位置：`gpu_model_runner.py:3834` 到 `gpu_model_runner.py:3840`
 
 它的定位是：
 
@@ -151,7 +151,7 @@ return self.model(
 这个方法可以被子类覆盖，方便只检查模型执行部分，而不是整个 execute_model。
 ```
 
-位置：`gpu_model_runner.py:3765` 到 `gpu_model_runner.py:3770`
+位置：`gpu_model_runner.py:3818` 到 `gpu_model_runner.py:3823`
 
 ---
 
@@ -176,7 +176,7 @@ return self.model(
 )
 ```
 
-位置：`gpu_model_runner.py:4271` 到 `gpu_model_runner.py:4280`
+位置：`gpu_model_runner.py:4324` 到 `gpu_model_runner.py:4333`
 
 其中：
 
@@ -223,7 +223,7 @@ set_forward_context(
 )
 ```
 
-位置：`gpu_model_runner.py:4303` 到 `gpu_model_runner.py:4313`
+位置：`gpu_model_runner.py:4363` 到 `gpu_model_runner.py:4373`
 
 这里传进去的关键信息包括：
 
@@ -235,7 +235,7 @@ cudagraph_runtime_mode：CUDA graph / eager / piecewise 模式；
 batch_descriptor：batch 执行描述；
 ubatch_slices：microbatch 切分；
 slot_mapping：token 写入 KV cache 的位置；
-skip_compiled：是否跳过编译路径。
+skip_compiled：是否跳过编译路径，encoder-decoder 有 encoder input 的步骤会走 eager / 非编译路径。
 ```
 
 这说明：
@@ -257,7 +257,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`gpu_model_runner.py:4255` 到 `gpu_model_runner.py:4268`
+位置：`gpu_model_runner.py:4308` 到 `gpu_model_runner.py:4321`
 
 然后 `set_forward_context()` 把 `attn_metadata` 放入当前 forward 上下文。
 
@@ -312,7 +312,7 @@ else:
     aux_hidden_states = None
 ```
 
-位置：`gpu_model_runner.py:4328` 到 `gpu_model_runner.py:4335`
+位置：`gpu_model_runner.py:4388` 到 `gpu_model_runner.py:4395`
 
 ### 7.2 非最后 PP rank：IntermediateTensors
 
@@ -325,7 +325,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`gpu_model_runner.py:4337` 到 `gpu_model_runner.py:4343`
+位置：`gpu_model_runner.py:4397` 到 `gpu_model_runner.py:4403`
 
 这说明非最后 PP rank 不会计算 logits，而是把中间 hidden states 交给下一个 PP stage。
 
@@ -338,7 +338,7 @@ if self.is_pooling_model:
     return self._pool(...)
 ```
 
-位置：`gpu_model_runner.py:4345` 到 `gpu_model_runner.py:4352`
+位置：`gpu_model_runner.py:4405` 到 `gpu_model_runner.py:4412`
 
 pooling 模型不会走 token sampling 的主路径。
 
@@ -353,7 +353,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu_model_runner.py:4354` 到 `gpu_model_runner.py:4355`
+位置：`gpu_model_runner.py:4414` 到 `gpu_model_runner.py:4415`
 
 关键点：
 
@@ -368,7 +368,7 @@ logits = self.model.compute_logits(sample_hidden_states)
 logits_indices, spec_decode_metadata = self._prepare_inputs(...)
 ```
 
-位置：`gpu_model_runner.py:4128` 到 `gpu_model_runner.py:4131`
+位置：`gpu_model_runner.py:4181` 到 `gpu_model_runner.py:4184`
 
 这表示：
 
@@ -432,10 +432,16 @@ self.execute_model_state = ExecuteModelState(
     slot_mappings,
 )
 self.kv_connector_output = kv_connector_output
+
+if deferred_state_corrections_fn:
+    deferred_state_corrections_fn()
+
 return None
 ```
 
-位置：`gpu_model_runner.py:4386` 到 `gpu_model_runner.py:4405`
+位置：`gpu_model_runner.py:4446` 到 `gpu_model_runner.py:4465`
+
+这里的 `deferred_state_corrections_fn()` 用于 async scheduling + spec decode 场景：forward batch 已经 launch 后，再等待上一轮采样统计并修正乐观推进的 token 计数，避免阻塞 forward 前的输入准备。
 
 原因是：
 
@@ -479,7 +485,7 @@ def _pool(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput:
 ```
 
-位置：`gpu_model_runner.py:3342`
+位置：`gpu_model_runner.py:3392`
 
 ### 11.1 构造 pooling metadata
 
@@ -488,7 +494,7 @@ pooling_metadata = self.input_batch.get_pooling_metadata()
 pooling_metadata.build_pooling_cursor(...)
 ```
 
-位置：`gpu_model_runner.py:3357` 到 `gpu_model_runner.py:3363`
+位置：`gpu_model_runner.py:3407` 到 `gpu_model_runner.py:3413`
 
 这一步告诉 pooler：
 
@@ -509,7 +515,7 @@ raw_pooler_output = model.pooler(
 )
 ```
 
-位置：`gpu_model_runner.py:3365` 到 `gpu_model_runner.py:3368`
+位置：`gpu_model_runner.py:3415` 到 `gpu_model_runner.py:3418`
 
 这就是 pooling 输出产生的位置。
 
@@ -523,11 +529,11 @@ model_runner_output = ModelRunnerOutput(
 )
 ```
 
-位置：`gpu_model_runner.py:3381` 到 `gpu_model_runner.py:3385`
+位置：`gpu_model_runner.py:3431` 到 `gpu_model_runner.py:3435`
 
 如果有完成的 pooling output，则填入 `pooler_output`；CUDA 场景下可能包装成 `AsyncGPUPoolingModelRunnerOutput`。
 
-位置：`gpu_model_runner.py:3387` 到 `gpu_model_runner.py:3405`
+位置：`gpu_model_runner.py:3437` 到 `gpu_model_runner.py:3455`
 
 ---
 
@@ -544,7 +550,7 @@ tensor_dict, comm_handles, comm_postprocess = get_pp_group().irecv_tensor_dict(.
 intermediate_tensors = AsyncIntermediateTensors(...)
 ```
 
-位置：`gpu_worker.py:853` 到 `gpu_worker.py:865`
+位置：`gpu_worker.py:1047` 到 `gpu_worker.py:1059`
 
 这说明：
 
@@ -561,7 +567,7 @@ first PP rank 输入 token ids / embeddings；
 IntermediateTensors
 ```
 
-位置：`gpu_model_runner.py:4337` 到 `gpu_model_runner.py:4343`
+位置：`gpu_model_runner.py:4397` 到 `gpu_model_runner.py:4403`
 
 然后 `GPUWorker.execute_model()` 会把它异步发送到下一 PP stage：
 
@@ -570,7 +576,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(output.tensors, ...)
 return None
 ```
 
-位置：`gpu_worker.py:889` 到 `gpu_worker.py:896`
+位置：`gpu_worker.py:1083` 到 `gpu_worker.py:1090`
 
 ### 12.3 最后 PP rank 才算 logits / pooling
 
@@ -602,7 +608,7 @@ PP rank N-1：
 if self.broadcast_pp_output:
 ```
 
-位置：`gpu_model_runner.py:4356`
+位置：`gpu_model_runner.py:4416`
 
 它主要用于 `external_launcher` + PP 场景。
 
@@ -621,7 +627,7 @@ broadcasted = get_pp_group().broadcast_tensor_dict(...)
 logits = broadcasted["logits"]
 ```
 
-位置：`gpu_model_runner.py:4356` 到 `gpu_model_runner.py:4384`
+位置：`gpu_model_runner.py:4416` 到 `gpu_model_runner.py:4444`
 
 这不是普通 serving 主路径，但说明 vLLM 为外部 launcher / torchrun 类场景保留了同步 logits 的机制。
 
@@ -647,7 +653,7 @@ set_forward_context
 保存 ExecuteModelState
 ```
 
-位置：`gpu/model_runner.py:1101` 到 `gpu/model_runner.py:1323`
+位置：`gpu/model_runner.py:1129` 到 `gpu/model_runner.py:1369`
 
 ### 14.2 eager / piecewise / full cudagraph
 
@@ -659,7 +665,7 @@ PIECEWISE：cudagraph_manager.run_pw_graph(self.model, model_inputs)
 NONE：self.model(**model_inputs)
 ```
 
-位置：`gpu/model_runner.py:1256` 到 `gpu/model_runner.py:1294`
+位置：`gpu/model_runner.py:1301` 到 `gpu/model_runner.py:1339`
 
 ### 14.3 logits 在 sample 阶段计算
 
@@ -670,7 +676,7 @@ sample_hidden_states = hidden_states[input_batch.logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu/model_runner.py:1042` 到 `gpu/model_runner.py:1046`
+位置：`gpu/model_runner.py:1069` 到 `gpu/model_runner.py:1070`
 
 和 V1 的区别是组织位置不同，但核心仍然是：
 
@@ -688,7 +694,7 @@ hidden_states + logits_indices → compute_logits()
 _determine_batch_execution_and_padding(...)
 ```
 
-位置：`gpu_model_runner.py:4143` 到 `gpu_model_runner.py:4156`
+位置：`gpu_model_runner.py:4196` 到 `gpu_model_runner.py:4209`
 
 它会决定：
 
@@ -700,7 +706,7 @@ num_tokens_across_dp
 cudagraph_stats
 ```
 
-后续 `set_forward_context()` 把这些信息传入 forward context。
+后续 `set_forward_context()` 把这些信息传入 forward context。另有两个运行时修正：如果需要计算 KV scales，会强制 `cudagraph_mode = CUDAGraphMode.NONE`；encoder-decoder 模型有 encoder input 的步骤会通过 `skip_compiled=has_encoder_input` 跳过编译路径。位置：`gpu_model_runner.py:4335` 到 `gpu_model_runner.py:4348`。
 
 因此：
 
@@ -729,7 +735,7 @@ self.maybe_get_kv_connector_output(
 ) as kv_connector_output
 ```
 
-位置：`gpu_model_runner.py:4315` 到 `gpu_model_runner.py:4318`
+位置：`gpu_model_runner.py:4375` 到 `gpu_model_runner.py:4378`
 
 这说明：
 
@@ -744,7 +750,7 @@ forward 产生的 KV cache 状态可能需要被 connector 输出带回 Schedule
 defer_kv_connector_finalize = self.speculative_config is not None
 ```
 
-位置：`gpu_model_runner.py:4297` 到 `gpu_model_runner.py:4301`
+位置：`gpu_model_runner.py:4350` 到 `gpu_model_runner.py:4354`
 
 原因是 draft model 也可能需要保存 KV，因此 connector finalize 要延后到 draft model 之后。
 
@@ -769,7 +775,7 @@ self.execute_model_state = ExecuteModelState(
 )
 ```
 
-位置：`gpu_model_runner.py:4386` 到 `gpu_model_runner.py:4397`
+位置：`gpu_model_runner.py:4446` 到 `gpu_model_runner.py:4457`
 
 这说明 execute_model 和 sample_tokens 之间通过 `ExecuteModelState` 传递：
 
