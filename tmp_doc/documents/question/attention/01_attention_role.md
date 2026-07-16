@@ -139,11 +139,11 @@ GPUModelRunner._update_states()
 
 对应源码入口：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4044`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4244`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4255`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4303`
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:438`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4097`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4297`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4308`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:485`
 
 所以 Attention 子系统不是一个独立的外层服务，而是：
 
@@ -173,7 +173,7 @@ AttentionImplBase / AttentionImpl
 `Attention` 定义在：
 
 ```text
-code/vllm/vllm/model_executor/layers/attention/attention.py:192
+code/vllm/vllm/model_executor/layers/attention/attention.py:221
 ```
 
 源码注释直接说明它做三件事：
@@ -191,7 +191,7 @@ The class does the following:
 """
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:192`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:221`
 
 它是模型结构的一部分，每个 transformer block 通常会持有一个 attention layer。
 
@@ -218,7 +218,7 @@ The class does the following:
 `AttentionBackend` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:55
+code/vllm/vllm/v1/attention/backend.py:56
 ```
 
 它是抽象类，负责声明：
@@ -244,7 +244,7 @@ get_builder_cls()
 get_kv_cache_shape(...)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:73` 到 `code/vllm/vllm/v1/attention/backend.py:96`
+位置：`code/vllm/vllm/v1/attention/backend.py:73` 到 `code/vllm/vllm/v1/attention/backend.py:97`
 
 所以 backend 不是“某个 attention 算法名”的泛称，而是 vLLM 内部的执行后端契约：
 
@@ -257,7 +257,7 @@ backend = metadata builder + impl + KV cache layout + capability checks。
 `AttentionMetadataBuilder` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:565
+code/vllm/vllm/v1/attention/backend.py:600
 ```
 
 它的核心方法是：
@@ -271,7 +271,7 @@ def build(
 ) -> M:
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:632`
+位置：`code/vllm/vllm/v1/attention/backend.py:667`
 
 它负责把 `CommonAttentionMetadata` 变成具体 backend 的 metadata。
 
@@ -289,7 +289,7 @@ ModelRunner 不应该直接知道每个 backend 的私有字段，所以它只�
 `AttentionImplBase` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:734
+code/vllm/vllm/v1/attention/backend.py:769
 ```
 
 标准 attention impl 是：
@@ -298,7 +298,7 @@ code/vllm/vllm/v1/attention/backend.py:734
 class AttentionImpl(AttentionImplBase[T], Generic[T]):
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:812`
+位置：`code/vllm/vllm/v1/attention/backend.py:860`
 
 核心 forward 抽象是：
 
@@ -316,7 +316,7 @@ def forward(
 ) -> torch.Tensor:
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:839`
+位置：`code/vllm/vllm/v1/attention/backend.py:887`
 
 MLA 则有单独抽象：
 
@@ -325,7 +325,7 @@ MLAAttentionImpl.forward_mha()
 MLAAttentionImpl.forward_mqa()
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:863`
+位置：`code/vllm/vllm/v1/attention/backend.py:943`
 
 所以执行分层是：
 
@@ -352,7 +352,7 @@ Attention 子系统负责“用这些信息执行 attention”。
 slot_mappings_by_group, slot_mappings = self._get_slot_mappings(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4244`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4297`
 
 然后构造 attention metadata：
 
@@ -362,7 +362,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4308`
 
 最后用 forward context 包住模型 forward：
 
@@ -380,7 +380,7 @@ set_forward_context(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4303`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 也就是说，ModelRunner 准备：
 
@@ -404,7 +404,7 @@ Attention metadata is set using a context manager in the model runner's execute_
 It is accessed via forward context using get_forward_context().attn_metadata.
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:452`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:500`
 
 所以 attention layer 的运行时参数不是全靠函数显式传入，而是通过：
 
@@ -460,7 +460,7 @@ block_table_tensor: torch.Tensor
 slot_mapping: torch.Tensor
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:387`
+位置：`code/vllm/vllm/v1/attention/backend.py:420`
 
 它们是逻辑 block 分配进入 attention backend 的桥。
 
@@ -472,7 +472,7 @@ slot_mapping: torch.Tensor
 def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:567`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:616`
 
 报告它需要的 KV cache spec。
 
@@ -488,7 +488,7 @@ sliding window 返回：
 SlidingWindowSpec
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:573`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:629`
 
 ModelRunner 会收集这些 spec：
 
@@ -496,7 +496,9 @@ ModelRunner 会收集这些 spec：
 def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7459`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7623`
+
+当前实现还会跳过不需要自回归 KV cache 的 encoder-only / encoder attention 层，并对 `AttentionSpec` 写入 backend 是否支持按 runtime block stride 索引 KV 的 `indexes_kv_by_block_stride` 标记。
 
 然后 EngineCore / KV cache manager 才能知道每层 KV cache 需要多少显存、如何分组。
 
@@ -626,7 +628,7 @@ supports_compute_capability()
 get_required_kv_cache_layout()
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:55` 到 `code/vllm/vllm/v1/attention/backend.py:351`
+位置：`code/vllm/vllm/v1/attention/backend.py:56` 到 `code/vllm/vllm/v1/attention/backend.py:351`
 
 它们的作用是：
 
