@@ -11,6 +11,7 @@
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
@@ -44,7 +45,7 @@ Scheduler.update_from_output()
       → SchedulerOutput.kv_connector_metadata
   → Worker / ModelRunner execute_model()
       → bind_connector_metadata()
-      → start_load_kv() / save_kv_layer() / wait_for_save()
+      → start_load_kv() / wait_for_layer_load() / save_kv_layer() / wait_for_save()
       → get_finished(finished_req_ids)
       → ModelRunnerOutput.kv_connector_output.finished_sending
   → Scheduler.update_from_output()
@@ -127,7 +128,7 @@ def request_finished(
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:547`
 
-HMA / 多 KV group 接口：
+HMA / 多 KV group 接口定义在 `SupportsHMA` mixin 上，Scheduler 通过 `isinstance(self.connector, SupportsHMA)` 分支决定是否调用它：
 
 ```python
 def request_finished_all_groups(
@@ -137,7 +138,7 @@ def request_finished_all_groups(
 ) -> tuple[bool, dict[str, Any] | None]:
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:92` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:97`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:85` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:97`；调用分支见 `code/vllm/vllm/v1/core/sched/scheduler.py:2461` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2469`
 
 返回值含义：
 
@@ -587,7 +588,7 @@ finally:
 
 ```text
 1. start_load_kv() 名字偏 load，但很多 connector 也借这个 metadata 入口推进 save/send；
-2. save_kv_layer() 通常发生在 attention layer forward 过程中；
+2. attention wrapper 会在 forward 前调用 wait_for_layer_load(layer_name)，在 forward 后调用 save_kv_layer()；
 3. wait_for_save() 在 context 退出时保证必要保存完成，避免 KV buffer 被覆盖；
 4. no-forward step 会传 wait_for_save=False，仍推进 start_load_kv() / get_finished()，但不等待 save；
 5. defer_finalize=True 时不在这里 clear metadata，后续 finalize_kv_connector() 再 wait_for_save() 并清理；
@@ -595,22 +596,23 @@ finally:
 7. 这些结果进入 ModelRunnerOutput.kv_connector_output。
 ```
 
-### 10.4 save_kv_layer 在 attention 层之后调用
+### 10.4 attention wrapper 在 forward 前等待 load、forward 后保存
 
-attention 层的 KV transfer wrapper 在 forward 后调用：
+attention 层的 KV transfer wrapper 会在 forward 前等待该层 load 完成，forward 后再保存该层 KV：
 
 ```python
+connector.wait_for_layer_load(layer_name)
 result = func(*args, **kwargs)
 connector.save_kv_layer(layer_name, kv_cache, attn_metadata)
 return result
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py:52` 到 `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py:59`
+位置：`code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py:50` 到 `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py:59`
 
 也就是说：
 
 ```text
-逐层 save 的时间点在该 attention layer 计算完、KV 已经写入 paged KV cache 之后。
+逐层 save 的时间点在该 attention layer 计算完、KV 已经写入 paged KV cache 之后；逐层 load 的等待点在该 layer forward 之前。
 ```
 
 ---
@@ -745,6 +747,12 @@ if not params:
 
 is_p_node = bool(params.get("do_remote_decode"))
 ...
+if params.get("do_remote_prefill"):
+    params["remote_block_ids"] = ()
+    self._reqs_need_recv[request.request_id] = (request, [])
+    params["do_remote_prefill"] = False
+    return False, None
+
 if not is_p_node:
     return False, None
 
@@ -762,6 +770,7 @@ if request.status not in (
 
 ```text
 NIXL push 只在 P-side、且请求正常 stopped / length capped 时保存；
+D-side 如果 do_remote_prefill 仍为 True，说明请求尚未调度就被 abort，会登记一个空 recv 通知，避免 P 侧 blocks stranded；
 abort / error 等状态通常不保存。
 ```
 
@@ -794,6 +803,7 @@ return delay_free_blocks, dict(
     remote_host=self.side_channel_host,
     remote_port=self.side_channel_port,
     tp_size=self.vllm_config.parallel_config.tensor_parallel_size,
+    pp_size=self.vllm_config.parallel_config.pipeline_parallel_size,
     remote_num_tokens=remote_num_tokens,
 )
 ```
@@ -874,6 +884,20 @@ else:
 真正提交 WRITE 时，`_xfer_blocks()` 返回 handle；外层 `_xfer_blocks_for_req()` 会把同一请求的所有 WRITE handles 一次性加入 `_sending_transfers[req_id]`，避免部分 handles 被提前判定完成：
 
 ```python
+handle = self._xfer_blocks(...)
+if handle is not None:
+    handles.append(handle)
+...
+if handles:
+    with self._sending_transfers_lock:
+        self._sending_transfers[req_id].extend(handles)
+```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py:547` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py:587`
+
+`_xfer_blocks()` 内部通过 NIXL 提交 WRITE 并返回 handle：
+
+```python
 handle = self.nixl_wrapper.make_prepped_xfer(
     "WRITE",
     local_xfer_side_handle,
@@ -883,8 +907,6 @@ handle = self.nixl_wrapper.make_prepped_xfer(
     notif_msg=notif_id,
 )
 self.nixl_wrapper.transfer(handle)
-# Caller tracks the handle (atomically with the request's other
-# writes) so P can free blocks once all of them are done.
 return handle
 ```
 
@@ -991,7 +1013,7 @@ meta = OffloadingConnectorMetadata(
 )
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1121` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1128`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1121` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1125`
 
 `_build_store_jobs()` 会根据本轮 scheduled tokens、block hash / offload keys、sliding window / EAGLE 等规则决定哪些 blocks 要 store。
 
@@ -1030,7 +1052,7 @@ Stores never emit finished_sending — the scheduler tracks store completion
 via kv_connector_worker_meta.completed_jobs and fences any block reuse via jobs_to_flush.
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:252` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:260`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:304` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:313`
 
 它返回：
 
@@ -1038,7 +1060,7 @@ via kv_connector_worker_meta.completed_jobs and fences any block reuse via jobs_
 return set(), finished_recving
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:286`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:339`
 
 完成 job 通过：
 
@@ -1046,9 +1068,9 @@ return set(), finished_recving
 return meta
 ```
 
-即 `build_connector_worker_meta()` 返回 `OffloadingWorkerMetadata`。
+即 `build_connector_worker_meta()` 在有 completed jobs 时返回 `OffloadingWorkerMetadata`；如果没有 completed jobs，则返回 `None`。
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:288` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:294`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:341` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:347`
 
 ### 14.4 Scheduler 侧用 completed_jobs 更新 store 状态
 
@@ -1058,7 +1080,7 @@ return meta
 meta = connector_output.kv_connector_worker_meta
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1037` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1048`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1139` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1150`
 
 遍历 completed jobs：
 
@@ -1071,7 +1093,7 @@ for job_id, count in meta.completed_jobs.items():
         self.manager.complete_load(job_status.keys, req_status.req_context)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1082` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1101`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1181` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1217`
 
 请求结束时，标准 connector facade 仍接收 `block_ids`，但会转发为 scheduler 侧的 `request_finished(request)`：
 
@@ -1080,29 +1102,33 @@ for job_id, count in meta.completed_jobs.items():
 return self.connector_scheduler.request_finished(request)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:157` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:171`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:161` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:175`
 
 scheduler 侧实现不接收 `block_ids`，并且所有路径都返回 `False, None`：
 
 ```python
-req_context = (
-    req_status.req_context if req_status else _create_req_context(request)
-)
-self.manager.on_request_finished(req_context)
+req_status = self._req_status.get(request.request_id)
 
 if req_status is None:
+    req_context = _create_req_context(request)
+    self.manager.on_new_request(req_context)
+    self.manager.on_request_finished(req_context)
     return False, None
+
+self.manager.on_request_finished(req_status.req_context)
+self._maybe_observe_lookup_async_delay(req_status)
 if not req_status.transfer_jobs:
     del self._req_status[request.request_id]
     return False, None
 
 for job_id in req_status.transfer_jobs:
-    ...
-    self._block_id_to_pending_jobs.setdefault(bid, set()).add(job_id)
+    job_status = self._jobs[job_id]
+    for bid in job_status.non_sliding_window_block_ids or ():
+        self._block_id_to_pending_jobs.setdefault(bid, set()).add(job_id)
 return False, None
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1151` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1167`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1234` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1276`
 
 注意它始终返回 False：
 
@@ -1114,6 +1140,16 @@ Offloading connector 请求结束时不通过 delay_free_blocks 保留整个 req
 ```
 
 这和 NIXL push 的 `finished_sending → _free_blocks()` 模式不同。
+
+此外，Offloading scheduler 也实现了 `has_pending_push_work()`：
+
+```python
+return bool(self._jobs) or self.manager.has_pending_work()
+```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1131` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1137`
+
+虽然方法名仍叫 push work，但这里的作用是让 engine loop 在还有 offloading jobs 或 manager pending work 时继续 step，从而继续推进 completed_jobs / flush。
 
 ---
 
@@ -1152,7 +1188,7 @@ if multiple_inflight_batches and kv_transfer_config.is_kv_consumer:
     self.defer_block_free = True
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:145` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:151`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:147` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:153`
 
 `_free_request_blocks()` 会根据 in-flight step fence 决定是否真正归还 BlockPool：
 
@@ -1165,7 +1201,7 @@ if blocks:
     self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2077` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2090`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2197` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 作用：
 
@@ -1187,7 +1223,7 @@ jobs_to_flush
 
 在 block 可能复用前强制 flush 对应 store jobs。
 
-相关代码：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1005` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1017`
+复用前 flush pending jobs 的代码：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1107` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1119`；metadata 携带 `jobs_to_flush` 的位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1121` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1125`
 
 作用：
 
@@ -1207,11 +1243,14 @@ jobs_to_flush
 ```python
 self.kv_cache_manager.remove_skipped_blocks(
     request_id=request.request_id,
-    total_computed_tokens=request.num_computed_tokens,
+    processed_computed_tokens=max(
+        0, request.num_computed_tokens - request.num_in_flight_tokens
+    ),
+    num_prompt_tokens=request.num_prompt_tokens,
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2311` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2316`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2448` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2454`
 
 这保证 connector 看到的 block table 已经反映当前 attention 类型的保留窗口。
 
@@ -1223,7 +1262,7 @@ NIXL base scheduler 有：
 def get_sw_clipped_blocks(self, block_ids: BlockIds) -> BlockIds:
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:219`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:221`
 
 注释说明：
 
@@ -1231,7 +1270,7 @@ def get_sw_clipped_blocks(self, block_ids: BlockIds) -> BlockIds:
 Clip the number of blocks to the sliding window size for each kv cache group that employs SWA.
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:219` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:225`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:221` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_scheduler.py:246`
 
 Push request_finished 中也调用：
 
@@ -1239,7 +1278,7 @@ Push request_finished 中也调用：
 block_ids = self.get_sw_clipped_blocks(block_ids)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py:267`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py:274`
 
 ### 16.3 Offloading store 会用 block hash / offload key
 
@@ -1254,7 +1293,7 @@ for req_block_hash in islice(... self.req.block_hashes ...):
     )
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:258` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:272`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:275` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:289`
 
 所以 external KV save 和 prefix cache 的共同基础是：
 
@@ -1364,7 +1403,7 @@ finished_sending → _free_blocks()
 finished_recving → 如果请求还在 WAITING_FOR_REMOTE_KVS，则加入 finished_recving_kv_req_ids；如果请求已经 finished，则 _free_blocks()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2431` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2444`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2559` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2586`
 
 ### 18.4 Worker 侧为什么在 0-token step 也要执行 connector？
 

@@ -5,6 +5,7 @@
 - `code/vllm/vllm/v1/core/sched/scheduler.py`
 - `code/vllm/vllm/v1/outputs.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/gpu/kv_connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py`
@@ -79,7 +80,7 @@ sync load：请求已经在 running，本轮也出现在 SchedulerOutput.num_sch
 
 ## 3. invalid_block_ids 是什么
 
-`invalid_block_ids` 定义在：`vllm/v1/outputs.py:196`
+`invalid_block_ids` 定义在：`code/vllm/vllm/v1/outputs.py:196`
 
 字段说明：
 
@@ -88,7 +89,7 @@ IDs of externally computed KV blocks that failed to load.
 Requests referencing these blocks should be rescheduled to recompute them.
 ```
 
-位置：`outputs.py:203` 到 `outputs.py:205`
+位置：`code/vllm/vllm/v1/outputs.py:203` 到 `code/vllm/vllm/v1/outputs.py:205`
 
 它表示的是：
 
@@ -121,7 +122,7 @@ legacy mixin 路径在：
 KVConnectorModelRunnerMixin._get_kv_connector_output()
 ```
 
-位置：`kv_connector_model_runner_mixin.py:77`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:77`
 
 在 finally 中：
 
@@ -129,7 +130,7 @@ KVConnectorModelRunnerMixin._get_kv_connector_output()
 output.invalid_block_ids = kv_connector.get_block_ids_with_load_errors()
 ```
 
-位置：`kv_connector_model_runner_mixin.py:102` 到 `kv_connector_model_runner_mixin.py:106`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:102` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:105`
 
 新版 GPU connector 路径在：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:77` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:96`，`ActiveKVConnector.post_forward()` 同样把 `get_block_ids_with_load_errors()` 写入 `KVConnectorOutput.invalid_block_ids`。
 
@@ -146,7 +147,7 @@ ModelRunner 只负责把错误 block ids 塞进 KVConnectorOutput。
 
 ## 5. connector 抽象接口如何定义 load failure
 
-接口在：`kv_connector/v1/base.py:375`
+接口在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:375`
 
 ```python
 def get_block_ids_with_load_errors(self) -> set[int]:
@@ -162,7 +163,7 @@ def get_block_ids_with_load_errors(self) -> set[int]:
 - sync loading 的失败应在发现失败的那个 forward pass 报告。
 ```
 
-位置：`kv_connector/v1/base.py:375` 到 `kv_connector/v1/base.py:393`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:375` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:393`
 
 这几个约束很重要：
 
@@ -177,14 +178,14 @@ finished_recving 告诉 Scheduler “这次 async transfer 已经收尾，可以
 
 ## 6. NIXL 如何收集失败 block
 
-NIXL facade：`nixl/connector.py:244`
+NIXL facade：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/connector.py:245`
 
 ```python
 def get_block_ids_with_load_errors(self) -> set[int]:
     return self.connector_worker.get_block_ids_with_load_errors()
 ```
 
-Worker 实现在：`nixl/base_worker.py:2301`
+Worker 实现在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2360`
 
 ```text
 1. NIXL worker 内部维护 _invalid_block_ids 队列；
@@ -193,15 +194,20 @@ Worker 实现在：`nixl/base_worker.py:2301`
 4. get_block_ids_with_load_errors() drain 队列并返回 set[int]。
 ```
 
-失败记录位置：`nixl/base_worker.py:817` 到 `nixl/base_worker.py:828`，`nixl/base_worker.py:1905` 到 `nixl/base_worker.py:1953`
+`_invalid_block_ids` 定义位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:458`
 
-上报位置：`nixl/base_worker.py:2191` 到 `nixl/base_worker.py:2205`
+失败路径位置：handshake 失败调用 `_handle_failed_transfer()` 在 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:894`；transfer 失败 / 异常调用在 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2088` 和 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2096`；实际入队 `set(meta.local_block_ids[0])` 在 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2117` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2118`。
+
+上报位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2360` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:2374`
 
 关键点：
 
 ```text
-返回后会清空这批 invalid block ids，避免重复上报。
+返回后会清空这批 invalid block ids，避免重复上报；
+失败请求也会进入 _failed_recv_reqs，get_finished() drain 后并入 done_recving，并跳过 KV post-processing。
 ```
+
+对应位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:1925` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:1935`，`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:1949` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:1960`
 
 ---
 
@@ -211,7 +217,7 @@ Worker 实现在：`nixl/base_worker.py:2301`
 
 ### 7.1 LMCache
 
-`LMCacheConnector.get_block_ids_with_load_errors()`：`lmcache_connector.py:215`
+`LMCacheConnector.get_block_ids_with_load_errors()`：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py:215`
 
 它会尝试调用底层 engine 的：
 
@@ -221,11 +227,11 @@ get_block_ids_with_load_errors()
 
 如果底层旧版本没有这个方法，则返回空 set。
 
-位置：`lmcache_connector.py:215` 到 `lmcache_connector.py:228`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py:215` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/lmcache_connector.py:228`
 
 ### 7.2 FlexKV
 
-`FlexKVConnector.get_block_ids_with_load_errors()`：`flexkv_connector.py:258`
+`FlexKVConnector.get_block_ids_with_load_errors()`：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/flexkv_connector.py:258`
 
 直接委托给底层 FlexKV connector。
 
@@ -244,9 +250,9 @@ MultiConnector 逻辑：
 agg_block_ids |= c.get_block_ids_with_load_errors()
 ```
 
-位置：`multi_connector.py:338` 到 `multi_connector.py:342`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:338` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:342`
 
-`kv_connector/utils.py` 中多 worker 聚合逻辑：
+`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py` 中多 worker 聚合逻辑：
 
 ```python
 invalid_block_ids |= kv_output.invalid_block_ids
@@ -258,7 +264,7 @@ invalid_block_ids |= kv_output.invalid_block_ids
 KVConnectorOutput.invalid_block_ids
 ```
 
-位置：`kv_connector/utils.py:154` 到 `kv_connector/utils.py:168`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:159` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:173`
 
 也就是说，只要任意 worker / connector 报告某个 block 失败，Scheduler 就会看到这个 block id。
 
@@ -272,7 +278,7 @@ KVConnectorOutput.invalid_block_ids
 Scheduler.update_from_output(scheduler_output, model_runner_output)
 ```
 
-位置：`scheduler.py:1463`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 它在主循环处理每个请求输出之前，先处理 invalid blocks：
 
@@ -285,7 +291,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     )
 ```
 
-位置：`scheduler.py:1490` 到 `scheduler.py:1498`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1578` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1586`
 
 为什么要这么早？
 
@@ -301,7 +307,7 @@ if failed_kv_load_req_ids and req_id in failed_kv_load_req_ids:
     continue
 ```
 
-位置：`scheduler.py:1526` 到 `scheduler.py:1530`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1619` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1621`
 
 ---
 
@@ -313,7 +319,7 @@ if failed_kv_load_req_ids and req_id in failed_kv_load_req_ids:
 KVTransferConfig.kv_load_failure_policy: Literal["recompute", "fail"] = "fail"
 ```
 
-位置：`config/kv_transfer.py:69`
+位置：`code/vllm/vllm/config/kv_transfer.py:69`
 
 含义：
 
@@ -329,7 +335,7 @@ kv_load_failure_policy = kv_transfer_config.kv_load_failure_policy
 self.recompute_kv_load_failures = kv_load_failure_policy == "recompute"
 ```
 
-位置：`scheduler.py:142` 到 `scheduler.py:143`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:144` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:145`
 
 如果没有 KV connector，默认值虽然初始化为 True，但这条逻辑不会实际触发。
 
@@ -337,7 +343,7 @@ self.recompute_kv_load_failures = kv_load_failure_policy == "recompute"
 
 ## 10. _handle_invalid_blocks() 的职责
 
-入口：`scheduler.py:2549`
+入口：`code/vllm/vllm/v1/core/sched/scheduler.py:2691`
 
 它负责：
 
@@ -356,7 +362,7 @@ self.recompute_kv_load_failures = kv_load_failure_policy == "recompute"
 should_fail = not self.recompute_kv_load_failures
 ```
 
-位置：`scheduler.py:2558`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2700`
 
 ---
 
@@ -384,7 +390,7 @@ async_load_reqs = (
 )
 ```
 
-位置：`scheduler.py:2560` 到 `scheduler.py:2565`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2702` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2707`
 
 然后调用：
 
@@ -397,7 +403,7 @@ _update_requests_with_invalid_blocks(
 )
 ```
 
-位置：`scheduler.py:2566` 到 `scheduler.py:2573`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2708` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2715`
 
 为什么 `evict_blocks=False`？
 
@@ -428,7 +434,7 @@ _update_requests_with_invalid_blocks(
 )
 ```
 
-位置：`scheduler.py:2578` 到 `scheduler.py:2583`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2720` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2725`
 
 为什么 `evict_blocks=True`？
 
@@ -445,7 +451,7 @@ if sync_blocks_to_evict and not self.recompute_kv_load_failures:
     self.kv_cache_manager.evict_blocks(sync_blocks_to_evict)
 ```
 
-位置：`scheduler.py:2591` 到 `scheduler.py:2595`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2733` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2737`
 
 ---
 
@@ -457,7 +463,7 @@ if sync_blocks_to_evict and not self.recompute_kv_load_failures:
 _update_requests_with_invalid_blocks(...)
 ```
 
-位置：`scheduler.py:2446`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2588`
 
 它对每个请求做：
 
@@ -470,7 +476,7 @@ req_num_computed_blocks = (req_num_computed_tokens + block_size - 1) // block_si
 
 这里的解包 `(req_block_ids,)` 也说明当前 invalid block 恢复逻辑仍按单 KV group 路径处理，源码 TODO 明确标注 HMA 支持待补。
 
-位置：`scheduler.py:2488` 到 `scheduler.py:2498`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2630` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2639`
 
 然后遍历：
 
@@ -480,7 +486,7 @@ for idx, block_id in zip(range(req_num_computed_blocks), req_block_ids):
         continue
 ```
 
-位置：`scheduler.py:2499` 到 `scheduler.py:2501`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2641` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2643`
 
 一旦发现第一个失败 block：
 
@@ -488,7 +494,7 @@ for idx, block_id in zip(range(req_num_computed_blocks), req_block_ids):
 request.num_computed_tokens = idx * self.block_size
 ```
 
-位置：`scheduler.py:2521` 到 `scheduler.py:2524`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2663` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2665`
 
 也就是说：
 
@@ -509,7 +515,7 @@ request.num_computed_tokens = idx * self.block_size
 req_num_computed_tokens = request.num_computed_tokens - num_scheduled_tokens.get(req_id, 0)
 ```
 
-位置：`scheduler.py:2492` 到 `scheduler.py:2494`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2634` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2636`
 
 原因是：
 
@@ -577,7 +583,7 @@ block_hash[i] = hash(parent_block_hash[i-1], block_tokens[i], extra_keys)
 blocks_to_evict.update(req_block_ids[idx:])
 ```
 
-位置：`scheduler.py:2529` 到 `scheduler.py:2531`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2671` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2673`
 
 这表示：
 
@@ -595,7 +601,7 @@ blocks_to_evict.update(req_block_ids[idx:])
 marked_invalid_block_ids: set[int] = set()
 ```
 
-位置：`scheduler.py:2479` 到 `scheduler.py:2483`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2621` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2625`
 
 如果多个请求共享同一个 invalid block：
 
@@ -611,7 +617,7 @@ if block_id in marked_invalid_block_ids:
     continue
 ```
 
-位置：`scheduler.py:2505` 到 `scheduler.py:2512`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2647` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2654`
 
 如果一个请求的 invalid blocks 全部都是“已由前面请求标记”的共享 block，则它会回退到：
 
@@ -619,7 +625,7 @@ if block_id in marked_invalid_block_ids:
 request.num_computed_tokens = req_num_computed_tokens
 ```
 
-位置：`scheduler.py:2533` 到 `scheduler.py:2544`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2675` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2686`
 
 源码注释说明：
 
@@ -627,7 +633,7 @@ request.num_computed_tokens = req_num_computed_tokens
 目前这个共享 block 优化只适用于 sync loading；async loading does not yet support block sharing。
 ```
 
-位置：`scheduler.py:2508` 到 `scheduler.py:2511`，`scheduler.py:2537` 到 `scheduler.py:2539`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2650` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2653`，`code/vllm/vllm/v1/core/sched/scheduler.py:2679` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2681`
 
 ---
 
@@ -646,7 +652,7 @@ self.failed_recving_kv_req_ids |= async_failed_req_ids
 return sync_failed_req_ids
 ```
 
-位置：`scheduler.py:2615` 到 `scheduler.py:2618`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2757` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2760`
 
 对 async load 来说，请求仍然处在：
 
@@ -668,7 +674,7 @@ finished_recving
 
 `failed_recving_kv_req_ids` 是 Scheduler 记录 async load 失败请求的集合。
 
-定义位置：`scheduler.py:195` 到 `scheduler.py:198`
+定义位置：`code/vllm/vllm/v1/core/sched/scheduler.py:200` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:202`
 
 它的作用是：
 
@@ -678,7 +684,7 @@ finished_recving
 走失败提交路径，而不是把全部外部 tokens 当成成功 load 并 cache。
 ```
 
-提交逻辑在 `_update_waiting_for_remote_kv()`：`scheduler.py:2350`
+提交逻辑在 `_update_waiting_for_remote_kv()`：`code/vllm/vllm/v1/core/sched/scheduler.py:2492`
 
 如果请求在 `failed_recving_kv_req_ids` 中：
 
@@ -692,7 +698,7 @@ finished_recving
 3. 从 failed_recving_kv_req_ids 移除。
 ```
 
-位置：`scheduler.py:2360` 到 `scheduler.py:2371`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2502` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2513`
 
 这避免了一个严重错误：
 
@@ -720,7 +726,7 @@ _update_requests_with_invalid_blocks()
 continue
 ```
 
-位置：`scheduler.py:1526` 到 `scheduler.py:1530`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1619` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1621`
 
 这表示：
 
@@ -762,7 +768,7 @@ should_fail = True
 return async_failed_req_ids | sync_failed_req_ids
 ```
 
-位置：`scheduler.py:2558` 到 `scheduler.py:2606`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2700` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2748`
 
 回到 `update_from_output()` 后：
 
@@ -773,7 +779,7 @@ if failed_kv_load_req_ids and not self.recompute_kv_load_failures:
     ... 生成 EngineCoreOutput(finish_reason=ERROR)
 ```
 
-位置：`scheduler.py:1717` 到 `scheduler.py:1729`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1823` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1835`
 
 单测覆盖：
 
@@ -782,7 +788,7 @@ test_error_propagation_sync_load()
 test_error_propagation_async_load()
 ```
 
-位置：`tests/v1/kv_connector/unit/test_error_propagation.py:41` 和 `test_error_propagation.py:95`
+位置：`tests/v1/kv_connector/unit/test_error_propagation.py:41` 和 `tests/v1/kv_connector/unit/test_error_propagation.py:95`
 
 预期结果是：
 
@@ -807,7 +813,7 @@ if sync_blocks_to_evict and not self.recompute_kv_load_failures:
     self.kv_cache_manager.evict_blocks(sync_blocks_to_evict)
 ```
 
-位置：`scheduler.py:2591` 到 `scheduler.py:2595`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2733` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2737`
 
 这里 evict 的范围是：
 
@@ -833,7 +839,7 @@ only when not using recompute policy
 (where blocks will be recomputed and reused by other requests sharing them)
 ```
 
-位置：`scheduler.py:2591` 到 `scheduler.py:2594`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2733` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2736`
 
 含义是：
 
@@ -871,7 +877,7 @@ where the request ID is returned by get_finished(); even if failures occur, the 
 must still be reported via get_finished().
 ```
 
-位置：`kv_connector/v1/base.py:383` 到 `kv_connector/v1/base.py:389`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:383` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:389`
 
 所以在 recompute policy 下，Scheduler 的动作分两段：
 
@@ -899,7 +905,7 @@ _try_promote_blocked_waiting_request()
   → status = WAITING 或 PREEMPTED
 ```
 
-位置：`scheduler.py:2384` 到 `scheduler.py:2399`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2530` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2541`
 
 如果失败导致 `request.num_computed_tokens` 回退到 0：
 
@@ -908,7 +914,7 @@ _update_waiting_for_remote_kv()
   → kv_cache_manager.free(request)
 ```
 
-位置：`scheduler.py:2363` 到 `scheduler.py:2369`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2508` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2511`
 
 这样后续请求会像普通新请求一样重新走：
 
@@ -972,7 +978,7 @@ Scheduler._update_from_kv_xfer_finished()
 
 中处理。
 
-位置：`scheduler.py:2417` 到 `scheduler.py:2445`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2559` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2586`
 
 如果请求仍是：
 
@@ -986,7 +992,7 @@ WAITING_FOR_REMOTE_KVS
 finished_recving_kv_req_ids
 ```
 
-位置：`scheduler.py:2431` 到 `scheduler.py:2438`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2574` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2582`
 
 这只是“transfer 完成”的标记，不代表没有失败。
 
@@ -1024,7 +1030,7 @@ if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
     self.failed_recving_kv_req_ids.discard(request.request_id)
 ```
 
-位置：`scheduler.py:2031` 到 `scheduler.py:2040`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2144` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2149`
 
 含义是：
 

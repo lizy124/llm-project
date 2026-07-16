@@ -10,6 +10,8 @@
 - `code/vllm/vllm/v1/outputs.py`
 - `code/vllm/vllm/v1/worker/gpu_worker.py`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/kv_connector.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/model_executor/layers/attention/kv_transfer_utils.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py`
@@ -108,17 +110,29 @@ EngineCore.step()
   → Executor.execute_model(scheduler_output)
   → Worker.execute_model(scheduler_output)
   → GPUModelRunner.execute_model(scheduler_output)
-  → handle_preemptions(kv_connector_metadata)
-  → _update_states() / _prepare_inputs() / _build_attention_metadata()
-  → _preprocess()
-  → set_forward_context(attn_metadata, ...)
+  → legacy: handle_preemptions(kv_connector_metadata)
+  → legacy: _update_states() / _prepare_inputs() / _build_attention_metadata() / _preprocess()
+  → legacy: set_forward_context(attn_metadata, ...)
   → legacy: maybe_get_kv_connector_output(scheduler_output)
-    或新版: kv_connector.pre_forward(scheduler_output)
       → bind_connector_metadata(kv_connector_metadata)
       → start_load_kv(forward_context)
       → model forward
           → attention layer entry: wait_for_layer_load(layer_name)
           → attention layer exit: save_kv_layer(layer_name, kv_cache, attn_metadata)
+      → wait_for_save()
+      → get_finished(finished_req_ids)
+      → get_block_ids_with_load_errors()
+      → build_connector_worker_meta()
+      → clear_connector_metadata()
+  → V2: _update_states() / _prepare_inputs() / _build_attention_metadata() / _preprocess()
+  → V2: execute_model() 中 kv_connector.pre_forward(scheduler_output)
+      → handle_preemptions(kv_connector_metadata)
+      → bind_connector_metadata(kv_connector_metadata)
+      → start_load_kv(forward_context)
+      → model forward
+          → attention layer entry: wait_for_layer_load(layer_name)
+          → attention layer exit: save_kv_layer(layer_name, kv_cache, attn_metadata)
+    V2: sample_tokens() / pool() 后段 kv_connector.post_forward()
       → wait_for_save()
       → get_finished(finished_req_ids)
       → get_block_ids_with_load_errors()
@@ -133,9 +147,9 @@ EngineCore.step()
 ```text
 kv_connector_metadata
   → Worker connector bind
-  → forward context 中 start load
+  → forward context / pre_forward 中 start load
   → attention layer 中 wait load / save layer
-  → forward 结束收集 output
+  → legacy context 退出或 V2 post_forward 中收集 output
   → kv_connector_output
 ```
 
@@ -147,7 +161,7 @@ kv_connector_metadata
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:27`
 
-Worker 侧接口包括：
+Worker 侧核心 load / save 接口包括：
 
 ```text
 handle_preemptions()
@@ -158,6 +172,9 @@ wait_for_save()
 get_finished()
 build_connector_worker_meta()
 get_block_ids_with_load_errors()
+get_kv_connector_stats()
+get_kv_connector_kv_cache_events()
+get_handshake_metadata()
 register_kv_caches()
 register_cross_layers_kv_cache()
 set_host_xfer_buffer_ops()
@@ -189,20 +206,22 @@ Worker 侧 connector 不是 Scheduler 创建的那个实例，而是在 Worker �
 
 入口在 `GPUWorker.initialize_from_config()`：
 
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:717`
+
 ```python
 ensure_kv_transfer_initialized(self.vllm_config, kv_cache_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:563`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:729`
 
 源码注释解释为什么要在这里初始化：
 
 ```text
 Init kv cache connector here, because it requires kv_cache_config.
-This needs to be done before initialize_kv_cache.
+This needs to be done before initialize_kv_cache, because initialize_kv_cache will inject kv cache groups not related to kv cache connector.
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:570`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:724` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:729`
 
 `ensure_kv_transfer_initialized()` 的关键逻辑是：
 
@@ -243,9 +262,9 @@ if vllm_config.kv_transfer_config.is_kv_transfer_instance and _KV_CONNECTOR_AGEN
 
 创建 connector 只拿到了配置和 `kv_cache_config`，还没有拿到真正的 GPU KV cache tensor。
 
-真正注册发生在 `GPUModelRunner.initialize_kv_cache()` 末尾。
+legacy 路径中，真正注册发生在 `GPUModelRunner.initialize_kv_cache()` 末尾。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7303`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7467`
 
 主流程是：
 
@@ -274,7 +293,7 @@ if has_kv_transfer_group() and not is_profiling:
     kv_transfer_group.set_host_xfer_buffer_ops(copy_kv_blocks)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7351`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7515` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7524`
 
 这里说明两种 KV cache 布局：
 
@@ -298,7 +317,7 @@ cross-layer uniform 布局：
 1. 当前存在 KV transfer group；
 2. connector.prefer_cross_layer_blocks 为 True；
 3. 只有一个 attention group / KV cache group；
-4. attention backend 支持带 num_layers 维度的 stride order。
+4. 对应 `AttentionSpec.indexes_kv_by_block_stride` 为 True。
 ```
 
 因此 Worker connector 执行 load / save 的前置条件是：
@@ -307,7 +326,7 @@ cross-layer uniform 布局：
 connector 已经知道本地 KV cache tensor 的地址、形状和 layer 映射。
 ```
 
-注意新版 `v1/worker/gpu/kv_connector.py:47` 的 `ActiveKVConnector` 当前只注册 `register_kv_caches(kv_caches_dict)`，源码里仍有 TODO 标注 cross-layer KV cache 支持待补；legacy model runner 路径才包含上面这段 `register_cross_layers_kv_cache(...)` 分支。
+注意 V2 路径在 `code/vllm/vllm/v1/worker/gpu/model_runner.py:496` 通过 `get_kv_connector(self.vllm_config, kv_caches_dict)` 创建 `ActiveKVConnector`；`ActiveKVConnector` 位于 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:47`，当前只注册 `register_kv_caches(kv_caches_dict)` 并设置 `set_host_xfer_buffer_ops(copy_kv_blocks)`，源码 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:53` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:57` 仍有 TODO 标注 cross-layer KV cache 支持待补。legacy model runner 路径才包含上面这段 `register_cross_layers_kv_cache(...)` 分支。
 
 ---
 
@@ -319,7 +338,7 @@ connector 已经知道本地 KV cache tensor 的地址、形状和 layer 映射�
 kv_connector_metadata: KVConnectorMetadata | None = None
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:232`
+位置：`code/vllm/vllm/v1/core/sched/output.py:235`
 
 Executor / Worker 只是把这个 `SchedulerOutput` 透传给 `GPUModelRunner.execute_model()`。
 
@@ -332,9 +351,9 @@ if has_kv_transfer_group():
     get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4078`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
 
-这一步还没有真正 load KV，而是先处理 preemption / evicted blocks。新版 GPU runner 则把同样的动作放在 `ActiveKVConnector.pre_forward()` 内部，位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:61` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:75`。
+这一步还没有真正 load KV，而是先处理 preemption / evicted blocks。V2 GPU runner 则把同样的动作放在 `ActiveKVConnector.pre_forward()` 内部，位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:61` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:75`；V2 中 `pre_forward()` 的调用发生在输入和 attention metadata 准备之后、模型 forward 之前，调用点见 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1328`。
 
 为什么要在 forward 前先 `handle_preemptions()`？
 
@@ -385,7 +404,7 @@ with (
     model_output = self._model_forward(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4302`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4362` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 这说明：
 
@@ -470,7 +489,9 @@ if not defer_finalize:
 3. forward 后：等待 save、收集 output、清理 metadata。
 ```
 
-新版 GPU model runner 不再用这个 context manager 包住 forward，而是通过 `v1/worker/gpu/kv_connector.py` 的 `ActiveKVConnector` 拆成显式的 `pre_forward()` / `post_forward()`：`pre_forward()` 调 `handle_preemptions()`、`bind_connector_metadata()` 和 `start_load_kv()`；`post_forward()` 调 `wait_for_save()`、`get_finished()`、`get_block_ids_with_load_errors()`、收集 stats/events/worker_meta 并 `clear_connector_metadata()`。no-forward 路径则直接调用 `ActiveKVConnector.no_forward()`。
+V2 GPU model runner 不再用这个 context manager 包住 forward，而是通过 `v1/worker/gpu/kv_connector.py` 的 `ActiveKVConnector` 拆成显式的 `pre_forward()` / `post_forward()`：`execute_model()` 中调用 `pre_forward()`，负责 `handle_preemptions()`、`bind_connector_metadata()` 和 `start_load_kv()`；`sample_tokens()` / `pool()` 后段再调用 `post_forward()`，负责 `wait_for_save()`、`get_finished()`、`get_block_ids_with_load_errors()`、收集 stats/events/worker_meta 并 `clear_connector_metadata()`。no-forward 路径则直接调用 `ActiveKVConnector.no_forward()`。
+
+位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1307`、`code/vllm/vllm/v1/worker/gpu/model_runner.py:1402`、`code/vllm/vllm/v1/worker/gpu/model_runner.py:1505`；`ActiveKVConnector.post_forward()` 位置：`code/vllm/vllm/v1/worker/gpu/kv_connector.py:77` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:96`。
 
 ---
 
@@ -708,13 +729,13 @@ kv_connector.wait_for_save()
 确保本轮由 save_kv_layer() 发起的必要保存已经完成，避免后续 batch 复用 / 覆盖 paged KV blocks 时破坏外部保存数据。
 ```
 
-但 speculative decoding 有一个特殊分支：
+legacy GPUModelRunner 的 speculative decoding 有一个特殊分支：
 
 ```python
 defer_kv_connector_finalize = self.speculative_config is not None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4301`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354`
 
 如果开启 spec decode，connector finalization 会延后到 `sample_tokens()`：
 
@@ -723,7 +744,7 @@ if spec_config is not None:
     self.finalize_kv_connector()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4599`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4686` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4687`
 
 原因是：
 
@@ -746,7 +767,7 @@ if not num_scheduled_tokens:
     return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4096`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4149` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4165`
 
 `kv_connector_no_forward()` 的逻辑是：
 
@@ -760,7 +781,11 @@ with (
 return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:35`
+位置：`code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:36` 到 `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py:48`
+
+V2 路径中，如果 `scheduler_output.total_num_scheduled_tokens == 0` 或 DP 同步后 `batch_desc.num_tokens == 0`，会调用 `self.kv_connector.no_forward()`；`ActiveKVConnector.no_forward()` 内部先 `pre_forward()`，再 `post_forward(finished_req_ids, wait_for_save=False)`。
+
+位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1145`、`code/vllm/vllm/v1/worker/gpu/kv_connector.py:98` 到 `code/vllm/vllm/v1/worker/gpu/kv_connector.py:105`
 
 这说明：
 
@@ -965,7 +990,7 @@ Scheduler 侧会先调用：
 connector.update_connector_output(kv_connector_output)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2428`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2570` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2571`
 
 所以 `kv_connector_worker_meta` 的作用是：
 
@@ -983,7 +1008,7 @@ connector.update_connector_output(kv_connector_output)
 
 KV connector output 的聚合工具是 `KVOutputAggregator`。
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:50`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:55`
 
 它的职责是：
 
@@ -999,7 +1024,7 @@ def from_connector(cls, connector, world_size):
     return cls(connector.get_finished_count() or world_size)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:61`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:66` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:68`
 
 聚合 finished set 的逻辑是：
 
@@ -1008,7 +1033,7 @@ def from_connector(cls, connector, world_size):
 只有 remaining_count 变成 0，才把该 req_id 放入最终 finished_sending / finished_recving。
 ```
 
-对应代码位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:75`
+对应代码位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:78` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:90`
 
 聚合内容包括：
 
@@ -1023,7 +1048,7 @@ expected_finished_count：允许 worker 动态更新。
 
 最终输出仍然是一个 `KVConnectorOutput`。
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:160`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:165` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:173`
 
 关键点：
 
@@ -1052,13 +1077,15 @@ class ReqMeta:
     mm_hashes: list[str]
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:31`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:32`
 
 `slot_mapping` 由 `block_ids` 和 `block_size` 展开：
 
 ```text
 block id + block offset → paged KV cache 中的物理 slot。
 ```
+
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:54` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:58`
 
 这说明 Worker connector 最终需要知道的不是抽象 token 命中，而是：
 
@@ -1075,7 +1102,7 @@ metadata = self._get_connector_metadata()
 assert isinstance(metadata, ExampleConnectorMetadata)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:151`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:151` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:153`
 
 然后遍历 metadata 中 `is_store=False` 的请求：
 
@@ -1091,7 +1118,7 @@ for request in metadata.requests:
         inject_kv_into_layer(kv_cache_layer, kv_cache, request.slot_mapping, attn_metadata[layer_name])
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:160`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:160` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:191`
 
 它展示了 load 的本质：
 
@@ -1112,7 +1139,7 @@ for request in connector_metadata.requests:
         safetensors.torch.save_file(tensors, filename)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:237`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:237` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/example_connector.py:246`
 
 它展示了 save 的本质：
 
@@ -1142,7 +1169,7 @@ ExampleConnector 是 debug 实现：
 
 public connector wrapper 在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:87`
 
-Worker component 在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:914`
+Worker component 在：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:947`
 
 它包含：
 
@@ -1190,7 +1217,7 @@ clear_connector_metadata()
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:275` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py:303`
 
-I/O 发起位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1242` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1280`
+transfer threads 启动位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1278` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1319`；I/O 发起和完成检查位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1335` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py:1391`
 
 这就是 vLLM KV Connector 抽象的核心价值：
 
@@ -1238,6 +1265,8 @@ Scheduler.update_from_output()
   → 下一轮 schedule() 再 promote WAITING_FOR_REMOTE_KVS
 ```
 
+这条时序按逻辑顺序展开；legacy 路径通过 `maybe_get_kv_connector_output()` context 承载 bind/start/output collection，V2 路径则把 bind/start 放在 `pre_forward()`，把 output collection 放在 `post_forward()`。
+
 这里有两个 load 分支：
 
 ```text
@@ -1283,6 +1312,7 @@ Scheduler.update_from_output()
 ```text
 Scheduler 决定“这个请求结束后是否要 save，以及 blocks 是否延迟释放”；
 Worker 决定“KV 怎么从 tensor 中取出来并写到外部系统”（可能逐层，也可能由 connector 自己在 get_finished() / 后台线程中提交）；
+legacy 路径在 forward context 退出时收集 connector output，V2 路径在 post_forward() 中收集；
 Scheduler 等 Worker 报告 finished_sending 后，才真正释放被延迟保护的 blocks。
 ```
 
@@ -1300,7 +1330,7 @@ Worker 侧入口是：
 get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4078`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
 
 抽象接口注释明确说：
 
@@ -1310,10 +1340,11 @@ Handle preempted requests or evicted blocks BEFORE they are overwritten.
 
 位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:285`
 
-所以它必须发生在：
+所以它必须发生在新 KV 覆写相关 blocks 之前：
 
 ```text
-本轮 _prepare_inputs / forward / 新 KV 写入之前。
+legacy 路径：handle_preemptions() 在 _update_states() / _prepare_inputs() / forward 之前；
+V2 路径：handle_preemptions() 在 ActiveKVConnector.pre_forward() 内，发生在输入和 attention metadata 准备之后、模型 forward 之前。
 ```
 
 否则可能出现：
@@ -1348,13 +1379,13 @@ sample_tokens()
   → ModelRunnerOutput(kv_connector_output=self.kv_connector_output)
 ```
 
-相关位置：
+legacy 相关位置：
 
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:4386`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4405`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4605`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4397` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4403`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4686` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4694`
 
-PP 非最后一 rank 也有特殊处理：
+legacy PP 非最后一 rank 也有特殊处理：
 
 ```python
 if not get_pp_group().is_last_rank:
@@ -1362,21 +1393,26 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4339`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4397` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
-如果 `sample_tokens()` 被调用时没有 `execute_model_state`，会返回 only connector output：
+如果 legacy `sample_tokens()` 被调用时没有 `execute_model_state`，会返回 only connector output：
 
 ```python
 return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4426`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4486`
+
+V2 PP 非最后一 rank 的路径不同：`sample_tokens()` 收到 broadcast 后会调用 `post_forward()`，再返回 only connector output。
+
+位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1388`
 
 这说明：
 
 ```text
 KV connector output 的生命周期不完全等同于 sampled token output；
-它可能随 execute_model 保存，最后由 sample_tokens 或 PP pass-through 带回 Scheduler。
+legacy 路径中它可能随 execute_model 保存，最后由 sample_tokens 或 PP pass-through 带回 Scheduler；
+V2 路径中 post_forward() 可能在 sample_tokens() / pool() 后段才生成 connector output。
 ```
 
 ---
@@ -1472,7 +1508,7 @@ if ensure_kv_transfer_shutdown is not None:
     ensure_kv_transfer_shutdown()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:1141`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:1294` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:1299`
 
 `ensure_kv_transfer_shutdown()` 做：
 
@@ -1726,7 +1762,7 @@ kv_connector_worker_meta 是 connector 自定义扩展通道，用于传更复�
 wait_for_save → collect output → clear_connector_metadata
 ```
 
-如果 spec decode 设置了 `defer_finalize=True`，则只延后 `wait_for_save()` 和 `clear_connector_metadata()`；output collection 仍在 context 退出时完成，后续 `sample_tokens()` 中的 `finalize_kv_connector()` 只负责等待保存并清理 metadata。
+legacy spec decode 设置 `defer_finalize=True` 时，只延后 `wait_for_save()` 和 `clear_connector_metadata()`；output collection 仍在 context 退出时完成，后续 `sample_tokens()` 中的 `finalize_kv_connector()` 只负责等待保存并清理 metadata。V2 路径没有这个 `defer_finalize` 参数，而是在 speculator / propose 结束后统一调用 `ActiveKVConnector.post_forward()`；`post_forward()` 总是收集 output 后 `clear_connector_metadata()`。
 
 ---
 
@@ -1741,7 +1777,7 @@ Worker / ModelRunner 如何消费 KV Connector metadata？
 可以回答：
 
 ```text
-Worker 侧在 initialize_from_config() 中根据 kv_transfer_config 创建 role=WORKER 的 connector，并在 ModelRunner 初始化 KV cache 后把本地 paged KV cache tensors 注册给 connector。每轮 execute_model() 收到 SchedulerOutput 后，GPUModelRunner 先用 kv_connector_metadata 处理 preemption，然后在 set_forward_context(attn_metadata, ...) 之后进入 maybe_get_kv_connector_output()。这个 context 会 bind_connector_metadata()，再调用 start_load_kv(forward_context) 启动外部 KV load。模型 forward 期间，每个 attention layer 会通过 maybe_transfer_kv_layer 在进入时调用 wait_for_layer_load(layer_name)，退出时调用 save_kv_layer(layer_name, kv_cache, attn_metadata)。forward 结束后，context 调 wait_for_save()、get_finished()、get_block_ids_with_load_errors()、build_connector_worker_meta()，形成 KVConnectorOutput，并通过 ModelRunnerOutput.kv_connector_output 返回 Scheduler。
+Worker 侧在 initialize_from_config() 中根据 kv_transfer_config 创建 role=WORKER 的 connector，并在 ModelRunner 初始化 KV cache 后把本地 paged KV cache tensors 注册给 connector。每轮 execute_model() 收到 SchedulerOutput 后，legacy GPUModelRunner 会先用 kv_connector_metadata 处理 preemption，然后在 set_forward_context(attn_metadata, ...) 之后进入 maybe_get_kv_connector_output()；V2 GPUModelRunner 则在 execute_model() 中调用 ActiveKVConnector.pre_forward()，在 sample_tokens() / pool() 后段调用 post_forward()。两条路径都会 bind_connector_metadata() 并调用 start_load_kv(forward_context)。模型 forward 期间，每个 attention layer 会通过 maybe_transfer_kv_layer 在进入时调用 wait_for_layer_load(layer_name)，退出时调用 save_kv_layer(layer_name, kv_cache, attn_metadata)。最终 wait_for_save()、get_finished()、get_block_ids_with_load_errors()、build_connector_worker_meta() 会形成 KVConnectorOutput，并通过 ModelRunnerOutput.kv_connector_output 返回 Scheduler。
 ```
 
 如果问：
@@ -1753,7 +1789,7 @@ Worker 侧 KV load / save 发生在哪里？
 可以回答：
 
 ```text
-load 的启动点在 ModelRunner forward context 进入时的 start_load_kv()，每层真正使用前在 attention layer entry 的 wait_for_layer_load(layer_name) 同步；save 的触发点在 attention layer exit 的 save_kv_layer(layer_name, kv_cache, attn_metadata)，forward context 退出时通过 wait_for_save() 做必要栅栏。
+load 的启动点是 connector 绑定 metadata 后调用 start_load_kv()：legacy 路径在 forward context 进入时调用，V2 路径在 ActiveKVConnector.pre_forward() 中调用。每层真正使用前在 attention layer entry 的 wait_for_layer_load(layer_name) 同步；save 的触发点在 attention layer exit 的 save_kv_layer(layer_name, kv_cache, attn_metadata)，legacy context 退出或 V2 post_forward() 时通过 wait_for_save() 做必要栅栏。
 ```
 
 如果问：
@@ -1784,33 +1820,36 @@ Worker 初始化
        └─ connector.register_kv_caches(...) / register_cross_layers_kv_cache(...)
 
 每轮执行
-  ├─ GPUModelRunner.execute_model(scheduler_output)
+  ├─ legacy GPUModelRunner.execute_model(scheduler_output)
+  │    ├─ handle_preemptions(scheduler_output.kv_connector_metadata)
+  │    ├─ _update_states / _prepare_inputs / _build_attention_metadata / _preprocess
+  │    └─ with set_forward_context(...), maybe_get_kv_connector_output(...):
+  │         ├─ bind_connector_metadata(kv_connector_metadata)
+  │         ├─ start_load_kv(forward_context)
+  │         ├─ model forward
+  │         │    └─ each attention layer: wait_for_layer_load → attention forward → save_kv_layer
+  │         ├─ wait_for_save()
+  │         ├─ get_finished(finished_req_ids)
+  │         ├─ get_block_ids_with_load_errors()
+  │         ├─ get_kv_connector_stats() / get_kv_connector_kv_cache_events()
+  │         ├─ build_connector_worker_meta()
+  │         └─ clear_connector_metadata()
   │
-  ├─ if has_kv_transfer_group:
-  │    └─ handle_preemptions(scheduler_output.kv_connector_metadata)
-  │
-  ├─ _update_states(scheduler_output)
-  ├─ _prepare_inputs(...)
-  ├─ _build_attention_metadata(...)
-  ├─ _preprocess(...)
-  │
-  └─ with set_forward_context(attn_metadata, ...), maybe_get_kv_connector_output(...):
-       ├─ bind_connector_metadata(kv_connector_metadata)
-       ├─ start_load_kv(forward_context)
-       │
+  └─ V2 GPUModelRunner
+       ├─ execute_model(): _update_states / _prepare_inputs / _build_attention_metadata / _preprocess
+       ├─ execute_model(): kv_connector.pre_forward(scheduler_output)
+       │    ├─ handle_preemptions(kv_connector_metadata)
+       │    ├─ bind_connector_metadata(kv_connector_metadata)
+       │    └─ start_load_kv(forward_context)
        ├─ model forward
-       │    └─ each attention layer
-       │         ├─ wait_for_layer_load(layer_name)
-       │         ├─ attention forward
-       │         └─ save_kv_layer(layer_name, kv_cache, attn_metadata)
-       │
-       ├─ wait_for_save()
-       ├─ get_finished(finished_req_ids)
-       ├─ get_block_ids_with_load_errors()
-       ├─ get_kv_connector_stats()
-       ├─ get_kv_connector_kv_cache_events()
-       ├─ build_connector_worker_meta()
-       └─ clear_connector_metadata()
+       │    └─ each attention layer: wait_for_layer_load → attention forward → save_kv_layer
+       └─ sample_tokens() / pool(): kv_connector.post_forward()
+            ├─ wait_for_save()
+            ├─ get_finished(finished_req_ids)
+            ├─ get_block_ids_with_load_errors()
+            ├─ get_kv_connector_stats() / get_kv_connector_kv_cache_events()
+            ├─ build_connector_worker_meta()
+            └─ clear_connector_metadata()
 
 输出回收
   ├─ ModelRunnerOutput.kv_connector_output
