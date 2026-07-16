@@ -187,7 +187,7 @@ AttentionBackend / AttentionImpl：
 
 ### 3.1 `AttentionBackend`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:55`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:56`
 
 `AttentionBackend` 是“后端能力描述 + 工厂入口 + KV cache 布局定义”。
 
@@ -224,7 +224,7 @@ AttentionBackend 说明“这个 backend 能不能用、KV cache 长什么样、
 
 ### 3.2 `CommonAttentionMetadata`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:362`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:395`
 
 `CommonAttentionMetadata` 是所有 backend 共享的 batch 级 attention 描述。
 
@@ -240,9 +240,11 @@ max_seq_len：当前最大上下文长度；
 block_table_tensor：request → KV blocks；
 slot_mapping：token → KV cache slot；
 causal：是否 causal；
+logits_indices_padded / num_logits_indices：KV sharing fast prefill 等路径需要的 logits 边界；
 positions：token 位置；
 is_prefilling：哪些 request 处于 prefill/chunked prefill；
-encoder_seq_lens / dcp_local_seq_lens / mm_req_doc_ranges：特殊模型路径需要的辅助字段。
+seq_lens_cpu_upper_bound：async spec decode 等路径的 CPU 上界；
+encoder_seq_lens / dcp_local_seq_lens / mm_req_doc_ranges / rswa_prefix_lens：特殊模型路径需要的辅助字段。
 ```
 
 它不是最终 kernel 参数，而是 backend-specific builder 的输入。
@@ -255,7 +257,7 @@ CommonAttentionMetadata 是“所有 backend 都能看懂的公共 batch 描述�
 
 ### 3.3 `AttentionMetadataBuilder`
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:533`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:600`
 
 `AttentionMetadataBuilder` 负责把 `CommonAttentionMetadata` 转换成某个 backend 私有的 metadata。
 
@@ -292,8 +294,8 @@ AttentionMetadataBuilder 负责“把公共 metadata 翻译成某个 backend 能
 
 源码位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:702`
-- `code/vllm/vllm/v1/attention/backend.py:780`
+- `code/vllm/vllm/v1/attention/backend.py:769`
+- `code/vllm/vllm/v1/attention/backend.py:860`
 
 `AttentionImplBase` 是具体 attention 执行实现的基类，保存通用属性：
 
@@ -330,7 +332,7 @@ AttentionImplBase / AttentionImpl 负责“真正调 kernel 算 attention”。
 
 ### 3.5 `Attention layer`
 
-源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:178`
+源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:221`
 
 模型里的 attention layer 是后端实现和模型 forward 的连接点。
 
@@ -354,7 +356,7 @@ Attention layer 是“模型层里调用 attention backend 的统一入口”。
 
 ### 3.6 `ForwardContext`
 
-源码位置：`code/vllm/vllm/forward_context.py:128`
+源码位置：`code/vllm/vllm/forward_context.py:132`
 
 `ForwardContext` 是模型 forward 生命周期内的隐式参数区。
 
@@ -388,7 +390,7 @@ ForwardContext 让模型内部 attention layer 不用显式传参，也能拿到
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:317`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:348`
 - `code/vllm/vllm/v1/attention/selector.py:54`
 
 选择入口显式参数包括：
@@ -436,13 +438,18 @@ num_heads
 
 ```text
 FLASH_ATTN
+FLASH_ATTN_DIFFKV
 FLASHINFER
 TRITON_ATTN
 FLEX_ATTENTION
 FLASHMLA
 FLASH_ATTN_MLA
-CUTLASS_MLA
+FLASH_ATTN_MLA_SPARSE
 FLASHINFER_MLA
+FLASHINFER_MLA_SPARSE
+FLASHINFER_MLA_SPARSE_SM120
+FLASHINFER_MLA_SPARSE_DSV4
+CUTLASS_MLA
 TOKENSPEED_MLA
 ROCM_AITER_MLA
 ROCM_AITER_TRITON_MLA
@@ -457,7 +464,7 @@ registry 还支持自定义 backend 注册。
 
 ### 4.4 CUDA 平台的自动优先级
 
-源码位置：`code/vllm/vllm/platforms/cuda.py:82`
+源码位置：`code/vllm/vllm/platforms/cuda.py:391`
 
 CUDA 平台会按优先级尝试 backend。
 
@@ -520,9 +527,9 @@ FlashAttentionBackend
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6766`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6810`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6846`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6862`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6925`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6959`
 
 核心过程：
 
@@ -546,7 +553,7 @@ FlashAttentionBackend
 
 ### 5.2 execute_model 阶段主链路
 
-源码入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4047`
+源码入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4097`
 
 构造 attention metadata 所处位置：
 
@@ -578,7 +585,7 @@ _build_attention_metadata()
 
 ### 5.3 `_prepare_inputs()` 先把 request 状态变成 token 级张量
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
 
 它会做：
 
@@ -601,7 +608,7 @@ _build_attention_metadata()
 
 ### 5.4 `_get_slot_mappings()` 同时服务 metadata 和 forward context
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3963`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4013`
 
 它返回两种 mapping：
 
@@ -626,7 +633,7 @@ padding token 的 slot mapping 会填 `-1`，让 KV cache update 跳过无效位
 
 ### 5.5 `_build_attention_metadata()` 是核心翻译层
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 它的主要流程：
 
@@ -896,7 +903,7 @@ set_forward_context(
 )
 ```
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4305`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 这样模型内部 attention layer 可以通过当前 context 拿到 metadata。
 
@@ -911,7 +918,7 @@ set_forward_context(
 当前层 slot mapping。
 ```
 
-源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
+源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 ### 8.3 写 KV cache
 
@@ -930,7 +937,7 @@ key tensor / value tensor
 
 FlashAttention 的 `do_kv_cache_update()` 会调用 `reshape_and_cache_flash()`，按照 `slot_mapping` 写 KV cache。
 
-源码位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:927`
+源码位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:1067`
 
 ### 8.4 读 KV cache
 
@@ -1065,8 +1072,8 @@ backend builder 是否支持 cascade
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2511`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2549`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2583`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2604`
 
 这里得到的是 cascade attention 可用的 common prefix length，不一定等于请求真实共享 prefix。它还会被 `min(num_computed_tokens)` 截断，并按 block size 向下取整；如果 ubatching 已启用、builder 判断当前 batch 不适合 cascade，或 backend 不支持该路径，最终会退化为 0。
 
@@ -1087,7 +1094,7 @@ FlashAttention builder 会构造这些字段，FlashAttention impl 会调用 `ca
 
 源码位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:489`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:443`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:898`
 
 因为 cascade 路径形状和普通路径差异较大，runtime 中通常会禁用 full CUDA graph。
@@ -1117,7 +1124,7 @@ maybe_get_kv_connector_output()
 
 在 `GPUModelRunner.execute_model()` 中，KV connector context 和 `set_forward_context()` 一起包住 `_model_forward()`。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4305`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 ### 11.2 Attention layer 侧做逐层 wait/save
 
@@ -1158,7 +1165,7 @@ KV connector 的生命周期不完全等同于模型 forward 生命周期；
 
 ### 12.1 backend builder 声明 CUDA graph 支持级别
 
-源码位置：`code/vllm/vllm/v1/attention/backend.py:548`
+源码位置：`code/vllm/vllm/v1/attention/backend.py:583`
 
 `AttentionCGSupport` 常见级别：
 
@@ -1176,13 +1183,13 @@ NEVER：
   不支持 CUDA graph。
 ```
 
-每个 `AttentionMetadataBuilder` 通过 `get_cudagraph_support()` 暴露自己的能力。
+每个 `AttentionMetadataBuilder` 通过 `get_cudagraph_support()` 暴露自己的能力（方法位置：`code/vllm/vllm/v1/attention/backend.py:625`）。
 
 ### 12.2 ModelRunner 汇总所有 builder 的限制
 
 `GPUModelRunner` 会遍历所有 attention metadata builder，取最保守的支持级别，再解析最终 cudagraph mode 和 capture sizes。
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6880`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6968`
 
 这意味着：
 
@@ -1204,7 +1211,7 @@ NEVER：
 - LoRA / compile config 是否允许 graph replay。
 ```
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3813`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3863`
 
 最终通过 `CudagraphDispatcher` 选择：
 
@@ -1229,12 +1236,13 @@ capture / warmup 时会跑 dummy input。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5660`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5869`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5748`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6054`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:6702`
 
 ### 12.5 torch.compile 通过 opaque attention op 隔离复杂逻辑
 
-源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:502` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:522`，custom op 注册在 `code/vllm/vllm/model_executor/layers/attention/attention.py:779`
+源码位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:505` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:579`，custom op 注册在 `code/vllm/vllm/model_executor/layers/attention/attention.py:856`
 
 Attention layer 通常会把 attention 包成：
 

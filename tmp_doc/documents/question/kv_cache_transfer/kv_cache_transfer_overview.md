@@ -11,6 +11,7 @@
 - `code/vllm/vllm/v1/outputs.py`
 - `code/vllm/vllm/v1/worker/gpu_worker.py`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
 - `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
 - `code/vllm/vllm/distributed/kv_transfer/`
 - `code/vllm/vllm/distributed/ec_transfer/`
@@ -119,7 +120,7 @@ KVPool hit
 
 `KVCacheManager` 是 Scheduler 侧的 KV block 管理入口。
 
-源码位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:110`
+源码位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:114`
 
 它负责：
 
@@ -156,7 +157,7 @@ KVCacheManager 负责“把调度语义翻译成 KV block 账本”。
 
 `BlockPool` 是 Scheduler 侧的 KV block 元数据资源池。
 
-源码位置：`code/vllm/vllm/v1/core/block_pool.py:144`
+源码位置：`code/vllm/vllm/v1/core/block_pool.py:143`
 
 它管理的是：
 
@@ -219,6 +220,8 @@ BlockPool 管“哪些 block id 被谁占用、能否复用、能否驱逐”；
 req_to_blocks[request_id]      请求当前持有的 KVCacheBlock 列表
 num_cached_block[request_id]   该请求已有多少 full block 进入 prefix cache
 new_block_ids                  本轮新分配、需要 Worker zero 的 block ids
+_partial_hit_reqs              partial hit / CoW 场景下暂存 source block
+_pending_cow_copies            本轮待下发给 Worker 的 CoW block copy
 ```
 
 一句话记忆：
@@ -322,6 +325,7 @@ Worker / ModelRunner 是设备侧执行层。
 - 构造 positions / slot mapping / attention metadata；
 - 在 forward 中让 attention backend 读写 KV；
 - 根据 new_block_ids_to_zero 清零新 block；
+- 根据 kv_cache_block_copies 执行 CoW block copy；
 - 执行 KV connector load / save / finalize；
 - 返回 ModelRunnerOutput.kv_connector_output。
 ```
@@ -527,6 +531,8 @@ num_new_tokens = request.num_tokens - num_computed_tokens
 
 ```text
 num_new_tokens = 0
+num_lookahead_tokens 临时限制为 0
+reserved_blocks 预留其他 in-flight prefill 后续完成所需容量
 ```
 
 因为本轮只做：
@@ -648,6 +654,7 @@ free_encoder_mm_hashes
 kv_connector_metadata
 ec_connector_metadata
 new_block_ids_to_zero
+kv_cache_block_copies
 ```
 
 其中和 KV transfer 最相关的是：
@@ -657,7 +664,8 @@ block ids：Worker 构造 block table / slot mapping；
 num_computed_tokens：Worker 知道哪些 prefix 已经可用；
 kv_connector_metadata：Worker connector 知道本轮 load / save 计划；
 finished_req_ids：Worker connector 可据此推进 finished_sending / finished_recving；
-new_block_ids_to_zero：Worker 清零新分配的 KV blocks。
+new_block_ids_to_zero：Worker 清零新分配的 KV blocks；
+kv_cache_block_copies：Worker 在 forward 前执行 CoW block copy。
 ```
 
 ---
@@ -692,6 +700,7 @@ legacy:
     → _model_forward(...)
 
 新版:
+  0-token step → kv_connector.no_forward(scheduler_output)
   set_forward_context(attn_metadata, ...)
     → kv_connector.pre_forward(scheduler_output)
     → model forward
@@ -1301,7 +1310,8 @@ connector.request_finished*() 返回 delay_free_blocks=True。
 ```text
 kv_cache_manager.remove_skipped_blocks(
   request_id=request.request_id,
-  total_computed_tokens=request.num_computed_tokens,
+  processed_computed_tokens=max(0, request.num_computed_tokens - request.num_in_flight_tokens),
+  num_prompt_tokens=request.num_prompt_tokens,
 )
 ```
 
@@ -1309,7 +1319,7 @@ kv_cache_manager.remove_skipped_blocks(
 
 ```text
 sliding window / local attention / Mamba 等场景下，有些旧 blocks 对后续 attention 已经不可达；
-保存前先清理 skipped blocks，可以避免 connector 保存不需要或不正确的 block 范围。
+保存前按 processed-token basis 清理 skipped blocks，可以避免 connector 保存不需要、不正确或仍在 in-flight 的 block 范围。
 ```
 
 ---
@@ -1470,6 +1480,10 @@ request finished / preempted / transfer done
   → _free_request_blocks(request)
       → 如果 request.last_sched_seq <= processed_step_seq：立即 free
       → 否则：pop_blocks_for_free()，放入 deferred_frees
+
+KV block CoW copy
+  → retained source/destination blocks 按 sched_step_seq + 1 建 fence
+  → 复用 deferred_frees 等待执行 copy 的 step 完成
 
 update_from_output() 处理非空 step
   → processed_step_seq += 1
@@ -1649,6 +1663,7 @@ num_scheduled_tokens
 total_num_scheduled_tokens
 finished_req_ids
 new_block_ids_to_zero
+kv_cache_block_copies
 kv_connector_metadata
 ```
 

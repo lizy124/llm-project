@@ -8,12 +8,14 @@
 - `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
 - `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
 - `code/vllm/vllm/v1/core/block_pool.py`
+- `code/vllm/vllm/v1/request.py`
 - `code/vllm/vllm/v1/outputs.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py`
 - `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_scheduler.py`
 
-本文梳理 vLLM V1 中 deferred free 的安全语义：为什么异步调度 / pipeline parallel / KV consumer 场景下不能立即把 KV block 还给 `BlockPool`，`last_sched_seq / processed_step_seq / deferred_frees` 如何构成 step fence，以及它和 KV connector delayed-free、offloading flush 的区别。
+本文梳理 vLLM V1 中 deferred free 的安全语义：为什么异步调度 / pipeline parallel / KV consumer 场景下不能立即把 KV block 还给 `BlockPool`，`last_sched_seq / processed_step_seq / deferred_frees` 如何构成 step fence，KV block CoW copy 的 retained blocks 为什么也复用这套 fence，以及它和 KV connector delayed-free、offloading flush 的区别。
 
 ---
 
@@ -62,6 +64,7 @@ max_concurrent_batches 和 async / PP 有什么关系？
 sched_step_seq / processed_step_seq / last_sched_seq 分别表示什么？
 deferred_frees 里保存什么？
 _free_request_blocks() 如何判断是否安全？
+CoW retained blocks 为什么也复用这套 fence？
 _drain_deferred_frees() 什么时候执行？
 它和 finished_sending / WAITING_FOR_REMOTE_KVS / offloading flush 有什么区别？
 ```
@@ -112,7 +115,7 @@ request A 的 bookkeeping 先清掉；
 
 ### 4.1 多个 batch 可能同时 in-flight
 
-`max_concurrent_batches` 定义在：`code/vllm/vllm/config/vllm.py:494`
+`max_concurrent_batches` 定义在：`code/vllm/vllm/config/vllm.py:493`
 
 ```python
 @property
@@ -129,7 +132,7 @@ def max_concurrent_batches(self) -> int:
     return pp_size
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:494` 到 `code/vllm/vllm/config/vllm.py:505`
+位置：`code/vllm/vllm/config/vllm.py:493` 到 `code/vllm/vllm/config/vllm.py:503`
 
 含义：
 
@@ -159,7 +162,7 @@ if multiple_inflight_batches and kv_transfer_config.is_kv_consumer:
     self.defer_block_free = True
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:145` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:151`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:147` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:153`
 
 这段注释已经把问题说清楚：
 
@@ -195,7 +198,7 @@ if kv_transfer_config is not None:
         self.defer_block_free = True
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:128` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:151`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:131` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:153`
 
 可以整理成表：
 
@@ -229,7 +232,7 @@ self.processed_step_seq = 0
 self.deferred_frees: deque[tuple[int, list[KVCacheBlock]]] = deque()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:292` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:298`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:310` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:316`
 
 ### 6.1 `sched_step_seq`
 
@@ -266,7 +269,7 @@ deferred block freeing (see Scheduler._free_request_blocks).
 self.last_sched_seq = 0
 ```
 
-位置：`code/vllm/vllm/v1/request.py:148` 到 `code/vllm/vllm/v1/request.py:150`
+位置：`code/vllm/vllm/v1/request.py:163` 到 `code/vllm/vllm/v1/request.py:165`
 
 ### 6.4 `deferred_frees`
 
@@ -298,7 +301,7 @@ if self.defer_block_free and total_num_scheduled_tokens > 0:
     self.sched_step_seq += 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1091` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1094`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1177` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1180`
 
 关键点：
 
@@ -315,12 +318,13 @@ if self.defer_block_free and total_num_scheduled_tokens > 0:
 for req_id, num_scheduled_token in num_scheduled_tokens.items():
     request = self.requests[req_id]
     request.num_computed_tokens += num_scheduled_token
+    request.num_in_flight_tokens += num_scheduled_token
     if self.defer_block_free:
         # Record the in-flight step, to fence deferred block freeing.
         request.last_sched_seq = self.sched_step_seq
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1138` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1144`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1226` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1232`
 
 这一步建立了 request 与 step fence 的关系：
 
@@ -336,11 +340,35 @@ request.last_sched_seq > processed_step_seq
 
 于是进入 deferred free。
 
+### 7.3 CoW retained blocks 也使用同一套 fence
+
+新 commit 中，Scheduler 在构造 `SchedulerOutput` 时会 drain KV cache manager 暂存的 CoW block copy：
+
+```python
+kv_cache_block_copies, cow_retained_blocks = (
+    self.kv_cache_manager.take_kv_cache_block_copies()
+)
+if kv_cache_block_copies:
+    # The copies run with this step's execution; the first non-empty
+    # step at or after it gets seq `sched_step_seq + 1` (0-token steps
+    # do not advance the seq), and its completion implies the copies
+    # have run.
+    self._free_cow_retained_blocks(cow_retained_blocks, self.sched_step_seq + 1)
+```
+
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1124` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1132`
+
+`KVCacheManager.take_kv_cache_block_copies()` 会把 pending CoW copy 转成 `KVCacheBlockCopy(src_block_id, dst_block_id)`，同时返回 source / destination 两端 retained blocks：
+
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:670` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:685`
+
+这条路径不是 request finished 的释放路径，而是为了保证 block copy 对应的 retained 引用至少保留到执行该 copy 的非空 step 完成。它复用 `deferred_frees` 队列和 `processed_step_seq` fence。
+
 ---
 
 ## 8. _free_request_blocks() 如何判断是否安全
 
-入口：`code/vllm/vllm/v1/core/sched/scheduler.py:2077`
+入口：`code/vllm/vllm/v1/core/sched/scheduler.py:2197`
 
 ```python
 def _free_request_blocks(self, request: Request):
@@ -359,7 +387,7 @@ def _free_request_blocks(self, request: Request):
         self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2077` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2090`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2197` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 它有两条路径。
 
@@ -378,7 +406,7 @@ defer_block_free == False；
 self.kv_cache_manager.free(request)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2086`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2206`
 
 `KVCacheManager.free()` 最终会释放 request blocks：
 
@@ -387,7 +415,7 @@ def free(self, request: Request) -> None:
     self.coordinator.free(request.request_id)
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:460` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:468`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:492` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:500`
 
 `SingleTypeKVCacheManager.free()` 会：
 
@@ -395,7 +423,7 @@ def free(self, request: Request) -> None:
 self.block_pool.free_blocks(reversed(self.pop_blocks_for_free(request_id)))
 ```
 
-位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:399` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:407`
+位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:482` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:490`
 
 ### 8.2 不安全路径：先 pop，后延迟归还
 
@@ -416,7 +444,7 @@ if blocks:
     self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2088` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2090`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2208` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 `pop_blocks_for_free()` 的语义是：
 
@@ -437,17 +465,29 @@ def pop_blocks_for_free(self, request: Request) -> list[KVCacheBlock]:
     return self.coordinator.pop_blocks_for_free(request.request_id)
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:483` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:494`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:521` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:532`
+
+`KVCacheCoordinator.pop_blocks_for_free()` 会跨所有 single-type manager 聚合 blocks：
+
+```python
+blocks: list[KVCacheBlock] = []
+for manager in self.single_type_managers:
+    blocks.extend(manager.pop_blocks_for_free(request_id))
+return blocks
+```
+
+位置：`code/vllm/vllm/v1/core/kv_cache_coordinator.py:300` 到 `code/vllm/vllm/v1/core/kv_cache_coordinator.py:317`
 
 `SingleTypeKVCacheManager.pop_blocks_for_free()`：
 
 ```python
 req_blocks = self.req_to_blocks.pop(request_id, [])
 self.num_cached_block.pop(request_id, None)
+self._partial_hit_reqs.pop(request_id, None)
 return req_blocks
 ```
 
-位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:381` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:397`
+位置：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:463` 到 `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:480`
 
 这就是 deferred free 的核心：
 
@@ -473,7 +513,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self._drain_deferred_frees()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1477` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1481`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1565` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 含义：
 
@@ -489,8 +529,9 @@ processed_step_seq 前进；
 def _drain_deferred_frees(self):
     """Return deferred blocks whose fence step has completed.
 
-    Entries are appended with monotonically non-decreasing fences, so
-    stop at the first one that is still pending.
+    Fences are appended in near-monotonic order (a CoW retention fence
+    can lead request-free fences by one step), so stop at the first
+    pending one; any satisfied entry behind it is merely freed later.
     """
     while self.deferred_frees:
         fence, _ = self.deferred_frees[0]
@@ -501,23 +542,23 @@ def _drain_deferred_frees(self):
         self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2092` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2104`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2223` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2236`
 
 这里有几个关键细节：
 
 ```text
 1. deferred_frees 是 FIFO；
-2. fence 单调不下降；
-3. 遇到第一个未完成 fence 就停止；
+2. request-free fence 单调不下降，CoW retention fence 可能领先 request-free fence 一步；
+3. 遇到第一个未完成 fence 就停止，后面即使有已满足的 entry 也只是晚一点释放；
 4. 真正归还时直接调用 block_pool.free_blocks(reversed(blocks))；
-5. 不再经过 req_to_blocks，因为 request bookkeeping 已经在 pop_blocks_for_free() 中移除了。
+5. request-free entry 不再经过 req_to_blocks，因为 request bookkeeping 已经在 pop_blocks_for_free() 中移除了。
 ```
 
 ---
 
 ## 10. BlockPool.free_blocks 真正做什么
 
-入口：`code/vllm/vllm/v1/core/block_pool.py:614`
+入口：`code/vllm/vllm/v1/core/block_pool.py:719`
 
 ```python
 def free_blocks(self, ordered_blocks: Iterable[KVCacheBlock]) -> None:
@@ -541,7 +582,7 @@ self.free_block_queue.prepend_n(blocks_without_hash)
 self.free_block_queue.append_n(blocks_with_hash)
 ```
 
-位置：`code/vllm/vllm/v1/core/block_pool.py:622` 到 `code/vllm/vllm/v1/core/block_pool.py:635`
+位置：`code/vllm/vllm/v1/core/block_pool.py:727` 到 `code/vllm/vllm/v1/core/block_pool.py:740`
 
 这说明：
 
@@ -575,7 +616,7 @@ if stopped:
         kv_transfer_params = self._free_request(request)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1655` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1663`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1760` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1766`
 
 `_free_request()` 中：
 
@@ -584,7 +625,7 @@ if not delay_free_blocks:
     self._free_blocks(request)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2059` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2061`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2179` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2181`
 
 `_free_blocks()` 会调用：
 
@@ -593,7 +634,7 @@ self._free_request_blocks(request)
 del self.requests[request.request_id]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2065` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2068`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2185` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2188`
 
 ### 11.2 外部 abort / finish_requests
 
@@ -604,11 +645,11 @@ request.status = finished_status
 self._free_request(request, delay_free_blocks=delay_free_blocks)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2041` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2042`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2151` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2152`
 
 如果请求正在 `WAITING_FOR_REMOTE_KVS`，可能会额外设置 `delay_free_blocks=True`。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2033` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2039`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2144` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2149`
 
 ### 11.3 preemption
 
@@ -622,7 +663,7 @@ request.status = RequestStatus.PREEMPTED
 request.num_computed_tokens = 0
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1105` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1118`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1191` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1213`
 
 这说明 preemption 也会释放 request 当前 KV blocks。
 
@@ -639,7 +680,7 @@ for req_id in kv_connector_output.finished_sending or ():
     self._free_blocks(self.requests[req_id])
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2441` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2444`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2583` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2586`
 
 `finished_recving` 如果对应请求已经 finished，也会：
 
@@ -648,7 +689,7 @@ assert RequestStatus.is_finished(req.status)
 self._free_blocks(self.requests[req_id])
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2438` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2440`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2580` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2582`
 
 这意味着：
 
@@ -745,7 +786,7 @@ if load_kv_async:
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:916` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:937`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:986` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1006`
 
 如果这个请求在 remote KV load 完成前被 abort：
 
@@ -756,7 +797,7 @@ if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2033` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2037`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2144` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2147`
 
 含义：
 
@@ -776,7 +817,7 @@ for req_id in kv_connector_output.finished_recving or ():
         self._free_blocks(self.requests[req_id])
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2431` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2440`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2574` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2582`
 
 这里和 deferred free 的关系是：
 
@@ -816,11 +857,11 @@ if (
     )
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1005` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1017`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1107` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1119`
 
 Worker 侧在 `handle_preemptions()` 中对 `jobs_to_flush` 调 `worker.wait(...)`。
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:225` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:232`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:271` 到 `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:279`
 
 这个机制解决的是：
 
@@ -851,7 +892,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self._drain_deferred_frees()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1477` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1481`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1565` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 原因是：
 
@@ -874,7 +915,7 @@ sched_step_seq / processed_step_seq 才能用简单单调计数作为 fence。
 update_from_output is called once per scheduled step in FIFO order, so these stay in sync.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:292` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:293`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:310` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:312`
 
 ---
 
@@ -886,7 +927,7 @@ update_from_output is called once per scheduled step in FIFO order, so these sta
 self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2088` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2090`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2208` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 直觉上可能会问：为什么不用 `request.last_sched_seq`？
 
@@ -907,7 +948,7 @@ self.deferred_frees.append((self.sched_step_seq, blocks))
 FIFO of (fence_seq, blocks): blocks become safe to free once processed_step_seq >= fence_seq.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:296` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:298`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:314` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:316`
 
 ---
 
@@ -1014,7 +1055,7 @@ self._free_request_blocks(request)
 del self.requests[request.request_id]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2065` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2068`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2185` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2188`
 
 即使 blocks 进入 `deferred_frees`，request 也会从 `self.requests` 删除。
 
@@ -1060,7 +1101,7 @@ if self.defer_block_free and total_num_scheduled_tokens > 0:
     self.sched_step_seq += 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1091` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1094`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1177` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1180`
 
 `update_from_output()` 里也只有非空 step 才：
 
@@ -1069,7 +1110,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self.processed_step_seq += 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1477` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1481`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1565` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 因为 0-token step 不写 KV。
 
@@ -1093,7 +1134,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
 We free the blocks in reverse order so that the tail blocks are evicted first when caching is enabled.
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:460` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:468`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:492` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:500`
 
 `_drain_deferred_frees()` 也保持同样规则：
 
@@ -1101,7 +1142,7 @@ We free the blocks in reverse order so that the tail blocks are evicted first wh
 self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2102` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2104`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2235` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2236`
 
 ### 18.7 has_requests 为什么还要看 finished requests / pending push work？
 
@@ -1115,7 +1156,7 @@ return (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2130` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2141`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2262` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2273`
 
 原因：
 
@@ -1144,6 +1185,7 @@ KV consumer + 多 in-flight batch
         deferred_frees.append((fence, blocks))
     否则：
         kv_cache_manager.free()
+  → 若本 step 携带 KV block CoW copy，retained source/destination blocks 也按 sched_step_seq + 1 建 fence
   → update_from_output 非空 step 时 processed_step_seq++
   → drain fence <= processed_step_seq 的 blocks
   → block_pool.free_blocks(reversed(blocks))
