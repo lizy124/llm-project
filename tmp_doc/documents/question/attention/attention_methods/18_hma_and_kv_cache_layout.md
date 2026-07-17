@@ -2,21 +2,21 @@
 
 源码位置：
 
-- `code/vllm/vllm/config/vllm.py`
-- `code/vllm/vllm/config/scheduler.py`
-- `code/vllm/vllm/v1/kv_cache_interface.py`
-- `code/vllm/vllm/v1/core/kv_cache_utils.py`
-- `code/vllm/vllm/v1/core/kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/kv_cache_coordinator.py`
-- `code/vllm/vllm/v1/core/single_type_kv_cache_manager.py`
-- `code/vllm/vllm/v1/core/block_pool.py`
-- `code/vllm/vllm/v1/core/sched/scheduler.py`
-- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
-- `code/vllm/vllm/v1/worker/gpu/block_table.py`
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py`
-- `code/vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
-- `code/vllm/vllm/distributed/kv_transfer/kv_connector/factory.py`
-- `code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
+- `vllm/vllm/config/vllm.py`
+- `vllm/vllm/config/scheduler.py`
+- `vllm/vllm/v1/kv_cache_interface.py`
+- `vllm/vllm/v1/core/kv_cache_utils.py`
+- `vllm/vllm/v1/core/kv_cache_manager.py`
+- `vllm/vllm/v1/core/kv_cache_coordinator.py`
+- `vllm/vllm/v1/core/single_type_kv_cache_manager.py`
+- `vllm/vllm/v1/core/block_pool.py`
+- `vllm/vllm/v1/core/sched/scheduler.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/worker/gpu/block_table.py`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py`
+- `vllm/vllm/v1/worker/kv_connector_model_runner_mixin.py`
+- `vllm/vllm/distributed/kv_transfer/kv_connector/factory.py`
+- `vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py`
 
 本文用于梳理 HMA / hybrid KV cache manager / KV cache group / layout 与 attention 的关系，说明 HMA 不是 attention 类型本身，而是影响 attention KV cache 管理、block table、slot mapping、attention metadata 和 connector 兼容性的内存组织机制。
 
@@ -820,14 +820,14 @@ group 2 block table → group 2 slot mapping
 
 ## 19. Attention metadata 如何按 group 构造
 
-Worker 侧在 `prepare_attn()` 中生成：
+Worker 侧在 `_prepare_inputs()` / `BlockTables` 中准备：
 
 ```text
 block_tables：num_kv_cache_groups x [num_reqs, max_num_blocks]
 slot_mappings：num_kv_cache_groups x [num_tokens]
 ```
 
-随后 `build_attn_metadata()` 按 group 组装 metadata：
+随后 `_build_attention_metadata()` 按 group 组装 metadata：
 
 ```text
 for kv_cache_group_id in range(num_kv_cache_groups):
@@ -1362,7 +1362,7 @@ Worker / ModelRunner
   → BlockTables(num_kv_cache_groups, ...)
   → append_block_ids()
   → apply_staged_writes()
-  → prepare_attn()
+  → _prepare_inputs()
       → gather_block_tables()
       → compute_slot_mappings()
   → build_attn_metadata()
