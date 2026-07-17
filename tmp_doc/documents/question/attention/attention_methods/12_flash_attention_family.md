@@ -246,7 +246,7 @@ Attention.__init__
   → self.impl = backend impl
 ```
 
-对应位置：`vllm/model_executor/layers/attention/attention.py:319` 到 `vllm/model_executor/layers/attention/attention.py:399`。
+对应位置：`vllm/model_executor/layers/attention/attention.py:349` 到 `vllm/model_executor/layers/attention/attention.py:431`。
 
 ### 5.2 selector 负责把模型条件整理成 AttentionSelectorConfig
 
@@ -408,7 +408,7 @@ mask_mod / aux_tensors
 
 ### 7.1 Backend 能力声明
 
-`FlashAttentionBackend` 位于 `vllm/v1/attention/backends/flash_attn.py:68`。
+`FlashAttentionBackend` 位于 `vllm/v1/attention/backends/flash_attn.py:71`。
 
 它声明的基础能力是：
 
@@ -441,11 +441,11 @@ KV cache shape 是：
 (num_blocks, 2, block_size, num_kv_heads, head_size)
 ```
 
-对应位置：`vllm/v1/attention/backends/flash_attn.py:140` 到 `vllm/v1/attention/backends/flash_attn.py:149`。
+对应位置：`vllm/v1/attention/backends/flash_attn.py:127` 到 `vllm/v1/attention/backends/flash_attn.py:137`。
 
 ### 7.2 Metadata 的作用
 
-`FlashAttentionMetadata` 位于 `vllm/v1/attention/backends/flash_attn.py:236`。
+`FlashAttentionMetadata` 位于 `vllm/v1/attention/backends/flash_attn.py:228`。
 
 它包含：
 
@@ -488,7 +488,7 @@ mm_prefix_range_tensor:
 
 ### 7.3 MetadataBuilder 从 CommonAttentionMetadata 翻译 backend metadata
 
-`FlashAttentionMetadataBuilder.build()` 位于 `vllm/v1/attention/backends/flash_attn.py:406`。
+`FlashAttentionMetadataBuilder.build()` 位于 `vllm/v1/attention/backends/flash_attn.py:443`。
 
 它做的事情可以拆成：
 

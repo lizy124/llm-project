@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\model.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\vllm.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\single_type_kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backends\flash_attn.py`
+- `code/vllm/vllm/config\model.py`
+- `code/vllm/vllm/config\vllm.py`
+- `code/vllm/vllm/v1\core\sched\output.py`
+- `code/vllm/vllm/v1\core\kv_cache_manager.py`
+- `code/vllm/vllm/v1\core\single_type_kv_cache_manager.py`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/v1\attention\backend.py`
+- `code/vllm/vllm/v1\attention\backends\flash_attn.py`
 
 本文用于梳理 cascade attention 的定位：它如何利用 batch 内公共 prefix KV blocks，如何从 SchedulerOutput 传到 ModelRunner，如何影响 attention metadata，FlashAttention 如何拆成 prefix / suffix 两次 attention kernel，以及它和 prefix cache、chunked prefill、sliding window、DCP、DBO、CUDA graph 的关系。
 
@@ -145,7 +145,7 @@ Cascade attention 不改变数学正确性，但可能带来数值差异；
 
 `GPUModelRunner.__init__()` 中记录：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:485`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:515`
 
 ```text
 self.cascade_attn_enabled = not self.model_config.disable_cascade_attn
@@ -166,7 +166,7 @@ runner + backend 启发式决定“本轮是否实际使用”。
 
 ### 5.1 async speculative decoding
 
-位置：`code/vllm/vllm/config/vllm.py:1034`
+位置：`code/vllm/vllm/config/vllm.py:1108`
 
 如果：
 
@@ -186,7 +186,7 @@ model_config.disable_cascade_attn = True
 
 ### 5.2 VLLM_BATCH_INVARIANT
 
-位置：`code/vllm/vllm/config/vllm.py:1427`
+位置：`code/vllm/vllm/config/vllm.py:1500`
 
 如果启用 `VLLM_BATCH_INVARIANT`，也会禁用 cascade。
 
@@ -199,7 +199,7 @@ cascade attention 的启用依赖 batch 内公共 prefix、query lens、backend 
 
 ### 5.3 DBO / ubatching
 
-位置：`code/vllm/vllm/config/vllm.py:1437`
+位置：`code/vllm/vllm/config/vllm.py:1510`
 
 如果 `parallel_config.use_ubatching=True`，会禁用 cascade。
 
@@ -211,7 +211,7 @@ Disabling cascade attention when DBO is enabled.
 
 在 `GPUModelRunner.execute_model()` 中也有运行时保护：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4133`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4186`
 
 ```text
 # Disable cascade attention when using microbatching (DBO)
@@ -221,7 +221,7 @@ if self.cascade_attn_enabled and not self.parallel_config.use_ubatching:
 
 ### 5.4 full CUDA graph 无 piecewise graph
 
-位置：`code/vllm/vllm/config/vllm.py:1404`
+位置：`code/vllm/vllm/config/vllm.py:1477`
 
 如果启用了 full cudagraph，但没有 piecewise cudagraph，同时 cascade 未禁用，会 warning：
 
@@ -276,7 +276,7 @@ common_prefix_len = num_common_prefix_blocks * block_size
 
 ## 7. KVCacheManager 如何计算公共 prefix blocks
 
-入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:520`
+入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:558`
 
 ```text
 get_num_common_prefix_blocks(running_request_id) -> list[int]
@@ -288,7 +288,7 @@ get_num_common_prefix_blocks(running_request_id) -> list[int]
 self.coordinator.get_num_common_prefix_blocks(running_request_id)
 ```
 
-对单一类型 KV cache manager，核心实现位于：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:588`
+对单一类型 KV cache manager，核心实现位于：`code/vllm/vllm/v1/core/single_type_kv_cache_manager.py:493`
 
 逻辑很直接：
 
@@ -345,7 +345,7 @@ SlidingWindowManager 也实现 `get_num_common_prefix_blocks()`，但 sliding wi
 
 在 `GPUModelRunner.execute_model()` 中，输入准备完成后、执行形态判断前，会计算 cascade prefix。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4133`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4186`
 
 ```text
 cascade_attn_prefix_lens = None
@@ -378,7 +378,7 @@ scheduler_output.num_common_prefix_blocks
 _determine_batch_execution_and_padding(..., use_cascade_attn=cascade_attn_prefix_lens is not None)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4143`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4202`
 
 这说明 cascade attention 会影响 batch 执行形态，例如 CUDA graph / padding / eager fallback 等判断。
 
@@ -386,7 +386,7 @@ _determine_batch_execution_and_padding(..., use_cascade_attn=cascade_attn_prefix
 
 ## 9. cascade_attn_prefix_lens 是二维结构
 
-`_compute_cascade_attn_prefix_lens()` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2511`
+`_compute_cascade_attn_prefix_lens()` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2583`
 
 返回值：
 
@@ -430,7 +430,7 @@ return cascade_attn_prefix_lens if any prefix > 0 else None
 
 ## 10. common_prefix_len 如何从 blocks 变成 tokens
 
-`_compute_cascade_attn_prefix_len()` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2549`
+`_compute_cascade_attn_prefix_len()` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2621`
 
 第一步：
 
@@ -480,7 +480,7 @@ Request 2 computed: [A, B, C, D]
 
 ### 10.2 截断到 min(num_computed_tokens)
 
-代码：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2619`
+代码：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2691`
 
 ```text
 common_prefix_len = min(common_prefix_len, num_computed_tokens.min())
@@ -494,7 +494,7 @@ common_prefix_len = min(common_prefix_len, num_computed_tokens.min())
 
 ### 10.3 再截断到 block size 的倍数
 
-代码：`gpu_model_runner.py:2620`
+代码：`gpu_model_runner.py:2693`
 
 ```text
 common_prefix_len = common_prefix_len // block_size * block_size
@@ -506,7 +506,7 @@ common_prefix_len = common_prefix_len // block_size * block_size
 
 ## 11. backend builder 如何判断 use_cascade_attention
 
-`AttentionMetadataBuilder` 基类定义：`code/vllm/vllm/v1/attention/backend.py:668`
+`AttentionMetadataBuilder` 基类定义：`code/vllm/vllm/v1/attention/backend.py:735`
 
 默认实现：
 
@@ -532,13 +532,13 @@ attn_metadata_builder.use_cascade_attention(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2633`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2705`
 
 这一步把 runner 能看到的模型 / batch / backend 条件交给 builder 做最终判断。
 
 ### 11.1 FlashAttention builder 支持 cascade
 
-`FlashAttentionMetadataBuilder.use_cascade_attention()` 定义在：`code/vllm/vllm/v1/attention/backends/flash_attn.py:622`
+`FlashAttentionMetadataBuilder.use_cascade_attention()` 定义在：`code/vllm/vllm/v1/attention/backends/flash_attn.py:724`
 
 它调用同文件底部的启发式函数：
 
@@ -546,7 +546,7 @@ attn_metadata_builder.use_cascade_attention(
 use_cascade_attention(...)
 ```
 
-位置：`flash_attn.py:1172`
+位置：`flash_attn.py:1490`
 
 ### 11.2 其他常见 backend 默认禁用
 
@@ -566,7 +566,7 @@ FlashInfer 当前路径也不作为主 cascade 支持路径
 
 ## 12. FlashAttention 的 cascade 启发式
 
-`flash_attn.py:1172` 的 `use_cascade_attention()` 做两类判断：
+`flash_attn.py:1490` 的 `use_cascade_attention()` 做两类判断：
 
 ```text
 1. 支持性检查：当前配置能不能用 cascade；
@@ -655,7 +655,7 @@ common_prefix_len / kv_tile_size
 
 `GPUModelRunner.execute_model()` 调用 `_build_attention_metadata()` 时传入：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4308`
 
 ```text
 cascade_attn_prefix_lens=cascade_attn_prefix_lens
@@ -781,7 +781,7 @@ suffix：原始 request batch，causal。
 
 在 `FlashAttentionImpl.forward()` 中：
 
-位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:792`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:807`
 
 ```text
 if not attn_metadata.use_cascade:
@@ -790,7 +790,7 @@ else:
     cascade_attention(...)
 ```
 
-调用 cascade：`flash_attn.py:898`
+调用 cascade：`flash_attn.py:1039`
 
 ```text
 cascade_attention(
@@ -815,7 +815,7 @@ cascade_attention(
 
 ## 17. cascade_attention() 内部做了什么
 
-`cascade_attention()` 定义在：`code/vllm/vllm/v1/attention/backends/flash_attn.py:1250`
+`cascade_attention()` 定义在：`code/vllm/vllm/v1/attention/backends/flash_attn.py:1568`
 
 它做三步。
 
@@ -956,7 +956,7 @@ query_lens 通常全为 1；
 
 FlashAttention cascade 明确禁用这些场景：
 
-位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:1195`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:1513`
 
 ```text
 if use_alibi or use_sliding_window or use_local_attention:
@@ -986,7 +986,7 @@ assert alibi_slopes is None
 assert sliding_window == (-1, -1)
 ```
 
-位置：`flash_attn.py:1276`
+位置：`flash_attn.py:1594`
 
 ---
 
@@ -996,7 +996,7 @@ cascade attention 可能影响 CUDA graph 执行形态。
 
 ### 21.1 runner 会把 use_cascade_attn 传给 batch 执行形态判断
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4149`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4202`
 
 ```text
 _determine_batch_execution_and_padding(
@@ -1016,7 +1016,7 @@ No piecewise cudagraph for executing cascade attention.
 Will fall back to eager execution if a batch runs into cascade attentions.
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:1412`
+位置：`code/vllm/vllm/config/vllm.py:1477`
 
 ### 21.3 FA3 AOT scheduler metadata
 

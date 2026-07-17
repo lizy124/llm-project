@@ -158,7 +158,7 @@ KV cache layout 解决“这一页在 tensor 内部如何排布”。
 
 ## 4. KVCacheSpec：每层 KV cache 的格式说明
 
-`KVCacheSpec` 定义在：`code/vllm/vllm/v1/kv_cache_interface.py:95`
+`KVCacheSpec` 定义在：`code/vllm/vllm/v1/kv_cache_interface.py:100`
 
 它是每一层 KV cache 格式的基类。
 
@@ -182,13 +182,13 @@ max_memory_usage_bytes(...)
   该层在最大上下文下最多需要多少 KV cache memory。
 ```
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:95` 到 `code/vllm/vllm/v1/kv_cache_interface.py:131`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:100` 到 `code/vllm/vllm/v1/kv_cache_interface.py:147`
 
 ### 4.1 AttentionSpec
 
 普通 attention 的基类是 `AttentionSpec`。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:159`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:176`
 
 关键字段：
 
@@ -204,26 +204,26 @@ page_size_padded
 
 ```text
 real_page_size_bytes
-  = 2 * block_size * num_kv_heads * head_size * dtype_size
+  = block_size * num_kv_heads * (head_size + head_size_v) * dtype_size
 ```
 
-这里的 `2` 表示：
+这里的 `head_size + head_size_v` 表示：
 
 ```text
-K cache + V cache
+K cache 维度 + V cache 维度
 ```
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:183` 到 `code/vllm/vllm/v1/kv_cache_interface.py:200`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:185` 到 `code/vllm/vllm/v1/kv_cache_interface.py:214`
 
 如果是 per-token-head quant scale、NVFP4 或 page padding，`page_size_bytes` 会在真实 K/V 数据之外额外预算 scale / padding 空间。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:167` 到 `code/vllm/vllm/v1/kv_cache_interface.py:180`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:184` 到 `code/vllm/vllm/v1/kv_cache_interface.py:197`
 
 ### 4.2 FullAttentionSpec
 
 `FullAttentionSpec` 代表普通 full attention KV cache。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:203`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:228`
 
 它会记录：
 
@@ -245,23 +245,23 @@ model runner / backend 计算时再按 sliding window 限制可见范围。
 
 `SlidingWindowSpec` 表示真正按 sliding window 管理 KV cache 的层。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:471`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:543`
 
-它的内存上界不是简单 `max_model_len`，而是按：
+它的 admission 上界不是简单 `max_model_len`，而是按：
 
 ```text
-sliding_window - 1 + max_num_batched_tokens
+sliding_window - 1 + max_in_flight_tokens
 ```
 
-估算最多要持有的 window blocks。
+估算当前最多要持有的 window blocks，并额外考虑窗口不从 block 边界开始时需要的一个 block。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:500` 到 `code/vllm/vllm/v1/kv_cache_interface.py:531`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:571` 到 `code/vllm/vllm/v1/kv_cache_interface.py:602`
 
 ### 4.4 MLAAttentionSpec
 
 MLA 的 KV cache 不再是标准 K/V pair。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:364`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:385`
 
 关键字段：
 

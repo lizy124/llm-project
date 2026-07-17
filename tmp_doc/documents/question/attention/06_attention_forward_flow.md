@@ -241,7 +241,7 @@ no_compile_layers
 
 ### 5.2 get_attention_context(layer_name)
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 它从当前 `ForwardContext` 中取出：
 
@@ -327,7 +327,7 @@ KV cache 初始化时：绑定真实 kv_cache tensor；
 
 ## 7. Attention.forward() 的输入输出
 
-入口：`code/vllm/vllm/model_executor/layers/attention/attention.py:452`
+入口：`code/vllm/vllm/model_executor/layers/attention/attention.py:480`
 
 签名：
 
@@ -335,9 +335,10 @@ KV cache 初始化时：绑定真实 kv_cache tensor；
 def forward(
     self,
     query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
+    key: torch.Tensor | None,
+    value: torch.Tensor | None,
     output_shape: torch.Size | None = None,
+    output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
 ```
 
@@ -345,9 +346,10 @@ def forward(
 
 ```text
 query：当前 token 的 Q；
-key：当前 token 的 K；
-value：当前 token 的 V；
-output_shape：某些 backend / MLA 变体可能需要特殊 output shape。
+key：当前 token 的 K，某些共享 KV / 特殊路径可为 None；
+value：当前 token 的 V，某些共享 KV / 特殊路径可为 None；
+output_shape：某些 backend / MLA 变体可能需要特殊 output shape；
+output_dtype：可显式指定输出 dtype，默认沿用 query dtype。
 ```
 
 它的输出是：
@@ -373,13 +375,13 @@ output_shape：某些 backend / MLA 变体可能需要特殊 output shape。
 关键代码位置：
 
 ```text
-maybe_calc_kv_scales：attention.py:471
-query quantization：attention.py:476
-output 分配：attention.py:488
-Q/K/V reshape：attention.py:495
-separate KV cache update：attention.py:504
-unified_attention_with_output：attention.py:516
-返回 output：attention.py:544
+maybe_calc_kv_scales：attention.py:505
+query quantization：attention.py:511
+output 分配：attention.py:528
+Q/K/V reshape：attention.py:533
+separate KV cache update：attention.py:548 / attention.py:568
+unified_attention_with_output：attention.py:551 / attention.py:571
+返回 output：attention.py:579
 ```
 
 ### 7.2 Q/K/V reshape 的边界
@@ -388,8 +390,8 @@ unified_attention_with_output：attention.py:516
 
 ```text
 query: [num_tokens, num_heads, head_size]
-key:   [num_tokens, num_kv_heads, head_size]
-value: [num_tokens, num_kv_heads, head_size_v]
+key:   [num_tokens, num_kv_heads, head_size]，如果 key 非 None
+value: [num_tokens, num_kv_heads, head_size_v]，如果 value 非 None
 output:[num_tokens, num_heads, head_size_v]
 ```
 
@@ -511,7 +513,7 @@ torch.empty(0, device=kv_cache.device, dtype=kv_cache.dtype)
 self.kv_sharing_target_layer_name is None
 ```
 
-如果当前层共享更早层的 KV cache，就不会对当前层执行 KV cache update。
+如果当前层共享更早层的 KV cache，或者当前路径没有传入 key/value，就不会对当前层执行 KV cache update。
 
 这对应 KV sharing / YOCO 类路径：
 

@@ -67,22 +67,20 @@
 
 本轮复审背景：
 - `D:\lzy\project\kv_pool\code\vllm` 已更新到新的 `origin/main`，当前 commit id：`4c81772e8bdf9e37ab2b8adfd80e4308b618fa92`。
-- 由于源码 commit 更新，需要重新核对 `llm-project\tmp_doc\documents\question` 下的文档。
-- 本轮复审不是从零做完整深度分析；默认沿用上一轮已确认的理解，只做轻量核对：源码路径、行号、对象名、字段名、函数名、调用链入口/出口是否仍匹配新 commit。
+- 由于源码 commit 更新，需要对 `llm-project\tmp_doc\documents\question` 下的文档做轻量复核。
+- 本轮复审不是从零做完整深度分析；默认沿用上一轮已确认的理解，只处理用户明确指出的文件、当前正在看的文件，或明显高风险/明显失效的位置。
 - 如果只发现行号或锚点漂移，只更新行号、路径和必要的源码位置描述，不展开整段语义重审。
-- 只有当当前文档结论与源码直接冲突、符号/调用链已经变义、或无法判断是否一致时，才对对应段落做最小范围的深度分析；不要顺着相邻模块扩搜。
+- 只有当当前文档结论与源码直接冲突、符号/调用链已经变义、或无法判断是否一致时，才对对应段落做最小范围的源码核对；不要顺着相邻模块扩搜。
 
 修改规则：
-- 每个专题必须审阅，批量处理一批不能超过 1 个文件。
-- 可以逐段审核，从而避免 agent 梳理过程中的极长上下文。
-- 每个文件至少核对其引用的源码路径、行号和关键符号名；不要做目录级泛化总结。
-- 默认按轻量复核执行：源码位置、行号、类名、函数名、字段名、调用链入口/出口是否仍匹配新 commit。
-- 除非出现明确语义冲突或无法判断，否则不要做整篇深度分析，只修当前命中的段落。
-- 如果文档中的源码路径、行号、术语、类名、函数名、字段名或执行顺序与 `code\vllm` 不一致，按新 commit 的源码最小化修正。
+- 不做逐专题、逐文件的全量重审；一次只处理当前明确目标文件。
+- 不要求每个文件都完整核对所有源码引用；优先检查明显过期、用户点名、或当前修改会触及的路径、行号、对象名、字段名、函数名和调用链入口/出口。
+- 默认按轻量复核执行：只修当前命中的段落，不做目录级泛化总结，不扩展到无关专题。
+- 如果文档中的源码路径、行号、术语、类名、函数名、字段名或执行顺序与 `code\vllm` 明确不一致，按新 commit 的源码最小化修正。
 - 修改内容保持同一目录内文档风格一致：标题层级、源码位置格式、列表缩进、术语写法、总结口径统一。
-- 每个文件完成后再进入下一个文件；遇到不确定逻辑时先查当前命中源码，不凭印象改。
+- 遇到不确定逻辑时只查当前命中源码，不凭印象改，也不顺手追加旁支分析。
 - 只修正文档本身的问题，不顺手修改无关专题或无关代码。
-- 每个文件审阅完成后，在 tmp_c.log 中记录进度，标记已完成专题、待审专题和当前/下一个文件。
+- 进度记录只写本次实际处理过的文件；不要为了填满专题清单而推进大批量复审。
 
 进度记录：
 在llm-project\tmp_doc\documents\question中
@@ -92,13 +90,13 @@
 - [x] 4. scheduler：已按新 commit 复审并修正 README.md、01_request_states.md、02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md、05_prefix_and_external_kv_hits.md、06_kv_block_allocation_and_preemption.md、07_auxiliary_scheduling_features.md、08_update_after_worker_output.md、token_states.md、spec_decode_token_states.md、vllm_scheduler.md。
 - [x] 5. executor_worker_model_runner：已按新 commit 复审并修正 README.md、01_executor_role.md、02_worker_role.md、03_model_runner_role.md、04_execute_model_flow.md、05_input_batch_and_state_update.md、06_prepare_inputs_and_attention_metadata.md、07_model_forward_and_logits.md、08_sampling_and_model_runner_output.md、09_worker_kv_cache_interaction.md、10_executor_worker_lifecycle.md、executor_worker_model_runner_overview.md。
 - [x] 6. kv_cache_transfer：已按新 commit 复审并修正 README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md、05_external_kv_load_flow.md、06_external_kv_save_flow.md、07_worker_kv_connector_flow.md、08_invalid_blocks_and_recompute.md、09_deferred_free_and_async_safety.md、10_kvpool_end_to_end.md、kv_cache_transfer_overview.md。
-- [ ] 7. attention：已按新 commit 复审并修正 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md；待按新 commit 复审 05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md 及 attention_methods 子目录。
+- [ ] 7. attention：已按新 commit 轻量复审并修正 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md、05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md；待按新 commit 轻量复审 attention_methods 子目录。
 - [ ] 8. parallelism：待按新 commit 复审。
 - [ ] 9. sampling_and_output：待按新 commit 复审。
 - [ ] 10. spec_decode：待按新 commit 复审。
 
-当前文件：llm-project\tmp_doc\documents\question\attention\04_prefill_decode_metadata.md
-下一个文件：llm-project\tmp_doc\documents\question\attention\05_slot_mapping_and_block_table.md
+当前文件：llm-project\tmp_doc\documents\question\attention\10_cuda_graph_compile_interaction.md
+下一个文件：llm-project\tmp_doc\documents\question\attention\attention_methods 子目录
 
 复审记录：
 - 2026-07-13：完成 engine 第三批 07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md；按新 commit 核对并修正 EngineCoreRequest / EngineCoreOutput 行号，补充 EC transfer 参数链路，更新 OutputProcessor 与 EngineCore / EngineCoreProc / CoreEngineActorManager 相关源码位置。
@@ -144,4 +142,6 @@
 - 2026-07-17：完成 attention 第三批 02_backend_selection.md；按新 commit 核对 AttentionConfig / arg_utils / registry / selector / AttentionBackend / CUDA、ROCm、CPU、XPU platform / Attention 与 MLAAttention / GPUModelRunner / KV cache reshape / forward 相关源码位置，修正行号，补充 CUDA SM12 MLA priority、ROCm encoder-decoder 跳过 ROCM_ATTN、XPU multimodal prefix fallback、CommonAttentionMetadata 当前字段和 registry 新增 backend 示例。
 - 2026-07-17：完成 attention 第四批 03_attention_metadata_builder.md；按新 commit 核对 AttentionBackend / AttentionMetadata / CommonAttentionMetadata / AttentionCGSupport / AttentionMetadataBuilder、AttentionGroup、GPUModelRunner `_build_attention_metadata` / `initialize_attn_backend` / `initialize_metadata_builders` / `calculate_reorder_batch_threshold`、`set_forward_context` / `get_attention_context` / `unified_attention_with_output`、ubatch 与 batch reorder 相关源码位置，修正行号，补充 `rswa_prefix_lens` 字段，并把 `list[dict[layer_name, metadata]]` 的说明改回当前以 speculative-decoding 多上下文为主、而非 ubatching 默认外部语义。
 - 2026-07-17：完成 attention 第五批 04_prefill_decode_metadata.md；按新 commit 核对 SchedulerOutput spec decode 字段、GPUModelRunner `_prepare_inputs` / `_build_attention_metadata`、CommonAttentionMetadata、batch reorder、FlashInfer、Mamba、GDN 与 cascade / CUDA graph 相关源码位置，修正行号，补充 `rswa_prefix_lens` 字段，明确 FlashInfer 仅在 `causal=True` 时显式 split、`causal=False` 时整批按 prefill 处理，并把单 token prefill 改判为 decode/update row 的特例明确归因到 Mamba FULL-CG 而非通用 GDN 规则。
+- 2026-07-17：完成 attention 第六批 05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md；按轻量复核口径只修正明显漂移的源码位置和局部语义：更新 GPUModelRunner / Attention.forward / get_attention_context / KV cache interface 与初始化入口行号，补充 `Attention.forward` 当前 key/value 可为 None、`output_dtype` 参数，以及 FullAttentionSpec page size 使用 `head_size + head_size_v`、SlidingWindowSpec admission 上界使用 `max_in_flight_tokens` 的当前语义。
+- 2026-07-17：完成 attention 第七批 08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md；按轻量复核口径修正旧绝对源码根路径和明显漂移的源码位置，重点更新 cascade attention 计算 / FlashAttention cascade / KV connector hook / CUDA graph dispatcher / ForwardContext / unified attention custom op / GPUModelRunner graph 决策与 KV connector 输出相关行号，不展开整篇语义重审。
 

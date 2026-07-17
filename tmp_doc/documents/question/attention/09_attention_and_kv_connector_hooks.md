@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\kv_transfer_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_transfer_state.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
+- `code/vllm/vllm/model_executor\layers\attention\kv_transfer_utils.py`
+- `code/vllm/vllm/model_executor\layers\attention\attention.py`
+- `code/vllm/vllm/forward_context.py`
+- `code/vllm/vllm/v1\worker\kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/distributed\kv_transfer\kv_transfer_state.py`
+- `code/vllm/vllm/distributed\kv_transfer\kv_connector\v1\base.py`
+- `code/vllm/vllm/v1\outputs.py`
 
 本文用于梳理 KV Connector 为什么挂在 attention layer 边界，`start_load_kv()` / `wait_for_layer_load()` / `save_kv_layer()` / `wait_for_save()` 如何与 `GPUModelRunner.execute_model()`、`set_forward_context()`、`unified_attention_with_output()` 和 backend attention forward 配合。
 
@@ -241,7 +241,7 @@ KV connector 要能 load/save KV，首先要知道本 worker 上每层 KV cache 
 
 `GPUModelRunner.initialize_kv_cache()` 中，在创建 KV cache tensor 后会注册给 connector。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7351`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7515`
 
 ```text
 if has_kv_transfer_group() and not is_profiling:
@@ -300,7 +300,7 @@ connector 可以更高效地一次传输某个 block 的跨层 KV。
 
 `GPUModelRunner.execute_model()` 开头有：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4075`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128`
 
 ```text
 if has_kv_transfer_group():
@@ -468,7 +468,7 @@ maybe_transfer_kv_layer(func)
 
 它被用于：
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:811`
 
 ```python
 @eager_break_during_capture
@@ -569,7 +569,7 @@ save 和后续计算重叠。
 
 ## 9. unified_attention_with_output 是 hook 的挂载点
 
-`unified_attention_with_output()` 位于：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+`unified_attention_with_output()` 位于：`code/vllm/vllm/model_executor/layers/attention/attention.py:811`
 
 它的主逻辑是：
 
@@ -579,7 +579,7 @@ save 和后续计算重叠。
 3. 调 self.impl.forward(..., kv_cache, attn_metadata, output=output)。
 ```
 
-位置：`attention.py:750`
+位置：`attention.py:827`
 
 因为这里同时具备三类信息：
 
@@ -676,7 +676,7 @@ self._connector_metadata is not None
 
 如果本轮没有 scheduled tokens：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4096`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4149`
 
 ```text
 if not num_scheduled_tokens:
@@ -741,7 +741,7 @@ worker_meta
 
 在 `GPUModelRunner.execute_model()` 中：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4297`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354`
 
 ```text
 defer_kv_connector_finalize = self.speculative_config is not None
@@ -779,7 +779,7 @@ target model forward 后，draft model 可能还要继续使用同一 connector 
 
 最终在 `sample_tokens()` 后段：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4596`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4687`
 
 ```text
 if spec_config is not None:
@@ -828,11 +828,11 @@ kv_connector_worker_meta
 self.kv_connector_output
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4398`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4402`
 
 在 `sample_tokens()` 构造 `ModelRunnerOutput` 时：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4605`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4693`
 
 ```text
 kv_connector_output = self.kv_connector_output
@@ -1020,7 +1020,7 @@ KV connector 的 layer-by-layer load/save 是 Python / runtime 侧同步点，�
 requires_piecewise_for_cudagraph(extra_config)
 ```
 
-位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:604`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/base.py:609`
 
 接口说明：
 
@@ -1048,7 +1048,7 @@ ensuring proper synchronization.
 @eager_break_during_capture
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:811`
 
 这也体现了 attention 边界是 compile / graph 的特殊边界。
 

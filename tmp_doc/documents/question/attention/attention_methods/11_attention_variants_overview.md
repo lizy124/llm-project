@@ -188,11 +188,11 @@ SchedulerOutput
 
 相关源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`：`_prepare_inputs()` 准备本轮 token 级输入。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`：`_build_attention_metadata()` 构造 attention metadata。
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 准备本轮 token 级输入。
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`：`_build_attention_metadata()` 构造 attention metadata。
 - `code/vllm/vllm/v1/worker/gpu/attn_utils.py:454`：`build_attn_metadata()` 按 group / builder 构造 metadata。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:452`：`Attention.forward()` 是普通 attention 层入口。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:670`：forward 中从上下文拿 metadata / cache 的主逻辑附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:485`：`Attention.forward()` 是普通 attention 层入口。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:726`：forward 中从上下文拿 metadata / cache 的主逻辑附近。
 
 ### 3.2 Attention 层做什么
 
@@ -209,11 +209,11 @@ SchedulerOutput
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:192`：`Attention` 类定义附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:319`：根据参数选择 backend 的逻辑附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:581`：生成 KV cache spec 的逻辑附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:713`：统一 KV cache update 路径附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:755`：统一 attention op 调用路径附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类定义附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:349`：根据参数选择 backend 的逻辑附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:616`：生成 KV cache spec 的逻辑附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:769`：统一 KV cache update 路径附近。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:813`：统一 attention op 调用路径附近。
 
 可以把 `Attention` 理解成：
 
@@ -249,7 +249,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 真正执行普通 attention forward 的接口。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:780`
+位置：`code/vllm/vllm/v1/attention/backend.py:860`
 
 第三层是 `AttentionMetadataBuilder`：
 
@@ -257,7 +257,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 把 CommonAttentionMetadata 转成 backend 自己要的 metadata。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533`
+位置：`code/vllm/vllm/v1/attention/backend.py:600`
 
 对于 MLA，还有单独的 `MLAAttentionImpl`：
 
@@ -266,7 +266,7 @@ forward_mha：prefill / compute-friendly 路径。
 forward_mqa：decode / memory-friendly 路径。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:863`
+位置：`code/vllm/vllm/v1/attention/backend.py:943`
 
 ---
 
@@ -501,9 +501,9 @@ GQA：
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:192`：`Attention` 类入口。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类入口。
 - `code/vllm/vllm/model_executor/layers/attention/attention.py:196`：head 数、head size 等初始化参数附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:581`：根据 layer 配置生成 KV cache spec。
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:616`：根据 layer 配置生成 KV cache spec。
 
 在 backend 层，普通 `AttentionImpl` 看到的是已经整理好的：
 
@@ -580,7 +580,7 @@ forward_mqa：
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:863`
+- `code/vllm/vllm/v1/attention/backend.py:943`
 - `code/vllm/vllm/v1/attention/backend.py:924`
 - `code/vllm/vllm/v1/attention/backend.py:939`
 
@@ -691,7 +691,7 @@ ModelRunner 先根据 Scheduler 分配的 block ids 更新 `InputBatch.block_tab
 
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2118`：`compute_slot_mapping()` 调用附近。
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:2330`：`CommonAttentionMetadata` 填充 block table / slot mapping 附近。
-- `code/vllm/vllm/v1/attention/backend.py:361`：`CommonAttentionMetadata` 定义附近。
+- `code/vllm/vllm/v1/attention/backend.py:395`：`CommonAttentionMetadata` 定义附近。
 
 可以这样记：
 
@@ -704,7 +704,7 @@ slot mapping 决定“当前 token 写到哪个 KV slot”。
 
 vLLM 不只一种 KV cache spec。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:82`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:86`
 
 常见类型包括：
 
@@ -813,8 +813,8 @@ FlashAttention backend 的实现位置：
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:68`：backend 能力声明附近。
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:651`：sliding window 转换逻辑附近。
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:701`：forward 主路径附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1172`：cascade attention 启发式判断附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1250`：cascade attention 执行路径附近。
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1490`：cascade attention 启发式判断附近。
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1568`：cascade attention 执行路径附近。
 
 ### 9.3 FlashInfer backend
 
@@ -1094,8 +1094,8 @@ chunked prefill 的思路是：
 
 位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 ### 12.3 MLA chunked context
 
@@ -1185,14 +1185,14 @@ prefix / suffix KV lens
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1172`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1490`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:1189`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:1195`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:1203`
 
 执行路径：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1250`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1568`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:1289`
 - `code/vllm/vllm/v1/attention/backends/flash_attn.py:1317`
 
@@ -1258,8 +1258,8 @@ Spec decode 会让一个请求在一轮里出现 draft token、target token、bo
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`：`_prepare_inputs()` 构造 spec decode metadata 的主入口附近。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`：attention metadata 构造会接入 spec decode 相关公共 metadata。
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 构造 spec decode metadata 的主入口附近。
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`：attention metadata 构造会接入 spec decode 相关公共 metadata。
 
 ---
 

@@ -2086,13 +2086,13 @@ modular runner idx_mapping。
 ```text
 code/vllm/vllm/v1/core/sched/scheduler.py:521
 code/vllm/vllm/v1/core/kv_cache_manager.py:244
-code/vllm/vllm/v1/worker/gpu_model_runner.py:1127
-code/vllm/vllm/v1/worker/gpu_model_runner.py:1889
-code/vllm/vllm/v1/worker/gpu_model_runner.py:2208
-code/vllm/vllm/v1/worker/gpu_model_runner.py:3960
+code/vllm/vllm/v1/worker/gpu_model_runner.py:1224
+code/vllm/vllm/v1/worker/gpu_model_runner.py:1930
+code/vllm/vllm/v1/worker/gpu_model_runner.py:2254
+code/vllm/vllm/v1/worker/gpu_model_runner.py:4013
 code/vllm/vllm/v1/worker/block_table.py:325
 code/vllm/vllm/v1/worker/gpu/block_table.py:239
-code/vllm/vllm/model_executor/layers/attention/attention.py:649
+code/vllm/vllm/model_executor/layers/attention/attention.py:726
 ```
 
 ---

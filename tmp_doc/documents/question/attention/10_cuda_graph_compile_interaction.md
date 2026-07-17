@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\compilation.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\vllm.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\forward_context.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\compilation\cuda_graph.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\compilation\breakable_cudagraph.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\compilation\piecewise_backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\cudagraph_dispatcher.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\attention\backend.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\attention.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\attention\kv_transfer_utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\kv_connector_model_runner_mixin.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\distributed\kv_transfer\kv_connector\v1\base.py`
+- `code/vllm/vllm/config\compilation.py`
+- `code/vllm/vllm/config\vllm.py`
+- `code/vllm/vllm/forward_context.py`
+- `code/vllm/vllm/compilation\cuda_graph.py`
+- `code/vllm/vllm/compilation\breakable_cudagraph.py`
+- `code/vllm/vllm/compilation\piecewise_backend.py`
+- `code/vllm/vllm/v1\cudagraph_dispatcher.py`
+- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/v1\attention\backend.py`
+- `code/vllm/vllm/model_executor\layers\attention\attention.py`
+- `code/vllm/vllm/model_executor\layers\attention\kv_transfer_utils.py`
+- `code/vllm/vllm/v1\worker\kv_connector_model_runner_mixin.py`
+- `code/vllm/vllm/distributed\kv_transfer\kv_connector\v1\base.py`
 
 本文用于梳理 CUDA graph、torch.compile、piecewise compilation 如何影响 attention 执行路径，以及 attention metadata、batch padding、KV cache update、KV connector layer hook、dynamic metadata 对图捕获的约束。前几篇已经分别讲了 metadata builder、attention forward、KV connector；本文把它们放到 “compile / graph capture / replay” 这一层统一看。
 
@@ -231,7 +231,7 @@ prefill / mixed 动态路径退到 piecewise。
 
 ## 5. AttentionCGSupport：backend 如何声明 CUDA graph 能力
 
-定义位置：`code/vllm/vllm/v1/attention/backend.py:516`
+定义位置：`code/vllm/vllm/v1/attention/backend.py:583`
 
 ```text
 ALWAYS = 3
@@ -247,7 +247,7 @@ NEVER = 0
   不支持 CUDA graph。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:516` 到 `code/vllm/vllm/v1/attention/backend.py:530`
+位置：`code/vllm/vllm/v1/attention/backend.py:583` 到 `code/vllm/vllm/v1/attention/backend.py:597`
 
 每个 `AttentionMetadataBuilder` 有：
 
@@ -256,7 +256,7 @@ _cudagraph_support
 get_cudagraph_support(vllm_config, kv_cache_spec)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533` 到 `code/vllm/vllm/v1/attention/backend.py:565`
+位置：`code/vllm/vllm/v1/attention/backend.py:600` 到 `code/vllm/vllm/v1/attention/backend.py:632`
 
 这说明：
 
@@ -272,7 +272,7 @@ CUDA graph 支持能力不是由 Attention impl 单独决定，而是由 metadat
 
 入口：`GPUModelRunner._check_and_update_cudagraph_mode()`
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6877`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6995`
 
 它做三件事。
 
@@ -556,7 +556,7 @@ return CUDAGraphMode.NONE, BatchDescriptor(num_tokens)
 
 ## 9. _determine_batch_execution_and_padding() 每轮做什么
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3810`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3863`
 
 它发生在：
 
@@ -578,7 +578,7 @@ num_tokens_across_dp
 cudagraph_stats
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3825` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3831`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3878` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3884`
 
 ### 9.1 判断是否 uniform decode
 
@@ -591,7 +591,7 @@ uniform_decode = _is_uniform_decode(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3832` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3838`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3885` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3891`
 
 普通 decode 时：
 
@@ -615,7 +615,7 @@ dispatch 时：
 disable_full = use_cascade_attn or has_encoder_output
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3865` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3867`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3918` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3920`
 
 也就是说：
 
@@ -632,7 +632,7 @@ encoder-decoder 中带 encoder output 的 step 也禁用 full cudagraph。
 num_tokens_padded = _pad_for_sequence_parallelism(num_tokens)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3853`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3906`
 
 如果启用 SP，还要求：
 
@@ -640,7 +640,7 @@ num_tokens_padded = _pad_for_sequence_parallelism(num_tokens)
 batch_descriptor.num_tokens % tensor_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3869` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3877`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3922` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3930`
 
 ### 9.4 data parallel 需要跨 rank 协调
 
@@ -652,7 +652,7 @@ coordinate_batch_across_dp(...)
 
 并根据 DP 同步后的 token 数重新 dispatch。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3879` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3905`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3932` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3958`
 
 这保证不同 DP rank 的 graph shape / mode 对齐。
 
@@ -675,7 +675,7 @@ CUDAGraphStat(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3907` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3914`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3960` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3967`
 
 ---
 
@@ -744,7 +744,7 @@ attn_metadata.num_actual_tokens
 build_for_cudagraph_capture(common_attn_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:634`
+位置：`code/vllm/vllm/v1/attention/backend.py:701`
 
 默认实现只是：
 
@@ -752,7 +752,7 @@ build_for_cudagraph_capture(common_attn_metadata)
 return self.build(common_prefix_len=0, common_attn_metadata=common_attn_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:634` 到 `code/vllm/vllm/v1/attention/backend.py:644`
+位置：`code/vllm/vllm/v1/attention/backend.py:701` 到 `code/vllm/vllm/v1/attention/backend.py:711`
 
 为什么需要这个接口？
 
@@ -768,7 +768,7 @@ ModelRunner 中如果是 capture 路径，会调用：
 builder.build_for_cudagraph_capture(common_attn_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2417` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2420`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2490` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2493`
 
 普通路径则调用：
 
@@ -776,13 +776,13 @@ builder.build_for_cudagraph_capture(common_attn_metadata)
 builder.build(common_prefix_len, common_attn_metadata, ...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2431` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2435`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2503` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2507`
 
 ---
 
 ## 12. set_forward_context 如何传递 graph 信息
 
-`ForwardContext` 定义在：`code/vllm/vllm/forward_context.py:128`
+`ForwardContext` 定义在：`code/vllm/vllm/forward_context.py:132`
 
 和 CUDA graph 相关的字段：
 
@@ -793,9 +793,9 @@ ubatch_slices: UBatchSlices | None
 skip_compiled: bool
 ```
 
-位置：`code/vllm/vllm/forward_context.py:141` 到 `code/vllm/vllm/forward_context.py:151`
+位置：`code/vllm/vllm/forward_context.py:148` 到 `code/vllm/vllm/forward_context.py:159`
 
-`set_forward_context()` 入口：`code/vllm/vllm/forward_context.py:249`
+`set_forward_context()` 入口：`code/vllm/vllm/forward_context.py:260`
 
 当：
 
@@ -812,7 +812,7 @@ batch_descriptor = BatchDescriptor(num_tokens=num_tokens)
 
 如果调用方已经传入更完整的 descriptor，就使用调用方的。
 
-位置：`code/vllm/vllm/forward_context.py:292` 到 `code/vllm/vllm/forward_context.py:297`
+位置：`code/vllm/vllm/forward_context.py:315` 到 `code/vllm/vllm/forward_context.py:316`
 
 然后它把这些值放进 `ForwardContext`：
 
@@ -848,7 +848,7 @@ set_forward_context(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4303` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4313`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4362` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4373`
 
 几个关键点：
 
@@ -866,7 +866,7 @@ has_encoder_input 时 skip_compiled=True，绕过 compiled model call。
 maybe_get_kv_connector_output(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4315` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4318`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4375` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4378`
 
 所以 KV connector 的 lifecycle 也是在 forward context 作用域内执行。
 
@@ -999,7 +999,7 @@ maybe_transfer_kv_layer 引入 host-side side effect；
 def unified_attention_with_output(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:736`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:811` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:736`
 
 ### 15.3 BreakableCUDAGraphCapture 的执行方式
 
@@ -1033,7 +1033,7 @@ breakable graph = graph segment + eager segment + graph segment + ...
 
 ## 16. unified_attention_with_output 是 attention 的 compile / graph 边界
 
-定义位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+定义位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:811`
 
 它是一个 custom op，并注册为：
 
@@ -1042,7 +1042,7 @@ op_name="unified_attention_with_output"
 mutates_args=["output", "output_block_scale"]
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:779` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:784`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:856` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:859`
 
 它内部做：
 
@@ -1057,7 +1057,7 @@ self.impl.forward(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:750` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:763`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:827` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:840`
 
 它成为边界的原因：
 
@@ -1096,7 +1096,7 @@ unified_attention_with_output(..., kv_cache_dummy_dep=...)
 它不被使用，但作为数据依赖，确保 torch.compile 保持 KV cache update 在 attention forward 之前。
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:746` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:748`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:821` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:825`
 
 `unified_kv_cache_update` 也是 custom op：
 
@@ -1104,7 +1104,7 @@ unified_attention_with_output(..., kv_cache_dummy_dep=...)
 op_name="unified_kv_cache_update"
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:731`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:769` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:807`
 
 编译配置里也会把 KV cache update op 纳入 splitting 判断：
 
@@ -1249,7 +1249,7 @@ connector.save_kv_layer(layer_name, kv_cache, attn_metadata)
 connector_cls.requires_piecewise_for_cudagraph(extra_config)
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:1280` 到 `code/vllm/vllm/config/vllm.py:1286`
+位置：`code/vllm/vllm/config/vllm.py:1342` 到 `code/vllm/vllm/config/vllm.py:1367`
 
 例如 LMCache connector 有：
 
@@ -1276,7 +1276,7 @@ MultiConnector 会在任一 child connector 需要时返回 True。
 
 `GPUModelRunner` 在模型 load / compile 后，会根据最终 `cudagraph_mode` 包装模型。
 
-相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5291`
+相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5377`
 
 逻辑大致是：
 
@@ -1291,7 +1291,7 @@ MultiConnector 会在任一 child connector 需要时返回 True。
   使用 gpu_ubatch_wrapper 中的 CUDAGraphWrapper。
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5291` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5309`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5377` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5406`
 
 这说明：
 
@@ -1377,7 +1377,7 @@ vLLM 的做法是：
 dispatch_cudagraph(..., disable_full=use_cascade_attn or has_encoder_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3865` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3867`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3918` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3920`
 
 原因是 cascade attention 的 metadata 和执行计划依赖：
 
@@ -1396,7 +1396,7 @@ per-request suffix kernel
 Here we do not consider the cascade attention, as currently it is never cudagraph supported.
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:516` 到 `code/vllm/vllm/v1/attention/backend.py:519`
+位置：`code/vllm/vllm/v1/attention/backend.py:583` 到 `code/vllm/vllm/v1/attention/backend.py:519`
 
 所以：
 
@@ -1411,7 +1411,7 @@ cascade attention 可以继续正常执行；
 
 `_determine_batch_execution_and_padding()` 会生成 `CUDAGraphStat`。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3907` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3914`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3960` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3967`
 
 字段定义：
 
@@ -1432,7 +1432,7 @@ runtime_mode
 cudagraph_stats=cudagraph_stats
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4609` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4623`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4697` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4711`
 
 日志聚合由 `CUDAGraphLogging` 完成：
 
@@ -1717,12 +1717,12 @@ side effects 不被错误 capture。
 code/vllm/vllm/config/compilation.py:53
 code/vllm/vllm/config/compilation.py:1316
 code/vllm/vllm/v1/cudagraph_dispatcher.py:15
-code/vllm/vllm/v1/worker/gpu_model_runner.py:3810
-code/vllm/vllm/v1/worker/gpu_model_runner.py:6877
-code/vllm/vllm/forward_context.py:249
+code/vllm/vllm/v1/worker/gpu_model_runner.py:3863
+code/vllm/vllm/v1/worker/gpu_model_runner.py:6995
+code/vllm/vllm/forward_context.py:260
 code/vllm/vllm/compilation/cuda_graph.py:145
 code/vllm/vllm/compilation/breakable_cudagraph.py:59
-code/vllm/vllm/model_executor/layers/attention/attention.py:734
+code/vllm/vllm/model_executor/layers/attention/attention.py:811
 ```
 
 ---
