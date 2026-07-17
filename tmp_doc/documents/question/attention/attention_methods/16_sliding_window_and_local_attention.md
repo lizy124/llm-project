@@ -276,7 +276,7 @@ self.sliding_window
 impl_cls(..., sliding_window, kv_cache_dtype, ...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:387`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:431`
 
 所以同一个值会进入两条链路：
 
@@ -292,7 +292,7 @@ impl.sliding_window
 
 `Attention.get_kv_cache_spec()` 会根据 `self.sliding_window` 返回不同 spec。
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:581`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:616`
 
 ```text
 self.sliding_window is not None
@@ -312,7 +312,7 @@ Attention 层声明“我需要什么样的 KV cache 管理策略”。
 
 `SlidingWindowSpec` 继承自 `AttentionSpec`，核心字段是：
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:478`
+位置：`vllm/vllm/v1/kv_cache_interface.py:543`
 
 ```text
 SlidingWindowSpec(
@@ -328,7 +328,7 @@ SlidingWindowSpec(
 
 `max_admission_blocks_per_request()` 的核心计算是：
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:506`
+位置：`vllm/vllm/v1/kv_cache_interface.py:571`
 
 ```text
 num_tokens = min(sliding_window - 1 + max_num_batched_tokens, max_model_len)
@@ -371,7 +371,7 @@ ChunkedLocalAttentionSpec(
 
 它的内存上限估计是：
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:441`
+位置：`vllm/vllm/v1/kv_cache_interface.py:506`
 
 ```text
 num_tokens = min(attention_chunk_size + max_num_batched_tokens, max_model_len)
@@ -388,7 +388,7 @@ max_blocks = ceil(num_tokens / block_size)
 
 `FullAttentionSpec` 中也有：
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:204`
+位置：`vllm/vllm/v1/kv_cache_interface.py:228`
 
 ```text
 sliding_window: int | None = None
@@ -404,7 +404,7 @@ vLLM 会把 sliding/local 层的 KV cache spec 转成 FullAttentionSpec，
 让所有层在 KV cache manager 视角下统一成 full 类型。
 ```
 
-位置：`vllm/vllm/v1/core/kv_cache_utils.py:1392`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:1430`
 
 转换后：
 
@@ -427,7 +427,7 @@ attention backend：仍然按 sliding/local 语义计算 attention
 
 `SlidingWindowSpec` 会注册到 `SlidingWindowManager`。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1369`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1815`
 
 `SlidingWindowManager.get_num_skipped_tokens()`：
 
@@ -454,11 +454,11 @@ get_num_skipped_tokens() = 4
 
 `ChunkedLocalAttentionSpec` 会注册到 `ChunkedLocalAttentionManager`。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1383`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1829`
 
 `ChunkedLocalAttentionManager.get_num_skipped_tokens()`：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:946`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1163`
 
 ```text
 num_skipped_tokens = (num_computed_tokens // attention_chunk_size)
@@ -480,7 +480,7 @@ get_num_skipped_tokens() = 8
 
 `SingleTypeKVCacheManager.get_num_blocks_to_allocate()` 会读取 `get_num_skipped_tokens()`，并用它计算新需要的 blocks。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:132`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:135`
 
 核心关系是：
 
@@ -500,7 +500,7 @@ num_new_blocks = max(num_required_blocks - max(num_skipped_blocks,
 
 同时，启动时的容量估计和运行时 admission 使用同一个上限：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1347`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:173`
 
 ```text
 SlidingWindowSpec / ChunkedLocalAttentionSpec
@@ -514,7 +514,7 @@ SlidingWindowSpec / ChunkedLocalAttentionSpec
 
 `unify_hybrid_kv_cache_specs()` 的 warning 说得很清楚：
 
-位置：`vllm/vllm/v1/core/kv_cache_utils.py:1407`
+位置：`vllm/vllm/v1/core/kv_cache_utils.py:1446`
 
 ```text
 Hybrid KV cache manager is disabled ...
@@ -539,7 +539,7 @@ The compute of layers like sliding window is still saved.
 
 `GPUModelRunner._build_attention_metadata()` 构造的是公共 metadata：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2216`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 关键字段包括：
 
@@ -559,7 +559,7 @@ mm_req_doc_ranges
 
 这些字段放进 `CommonAttentionMetadata`：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2338`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2394`
 
 `CommonAttentionMetadata` 自身并没有一个通用 `sliding_window` 字段。
 
@@ -582,7 +582,7 @@ backend impl 负责把自己的 `self.sliding_window` 传给 kernel。
 
 `_build_attention_metadata()` 中：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2247`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2285`
 
 ```text
 if for_cudagraph_capture:
@@ -602,7 +602,7 @@ else:
 
 `_get_cascade_attn_prefix_len()` 会判断 KV spec 是否是 sliding/local：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2632`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2696`
 
 ```text
 use_sliding_window = isinstance(kv_cache_spec, SlidingWindowSpec)
@@ -616,7 +616,7 @@ use_local_attention = isinstance(kv_cache_spec, ChunkedLocalAttentionSpec)
 
 FlashAttention 的 cascade heuristic 会直接拒绝这些情况：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1195`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1514`
 
 ```text
 if use_alibi or use_sliding_window or use_local_attention:
@@ -637,7 +637,7 @@ cascade attention 当前不和 sliding window / chunked local attention 同时�
 
 `get_attn_backend()` 的选择参数包括：
 
-位置：`vllm/vllm/v1/attention/selector.py:53`
+位置：`vllm/vllm/v1/attention/selector.py:54`
 
 ```text
 head_size
@@ -670,7 +670,7 @@ use_kv_connector
 
 `FlashAttentionImpl.__init__()` 会把 `sliding_window` 转成 flash-attn 风格的 window tuple。
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:650`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:731`
 
 ```text
 sliding_window is None
@@ -693,7 +693,7 @@ decoder attention 只能看左侧历史，所以右窗口为 `0`。
 
 执行时会把它传给 `flash_attn_varlen_func()`：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:870`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1010`
 
 ```text
 window_size=sliding_window_size
@@ -701,7 +701,7 @@ window_size=sliding_window_size
 
 对于非 causal / dynamic causal 情况，如果右窗口是 0，FlashAttention 会在必要时改成对称窗口：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:837`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:650`
 
 ```text
 (sliding_window - 1, 0)
@@ -712,7 +712,7 @@ window_size=sliding_window_size
 
 Triton backend 也在 impl 初始化时转换窗口：
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:460`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:483`
 
 ```text
 None → (-1, -1)
@@ -722,7 +722,7 @@ encoder / encoder_only → (sliding_window - 1, sliding_window - 1)
 
 forward 时传给 unified attention：
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:642`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:687`
 
 ```text
 unified_attention(..., window_size=self.sliding_window, ...)
@@ -730,7 +730,7 @@ unified_attention(..., window_size=self.sliding_window, ...)
 
 encoder 路径下则传给 `context_attention_fwd()` 的：
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:709`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:771`
 
 ```text
 sliding_window_q=self.sliding_window[0]
@@ -741,7 +741,7 @@ sliding_window_k=self.sliding_window[1]
 
 FlashInfer native / 非全 TRTLLM 路径会检查所有层的窗口左边界等全局超参是否一致。
 
-位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1018`
+位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1154`
 
 如果窗口不一致，会抛错：
 
@@ -762,7 +762,7 @@ One potential fix is to set disable_sliding_window=True
 
 FlashAttention 的 `cascade_attention()` 内部也有断言：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1277`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1596`
 
 ```text
 assert sliding_window == (-1, -1),
@@ -819,7 +819,7 @@ metadata = super().build(common_prefix_len, cm, fast_build)
 
 `make_local_attention_virtual_batches()` 会把一个请求按 chunk 切成多个“虚拟请求”。
 
-位置：`vllm/vllm/v1/attention/backends/utils.py:251`
+位置：`vllm/vllm/v1/attention/backends/utils.py:277`
 
 例如注释里的例子：
 
@@ -837,7 +837,7 @@ block_table_local  = [virtual_batches, pages_per_local_batch]
 
 构造结果是一个新的 `CommonAttentionMetadata`：
 
-位置：`vllm/vllm/v1/attention/backends/utils.py:380`
+位置：`vllm/vllm/v1/attention/backends/utils.py:406`
 
 ```text
 CommonAttentionMetadata(
@@ -890,11 +890,11 @@ local virtual batches 的数量和形状依赖当前 batch 中 query span / seq 
 
 `SlidingWindowManager.find_longest_cache_hit()` 会从右向左搜索，直到找到足够多的连续 blocks。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:620`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:858`
 
 其中需要的连续 block 数是：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:607`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:896`
 
 ```text
 ceil((sliding_window - 1) / block_size)
@@ -910,7 +910,7 @@ ceil((sliding_window - 1) / block_size)
 computed_blocks = [null_block] * max_num_blocks
 ```
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:648`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:908`
 
 然后只把窗口附近命中的 block 填进去。
 
@@ -927,7 +927,7 @@ computed_blocks = [null_block] * max_num_blocks
 
 `ChunkedLocalAttentionManager.find_longest_cache_hit()` 的注释说明：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:813`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1064`
 
 ```text
 窗口左侧完整 chunk 可以用 null blocks 标记为 computed；
@@ -951,7 +951,7 @@ max_length = 15
 
 环境变量 `VLLM_PREFIX_CACHE_RETENTION_INTERVAL` 的注释说明：
 
-位置：`vllm/vllm/envs.py:1051`
+位置：`vllm/vllm/envs.py:1090`
 
 ```text
 Retain local sliding-window KV checkpoints for prefix caching.
@@ -977,7 +977,7 @@ chunked local / Mamba / linear attention 当前不复用这个 retention 语义�
 
 `SlidingWindowSpec.max_admission_blocks_per_request()` 会把 `max_num_batched_tokens` 纳入计算。
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:506`
+位置：`vllm/vllm/v1/kv_cache_interface.py:571`
 
 这是为了 chunked prefill：
 
@@ -997,7 +997,7 @@ sliding_window - 1 + max_num_batched_tokens
 
 `SlidingWindowSpec.max_memory_usage_bytes()` 中有断言：
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:528`
+位置：`vllm/vllm/v1/kv_cache_interface.py:596`
 
 ```text
 DCP not support sliding window.
@@ -1005,7 +1005,7 @@ DCP not support sliding window.
 
 `SlidingWindowManager.find_longest_cache_hit()` 也断言：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:635`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:873`
 
 ```text
 DCP not support sliding window attn now.
@@ -1014,7 +1014,7 @@ PCP not support sliding window attn now.
 
 `ChunkedLocalAttentionManager.find_longest_cache_hit()` 也有类似断言：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:868`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1118`
 
 ```text
 DCP not support chunked local attn now.
@@ -1110,7 +1110,7 @@ FullAttentionSpec(sliding_window=...)
 
 `ModelConfig` 会把 `hf_text_config.sliding_window` 设置成 `None`。
 
-位置：`vllm/vllm/config/model.py:716`
+位置：`vllm/vllm/config/model.py:736`
 
 结果是：
 
@@ -1158,7 +1158,7 @@ cascade attention 会把公共 prefix 拆成一个单独 kernel，并对 prefix 
 
 sliding/local attention 的可见范围不是简单的“公共 prefix + suffix causal”，所以当前实现直接禁用。
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1195`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1514`
 
 ---
 

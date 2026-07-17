@@ -168,7 +168,7 @@ current_platform.get_attn_backend_cls(
 
 如果用户通过 attention config 指定了 backend，CUDA 平台会先只校验它。
 
-源码位置：`vllm/vllm/platforms/cuda.py:381`
+源码位置：`vllm/vllm/platforms/cuda.py:391`
 
 ```text
 指定 backend 合法：
@@ -184,7 +184,7 @@ current_platform.get_attn_backend_cls(
 
 CUDA 平台会先取优先级列表，再对每个候选调用 `validate_configuration()`。
 
-源码位置：`vllm/vllm/platforms/cuda.py:337`
+源码位置：`vllm/vllm/platforms/cuda.py:354`
 
 校验失败原因可能包括：
 
@@ -206,7 +206,7 @@ KV connector not supported
 
 最后选择优先级最高且合法的 backend。
 
-源码位置：`vllm/vllm/platforms/cuda.py:426`
+源码位置：`vllm/vllm/platforms/cuda.py:434`
 
 ---
 
@@ -355,7 +355,7 @@ TRITON_ATTN_DIFFKV：普通 attention 的 DiffKV 变体。
 
 ## 7. FlashInferBackend：普通 paged attention 高性能后端
 
-源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:325`
+源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:341`
 
 ### 7.1 它适合什么
 
@@ -395,7 +395,7 @@ block size：
 
 源码位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:325`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:341`
 - `vllm/vllm/v1/attention/backends/flashinfer.py:337`
 - `vllm/vllm/v1/attention/backends/flashinfer.py:420`
 - `vllm/vllm/v1/attention/backends/flashinfer.py:425`
@@ -434,7 +434,7 @@ SM100：
 
 `FlashInferMetadataBuilder` 把 `CommonAttentionMetadata` 翻译成 `FlashInferMetadata`。
 
-源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:558`
+源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:614`
 
 `FlashInferMetadata` 的核心字段：
 
@@ -451,7 +451,7 @@ use_cascade
 cascade_wrapper
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:519`
+源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:573`
 
 其中 `prefill` 和 `decode` 不是简单 tensor，而是再分成两类：
 
@@ -515,7 +515,7 @@ cascade：
   MultiLevelCascadeAttentionWrapper.run(...)  # 代码路径存在，但当前常规调度不自动启用
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1436`
+源码位置：`vllm/vllm/v1/attention/backends/flashinfer.py:1613`
 
 这里还有两个容易忽略的点：
 
@@ -527,14 +527,14 @@ cascade：
 
 源码位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:454`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1903`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:493`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1916`
 
 ---
 
 ## 8. FlashInfer_MLA：FlashInfer 的 MLA 专用路径
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:38`
+源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:56`
 
 `FLASHINFER_MLA` 不是 `FLASHINFER` 的普通 attention 变体，而是 MLA backend。
 
@@ -562,15 +562,21 @@ cascade：
 trtllm_batch_decode_with_kv_cache_mla(...)
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:164`
+源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:183`
 
-它不返回 LSE：
+它会根据 `need_to_return_lse_for_decode` 决定是否返回 LSE：
 
 ```text
-return o, None
+return_lse = self.need_to_return_lse_for_decode
+...
+if return_lse:
+    o, lse = kernel_out
+else:
+    o, lse = kernel_out, None
+return o, lse
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:216`
+源码位置：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:218` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:242`
 
 ---
 
@@ -666,7 +672,7 @@ scheduler_metadata = get_mla_metadata(
 
 `FlashMLAImpl.forward_mqa()` 处理 decode / MQA-style 路径。
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/flashmla.py:263`
+源码位置：`vllm/vllm/v1/attention/backends/mla/flashmla.py:266`
 
 核心调用：
 
@@ -680,8 +686,8 @@ FP8 KV cache：
 
 源码位置：
 
-- `vllm/vllm/v1/attention/backends/mla/flashmla.py:314`
-- `vllm/vllm/v1/attention/backends/mla/flashmla.py:328`
+- `vllm/vllm/v1/attention/backends/mla/flashmla.py:318`
+- `vllm/vllm/v1/attention/backends/mla/flashmla.py:332`
 
 它可以返回 decode LSE：
 
@@ -753,7 +759,7 @@ DeepSeek V4：
 
 ## 11. TritonAttentionBackend：覆盖面广的普通 attention 后端
 
-源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:248`
+源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:271`
 
 ### 11.1 它为什么经常是 fallback
 
@@ -773,7 +779,7 @@ DeepSeek V4：
 
 源码位置：
 
-- `vllm/vllm/v1/attention/backends/triton_attn.py:248`
+- `vllm/vllm/v1/attention/backends/triton_attn.py:271`
 - `vllm/vllm/v1/attention/backends/triton_attn.py:277`
 - `vllm/vllm/v1/attention/backends/triton_attn.py:285`
 - `vllm/vllm/v1/attention/backends/triton_attn.py:346`
@@ -857,7 +863,7 @@ mm_prefix_range_tensor
 3. 调用 unified_attention(...)
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:530`
+源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:576`
 
 核心 kernel 调用：
 
@@ -876,7 +882,7 @@ unified_attention(
 )
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:642`
+源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:687`
 
 ### 11.5 encoder attention 走另一条 Triton prefill kernel
 
@@ -894,7 +900,7 @@ context_attention_fwd(..., is_causal=False)
 
 Triton 普通 attention 的 `forward_includes_kv_cache_update = False`，KV cache 更新也单独做。
 
-源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:275`
+源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:299`
 
 普通路径调用：
 
@@ -908,7 +914,7 @@ per-token-head quant 路径调用：
 triton_reshape_and_cache_flash_per_token_head_quant(...)
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:724`
+源码位置：`vllm/vllm/v1/attention/backends/triton_attn.py:787`
 
 ---
 
@@ -951,7 +957,7 @@ K 的 head dim 和 V 的 head dim 不同。
 
 ## 13. TritonMLABackend：MLA 的通用 Triton 路径
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:36`
+源码位置：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:83`
 
 `TRITON_MLA` 是 MLA 后端，不是普通 `TRITON_ATTN`。
 
@@ -1413,8 +1419,8 @@ forward_includes_kv_cache_update = False
 
 源码位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:454`
-- `vllm/vllm/v1/attention/backends/triton_attn.py:275`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:493`
+- `vllm/vllm/v1/attention/backends/triton_attn.py:299`
 
 这会影响你追踪 kernel 调用时看到的顺序：
 
