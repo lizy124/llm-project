@@ -132,7 +132,7 @@ kernel 自己根据 block table 去 KV cache 中加载 K/V。
 
 `KVCacheSpec` 是每类 KV cache 的规格基类。
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:95`
+位置：`vllm/vllm/v1/kv_cache_interface.py:100`
 
 其中最关键的是：
 
@@ -142,15 +142,15 @@ page_size_bytes：这个 block 对应多少字节显存；
 storage_block_size：某些 MLA / 压缩 KV cache 的物理存储粒度。
 ```
 
-对于普通 attention，`AttentionSpec.page_size_bytes` 大致由这些因素决定：
+对于普通 full attention，`FullAttentionSpec.real_page_size_bytes` 大致由这些因素决定：
 
 ```text
-2 * block_size * num_kv_heads * head_size * dtype_size
+block_size * num_kv_heads * (head_size + head_size_v) * dtype_size
 ```
 
-这里的 `2` 对应 K 和 V。
+这里的 `head_size + head_size_v` 对应 K 和 V 的存储维度。
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:159`
+位置：`vllm/vllm/v1/kv_cache_interface.py:228`
 
 ### 5.2 KVCacheConfig：描述整个模型有哪些 KV cache group
 
@@ -162,7 +162,7 @@ storage_block_size：某些 MLA / 压缩 KV cache 的物理存储粒度。
 - kv_cache_groups：哪些 layer 共享一组 block table / cache spec。
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:879`
+位置：`vllm/vllm/v1/kv_cache_interface.py:957`
 
 对普通 decoder-only 模型，通常只有一个 KV cache group。对 hybrid 模型、MLA、Mamba、cross-attention 等，可能会有多个 group。
 
@@ -444,7 +444,7 @@ kernel block ids = [b * 2, b * 2 + 1]
 self.input_batch.block_table.commit_block_table(num_reqs)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1906`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1949`
 
 目的不是立刻 attention，而是提前把 CPU staged writes 提交到 GPU，和后续 CPU 侧 input 准备重叠。
 
@@ -455,7 +455,7 @@ blk_table = self.input_batch.block_table[kv_cache_gid]
 blk_table_tensor = blk_table.get_device_tensor(num_reqs_padded)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2257`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2302`
 
 ### 9.4 block table 的形状
 
@@ -493,7 +493,7 @@ self.input_batch.block_table.compute_slot_mapping(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2126`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2167`
 
 底层 kernel 在：
 
@@ -535,7 +535,7 @@ slot_id = 2 * 16 + 2 = 34
 
 `GPUModelRunner._get_slot_mappings()` 也会对 padded 区域填 `-1`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4009`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4061`
 
 ### 10.4 context parallel 下 slot 可能不是本 rank 本地
 
@@ -557,7 +557,7 @@ slot mapping = token position 到“当前 rank 本地 KV cache slot”的映射
 
 ### 11.1 _get_slot_mappings() 生成两种视图
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3963`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4013`
 
 它返回：
 
@@ -580,7 +580,7 @@ attention metadata 构造按 KV cache group 组织；
 
 ### 11.2 _build_attention_metadata() 先构造 CommonAttentionMetadata
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2216`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 核心公共字段包括：
 
@@ -616,13 +616,13 @@ is_prefilling：请求是否仍在 prefill 阶段。
 
 `AttentionMetadataBuilder` 是抽象基类。
 
-位置：`vllm/vllm/v1/attention/backend.py:533`
+位置：`vllm/vllm/v1/attention/backend.py:600`
 
 每种 attention backend 会把 `CommonAttentionMetadata` 转成自己的 metadata。
 
 例如 FlashAttention builder 会生成 `FlashAttentionMetadata`：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:236`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:228`
 
 它保留了：
 
@@ -641,7 +641,7 @@ scheduler_metadata
 
 `_build_attention_metadata()` 会按 KV cache group 循环。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2460`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2524`
 
 通常不同 group 共享大部分 batch 形状信息，只是：
 
@@ -656,7 +656,7 @@ kv_cache_spec / builder 可能不同。
 
 FlashAttention builder 就支持：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:611`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:713`
 
 ---
 
@@ -675,7 +675,7 @@ set_forward_context(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4306`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 这意味着模型层的 `Attention.forward()` 不需要显式传入 block table / slot mapping，它们都在 forward context 里。
 
@@ -688,7 +688,7 @@ KV cache 存储在 Attention class 内部，通过 self.kv_cache 访问；
 attention metadata 通过 forward context 访问。
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:452`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:485`
 
 实际执行时，统一入口会从 forward context 中按 `layer_name` 取：
 
@@ -699,7 +699,7 @@ kv_cache
 layer_slot_mapping
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:675`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 ### 12.3 KV cache update 也依赖 slot mapping
 
@@ -709,11 +709,11 @@ layer_slot_mapping
 forward_includes_kv_cache_update = False
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:96`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:83`
 
 因此 `Attention.forward()` 会先调用统一 KV cache update，把当前 token 的 K/V scatter 到 paged cache 中。
 
-入口：`vllm/vllm/model_executor/layers/attention/attention.py:713`
+入口：`vllm/vllm/model_executor/layers/attention/attention.py:769`
 
 FlashAttention 的具体实现：
 
@@ -730,7 +730,7 @@ reshape_and_cache_flash(
 )
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:927`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1067`
 
 所以写入路径是：
 
@@ -755,7 +755,7 @@ seqused_k    = attn_metadata.seq_lens
 block_table  = attn_metadata.block_table
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:792`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:898`
 
 然后调用：
 
@@ -770,7 +770,7 @@ flash_attn_varlen_func(
 )
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:870`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1010`
 
 注意这里传给 FlashAttention 的 `k/v` 不是本轮 key/value，而是 paged KV cache。
 
@@ -852,7 +852,7 @@ ModelRunner 会为这些 token 计算连续 positions：
 positions_np = num_computed_tokens_cpu[req_indices] + query_pos
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1920`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1962`
 
 然后 slot mapping 会把这些 positions 分散写入多个 physical blocks。
 
@@ -973,7 +973,7 @@ num_computed_tokens
 positions = num_computed_tokens + query_pos
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1920`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1962`
 
 也就是：
 

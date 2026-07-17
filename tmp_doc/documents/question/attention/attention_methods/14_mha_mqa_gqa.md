@@ -171,7 +171,7 @@ head_size=self.get_head_size()
 total_num_kv_heads=self.get_total_num_kv_heads()
 ```
 
-位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:345` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:360`
+位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:356` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:366`
 
 ### 4.2 num_attention_heads 的来源
 
@@ -204,7 +204,7 @@ attributes = [
 ]
 ```
 
-位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:106` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:123`
+位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:110` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:127`
 
 如果这些字段都不存在，则默认：
 
@@ -232,7 +232,7 @@ if not new_decoder_arch_falcon and getattr(self.hf_text_config, "multi_query", F
     return 1
 ```
 
-位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:420` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:436`
+位置：`vllm/vllm/transformers_utils/model_arch_config_convertor.py:435` 到 `vllm/vllm/transformers_utils/model_arch_config_convertor.py:447`
 
 这就是典型 MQA 配置进入 vLLM 的方式之一。
 
@@ -256,7 +256,7 @@ if total_num_attention_heads % tensor_parallel_size != 0:
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/config/model.py:1159` 到 `vllm/vllm/config/model.py:1170`
+位置：`vllm/vllm/config/model.py:1206` 到 `vllm/vllm/config/model.py:1222`
 
 也就是说：
 
@@ -272,7 +272,7 @@ def get_num_attention_heads(self, parallel_config: ParallelConfig) -> int:
     return num_heads // parallel_config.tensor_parallel_size
 ```
 
-位置：`vllm/vllm/config/model.py:1272` 到 `vllm/vllm/config/model.py:1274`
+位置：`vllm/vllm/config/model.py:1323` 到 `vllm/vllm/config/model.py:1325`
 
 ### 5.2 KV heads 可能切分，也可能复制
 
@@ -287,7 +287,7 @@ def get_num_kv_heads(self, parallel_config: ParallelConfig) -> int:
     return max(1, total_num_kv_heads // parallel_config.tensor_parallel_size)
 ```
 
-位置：`vllm/vllm/config/model.py:1259` 到 `vllm/vllm/config/model.py:1270`
+位置：`vllm/vllm/config/model.py:1310` 到 `vllm/vllm/config/model.py:1321`
 
 关键点是：
 
@@ -308,7 +308,7 @@ else:
 self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:143` 到 `vllm/vllm/model_executor/models/llama.py:156`
+位置：`vllm/vllm/model_executor/models/llama.py:144` 到 `vllm/vllm/model_executor/models/llama.py:153`
 
 ---
 
@@ -369,7 +369,7 @@ heads (e.g., multi-query/grouped-query attention), the key/value head may
 be replicated while the query heads are partitioned.
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:914` 到 `vllm/vllm/model_executor/layers/linear.py:923`
+位置：`vllm/vllm/model_executor/layers/linear.py:942` 到 `vllm/vllm/model_executor/layers/linear.py:953`
 
 ### 6.3 QKVParallelLinear 内部怎么切
 
@@ -385,7 +385,7 @@ else:
     self.num_kv_head_replicas = 1
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:942` 到 `vllm/vllm/model_executor/layers/linear.py:973`
+位置：`vllm/vllm/model_executor/layers/linear.py:995` 到 `vllm/vllm/model_executor/layers/linear.py:1001`
 
 含义是：
 
@@ -406,7 +406,7 @@ q, k = self.rotary_emb(positions, q, k)
 attn_output = self.attn(q, k, v)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:224` 到 `vllm/vllm/model_executor/models/llama.py:233`
+位置：`vllm/vllm/model_executor/models/llama.py:221` 到 `vllm/vllm/model_executor/models/llama.py:231`
 
 所以 GQA / MQA 的差异在进入 Attention 前就已经体现在：
 
@@ -430,7 +430,7 @@ v 的最后一维 = num_kv_heads * head_dim
 3. Return the output tensor.
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:192` 到 `vllm/vllm/model_executor/layers/attention/attention.py:202`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:221` 到 `vllm/vllm/model_executor/layers/attention/attention.py:231`
 
 构造参数包含：
 
@@ -440,7 +440,7 @@ head_size: int
 num_kv_heads: int | None = None
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:204` 到 `vllm/vllm/model_executor/layers/attention/attention.py:221`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:233` 到 `vllm/vllm/model_executor/layers/attention/attention.py:252`
 
 ### 7.2 没传 num_kv_heads 时默认就是 MHA
 
@@ -450,7 +450,7 @@ if num_kv_heads is None:
 assert num_heads % num_kv_heads == 0
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:296` 到 `vllm/vllm/model_executor/layers/attention/attention.py:300`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:326` 到 `vllm/vllm/model_executor/layers/attention/attention.py:330`
 
 这说明：
 
@@ -469,7 +469,7 @@ self.head_size_v = self.head_size if head_size_v is None else head_size_v
 self.num_kv_heads = num_kv_heads
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:304` 到 `vllm/vllm/model_executor/layers/attention/attention.py:308`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:334` 到 `vllm/vllm/model_executor/layers/attention/attention.py:337`
 
 注意这里保存的是：
 
@@ -490,7 +490,7 @@ if value is not None:
     value = value.view(-1, self.num_kv_heads, self.head_size_v)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:488` 到 `vllm/vllm/model_executor/layers/attention/attention.py:503`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:533` 到 `vllm/vllm/model_executor/layers/attention/attention.py:548`
 
 所以 backend 看到的张量已经是：
 
@@ -506,9 +506,9 @@ value: [num_tokens, num_kv_heads, head_size_v]
 
 ## 8. KV cache spec 为什么只记录 num_kv_heads
 
-### 8.1 AttentionSpec 的字段
+### 8.1 AttentionSpec / FullAttentionSpec 的字段
 
-KV cache 的 attention spec 定义为：
+KV cache 的 attention spec 基类定义为：
 
 ```python
 @dataclass(frozen=True, kw_only=True)
@@ -518,7 +518,9 @@ class AttentionSpec(KVCacheSpec):
     dtype: torch.dtype
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:159` 到 `vllm/vllm/v1/kv_cache_interface.py:167`
+普通 full attention 则由 `FullAttentionSpec` 在此基础上补充 `head_size_v`、`sliding_window`、`attention_chunk_size` 等字段。
+
+位置：`vllm/vllm/v1/kv_cache_interface.py:176` 到 `vllm/vllm/v1/kv_cache_interface.py:238`
 
 注意这里没有 `num_heads`。
 
@@ -531,31 +533,29 @@ KV cache 存的是 K 和 V，不存 Q；
 
 ### 8.2 page_size_bytes 的公式
 
-普通 attention KV cache 的真实 page size：
+普通 full attention KV cache 的真实 page size：
 
 ```python
 return (
-    2
-    * self.block_size
+    self.block_size
     * self.num_kv_heads
-    * self.head_size
+    * (self.head_size + self.head_size_v)
     * get_dtype_size(self.dtype)
 )
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:183` 到 `vllm/vllm/v1/kv_cache_interface.py:201`
+位置：`vllm/vllm/v1/kv_cache_interface.py:332` 到 `vllm/vllm/v1/kv_cache_interface.py:340`
 
 公式拆开是：
 
 ```text
-2：K + V
 block_size：一个 KV block 中的 token 数
 num_kv_heads：每个 token 存多少组 K/V heads
-head_size：每个 head 的维度
+head_size + head_size_v：K 与 V 的存储维度之和
 dtype_size：每个元素占多少字节
 ```
 
-这里假设 K/V head dim 相同。对于 DiffKV 或 `head_size_v != head_size` 的路径，应使用 `block_size * num_kv_heads * (head_size + head_size_v) * dtype_size`，而不是固定写成 `2 * ... * head_size`。
+当 K/V head dim 相同，公式等价于旧的 `2 * block_size * num_kv_heads * head_size * dtype_size`；对于 DiffKV 或 `head_size_v != head_size` 的路径，当前代码显式使用 `head_size + head_size_v`。
 
 因此：
 
@@ -582,7 +582,7 @@ return FullAttentionSpec(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:581` 到 `vllm/vllm/model_executor/layers/attention/attention.py:632`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:616` 到 `vllm/vllm/model_executor/layers/attention/attention.py:691`
 
 也就是说：
 
@@ -608,7 +608,7 @@ def get_kv_cache_shape(
 ) -> tuple[int, ...]:
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:88` 到 `vllm/vllm/v1/attention/backend.py:96`
+位置：`vllm/vllm/v1/attention/backend.py:90` 到 `vllm/vllm/v1/attention/backend.py:98`
 
 这说明 backend 层的 KV cache shape 入口也只接收：
 
@@ -626,7 +626,7 @@ FlashAttention backend：
 return (num_blocks, 2, block_size, num_kv_heads, head_size)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:140` 到 `vllm/vllm/v1/attention/backends/flash_attn.py:149`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:127` 到 `vllm/vllm/v1/attention/backends/flash_attn.py:137`
 
 逻辑维度可以理解为：
 
@@ -642,7 +642,7 @@ Triton backend 普通路径也是：
 return (num_blocks, 2, block_size, num_kv_heads, head_size)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:293` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:315`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:318` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:348`
 
 某些 KV cache 量化模式会在最后一维额外 padding scale，但 `num_kv_heads` 仍然是 shape 中的 head 维。
 
@@ -660,7 +660,7 @@ kv_cache_shape = attn_backend.get_kv_cache_shape(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7129` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:7135`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7384` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:7404`
 
 这一步把：
 
@@ -754,7 +754,7 @@ block_table_tensor
 slot_mapping
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:393` 到 `vllm/vllm/v1/attention/backend.py:421`
+位置：`vllm/vllm/v1/attention/backend.py:395` 到 `vllm/vllm/v1/attention/backend.py:434`
 
 它不直接存 `num_heads` 或 `num_kv_heads`。
 
@@ -774,7 +774,7 @@ self.num_heads_q = self.model_config.get_num_attention_heads(self.parallel_confi
 self.num_heads_kv = self.model_config.get_num_kv_heads(self.parallel_config)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:342` 到 `vllm/vllm/v1/attention/backends/flash_attn.py:345`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:352` 到 `vllm/vllm/v1/attention/backends/flash_attn.py:356`
 
 Triton metadata builder 也类似：
 
@@ -783,7 +783,7 @@ self.num_heads_q = model_config.get_num_attention_heads(vllm_config.parallel_con
 self.num_heads_kv = model_config.get_num_kv_heads(vllm_config.parallel_config)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:112` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:117`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:117` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:120`
 
 这说明：
 
@@ -807,7 +807,7 @@ value: shape = [num_tokens, num_kv_heads, head_size]
 kv_cache: shape = [num_blocks, 2, block_size, num_kv_heads, head_size]
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:530` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:553`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:576` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:610`
 
 这就是 vLLM 中 MHA / MQA / GQA 的核心 runtime 形态。
 
@@ -829,7 +829,7 @@ triton_reshape_and_cache_flash(
 )
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:724` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:767`
+位置：`vllm/vllm/v1/attention/backends/triton_attn.py:787` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:821`
 
 因为 `key` / `value` 的 shape 已经是：
 
@@ -849,7 +849,7 @@ num_kv_heads = k.shape[2]
 num_queries_per_kv = num_query_heads // num_kv_heads
 ```
 
-位置：`vllm/vllm/v1/attention/ops/triton_unified_attention.py:853` 到 `vllm/vllm/v1/attention/ops/triton_unified_attention.py:858`
+位置：`vllm/vllm/v1/attention/ops/triton_unified_attention.py:927` 到 `vllm/vllm/v1/attention/ops/triton_unified_attention.py:929`
 
 这里的 `num_kv_heads = k.shape[2]` 是 Triton unified attention 内部对传入 `key_cache` 逻辑视图的读取，不是所有 backend 原始 KV tensor 的统一维度约定。这个 `num_queries_per_kv` 就是 GQA / MQA 的关键参数。
 
@@ -886,7 +886,7 @@ attention type
 
 比如 `Attention` 初始化时通过 `get_attn_backend(...)` 选择 backend，传入的是 `head_size`、`dtype`、`kv_cache_dtype`、`use_mla`、`has_sink`、`attn_type` 等。
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:318` 到 `vllm/vllm/model_executor/layers/attention/attention.py:328`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:349` 到 `vllm/vllm/model_executor/layers/attention/attention.py:369`
 
 但 backend 必须能处理：
 
@@ -996,7 +996,7 @@ num_q_per_kv = total_num_attention_heads // total_num_kv_heads
 assert num_q_per_kv % decode_context_parallel_size == 0
 ```
 
-位置：`vllm/vllm/config/model.py:1184` 到 `vllm/vllm/config/model.py:1207`
+位置：`vllm/vllm/config/model.py:1231` 到 `vllm/vllm/config/model.py:1254`
 
 这说明 DCP 对 GQA / MQA 不是随便开的：
 

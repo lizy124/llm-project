@@ -124,7 +124,7 @@ MLA：
 head_size = kv_lora_rank + qk_rope_head_dim
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:364`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:382`
 
 这说明 MLA 的 cache 维度不是 `qk_nope_head_dim + qk_rope_head_dim`，也不是普通 V head dim，而是：
 
@@ -154,7 +154,7 @@ vllm/vllm/model_executor/models/deepseek_v2.py
   → DeepseekV2MLAAttention
 ```
 
-对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:1121` 到 `vllm/vllm/model_executor/models/deepseek_v2.py:1138`
+对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:1206` 到 `vllm/vllm/model_executor/models/deepseek_v2.py:1216`
 
 所以 `use_mla` 是 DeepSeek 类模型进入 MLA 路径的关键开关。
 
@@ -183,9 +183,9 @@ DeepseekV2MLAAttention
 
 对应代码：
 
-- `MLAModules` 定义：`vllm/vllm/model_executor/layers/mla.py:13`
-- DeepSeek 组装 `MLAModules`：`vllm/vllm/model_executor/models/deepseek_v2.py:1051`
-- 创建 `MultiHeadLatentAttentionWrapper`：`vllm/vllm/model_executor/models/deepseek_v2.py:1071`
+- `MLAModules` 定义：`vllm/vllm/model_executor/layers/mla.py:14`
+- DeepSeek 组装 `MLAModules`：`vllm/vllm/model_executor/models/deepseek_v2.py:1126`
+- 创建 `MultiHeadLatentAttentionWrapper`：`vllm/vllm/model_executor/models/deepseek_v2.py:1146`
 
 ### 5.3 MultiHeadLatentAttentionWrapper 做什么
 
@@ -210,7 +210,7 @@ k_pe         # [tokens, 1, qk_rope_head_dim]
 8. 最后通过 o_proj 投影回 hidden size。
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/mla.py:120` 到 `vllm/vllm/model_executor/layers/mla.py:182`
+对应代码：`vllm/vllm/model_executor/layers/mla.py:120` 到 `vllm/vllm/model_executor/layers/mla.py:180`
 
 可以把它理解为：
 
@@ -226,7 +226,7 @@ MLAAttention 负责“cache 更新 + attention kernel 调用”。
 `MLAAttention` 定义在：
 
 ```text
-vllm/vllm/model_executor/layers/attention/mla_attention.py:322
+vllm/vllm/model_executor/layers/attention/mla_attention.py:339
 ```
 
 它的职责和普通 `Attention` 很像，但输入和 cache 语义完全不同。
@@ -246,7 +246,7 @@ get_attn_backend(
 )
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:387` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:394`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:404` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:411`
 
 这里最关键的是：
 
@@ -278,7 +278,7 @@ kv_b_proj
 indexer
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:446` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:468`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:461` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:482`
 
 ### 6.3 初始化阶段：创建 prefill backend
 
@@ -291,7 +291,7 @@ prefill_backend_cls = get_mla_prefill_backend(vllm_config)
 self.prefill_backend = prefill_backend_cls(...)
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:478` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:487`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:493` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:502`
 
 这意味着：
 
@@ -312,7 +312,7 @@ MLA prefill 则通过 mla/prefill/ 下的 backend 单独选择。
 block_size * num_kv_heads * (head_size + head_size_v) * dtype_size
 ```
 
-对应 `FullAttentionSpec.real_page_size_bytes`：`vllm/vllm/v1/kv_cache_interface.py:308`
+对应 `FullAttentionSpec.real_page_size_bytes`：`vllm/vllm/v1/kv_cache_interface.py:332`
 
 ### 7.2 MLA 的 cache 是单向量
 
@@ -328,7 +328,7 @@ MLAAttentionSpec(
 )
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:985` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:995`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1000` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1010`
 
 `MLACommonBackend.get_kv_cache_shape()` 也明确返回：
 
@@ -336,7 +336,7 @@ MLAAttentionSpec(
 (num_blocks, block_size, head_size)
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1201` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1208`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1216` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1223`
 
 DeepSeek V4、sliding-window MLA、sparse MLA 等模型或 backend 可能使用 `SlidingWindowMLASpec` 或 model-specific spec / layout，不能把所有 MLA cache 都简化为同一种 spec。也就是说普通 MLA cache 的形状可以理解为：
 
@@ -373,7 +373,7 @@ self.impl.do_kv_cache_update(
 )
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:553` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:579`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:553` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:608`
 
 真正写 cache 的默认实现在 `MLAAttentionImpl.do_kv_cache_update()`：
 
@@ -388,7 +388,7 @@ ops.concat_and_cache_mla(
 )
 ```
 
-对应代码：`vllm/vllm/v1/attention/backend.py:1043` 到 `vllm/vllm/v1/attention/backend.py:1063`
+对应代码：`vllm/vllm/v1/attention/backend.py:1011` 到 `vllm/vllm/v1/attention/backend.py:1031`
 
 这一步说明 cache 中每个 slot 实际写入的是：
 
@@ -428,7 +428,7 @@ kv_c_normed + k_pe
 `MLACommonMetadata` 定义在：
 
 ```text
-vllm/vllm/model_executor/layers/attention/mla_attention.py:1275
+vllm/vllm/model_executor/layers/attention/mla_attention.py:1291
 ```
 
 它是 MLA backend 的公共 metadata，和普通 attention metadata 相比，多了 MLA 特有的 prefill / decode 拆分信息。
@@ -468,7 +468,7 @@ prefill tokens：走 forward_mha
 `MLACommonPrefillMetadata` 定义在：
 
 ```text
-vllm/vllm/model_executor/layers/attention/mla_attention.py:1230
+vllm/vllm/model_executor/layers/attention/mla_attention.py:1246
 ```
 
 它保存 prefill 路径需要的信息：
@@ -490,7 +490,7 @@ prefill_backend
 `MLACommonDecodeMetadata` 定义在：
 
 ```text
-vllm/vllm/model_executor/layers/attention/mla_attention.py:1264
+vllm/vllm/model_executor/layers/attention/mla_attention.py:1281
 ```
 
 它保存 decode 路径需要的信息：
@@ -507,7 +507,7 @@ FlashMLA 会在它的子类 `FlashMLADecodeMetadata` 中额外加入：
 scheduler_metadata
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:108`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:109`
 
 ---
 
@@ -516,7 +516,7 @@ scheduler_metadata
 `MLACommonMetadataBuilder` 定义在：
 
 ```text
-vllm/vllm/model_executor/layers/attention/mla_attention.py:1385
+vllm/vllm/model_executor/layers/attention/mla_attention.py:1401
 ```
 
 它接收 ModelRunner 构造出来的 `CommonAttentionMetadata`，再把它翻译成 MLA 专用 metadata。
@@ -531,7 +531,7 @@ CommonAttentionMetadata
   → 返回 MLACommonMetadata
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1600` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1878`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1618` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1905`
 
 ### 9.1 为什么要 split decodes and prefills
 
@@ -557,7 +557,7 @@ num_decode_tokens
 num_prefill_tokens
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1623` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1632`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1641` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1650`
 
 ### 9.2 decode_threshold 和 query_len_support
 
@@ -571,7 +571,7 @@ UNIFORM：支持 batch 内统一 query_len
 VARLEN：支持 batch 内可变 query_len
 ```
 
-定义位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1130`
+定义位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1145`
 
 builder 会用 `reorder_batch_threshold` 来决定哪些请求归入 decode 路径。比如 FlashMLA：
 
@@ -580,7 +580,7 @@ query_len_support = UNIFORM
 reorder_batch_threshold = 128
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:118` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:122`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:118` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:120`
 
 这就是为什么部分小 prefill / spec decode query 也可能走 decode-style 路径。
 
@@ -599,7 +599,7 @@ token_to_seq
 workspace
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1657` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1833`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1675` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1860`
 
 这套 metadata 的作用是：
 
@@ -615,7 +615,7 @@ workspace
 
 `MLAAttention.forward_impl()` 是 MLA attention 真正执行 prefill / decode 的地方。
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:609`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:624`
 
 主流程可以压缩成：
 
@@ -642,7 +642,7 @@ kv_cache
 attn_metadata
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2275`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2344`
 
 它会先把当前新 token 的 compressed KV 展开：
 
@@ -670,8 +670,8 @@ prefill_backend.run_prefill_new_tokens(q, k, v, ...)
 
 对应代码：
 
-- 当前 token prefill：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2302` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:2323`
-- context chunk prefill：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2060` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:2165`
+- 当前 token prefill：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2371` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:2392`
+- context chunk prefill：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2129` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:2234`
 
 ### 10.2 decode：forward_mqa
 
@@ -718,9 +718,9 @@ _v_up_proj(attn_out)
 
 对应代码：
 
-- decode Q 转换：`vllm/vllm/model_executor/layers/attention/mla_attention.py:724` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:797`
-- V up projection：`vllm/vllm/model_executor/layers/attention/mla_attention.py:816` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:817`
-- `_v_up_proj` 实现：`vllm/vllm/model_executor/layers/attention/mla_attention.py:997`
+- decode Q 转换：`vllm/vllm/model_executor/layers/attention/mla_attention.py:739` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:812`
+- V up projection：`vllm/vllm/model_executor/layers/attention/mla_attention.py:831` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:832`
+- `_v_up_proj` 实现：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1012`
 
 ---
 
@@ -770,7 +770,7 @@ scheduler_metadata: FlashMLASchedMeta
 get_mla_metadata(seq_lens_device, num_q_tokens_per_head_k, 1, ...)
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:161` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:210`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:178` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:211`
 
 这里的 `1` 表示 decode path 按 MQA 方式处理，KV head 数等价为 1。
 
@@ -782,7 +782,7 @@ FlashMLA 的 decode 实现在：
 FlashMLAImpl.forward_mqa()
 ```
 
-位置：`vllm/vllm/v1/attention/backends/mla/flashmla.py:263`
+位置：`vllm/vllm/v1/attention/backends/mla/flashmla.py:266`
 
 核心调用是：
 
@@ -799,7 +799,7 @@ flash_mla_with_kvcache(
 )
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:329` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:339`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:332` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:340`
 
 如果是 FP8 KV cache，则调用：
 
@@ -807,7 +807,7 @@ flash_mla_with_kvcache(
 flash_mla_with_kvcache_fp8(...)
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:314` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:327`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla.py:318` 到 `vllm/vllm/v1/attention/backends/mla/flashmla.py:329`
 
 所以 FlashMLA backend 本质上接管的是：
 
@@ -839,7 +839,7 @@ block size = multiple of 16
 supports_batch_invariance = True
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:36` 到 `vllm/vllm/v1/attention/backends/mla/triton_mla.py:87`
+对应代码：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:83` 到 `vllm/vllm/v1/attention/backends/mla/triton_mla.py:120`
 
 ### 12.2 TritonMLA decode forward
 
@@ -849,7 +849,7 @@ supports_batch_invariance = True
 decode_attention_fwd(..., is_mla=True)
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:144` 到 `vllm/vllm/v1/attention/backends/mla/triton_mla.py:223`
+对应代码：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:191` 到 `vllm/vllm/v1/attention/backends/mla/triton_mla.py:243`
 
 其中 `is_mla=True` 告诉 kernel：
 
@@ -878,7 +878,7 @@ get_impl_cls() = FlashInferMLAImpl
 get_builder_cls() = FlashInferMLAMetadataBuilder
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:38` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:107`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:56` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:126`
 
 FlashInferMLA 当前只支持 SM100 / Blackwell，非 SM100 CUDA 默认不会选它。它还有一个额外点：
 
@@ -886,7 +886,7 @@ FlashInferMLA 当前只支持 SM100 / Blackwell，非 SM100 CUDA 默认不会选
 get_required_kv_cache_layout() = HND
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:103` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:105`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:122` 到 `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:126`
 
 attention selector 会读取 backend 的 required layout，并设置 KV cache layout：
 
@@ -962,7 +962,7 @@ attention backend 抽象类默认：
 is_mla() = False
 ```
 
-对应代码：`vllm/vllm/v1/attention/backend.py:237`
+对应代码：`vllm/vllm/v1/attention/backend.py:238`
 
 `MLACommonBackend` 重写为：
 
@@ -970,7 +970,7 @@ is_mla() = False
 is_mla() = True
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1221` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1227`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1236` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1242`
 
 在 backend 校验阶段，如果请求 `use_mla=True`，但 backend 不是 MLA backend，会报：
 
@@ -978,7 +978,7 @@ is_mla() = True
 MLA not supported
 ```
 
-对应代码：`vllm/vllm/v1/attention/backend.py:306` 到 `vllm/vllm/v1/attention/backend.py:310`
+对应代码：`vllm/vllm/v1/attention/backend.py:309` 到 `vllm/vllm/v1/attention/backend.py:313`
 
 backend registry 中注册了多种 MLA backend：
 
@@ -1022,7 +1022,7 @@ Sparse MLA 是在 MLA 基础上增加“只关注 top-k token”的稀疏检索�
 self.is_v32 = hasattr(config, "index_topk")
 ```
 
-对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:999`
+对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:1074`
 
 它会创建 `Indexer`，并通过 `MLAModules` 传入 `MultiHeadLatentAttentionWrapper`：
 
@@ -1033,7 +1033,7 @@ is_sparse=True
 topk_indices_buffer
 ```
 
-对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:1029` 到 `vllm/vllm/model_executor/models/deepseek_v2.py:1069`
+对应代码：`vllm/vllm/model_executor/models/deepseek_v2.py:1104` 到 `vllm/vllm/model_executor/models/deepseek_v2.py:1142`
 
 `MultiHeadLatentAttentionWrapper.forward()` 中，如果满足：
 
@@ -1067,7 +1067,7 @@ supported head_size = 576
 supported kv cache dtype = auto / bfloat16 / fp8_ds_mla / fp8
 ```
 
-对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla_sparse.py:90` 到 `vllm/vllm/v1/attention/backends/mla/flashmla_sparse.py:127`
+对应代码：`vllm/vllm/v1/attention/backends/mla/flashmla_sparse.py:90` 到 `vllm/vllm/v1/attention/backends/mla/flashmla_sparse.py:129`
 
 Sparse MLA 的 metadata 不再直接复用 `MLACommonMetadata`，而是有自己的 `FlashMLASparseMetadata`，包含：
 
@@ -1111,7 +1111,7 @@ DeepSeek V4 每 token 584 bytes：
 fp8_ds_mla
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:396` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:410`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:413` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:427`
 
 ---
 
@@ -1120,10 +1120,10 @@ fp8_ds_mla
 `MLAAttentionSpec` 定义在：
 
 ```text
-vllm/vllm/v1/kv_cache_interface.py:366
+vllm/vllm/v1/kv_cache_interface.py:385
 ```
 
-它继承自 `FullAttentionSpec`，但覆盖了 MLA 相关行为。
+它继承自 `FullAttentionSpec`，但通过 `num_kv_heads=1`、`head_size=kv_lora_rank + qk_rope_head_dim`、`compress_ratio` 和特殊 `real_page_size_bytes` 覆盖 MLA cache 的物理语义。
 
 ### 17.1 page size 计算
 
@@ -1135,7 +1135,7 @@ MLA page size 默认是：
 storage_block_size * num_kv_heads * head_size * dtype_size
 ```
 
-对应代码：`vllm/vllm/v1/kv_cache_interface.py:393` 到 `vllm/vllm/v1/kv_cache_interface.py:398`
+对应代码：`vllm/vllm/v1/kv_cache_interface.py:402` 到 `vllm/vllm/v1/kv_cache_interface.py:419`
 
 其中：
 
@@ -1154,7 +1154,7 @@ DeepSeek V4 等路径可能设置 `compress_ratio`，`MLAAttentionSpec.storage_b
 block_size // compress_ratio
 ```
 
-对应代码：`vllm/vllm/v1/kv_cache_interface.py:379` 到 `vllm/vllm/v1/kv_cache_interface.py:381`
+对应代码：`vllm/vllm/v1/kv_cache_interface.py:398` 到 `vllm/vllm/v1/kv_cache_interface.py:399`
 
 这说明某些 MLA cache 的物理存储 token 数可能和逻辑 block size 不完全一致。
 
@@ -1167,7 +1167,7 @@ DeepSeek V4：storage_block_size * 584
 DeepSeek V3.2：block_size * 656
 ```
 
-对应代码：`vllm/vllm/v1/kv_cache_interface.py:384` 到 `vllm/vllm/v1/kv_cache_interface.py:392`
+对应代码：`vllm/vllm/v1/kv_cache_interface.py:402` 到 `vllm/vllm/v1/kv_cache_interface.py:410`
 
 这说明 MLA cache spec 不只是“shape”，还要精确描述 backend 特定的物理 cache 格式。
 
@@ -1200,7 +1200,7 @@ concat(kv_c_normed, k_pe)
 @maybe_transfer_kv_layer
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1065` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1067`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1081` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1083`
 
 这说明 MLA attention 仍然走 vLLM attention layer 的 KV transfer hook，但传输的数据语义是 MLA cache，而不是普通 K/V cache。
 
@@ -1212,7 +1212,7 @@ concat(kv_c_normed, k_pe)
 KV sharing is not supported for MLA
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1991` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:1993`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:2027` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:2029`
 
 所以 MLA 当前不支持普通 attention 中某些 KV sharing 优化。
 
@@ -1226,7 +1226,7 @@ KV sharing is not supported for MLA
 则禁用 prefix caching。
 ```
 
-对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:426` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:440`
+对应代码：`vllm/vllm/model_executor/layers/attention/mla_attention.py:441` 到 `vllm/vllm/model_executor/layers/attention/mla_attention.py:455`
 
 这说明 MLA 的 prefix caching 不是完全不可用，但会受到 backend 和 batch invariance 约束。需要注意一个命名细节：MLA decode backend 名称是 `FLASHINFER_MLA`，而源码里这个保护分支检查的是字符串 `FLASHINFER`；因此不要把它写成已明确覆盖 `FLASHINFER_MLA`，更准确地说这是当前实现中的命名 / 逻辑疑点。
 

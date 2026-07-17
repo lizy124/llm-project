@@ -204,7 +204,7 @@ FA3 extension 可导入；
 当前设备是 compute capability 9.x。
 ```
 
-FA3 的 scheduler metadata 入口是 `get_scheduler_metadata()`，在 `vllm/vllm_flash_attn/flash_attn_interface.py:121`。`FlashAttentionMetadataBuilder` 在 full cuda graph + FA3 时会预分配 scheduler metadata buffer，见 `vllm/v1/attention/backends/flash_attn.py:372`。
+FA3 的 scheduler metadata 入口是 `get_scheduler_metadata()`，在 `vllm/vllm_flash_attn/flash_attn_interface.py:121`。`FlashAttentionMetadataBuilder` 在 full cuda graph + FA3 时会预分配 scheduler metadata buffer，见 `vllm/v1/attention/backends/flash_attn.py:396`。
 
 ### 4.4 v4：CuTe / Blackwell 相关的新路径
 
@@ -625,7 +625,7 @@ DCP world size == 1；
 启发式判断 cascade 比普通 FlashDecoding 更划算。
 ```
 
-真正执行在 `cascade_attention()`，见 `vllm/v1/attention/backends/flash_attn.py:1250`。
+真正执行在 `cascade_attention()`，见 `vllm/v1/attention/backends/flash_attn.py:1568`。
 
 限制：
 

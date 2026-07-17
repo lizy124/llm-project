@@ -101,7 +101,7 @@ skipped: 0 1 2 3
 
 对应 KV cache manager 的注释也使用了这个例子：`SlidingWindowManager.get_num_skipped_tokens()` 会在 `num_computed_tokens=7, sliding_window=4` 时返回 `4`，表示 token `0..3` 对下一步 attention 已经不可见。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:770`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1020`
 
 ### 2.3 chunked local attention
 
@@ -124,7 +124,7 @@ num_skipped_tokens = floor(num_computed_tokens / attention_chunk_size)
 
 即已经落在当前 chunk 左侧的完整 chunk 都可以跳过。
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:905`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1163`
 
 ---
 
@@ -134,7 +134,7 @@ num_skipped_tokens = floor(num_computed_tokens / attention_chunk_size)
 
 `ModelConfig.get_sliding_window()` 很直接：从 `hf_text_config.sliding_window` 读取。
 
-位置：`vllm/vllm/config/model.py:1225`
+位置：`vllm/vllm/config/model.py:1272`
 
 ```text
 hf_text_config.sliding_window
@@ -148,7 +148,7 @@ hf_text_config.sliding_window
 2. 如果用户设置 disable_sliding_window，最终会把 hf_text_config.sliding_window 置为 None。
 ```
 
-位置：`vllm/vllm/config/model.py:648`、`vllm/vllm/config/model.py:716`
+位置：`vllm/vllm/config/model.py:672`、`vllm/vllm/config/model.py:736`
 
 这意味着：
 
@@ -162,7 +162,7 @@ sliding_window = 0
 
 创建 `CacheConfig` 时，`arg_utils` 会先判断模型是否是 interleaved attention。
 
-位置：`vllm/vllm/engine/arg_utils.py:1825`
+位置：`vllm/vllm/engine/arg_utils.py:1875`
 
 关键逻辑是：
 
@@ -195,7 +195,7 @@ else:
 
 `Attention.__init__()` 的优先级是：
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:227`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:259`
 
 ```text
 if per_layer_sliding_window is not None:
@@ -234,7 +234,7 @@ layer_types[effective_layer_idx] == "sliding_attention"
 
 `attention_chunk_size` 也是从 HF text config 读取：
 
-位置：`vllm/vllm/config/model.py:549`
+位置：`vllm/vllm/config/model.py:570`
 
 ```text
 self.attention_chunk_size = getattr(hf_text_config, "attention_chunk_size", None)
@@ -268,7 +268,7 @@ attention_chunk_size → ChunkedLocalAttention 包装普通 backend
 self.sliding_window
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:304`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:338`
 
 它同时把 `sliding_window` 传给具体 backend impl：
 
@@ -431,7 +431,7 @@ attention backend：仍然按 sliding/local 语义计算 attention
 
 `SlidingWindowManager.get_num_skipped_tokens()`：
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:770`
+位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:1020`
 
 ```text
 return max(0, num_computed_tokens - sliding_window + 1)
@@ -1134,7 +1134,7 @@ per_layer_sliding_window
 
 让每层自己声明是否 sliding。
 
-位置：`vllm/vllm/engine/arg_utils.py:1825`
+位置：`vllm/vllm/engine/arg_utils.py:1875`
 
 ### 12.5 chunked local attention 和 sliding window 是一回事吗？
 
