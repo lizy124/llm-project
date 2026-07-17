@@ -1003,7 +1003,7 @@ attention type：
 decode_attention_fwd(..., is_mla=True)
 ```
 
-源码位置：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:144`
+源码位置：`vllm/vllm/v1/attention/backends/mla/triton_mla.py:191`
 
 它也可以返回 LSE：
 
@@ -1039,7 +1039,7 @@ can_return_lse_for_decode = True
 
 `CommonAttentionMetadata` 是所有 backend 的公共输入，但不是最终 kernel 参数。
 
-源码位置：`vllm/vllm/v1/attention/backend.py:361`
+源码位置：`vllm/vllm/v1/attention/backend.py:395`
 
 公共字段包括：
 
@@ -1207,7 +1207,7 @@ dense FlashMLA 调 `flash_mla_with_kvcache`；sparse FlashMLA 还要引入 topk 
 
 `AttentionCGSupport` 定义了 backend 对 CUDA graph 的支持等级。
 
-源码位置：`vllm/vllm/v1/attention/backend.py:548`
+源码位置：`vllm/vllm/v1/attention/backend.py:583`
 
 ```text
 ALWAYS：
