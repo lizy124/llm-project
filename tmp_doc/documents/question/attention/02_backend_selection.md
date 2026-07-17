@@ -2,17 +2,18 @@
 
 源码位置：
 
-- `code/vllm/vllm/config\attention.py`
-- `code/vllm/vllm/engine\arg_utils.py`
-- `code/vllm/vllm/v1\attention\selector.py`
-- `code/vllm/vllm/v1\attention\backend.py`
-- `code/vllm/vllm/v1\attention\backends\registry.py`
-- `code/vllm/vllm/platforms\cuda.py`
-- `code/vllm/vllm/platforms\rocm.py`
-- `code/vllm/vllm/platforms\cpu.py`
-- `code/vllm/vllm/model_executor\layers\attention\attention.py`
-- `code/vllm/vllm/model_executor\layers\attention\mla_attention.py`
-- `code/vllm/vllm/v1\worker\gpu_model_runner.py`
+- `code/vllm/vllm/config/attention.py`
+- `code/vllm/vllm/engine/arg_utils.py`
+- `code/vllm/vllm/v1/attention/selector.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/registry.py`
+- `code/vllm/vllm/platforms/cuda.py`
+- `code/vllm/vllm/platforms/rocm.py`
+- `code/vllm/vllm/platforms/cpu.py`
+- `code/vllm/vllm/platforms/xpu.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
 
 本问题关注：vLLM V1 如何把用户显式配置、模型 attention 形态、KV cache dtype、block size、硬件平台、compute capability、backend 能力约束，最终收敛成一个 `AttentionBackend` 类；以及这个选择结果如何继续影响 attention layer、metadata builder、CUDA graph、KV cache shape 和 forward 实现。
 
@@ -222,7 +223,7 @@ CLI 层先复制 `self.attention_config`，再处理 `self.attention_backend`。
   否则把 --attention-backend 解析后写入 attention_config.backend
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2121`
+位置：`code/vllm/vllm/engine/arg_utils.py:2235`
 
 这意味着：
 
@@ -283,6 +284,9 @@ FLASH_ATTN_MLA      → vllm.v1.attention.backends.mla.flashattn_mla.FlashAttnML
 FLASHINFER_MLA      → vllm.v1.attention.backends.mla.flashinfer_mla.FlashInferMLABackend
 TRITON_MLA          → vllm.v1.attention.backends.mla.triton_mla.TritonMLABackend
 TOKENSPEED_MLA      → vllm.v1.attention.backends.mla.tokenspeed_mla.TokenspeedMLABackend
+CUTLASS_MLA         → vllm.v1.attention.backends.mla.cutlass_mla.CutlassMLABackend
+FLASHINFER_MLA_SPARSE_SM120 → vllm.v1.attention.backends.mla.flashinfer_mla_sparse.FlashInferMLASparseSM120Backend
+HPC_ATTN            → vllm.v1.attention.backends.hpc_attn.HpcAttentionBackend
 CPU_ATTN            → vllm.v1.attention.backends.cpu_attn.CPUAttentionBackend
 TURBOQUANT          → vllm.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend
 CUSTOM              → 运行时注册的自定义 backend
@@ -292,7 +296,7 @@ CUSTOM              → 运行时注册的自定义 backend
 
 `AttentionBackendEnum.get_class()` 会通过 `resolve_obj_by_qualname()` 懒加载真实类。
 
-位置：`code/vllm/vllm/v1/attention/backends/registry.py:128`
+位置：`code/vllm/vllm/v1/attention/backends/registry.py:141`
 
 这个 registry 还支持 override / custom backend：
 
@@ -301,7 +305,7 @@ register_backend(AttentionBackendEnum.FLASH_ATTN, "my.module.MyBackend")
 register_backend(AttentionBackendEnum.CUSTOM, "my.module.CustomBackend")
 ```
 
-位置：`code/vllm/vllm/v1/attention/backends/registry.py:220`
+位置：`code/vllm/vllm/v1/attention/backends/registry.py:233`
 
 所以 enum 是“名字和默认类路径”，最终类路径可以被运行时 override。
 
@@ -437,7 +441,7 @@ set_kv_cache_layout(required_layout)
 
 `AttentionBackend` 抽象类定义在 `backend.py`。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:55`
+位置：`code/vllm/vllm/v1/attention/backend.py:56`
 
 一个 backend 最核心要提供：
 
@@ -485,7 +489,7 @@ KV connector
 backend 自定义组合条件
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:276`
+位置：`code/vllm/vllm/v1/attention/backend.py:309`
 
 它返回的是：
 
@@ -515,7 +519,7 @@ supports_combination(...)
 
 返回具体不合法原因。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:261`
+位置：`code/vllm/vllm/v1/attention/backend.py:294`
 
 ---
 
@@ -527,7 +531,7 @@ CUDA 平台选择逻辑在 `platforms/cuda.py`。
 
 优先级函数是 `_get_backend_priorities()`。
 
-位置：`code/vllm/vllm/platforms/cuda.py:79`
+位置：`code/vllm/vllm/platforms/cuda.py:83`
 
 它按两个大维度分支：
 
@@ -539,8 +543,8 @@ use_mla = True ：DeepSeek-style MLA attention
 再按 device capability 分支：
 
 ```text
-major == 10：Blackwell / SM 10.x
-其他：Ampere / Hopper / 旧 CUDA GPU 路径
+标准 attention：major == 10 走 Blackwell / SM 10.x 优先级，否则走通用 CUDA 优先级；
+MLA attention：major == 10、major == 12 和其他 CUDA GPU 分别有不同候选列表。
 ```
 
 ### 8.2 标准 attention 的 CUDA 自动优先级
@@ -555,7 +559,7 @@ Blackwell / SM 10.x：
 5. TURBOQUANT
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:133`
+位置：`code/vllm/vllm/platforms/cuda.py:144`
 
 非 Blackwell：
 
@@ -567,7 +571,7 @@ Blackwell / SM 10.x：
 5. TURBOQUANT
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:141`
+位置：`code/vllm/vllm/platforms/cuda.py:153`
 
 直观理解：
 
@@ -591,19 +595,29 @@ Blackwell / SM 10.x：
 7. sparse MLA 候选
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:87`
+位置：`code/vllm/vllm/platforms/cuda.py:92`
 
-非 Blackwell：
+SM 12.x：
+
+```text
+1. TRITON_MLA
+2. FLASHINFER_MLA_SPARSE_SM120
+```
+
+位置：`code/vllm/vllm/platforms/cuda.py:129`
+
+其他 CUDA GPU：
 
 ```text
 1. FLASH_ATTN_MLA
 2. FLASHMLA
 3. FLASHINFER_MLA
 4. TRITON_MLA
-5. FLASHMLA_SPARSE
+5. FLASH_ATTN_MLA_SPARSE
+6. FLASHMLA_SPARSE
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:124`
+位置：`code/vllm/vllm/platforms/cuda.py:135`
 
 这里要注意两点：
 
@@ -614,13 +628,13 @@ Blackwell / SM 10.x：
 
 `AttentionConfig.backend` / `--attention-backend` 传给 `get_attn_backend(use_mla=True)`，主要决定 MLA attention backend / decode 主路径；MLA prefill backend 由 `mla_prefill_backend` 或自动逻辑决定，入口在 `get_mla_prefill_backend(vllm_config)`。因此 `--attention-backend FLASHMLA` 不等价于 prefill 也走 FlashMLA。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:472`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:493`
 
 ### 8.4 Blackwell sparse MLA 的特殊排序
 
 CUDA Blackwell 上 sparse MLA 后端会根据 KV cache dtype 和 head 数选择顺序。
 
-位置：`code/vllm/vllm/platforms/cuda.py:89`
+位置：`code/vllm/vllm/platforms/cuda.py:94`
 
 逻辑是：
 
@@ -641,7 +655,7 @@ CUDA Blackwell 上 sparse MLA 后端会根据 KV cache dtype 和 head 数选择�
 
 `CudaPlatformBase.get_attn_backend_cls()` 首先处理 `selected_backend`。
 
-位置：`code/vllm/vllm/platforms/cuda.py:351`
+位置：`code/vllm/vllm/platforms/cuda.py:391`
 
 如果用户显式指定：
 
@@ -652,7 +666,7 @@ CUDA Blackwell 上 sparse MLA 后端会根据 KV cache dtype 和 head 数选择�
 4. 否则返回 selected_backend.get_path()
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:360`
+位置：`code/vllm/vllm/platforms/cuda.py:401`
 
 所以显式选择失败时不会自动 fallback。
 
@@ -669,11 +683,11 @@ CUDA Blackwell 上 sparse MLA 后端会根据 KV cache dtype 和 head 数选择�
 6. 如果没有合法 backend，抛出包含所有原因的 ValueError
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:316`
+位置：`code/vllm/vllm/platforms/cuda.py:354`
 
 如果用户指定了 `--block-size`，且这个 block size 排除了更高优先级 backend，会打印 warning。
 
-位置：`code/vllm/vllm/platforms/cuda.py:417`
+位置：`code/vllm/vllm/platforms/cuda.py:457`
 
 这解释了一个常见现象：
 
@@ -692,7 +706,7 @@ ROCm 平台选择逻辑在 `platforms/rocm.py`。
 
 入口是 `_get_backend_priorities()`。
 
-位置：`code/vllm/vllm/platforms/rocm.py:389`
+位置：`code/vllm/vllm/platforms/rocm.py:407`
 
 它按三类分支：
 
@@ -710,7 +724,7 @@ standard attention
 ROCM_AITER_MLA_SPARSE
 ```
 
-位置：`code/vllm/vllm/platforms/rocm.py:396`
+位置：`code/vllm/vllm/platforms/rocm.py:414`
 
 ### 9.3 ROCm MLA
 
@@ -726,7 +740,7 @@ ROCM_AITER_MLA_SPARSE
   1. TRITON_MLA
 ```
 
-位置：`code/vllm/vllm/platforms/rocm.py:399`
+位置：`code/vllm/vllm/platforms/rocm.py:417`
 
 ### 9.4 ROCm standard attention
 
@@ -740,17 +754,18 @@ ROCM_AITER_MLA_SPARSE
 5. TURBOQUANT
 ```
 
-位置：`code/vllm/vllm/platforms/rocm.py:411`
+位置：`code/vllm/vllm/platforms/rocm.py:429`
 
-一个重要细节：
+两个重要细节：
 
 ```text
-ROCM_ATTN 使用 (2, num_blocks, ...) KV cache layout；
-这和要求 blocks-first layout 的 KV connector 不兼容；
-所以 use_kv_connector=True 时不会把 ROCM_ATTN 加入候选。
+1. ROCM_ATTN 使用 (2, num_blocks, ...) KV cache layout；
+   这和要求 blocks-first layout 的 KV connector 不兼容；
+   所以 use_kv_connector=True 时不会把 ROCM_ATTN 加入候选。
+2. encoder-decoder 模型也会从自动候选中移除 ROCM_ATTN，避免 encoder / decoder backend layout 不匹配。
 ```
 
-位置：`code/vllm/vllm/platforms/rocm.py:411`
+位置：`code/vllm/vllm/platforms/rocm.py:429`；encoder-decoder 过滤位置：`code/vllm/vllm/platforms/rocm.py:516`
 
 ### 9.5 ROCm 的校验和选择流程
 
@@ -761,7 +776,7 @@ ROCm 和 CUDA 一样：
 自动 backend：按优先级遍历候选，选择第一个合法 backend。
 ```
 
-位置：`code/vllm/vllm/platforms/rocm.py:478`
+位置：`code/vllm/vllm/platforms/rocm.py:545`
 
 ---
 
@@ -790,19 +805,19 @@ Sparse Attention is not supported on CPU
 
 ### 10.2 XPU
 
-XPU 平台重写了 `get_attn_backend_cls()`：会先设置 NHD layout，再按 TurboQuant / sparse / MLA / 显式 backend / dtype 等分支返回 backend。一个特殊点是：如果显式选择 `FLASH_ATTN` 但 dtype 是 `torch.float32`，XPU 会 fallback 到 `TRITON_ATTN`。
+XPU 平台重写了 `get_attn_backend_cls()`：会先设置 NHD layout，再按 TurboQuant / sparse / MLA / 显式 backend / multimodal prefix / dtype 等分支返回 backend。特殊点是：如果启用 multimodal prefix，或显式选择 `FLASH_ATTN` 但 dtype 是 `torch.float32`，XPU 会 fallback 到 `TRITON_ATTN`。
 
-位置：`code/vllm/vllm/platforms/xpu.py:50` 到 `code/vllm/vllm/platforms/xpu.py:95`
+位置：`code/vllm/vllm/platforms/xpu.py:121` 到 `code/vllm/vllm/platforms/xpu.py:176`
 
 XPU 也有自己的 config update / block size update；对 GDN attention 这类内核，还会把 block size 对齐到 kernel 支持的大小。
 
-位置：`code/vllm/vllm/platforms/xpu.py:246`
+位置：`code/vllm/vllm/platforms/xpu.py:260`
 
 ### 10.3 ViT attention 不是普通 decoder attention selector
 
 平台基类提供 `get_vit_attn_backend()`，默认是 `TORCH_SDPA`。
 
-位置：`code/vllm/vllm/platforms/interface.py:278`
+位置：`code/vllm/vllm/platforms/interface.py:389`
 
 CUDA / ROCm 会 override ViT backend 选择，例如 CUDA 会在：
 
@@ -815,7 +830,7 @@ FLASHINFER
 
 之间选择。
 
-位置：`code/vllm/vllm/platforms/cuda.py:444`
+位置：`code/vllm/vllm/platforms/cuda.py:489`
 
 所以 ViT attention backend 选择不完全等同于 decoder attention 的 `get_attn_backend()` 主链路。
 
@@ -827,7 +842,7 @@ FLASHINFER
 
 入口：`Attention.__init__()`
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:190`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:221`
 
 如果调用者没有显式传入 `attn_backend`，就会调用：
 
@@ -844,7 +859,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:304`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:349`
 
 这里几个参数的来源很关键：
 
@@ -865,13 +880,13 @@ impl_cls = self.attn_backend.get_impl_cls()
 self.impl = impl_cls(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:373`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:417`
 
 ### 11.2 MLAAttention 层
 
 入口：`MLAAttention.__init__()`
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:322`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:339`
 
 如果没有显式传入 `attn_backend`：
 
@@ -886,7 +901,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:386`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:404`
 
 MLA 的 `head_size` 不是普通 attention 的 head dim，而是：
 
@@ -894,7 +909,7 @@ MLA 的 `head_size` 不是普通 attention 的 head dim，而是：
 kv_lora_rank + qk_rope_head_dim
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:363`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:381`
 
 因此 MLA backend 的 head size 判断要按 MLA cache 表示理解，而不是普通 Q/K/V head dim。
 
@@ -906,9 +921,9 @@ kv_lora_rank + qk_rope_head_dim
 attn_backend is not None：直接使用传入 backend，不再调用 get_attn_backend()
 ```
 
-标准 attention 位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:315`
+标准 attention 位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:348`
 
-MLA 位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:379`
+MLA 位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:397`
 
 这种路径常用于特殊模型包装、测试或动态 subclass backend。
 
@@ -922,7 +937,7 @@ backend selection 发生在 attention layer 初始化时，但真正“批处理
 
 `GPUModelRunner.initialize_attn_backend()` 会遍历 `kv_cache_config.kv_cache_groups`。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6736`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6854`
 
 它对每个 layer 调用：
 
@@ -930,7 +945,7 @@ backend selection 发生在 attention layer 初始化时，但真正“批处理
 attn_backend = layers[layer_name].get_attn_backend()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6777`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6896`
 
 然后按这个 key 聚合：
 
@@ -940,7 +955,7 @@ layer KVCacheSpec
 num_heads_q
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6796`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6915`
 
 聚合的结果是 `AttentionGroup`。
 
@@ -948,7 +963,7 @@ num_heads_q
 同一 KV cache group 内，backend 相同、KV spec 相同、num_heads_q 相同的 layer 可以共享 metadata builder。
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6807`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6925`
 
 ### 12.2 backend 会影响 CUDA graph 模式
 
@@ -959,7 +974,7 @@ builder_cls = attn_backend.get_builder_cls()
 cg_support = builder_cls.get_cudagraph_support(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6895`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7014`
 
 然后取最保守的支持级别，交给：
 
@@ -967,7 +982,7 @@ cg_support = builder_cls.get_cudagraph_support(...)
 compilation_config.resolve_cudagraph_mode_and_sizes(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6904`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7022`
 
 所以 backend 不只是影响 attention kernel，还会影响 CUDA graph capture 能不能开、怎么开、capture size 怎么定。
 
@@ -975,7 +990,7 @@ compilation_config.resolve_cudagraph_mode_and_sizes(...)
 
 `initialize_metadata_builders()` 会让每个 `AttentionGroup` 创建 metadata builder。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6843`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6961`
 
 核心关系：
 
@@ -995,7 +1010,7 @@ AttentionGroup.backend
 
 `AttentionMetadataBuilder` 是 backend 和 ModelRunner 之间的协议层。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533`
+位置：`code/vllm/vllm/v1/attention/backend.py:600`
 
 它至少要实现：
 
@@ -1003,7 +1018,7 @@ AttentionGroup.backend
 build(common_prefix_len, common_attn_metadata, fast_build=False)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:599`
+位置：`code/vllm/vllm/v1/attention/backend.py:667`
 
 输入是通用的 `CommonAttentionMetadata`，输出是 backend 自己的 `AttentionMetadata`。
 
@@ -1013,6 +1028,7 @@ build(common_prefix_len, common_attn_metadata, fast_build=False)
 
 ```text
 query_start_loc
+query_start_loc_cpu
 seq_lens
 num_reqs
 num_actual_tokens
@@ -1021,13 +1037,20 @@ max_seq_len
 block_table_tensor
 slot_mapping
 causal
+logits_indices_padded
+num_logits_indices
 encoder_seq_lens
+encoder_seq_lens_cpu
+dcp_local_seq_lens
+dcp_local_seq_lens_cpu
 positions
 is_prefilling
+seq_lens_cpu_upper_bound
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:361`
+位置：`code/vllm/vllm/v1/attention/backend.py:395`
 
 这是一份“所有 backend 都可能用到的 batch 描述”。
 
@@ -1053,11 +1076,11 @@ Flex builder 会构造更灵活的 block mask / prefix mask。
 reorder_batch_threshold
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:539`
+位置：`code/vllm/vllm/v1/attention/backend.py:607`
 
 ModelRunner 会收集所有 group 的 threshold，取最保守值。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6933`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7052`
 
 这会影响 decode / prefill 混合 batch 的排列方式。
 
@@ -1081,7 +1104,7 @@ kv_cache_shape = attn_backend.get_kv_cache_shape(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7103`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7264`
 
 这意味着不同 backend 可以有不同 KV cache layout，例如：
 
@@ -1099,7 +1122,7 @@ ModelRunner 会尝试读取：
 attn_backend.get_kv_cache_stride_order()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7111`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7272`
 
 如果 backend 实现了这个方法，就按它返回的顺序重排物理维度。
 
@@ -1129,7 +1152,7 @@ current_platform.update_block_size_for_backend(vllm_config)
   cache_config.block_size = backend_cls.get_preferred_block_size(DEFAULT_BLOCK_SIZE)
 ```
 
-位置：`code/vllm/vllm/platforms/interface.py:512`
+位置：`code/vllm/vllm/platforms/interface.py:609`
 
 这解释了为什么 selector 里用户没指定 block size 时传 `None`：
 
@@ -1146,14 +1169,15 @@ current_platform.update_block_size_for_backend(vllm_config)
 `Attention.forward()` 会：
 
 ```text
-1. reshape query/key/value
-2. 必要时做 query quantization
-3. 从 forward context 取 attention metadata / kv_cache / slot_mapping
-4. 调用 unified_attention_with_output(...)
-5. unified_attention_with_output 再调用 self.impl.forward(...)
+1. 必要时计算 KV scales；
+2. 必要时做 query quantization；
+3. 分配 output，并 reshape query / output / 可用的 key/value；
+4. 对 forward 不包含 KV cache update 的 backend，先调用 unified_kv_cache_update(...)；
+5. 调用 unified_attention_with_output(...)；
+6. unified_attention_with_output 再从 forward context 取 attention metadata / kv_cache / slot_mapping，并调用 self.impl.forward(...)。
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:438`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:485`
 
 最终调用：
 
@@ -1170,7 +1194,7 @@ self.impl.forward(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:753`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:830`
 
 这里的 `self.impl` 就是 backend selection 后的 `backend.get_impl_cls()`。
 
@@ -1182,7 +1206,7 @@ self.impl.forward(
 forward_includes_kv_cache_update: bool = True
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:65`
+位置：`code/vllm/vllm/v1/attention/backend.py:67`
 
 如果某 backend 不把 KV cache update 包在 forward 里，`Attention.forward()` 会先调用：
 
@@ -1192,7 +1216,7 @@ unified_kv_cache_update(...)
 
 再调用 attention。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:491`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:540`
 
 这说明 backend selection 会影响：
 
@@ -1209,7 +1233,7 @@ forward_mha：prefill / compute-friendly path
 forward_mqa：decode / data-movement-friendly path
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:892`
+位置：`code/vllm/vllm/v1/attention/backend.py:943`
 
 `MLAAttention.forward_impl()` 会根据 metadata 中的：
 
@@ -1226,7 +1250,7 @@ self.impl.forward_mha(...)
 self.impl.forward_mqa(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:699`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:696`
 
 这就是为什么 MLA backend selection 比标准 attention 更复杂：
 
@@ -1272,7 +1296,7 @@ backend=FLASH_ATTN
 ValueError: Selected backend FLASH_ATTN is not valid for this configuration. Reason: [...]
 ```
 
-但这不是所有平台的通用规则：CPU 会忽略非 `CPU_ATTN` 的显式 backend 并返回 `CPU_ATTN`；XPU 在显式 `FLASH_ATTN` 且 dtype 为 `torch.float32` 时会 fallback 到 `TRITON_ATTN`。
+但这不是所有平台的通用规则：CPU 会忽略非 `CPU_ATTN` 的显式 backend 并返回 `CPU_ATTN`；XPU 在 multimodal prefix 或 dtype 为 `torch.float32` 时会 fallback 到 `TRITON_ATTN`。
 
 ### 16.3 为什么 CUDA / ROCm 不 fallback
 
@@ -1294,7 +1318,7 @@ supports_dtype(dtype)
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:162`
+位置：`code/vllm/vllm/v1/attention/backend.py:163`
 
 ### 17.2 KV cache dtype
 
@@ -1321,7 +1345,7 @@ supports_kv_cache_dtype(kv_cache_dtype)
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:167`
+位置：`code/vllm/vllm/v1/attention/backend.py:168`
 
 ### 17.3 block size
 
@@ -1335,7 +1359,7 @@ supports_block_size(block_size)
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:174`
+位置：`code/vllm/vllm/v1/attention/backend.py:176`
 
 如果用户没有指定 block size，则：
 
@@ -1355,9 +1379,9 @@ DeviceCapability(major, minor)
 
 传给 backend 校验。
 
-CUDA 抽象 stub 位置：`code/vllm/vllm/platforms/cuda.py:218`；实际实现分别在 NVML / non-NVML 平台类中：`code/vllm/vllm/platforms/cuda.py:671`、`code/vllm/vllm/platforms/cuda.py:907`
+CUDA 抽象 stub 位置：`code/vllm/vllm/platforms/cuda.py:256`；实际实现分别在 NVML / non-NVML 平台类中：`code/vllm/vllm/platforms/cuda.py:728`、`code/vllm/vllm/platforms/cuda.py:964`
 
-ROCm 获取位置：`code/vllm/vllm/platforms/rocm.py:665`
+ROCm 获取位置：`code/vllm/vllm/platforms/rocm.py:698`
 
 backend 会通过：
 
@@ -1367,7 +1391,7 @@ supports_compute_capability(device_capability)
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:256`
+位置：`code/vllm/vllm/v1/attention/backend.py:290`
 
 ### 17.5 attention type
 
@@ -1380,7 +1404,7 @@ encoder_only
 encoder_decoder
 ```
 
-定义位置：`code/vllm/vllm/v1/attention/backend.py:32`
+定义位置：`code/vllm/vllm/v1/attention/backend.py:33`
 
 backend 会通过：
 
@@ -1392,7 +1416,7 @@ supports_attn_type(attn_type)
 
 默认 backend 只支持 decoder，其他类型需要 backend override。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:248`
+位置：`code/vllm/vllm/v1/attention/backend.py:281`
 
 ### 17.6 multimodal prefix / non-causal / sink
 
@@ -1406,7 +1430,7 @@ supports_sink()
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:208`
+位置：`code/vllm/vllm/v1/attention/backend.py:241`
 
 例如多模态 prefix LM 要求部分 multimodal token 能做 full / bidirectional attention，不支持该能力的 backend 会被排除。
 
@@ -1430,11 +1454,11 @@ supports_kv_connector()
 
 过滤。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:244`
+位置：`code/vllm/vllm/v1/attention/backend.py:277`
 
 ROCm 还会在候选阶段直接跳过某些 layout 不兼容的 backend，例如 `ROCM_ATTN`。
 
-位置：`code/vllm/vllm/platforms/rocm.py:411`
+位置：`code/vllm/vllm/platforms/rocm.py:429`
 
 ---
 
@@ -1450,7 +1474,7 @@ if use_mla != cls.is_mla():
   use_mla=False 且 backend 是 MLA → non-MLA not supported
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:306`
+位置：`code/vllm/vllm/v1/attention/backend.py:339`
 
 所以：
 
@@ -1467,7 +1491,7 @@ MLAAttention 不会误选标准 backend。
 use_sparse == backend.is_sparse()
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:313`
+位置：`code/vllm/vllm/v1/attention/backend.py:346`
 
 因此：
 
@@ -1484,7 +1508,7 @@ MLAAttention 在 decode backend 选完后，还会创建：
 self.prefill_backend = get_mla_prefill_backend(vllm_config)(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:472`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:493`
 
 这意味着一个 MLA layer 里可能同时存在：
 
@@ -1503,7 +1527,7 @@ prefill backend：FLASH_ATTN / FLASHINFER / TRTLLM_RAGGED / TOKENSPEED_MLA / ...
 (num_blocks, block_size, head_size)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1195`
+位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1216`
 
 普通 attention backend 通常需要同时存 K 和 V；MLA 存的是 compressed latent KV 与 rope 相关部分，语义不同。
 
@@ -1600,7 +1624,7 @@ FLEX_ATTENTION
 TURBOQUANT
 ```
 
-位置：`code/vllm/vllm/platforms/cuda.py:133`
+位置：`code/vllm/vllm/platforms/cuda.py:144`
 
 所以只要 FlashInfer 当前配置合法，它会优先于 FlashAttention。
 
@@ -1699,7 +1723,7 @@ subclass_attention_backend(...)
 subclass_attention_backend_with_overrides(...)
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:1034`
+位置：`code/vllm/vllm/v1/attention/backend.py:1114`
 
 ### 23.7 FlashAttention 版本在哪里选？
 

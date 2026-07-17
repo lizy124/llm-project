@@ -75,7 +75,7 @@ CommonAttentionMetadata 说明“这一批 token 和 KV cache 长什么样”，
 
 `AttentionBackend` 是 backend 家族的抽象类。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:55`
+位置：`code/vllm/vllm/v1/attention/backend.py:56`
 
 它最关键的职责包括：
 
@@ -108,7 +108,7 @@ backend class
 
 `AttentionMetadata` 是 backend-specific metadata 的基类。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:354`
+位置：`code/vllm/vllm/v1/attention/backend.py:387`
 
 它本身只定义统一类型边界，真正字段在具体 backend 中扩展，例如：
 
@@ -129,7 +129,7 @@ BaseMambaAttentionMetadata
 
 `CommonAttentionMetadata` 是 builder 的统一输入。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:361`
+位置：`code/vllm/vllm/v1/attention/backend.py:395`
 
 它保存的是所有 backend 都可能需要的 batch 级信息，例如：
 
@@ -148,6 +148,7 @@ encoder_seq_lens
 dcp_local_seq_lens
 is_prefilling
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
 它不是最终 kernel 参数，而是公共中间表示。
@@ -166,7 +167,7 @@ InputBatch / SchedulerOutput / block table / slot mapping
 
 `AttentionMetadataBuilder` 是本文主角。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533`
+位置：`code/vllm/vllm/v1/attention/backend.py:600`
 
 关键接口包括：
 
@@ -201,7 +202,7 @@ supports_update_block_table
 
 `AttentionGroup` 定义在 worker utils 中。
 
-位置：`code/vllm/vllm/v1/worker/utils.py:222`
+位置：`code/vllm/vllm/v1/worker/utils.py:243`
 
 它把同一 KV cache group 内满足以下条件的 layer 聚在一起：
 
@@ -234,7 +235,7 @@ Worker.initialize_from_config(...)
 
 ### 4.1 initialize_attn_backend() 先按 backend 分组
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6736`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6854`
 
 `initialize_attn_backend()` 会遍历 KV cache group 中的 attention layer，对每个 layer 调用：
 
@@ -270,7 +271,7 @@ KV cache group
 
 ### 4.2 initialize_metadata_builders() 创建 builder
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6843`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6961`
 
 每个 `AttentionGroup` 会调用：
 
@@ -278,7 +279,7 @@ KV cache group
 AttentionGroup.create_metadata_builders(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/utils.py:235`
+位置：`code/vllm/vllm/v1/worker/utils.py:255`
 
 内部逻辑是：
 
@@ -291,7 +292,7 @@ builder = builder_cls(kv_cache_spec, layer_names, vllm_config, device)
 
 ### 4.3 builder 影响 batch reorder 阈值
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6933`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7052`
 
 `GPUModelRunner.calculate_reorder_batch_threshold()` 会读取所有 builder 的：
 
@@ -309,7 +310,7 @@ reorder_batch_threshold
 
 每轮 `execute_model()` 中，attention metadata 的核心入口是：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 ```text
 GPUModelRunner._build_attention_metadata(...)
@@ -374,6 +375,7 @@ is_prefilling
 encoder_seq_lens
 dcp_local_seq_lens
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
 当启用 KV sharing fast prefill 且存在 logits indices 时，`cm_base` 还会额外填充：
@@ -462,7 +464,7 @@ runner 在 hybrid KV cache group 场景下可以复用已有 metadata，只调�
 builder.update_block_table(metadata, blk_table, slot_mapping)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2370` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2437`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2435` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2508`
 
 这样可以减少重复构造开销。
 
@@ -732,7 +734,7 @@ is_prefilling
 
 模型 forward 时，attention layer 是按 `layer_name` 从 forward context 里取 metadata 的。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 ```text
 get_attention_context(layer_name)
@@ -744,7 +746,7 @@ get_attention_context(layer_name)
 attn_metadata[layer_name] = metadata_for_this_layer
 ```
 
-如果启用 ubatching，`attn_metadata` 会变成 `list[dict[layer_name, metadata]]`，每个 ubatch 一份 dict；`get_attention_context()` 在普通 attention 自定义 op 中默认取第 0 份，实际 ubatch forward 会由 ubatch wrapper 切换对应的 forward context。
+`attn_metadata` 在普通执行路径下是 `dict[layer_name, metadata]`。只有在 speculative decoding 等需要同时保留多份 attention context 的路径中，forward context 才可能持有 `list[dict[layer_name, metadata]]`；而 ubatching 本身主要通过 `ubatch_slices` 和切分后的 common metadata 驱动逐个 ubatch 执行，不把这个 list 形态当作它的默认外部语义。
 
 但为了减少构造开销，同一 attention group 的多个 layer 可以指向同一个 metadata 对象。
 
@@ -861,8 +863,8 @@ builder 常见处理方式有三类：
 
 相关工具：
 
-- `code/vllm/vllm/v1/attention/backends/utils.py:538`
-- `code/vllm/vllm/v1/attention/backends/utils.py:637`
+- `code/vllm/vllm/v1/attention/backends/utils.py:564`
+- `code/vllm/vllm/v1/attention/backends/utils.py:663`
 
 `reorder_batch_to_split_decodes_and_prefills(...)` 会把 batch 组织成：
 
@@ -1372,7 +1374,7 @@ CUDA graph 要求执行图中 tensor shape 和控制流尽量固定。
 AttentionCGSupport
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:516`
+位置：`code/vllm/vllm/v1/attention/backend.py:583`
 
 常见支持级别可以理解为：
 
@@ -1574,7 +1576,7 @@ DCP 下一个重要原则是：
 
 metadata 构造完成后，不会作为普通参数一层层传给每个 module，而是放进 forward context。
 
-位置：`code/vllm/vllm/forward_context.py:249`
+位置：`code/vllm/vllm/forward_context.py:260`
 
 ```text
 set_forward_context(...)
@@ -1593,7 +1595,7 @@ ubatch_slices
 
 attention layer 执行时再取：
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 ```text
 get_attention_context(layer_name)
@@ -1601,7 +1603,7 @@ get_attention_context(layer_name)
 
 最终调用：
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:813`
 
 ```text
 unified_attention_with_output(...)

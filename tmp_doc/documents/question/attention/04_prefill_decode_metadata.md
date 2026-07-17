@@ -72,7 +72,7 @@ prefill / decode 差异在 Scheduler 侧表现为“本轮每个请求调度几�
 
 `SchedulerOutput` 是 attention metadata 的上游源头之一。
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:181`
+位置：`code/vllm/vllm/v1/core/sched/output.py:183`
 
 关键字段：
 
@@ -98,7 +98,7 @@ total_num_scheduled_tokens：Equal to sum(num_scheduled_tokens.values())
 scheduled_spec_decode_tokens：如果请求没有 spec decode tokens，则不在 dict 中
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:191` 到 `code/vllm/vllm/v1/core/sched/output.py:200`
+位置：`code/vllm/vllm/v1/core/sched/output.py:193` 到 `code/vllm/vllm/v1/core/sched/output.py:202`
 
 ### 3.1 prefill / decode 在 SchedulerOutput 中没有单独枚举
 
@@ -146,7 +146,7 @@ spec decode：
 
 Scheduler 在调度 running request 时会处理 speculative decode。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:581`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:630`
 
 核心公式：
 
@@ -164,7 +164,7 @@ num_scheduled_spec_tokens
 scheduled_spec_decode_tokens[request_id]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:581` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:594`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:630` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:642`
 
 这意味着：
 
@@ -187,7 +187,7 @@ Mamba / GDN 这类 stateful backend 的 metadata
 
 ## 5. _prepare_inputs() 如何生成 query_start_loc / positions / seq_lens
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
 
 `_prepare_inputs()` 接收：
 
@@ -216,7 +216,7 @@ num_scheduled_tokens: np.ndarray
 req_indices = [0, 0, 1, 1, 1, 1, 1, 2, 2, 2]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1910` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1912`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1933` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1935`
 
 它表示：
 
@@ -232,7 +232,7 @@ req_indices = [0, 0, 1, 1, 1, 1, 1, 2, 2, 2]
 query_pos = [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1914` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1918`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1937` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1941`
 
 它表示：
 
@@ -248,7 +248,7 @@ query_pos = [0, 1, 0, 1, 2, 3, 4, 0, 1, 2]
 positions = num_computed_tokens[req_indices] + query_pos
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1920` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1924`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2158` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2164`
 
 含义是：
 
@@ -281,7 +281,7 @@ num_scheduled_tokens = [2, 5, 3]
 query_start_loc = [0, 2, 7, 10]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2001` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2008`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2043` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2049`
 
 它表示：
 
@@ -301,7 +301,7 @@ request 2 的 query token 在 packed query[7:10]
 seq_lens = num_computed_tokens + num_scheduled_tokens
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2113` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2116`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2162` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2165`
 
 含义是：
 
@@ -325,7 +325,7 @@ spec decode：seq_lens 通常按 optimistic 方式假设 draft token 被接受�
 optimistic_seq_lens_cpu = num_computed_tokens + num_scheduled_tokens
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2010` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2018`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2055` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2060`
 
 它叫 optimistic，是因为 async spec decode 中 draft token 未必都会被接受，但 metadata 构造阶段会先按“都接受”计算上界。
 
@@ -350,7 +350,7 @@ discard_request_mask
 max_num_scheduled_tokens
 ```
 
-调用位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4268`
+调用位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4308` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4321`
 
 也就是说：
 
@@ -384,7 +384,7 @@ max_query_len > 1 不等于一定是 prompt prefill。
 max_seq_len = max(optimistic_seq_lens_cpu[:num_reqs])
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2239` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2246`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2285` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2293`
 
 如果是 CUDA graph capture，则会保守地使用：
 
@@ -412,7 +412,7 @@ max_seq_len = self.max_model_len
 
 `_build_attention_metadata()` 会按 KV cache group 取出 block table：
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2249` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2265`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2295` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2311`
 
 不同 KV cache group 可能有不同 block table，所以后面会按 group 替换。
 
@@ -436,7 +436,7 @@ self.input_batch.block_table.compute_slot_mapping(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2118` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2122`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2167` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2171`
 
 ### 7.3 prefill / decode 中二者的差异
 
@@ -459,7 +459,7 @@ chunked prefill：
 
 ## 8. CommonAttentionMetadata 如何承载这些字段
 
-定义位置：`code/vllm/vllm/v1/attention/backend.py:393`
+定义位置：`code/vllm/vllm/v1/attention/backend.py:395`
 
 `CommonAttentionMetadata` 是所有 backend 的公共输入，不是最终 kernel 参数。
 
@@ -483,9 +483,10 @@ encoder_seq_lens
 encoder_seq_lens_cpu
 dcp_local_seq_lens
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
-构造位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2330` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2347`
+构造位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2394` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2412`
 
 ### 8.1 query 相关字段
 
@@ -506,7 +507,7 @@ num_actual_tokens = metadata 当前携带的 token 数；普通路径等于本�
 
 `num_actual_tokens` 名称有历史包袱；普通路径等于真实 token 数，FULL CUDA graph / padding 路径可能等于 padded token 数。backend 应结合 `query_start_loc`、`num_reqs`、padding slot `-1`、block table padding 行等，避免把 padding 当真实 token。
 
-位置：`code/vllm/vllm/v1/attention/backend.py:377` 到 `code/vllm/vllm/v1/attention/backend.py:381`
+位置：`code/vllm/vllm/v1/attention/backend.py:412` 到 `code/vllm/vllm/v1/attention/backend.py:418`
 
 ### 8.2 sequence 相关字段
 
@@ -525,7 +526,7 @@ num_computed_tokens = seq_lens - query_lens
 query_lens = query_start_loc[1:] - query_start_loc[:-1]
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:472` 到 `code/vllm/vllm/v1/attention/backend.py:477`
+位置：`code/vllm/vllm/v1/attention/backend.py:513` 到 `code/vllm/vllm/v1/attention/backend.py:517`
 
 `seq_lens_cpu_upper_bound` 的源码注释很关键：
 
@@ -535,7 +536,7 @@ prefill rows 上是精确值；
 async spec decode 的 decode 行上是 optimistic upper bound。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:414` 到 `code/vllm/vllm/v1/attention/backend.py:418`
+位置：`code/vllm/vllm/v1/attention/backend.py:447` 到 `code/vllm/vllm/v1/attention/backend.py:451`
 
 ### 8.3 is_prefilling
 
@@ -545,7 +546,7 @@ async spec decode 的 decode 行上是 optimistic upper bound。
 is_prefilling = num_computed_tokens_cpu < num_prompt_tokens_cpu
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2293` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2299`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2339` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2345`
 
 它的语义是：
 
@@ -739,8 +740,8 @@ split_decodes_and_prefills(...)
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/utils.py:538`
-- `code/vllm/vllm/v1/attention/backends/utils.py:637`
+- `code/vllm/vllm/v1/attention/backends/utils.py:564`
+- `code/vllm/vllm/v1/attention/backends/utils.py:663`
 
 ### 13.1 目标 batch 顺序
 
@@ -762,7 +763,7 @@ long_extend：num_scheduled > threshold 且仍在 chunked prefill
 prefill：num_computed == 0
 ```
 
-位置：`code/vllm/vllm/v1/attention/backends/utils.py:646` 到 `code/vllm/vllm/v1/attention/backends/utils.py:681`
+位置：`code/vllm/vllm/v1/attention/backends/utils.py:673` 到 `code/vllm/vllm/v1/attention/backends/utils.py:739`
 
 ### 13.2 split_decodes_and_prefills() 如何切边界
 
@@ -872,9 +873,15 @@ FlashAttention 更偏“用一套 varlen/paged 参数覆盖 prefill、decode、m
 
 FlashInfer builder 是最典型的显式拆分案例。
 
-入口：`code/vllm/vllm/v1/attention/backends/flashinfer.py:912`
+入口：`code/vllm/vllm/v1/attention/backends/flashinfer.py:1074` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:1101`
 
-第一步就是调用：
+但这里不是无条件先 split，而是先看：
+
+```text
+causal = common_attn_metadata.causal
+```
+
+只有 `causal=True` 时才会调用：
 
 ```text
 split_decodes_and_prefills(
@@ -884,7 +891,18 @@ split_decodes_and_prefills(
 )
 ```
 
-位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:920` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:926`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:1079` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:1087`
+
+而 `causal=False` 时不会走 decode/TRTLLM 拆分，而是直接把整批都当作 prefill：
+
+```text
+num_decodes = 0
+num_prefills = num_reqs
+num_decode_tokens = 0
+num_prefill_tokens = num_actual_tokens
+```
+
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:1088` 到 `code/vllm/vllm/v1/attention/backends/flashinfer.py:1094`
 
 得到：
 
@@ -1052,7 +1070,9 @@ prev_last_scheduled_idx
 
 位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2398` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2416`
 
-GDN builder 中也会调用：
+这里要分清两层语义：
+
+1. GDN 的普通拆分路径确实会调用：
 
 ```text
 split_decodes_and_prefills(m, decode_threshold=1)
@@ -1060,15 +1080,38 @@ split_decodes_and_prefills(m, decode_threshold=1)
 
 位置：`code/vllm/vllm/v1/attention/backends/gdn_attn.py:210` 到 `code/vllm/vllm/v1/attention/backends/gdn_attn.py:213`
 
-但它不能只看 query_len，因为 stateful layer 需要区分：
+2. 但“单 token prefill 也可能被改判成 decode/update row”这个特例，当前源码里是 Mamba 的 FULL-CG 逻辑，不是通用 GDN 规则。
+
+Mamba 会先检查：
+
+```text
+single_token_prefill_rows = is_prefilling & (query_lens_cpu == 1)
+has_prior_state = seq_lens_cpu > 1
+prefill_to_decode = single_token_prefill_rows & has_prior_state
+```
+
+若命中，就把这些行的 `is_prefilling` 从 `True` 改成 `False`，再执行：
+
+```text
+split_decodes_and_prefills(
+    common_attn_metadata,
+    decode_threshold=decode_threshold,
+    treat_short_extends_as_decodes=False,
+)
+```
+
+位置：`code/vllm/vllm/v1/attention/backends/mamba_attn.py:388` 到 `code/vllm/vllm/v1/attention/backends/mamba_attn.py:415`
+
+因此它不能只看 `query_len`，因为 stateful layer 还需要区分：
 
 ```text
 真正 decode：更新已有 recurrent / state cache；
 short chunked prefill：仍在初始化或推进 prompt state；
-spec decode：可能有 accepted / rejected draft token，需要修正 state。
+spec decode：可能有 accepted / rejected draft token，需要修正 state；
+Mamba FULL-CG 下的单 token prefill：虽然仍处于 prefill 语义，但可能为了图复用被当作 decode/update row。
 ```
 
-所以 `is_prefilling` 的价值在这些 backend 上最明显。
+所以 `is_prefilling` 的价值在这些 backend 上最明显，而上述单 token 改判应明确归因到 Mamba FULL-CG。
 
 ---
 
@@ -1479,6 +1522,16 @@ num_computed_tokens < num_prompt_tokens
 ```
 
 那么即使本轮只调度 1 个 token，它仍可能是 short chunked prefill。
+
+另外在 Mamba 的 FULL-CG 路径里，还存在更细的特例：
+
+```text
+query_len = 1
+is_prefilling = True
+seq_lens_cpu > 1
+```
+
+这类“已有 prior state 的单 token prefill”会先被改写 `is_prefilling`，再按 decode/update row 参与后续拆分；这属于图复用需要下的 Mamba 特例，不应推广成通用规则。
 
 ### 24.2 max_query_len > 1 是否一定是 prefill？
 

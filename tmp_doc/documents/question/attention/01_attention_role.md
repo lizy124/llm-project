@@ -586,7 +586,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:304`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:349`
 
 backend 选好后，Attention layer 立刻创建 impl：
 
@@ -595,7 +595,7 @@ impl_cls = self.attn_backend.get_impl_cls()
 self.impl = impl_cls(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:373`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:417`
 
 所以 backend selection 发生在模型 attention layer 初始化阶段，而 metadata builder 创建发生在 ModelRunner 初始化 KV cache 阶段。
 
@@ -616,19 +616,24 @@ supports_head_size()
 supports_dtype()
 supports_kv_cache_dtype()
 supports_block_size()
+indexes_kv_by_block_stride()
 is_mla()
 supports_sink()
+supports_alibi_sqrt()
 supports_mm_prefix()
 is_sparse()
+supports_per_head_quant_scales()
 supports_non_causal()
 supports_batch_invariance()
 supports_kv_connector()
 supports_attn_type()
 supports_compute_capability()
+supports_combination()
+validate_configuration()
 get_required_kv_cache_layout()
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:56` 到 `code/vllm/vllm/v1/attention/backend.py:351`
+位置：`code/vllm/vllm/v1/attention/backend.py:56` 到 `code/vllm/vllm/v1/attention/backend.py:379`
 
 它们的作用是：
 
@@ -674,7 +679,7 @@ KV cache 初始化入口在 ModelRunner：
 def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7303`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7467`
 
 其中 attention 相关步骤是：
 
@@ -688,7 +693,7 @@ def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...)
 7. initialize_kv_cache_tensors(kv_cache_config, kernel_block_sizes)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7317` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7340`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7481` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:7503`
 
 ### 8.1 initialize_attn_backend() 创建 attention groups
 
@@ -698,7 +703,7 @@ def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...)
 def initialize_attn_backend(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6736`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6854`
 
 它会遍历 KV cache groups，按这些维度去重：
 
@@ -717,7 +722,7 @@ class AttentionGroupKey(NamedTuple):
     num_heads_q: int
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6746`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6864`
 
 为什么要分 attention group？
 
@@ -734,7 +739,7 @@ class AttentionGroupKey(NamedTuple):
 def initialize_metadata_builders(self, kv_cache_config, kernel_block_sizes)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6843`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6961`
 
 它会对每个 KV cache group、每个 attention group 调：
 
@@ -742,7 +747,7 @@ def initialize_metadata_builders(self, kv_cache_config, kernel_block_sizes)
 attn_group.create_metadata_builders(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6849`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6969`
 
 如果启用了 ubatching，会为每个 ubatch 创建 builder：
 
@@ -760,7 +765,7 @@ num_metadata_builders = num_ubatches
 self._check_and_update_cudagraph_mode(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6830`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6949`
 
 它会看每个 backend builder 的：
 
@@ -768,7 +773,7 @@ self._check_and_update_cudagraph_mode(...)
 builder_cls.get_cudagraph_support(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6898`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7016`
 
 所以 Attention 子系统会先在初始化阶段约束这个模型可用的 CUDA graph 模式和 capture sizes。
 
@@ -781,7 +786,7 @@ builder_cls.get_cudagraph_support(...)
 `CommonAttentionMetadata` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:361
+code/vllm/vllm/v1/attention/backend.py:395
 ```
 
 它是“跨 layer / backend 的公共 batch 描述”。
@@ -804,13 +809,15 @@ num_logits_indices
 encoder_seq_lens
 encoder_seq_lens_cpu
 dcp_local_seq_lens
+dcp_local_seq_lens_cpu
 positions
 is_prefilling
 seq_lens_cpu_upper_bound
 mm_req_doc_ranges
+rswa_prefix_lens
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:361` 到 `code/vllm/vllm/v1/attention/backend.py:425`
+位置：`code/vllm/vllm/v1/attention/backend.py:395` 到 `code/vllm/vllm/v1/attention/backend.py:465`
 
 它表达的是：
 
@@ -846,7 +853,7 @@ backend metadata = 某个 kernel 可直接消费的私有参数。
 def _build_attention_metadata(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 它的核心步骤是：
 
@@ -856,7 +863,7 @@ def _build_attention_metadata(...)
 3. 为每个 KV cache group 取 block table；
 4. 从 slot_mappings 中取对应 group 的 slot mapping；
 5. 构造 CommonAttentionMetadata；
-6. 处理 DCP、mm prefix、logits_indices、kv sharing fast prefill；
+6. 处理 DCP、mm prefix、R-SWA prefix lens、logits_indices、kv sharing fast prefill；
 7. 对每个 KV cache group / attention group 调 builder.build()；
 8. 把生成的 metadata 绑定到 group 内每个 layer_name；
 9. 如果有 ubatching，则生成 list[dict[layer_name, metadata]]；
@@ -876,7 +883,7 @@ cm_base = CommonAttentionMetadata(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2330`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2394`
 
 调用 builder 的位置是：
 
@@ -888,7 +895,7 @@ attn_metadata_i = builder.build(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2431`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2503`
 
 最终把同一 attention group 的 metadata 赋给每个 layer：
 
@@ -897,7 +904,7 @@ for layer_name in attn_group.layer_names:
     attn_metadata_dict[layer_name] = attn_metadata_i
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2446`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2518`
 
 所以：
 
@@ -912,7 +919,7 @@ Attention metadata 的最终形态是 layer_name → backend-specific metadata�
 `ForwardContext` 定义在：
 
 ```text
-code/vllm/vllm/forward_context.py:128
+code/vllm/vllm/forward_context.py:131
 ```
 
 它保存：
@@ -925,12 +932,14 @@ dp_metadata
 cudagraph_runtime_mode
 batch_descriptor
 ubatch_slices
+is_padding
 skip_compiled
 all_moe_layers
+moe_layer_index
 additional_kwargs
 ```
 
-位置：`code/vllm/vllm/forward_context.py:128` 到 `code/vllm/vllm/forward_context.py:180`
+位置：`code/vllm/vllm/forward_context.py:131` 到 `code/vllm/vllm/forward_context.py:188`
 
 `set_forward_context()` 是一个 context manager：
 
@@ -938,7 +947,7 @@ additional_kwargs
 def set_forward_context(attn_metadata, vllm_config, ...):
 ```
 
-位置：`code/vllm/vllm/forward_context.py:249`
+位置：`code/vllm/vllm/forward_context.py:259`
 
 它的注释说明：
 
@@ -947,7 +956,7 @@ stores the current forward context, can be attention metadata, etc.
 Here we can inject common logic for every model forward pass.
 ```
 
-位置：`code/vllm/vllm/forward_context.py:261`
+位置：`code/vllm/vllm/forward_context.py:272`
 
 为什么需要 ForwardContext？
 
@@ -971,10 +980,10 @@ ForwardContext 是 Attention 子系统在模型 forward 内部取到 runtime met
 `Attention.forward()` 入口：
 
 ```python
-def forward(self, query, key, value, output_shape=None) -> torch.Tensor:
+def forward(self, query, key, value, output_shape=None, output_dtype=None) -> torch.Tensor:
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:438`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:485`
 
 它的核心步骤是：
 
@@ -982,7 +991,7 @@ def forward(self, query, key, value, output_shape=None) -> torch.Tensor:
 1. 如果需要，计算 KV scales；
 2. 如果 backend 支持并启用了 query quant，先量化 query；
 3. 分配 output tensor；
-4. reshape query / key / value 成 [tokens, heads, head_dim]；
+4. reshape query / output，且在 key / value 存在时 reshape 成 [tokens, heads, head_dim]；
 5. 如果 backend 不在 forward 内更新 KV cache，且当前有 key/value、不是 KV sharing consumer 层，则先调用 unified_kv_cache_update()；
 6. 调用 unified_attention_with_output()；
 7. 返回 output.view(-1, hidden_size)。
@@ -993,11 +1002,13 @@ def forward(self, query, key, value, output_shape=None) -> torch.Tensor:
 ```python
 query = query.view(-1, self.num_heads, self.head_size)
 output = output.view(-1, self.num_heads, self.head_size_v)
-key = key.view(-1, self.num_kv_heads, self.head_size)
-value = value.view(-1, self.num_kv_heads, self.head_size_v)
+if key is not None:
+    key = key.view(-1, self.num_kv_heads, self.head_size)
+if value is not None:
+    value = value.view(-1, self.num_kv_heads, self.head_size_v)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:481`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:533`
 
 KV cache update 分支：
 
@@ -1012,7 +1023,7 @@ if (not self.attn_backend.forward_includes_kv_cache_update
         kv_cache_dummy_dep = torch.ops.vllm.unified_kv_cache_update(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:490` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:502`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:540` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:570`
 
 如果当前层是 cross-layer KV sharing 的消费者层，`kv_sharing_target_layer_name is not None`，则会跳过本层自己的 KV cache update，因为它复用 target layer 的 KV cache。
 
@@ -1025,7 +1036,7 @@ else:
     torch.ops.vllm.unified_attention_with_output(query, key, value, output, self.layer_name, ...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:510` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:522`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:551` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:578`
 
 所以 `Attention.forward()` 不是直接写一段 softmax 逻辑，而是：
 
@@ -1040,7 +1051,7 @@ else:
 `unified_attention_with_output()` 定义在：
 
 ```text
-code/vllm/vllm/model_executor/layers/attention/attention.py:734
+code/vllm/vllm/model_executor/layers/attention/attention.py:813
 ```
 
 它被两个装饰器包住：
@@ -1050,7 +1061,7 @@ code/vllm/vllm/model_executor/layers/attention/attention.py:734
 @maybe_transfer_kv_layer
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:811`
 
 函数内部会：
 
@@ -1068,7 +1079,7 @@ self.impl.forward(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:750`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:828`
 
 `get_attention_context()` 会从 ForwardContext 中取：
 
@@ -1079,7 +1090,7 @@ self.impl.forward(
 - 当前 layer 的 slot_mapping。
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 这就是 attention backend impl 获取 runtime 信息的关键路径：
 
@@ -1102,7 +1113,7 @@ attention 的一个关键副作用是写 KV cache。
 forward_includes_kv_cache_update: bool = True
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:65`
+位置：`code/vllm/vllm/v1/attention/backend.py:67`
 
 它表示：
 
@@ -1118,7 +1129,7 @@ forward_includes_kv_cache_update: bool = True
 unified_kv_cache_update(key, value, self.layer_name)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:499`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:548`
 
 `unified_kv_cache_update()` 内部会取当前 layer 的 kv_cache 和 slot_mapping：
 
@@ -1133,7 +1144,7 @@ attn_layer.impl.do_kv_cache_update(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:692`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:779`
 
 为什么要有 `kv_cache_dummy_dep`？
 
@@ -1143,7 +1154,7 @@ attn_layer.impl.do_kv_cache_update(
 Returns a dummy that is passed to unified_attention to signal a side effect and the data dependency between them to ensure torch.compile preserves ordering.
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:697`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:775`
 
 也就是说：
 
@@ -1206,7 +1217,7 @@ Attention 子系统会影响 CUDA graph / compile。
 _cudagraph_support: AttentionCGSupport = AttentionCGSupport.NEVER
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:533`
+位置：`code/vllm/vllm/v1/attention/backend.py:603`
 
 支持等级包括：
 
@@ -1217,11 +1228,11 @@ UNIFORM_SINGLE_TOKEN_DECODE
 NEVER
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:516`
+位置：`code/vllm/vllm/v1/attention/backend.py:583`
 
 ModelRunner 初始化 attention backend 时会取所有 backend 的最小支持级别，决定最终 cudagraph mode。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6877`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6995`
 
 ### 16.2 Attention op 对 torch.compile 是 opaque custom op 或 direct call
 
@@ -1231,7 +1242,7 @@ ModelRunner 初始化 attention backend 时会取所有 backend 的最小支持�
 self.use_direct_call = not current_platform.opaque_attention_op()
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:394`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:438`
 
 源码注释说明：
 
@@ -1240,7 +1251,7 @@ For cuda-alike and cpu platforms, we control how torch.compile works by register
 For other platforms, we directly call them and let torch.compile handle them.
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:390`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:434`
 
 这意味着：
 
@@ -1252,7 +1263,7 @@ Attention 子系统是 torch.compile 图边界设计的重要部分。
 
 `unified_kv_cache_update()` 返回 dummy dependency，就是为了让 compile 保持 KV update 与 attention 的顺序。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:697`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:775`
 
 所以 attention 角色里必须包含：
 
@@ -1267,7 +1278,7 @@ Attention 子系统是 torch.compile 图边界设计的重要部分。
 `AttentionType` 定义在：
 
 ```text
-code/vllm/vllm/v1/attention/backend.py:32
+code/vllm/vllm/v1/attention/backend.py:33
 ```
 
 包括：
@@ -1286,7 +1297,7 @@ def supports_attn_type(cls, attn_type: str) -> bool:
     return attn_type == AttentionType.DECODER
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:248`
+位置：`code/vllm/vllm/v1/attention/backend.py:281`
 
 这说明：
 
@@ -1313,7 +1324,7 @@ head_size
 head_size_v
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:290`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:334`
 
 它们影响：
 
@@ -1338,7 +1349,7 @@ def is_mla(cls) -> bool:
     return False
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:204`
+位置：`code/vllm/vllm/v1/attention/backend.py:238`
 
 MLA backend 会覆盖该能力，并走 `MLAAttentionImpl` 相关接口。
 
