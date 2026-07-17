@@ -86,12 +86,12 @@ Scheduler.schedule()
 关键位置：
 
 - `KVCacheManager.allocate_slots()`：`code/vllm/vllm/v1/core/kv_cache_manager.py:244`
-- `_prepare_inputs()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1889`
-- `_build_attention_metadata()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`
-- `_get_slot_mappings()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3960`
-- `get_attention_context()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:670`
-- `unified_kv_cache_update()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:713`
-- `unified_attention_with_output()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:757`
+- `_prepare_inputs()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
+- `_build_attention_metadata()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
+- `_get_slot_mappings()`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4013`
+- `get_attention_context()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:726`
+- `unified_kv_cache_update()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:769`
+- `unified_attention_with_output()`：`code/vllm/vllm/model_executor/layers/attention/attention.py:813`
 
 这里有两个输出视图：
 
@@ -108,13 +108,15 @@ slot_mappings_by_layer：给 forward context 使用，按 layer_name 查。
 
 `position` 是 token 在单个 request 序列中的绝对位置。
 
-在 `_prepare_inputs()` 中：
+在 `_prepare_inputs()` 中，先在 CPU 侧构造：
 
 ```text
-positions = num_computed_tokens[req_indices] + query_pos
+positions_np = num_computed_tokens[req_indices] + query_pos
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1920`
+后续再拷到运行时使用的 `positions` tensor。
+
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1962`
 
 例如一个请求已经计算 128 个 token，本轮调度 3 个 token：
 
