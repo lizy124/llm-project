@@ -2,33 +2,33 @@
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py`
-- `code/vllm/vllm/model_executor/layers/attention/chunked_local_attention.py`
-- `code/vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py`
-- `code/vllm/vllm/model_executor/layers/attention/static_sink_attention.py`
-- `code/vllm/vllm/v1/attention/backend.py`
-- `code/vllm/vllm/v1/attention/selector.py`
-- `code/vllm/vllm/v1/attention/backends/registry.py`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py`
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py`
-- `code/vllm/vllm/v1/attention/backends/flex_attention.py`
-- `code/vllm/vllm/v1/attention/backends/utils.py`
-- `code/vllm/vllm/v1/attention/ops/triton_unified_attention.py`
-- `code/vllm/vllm/v1/attention/backends/mla/prefill/registry.py`
-- `code/vllm/vllm/v1/attention/backends/mla/prefill/selector.py`
-- `code/vllm/vllm/v1/kv_cache_interface.py`
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `code/vllm/vllm/platforms/cuda.py`
-- `code/vllm/vllm/platforms/rocm.py`
-- `code/vllm/vllm/config/attention.py`
+- `vllm/vllm/model_executor/layers/attention/attention.py`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py`
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py`
+- `vllm/vllm/model_executor/layers/attention/chunked_local_attention.py`
+- `vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py`
+- `vllm/vllm/model_executor/layers/attention/static_sink_attention.py`
+- `vllm/vllm/v1/attention/backend.py`
+- `vllm/vllm/v1/attention/selector.py`
+- `vllm/vllm/v1/attention/backends/registry.py`
+- `vllm/vllm/v1/attention/backends/flash_attn.py`
+- `vllm/vllm/v1/attention/backends/flashinfer.py`
+- `vllm/vllm/v1/attention/backends/triton_attn.py`
+- `vllm/vllm/v1/attention/backends/flex_attention.py`
+- `vllm/vllm/v1/attention/backends/utils.py`
+- `vllm/vllm/v1/attention/ops/triton_unified_attention.py`
+- `vllm/vllm/v1/attention/backends/mla/prefill/registry.py`
+- `vllm/vllm/v1/attention/backends/mla/prefill/selector.py`
+- `vllm/vllm/v1/kv_cache_interface.py`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/platforms/cuda.py`
+- `vllm/vllm/platforms/rocm.py`
+- `vllm/vllm/config/attention.py`
 
 本文用于给 FlashAttention、PagedAttention、MHA / MQA / GQA、MLA、Sliding Window、FlashInfer、FlashMLA、Triton、FlexAttention、cascade attention、chunked prefill、HMA / hybrid KV cache 等名词建立分类框架，避免把模型结构、KV cache 管理、kernel backend 和调度优化混在一起。
 
-本文中的 `code/vllm/...` 是当前项目里的源码外层路径；如果从 vLLM 源码仓库根目录阅读，可对应理解为 `vllm/...`。
+本文中的源码路径按 vLLM 源码仓库根目录写作，例如 `vllm/...`。
 
 ---
 
@@ -188,11 +188,11 @@ SchedulerOutput
 
 相关源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 准备本轮 token 级输入。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`：`_build_attention_metadata()` 构造 attention metadata。
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:454`：`build_attn_metadata()` 按 group / builder 构造 metadata。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:485`：`Attention.forward()` 是普通 attention 层入口。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:726`：forward 中从上下文拿 metadata / cache 的主逻辑附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 准备本轮 token 级输入。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2254`：`_build_attention_metadata()` 构造 attention metadata。
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:454`：`build_attn_metadata()` 按 group / builder 构造 metadata。
+- `vllm/vllm/model_executor/layers/attention/attention.py:485`：`Attention.forward()` 是普通 attention 层入口。
+- `vllm/vllm/model_executor/layers/attention/attention.py:726`：forward 中从上下文拿 metadata / cache 的主逻辑附近。
 
 ### 3.2 Attention 层做什么
 
@@ -209,11 +209,11 @@ SchedulerOutput
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类定义附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:349`：根据参数选择 backend 的逻辑附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:616`：生成 KV cache spec 的逻辑附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:769`：统一 KV cache update 路径附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:813`：统一 attention op 调用路径附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类定义附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:349`：根据参数选择 backend 的逻辑附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:616`：生成 KV cache spec 的逻辑附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:769`：统一 KV cache update 路径附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:813`：统一 attention op 调用路径附近。
 
 可以把 `Attention` 理解成：
 
@@ -241,7 +241,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 - 是否支持 sliding window / sink / non-causal / encoder-decoder 等能力。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:55`
+位置：`vllm/vllm/v1/attention/backend.py:55`
 
 第二层是 `AttentionImpl`：
 
@@ -249,7 +249,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 真正执行普通 attention forward 的接口。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:860`
+位置：`vllm/vllm/v1/attention/backend.py:860`
 
 第三层是 `AttentionMetadataBuilder`：
 
@@ -257,7 +257,7 @@ vLLM V1 中 attention backend 抽象主要分成三部分。
 把 CommonAttentionMetadata 转成 backend 自己要的 metadata。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:600`
+位置：`vllm/vllm/v1/attention/backend.py:600`
 
 对于 MLA，还有单独的 `MLAAttentionImpl`：
 
@@ -266,7 +266,7 @@ forward_mha：prefill / compute-friendly 路径。
 forward_mqa：decode / memory-friendly 路径。
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:943`
+位置：`vllm/vllm/v1/attention/backend.py:943`
 
 ---
 
@@ -281,7 +281,7 @@ ENCODER_ONLY
 ENCODER_DECODER
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:32`
+位置：`vllm/vllm/v1/attention/backend.py:32`
 
 这组概念回答的是：
 
@@ -305,9 +305,9 @@ CrossAttention 是 attention 语义 / 模型结构层的包装；
 
 相关实现：
 
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py:73`：`CrossAttention` 包装底层 backend。
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py:123`：cross attention KV cache / slot mapping 相关逻辑附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:68`：FlashAttention backend 支持 attention type 的声明附近。
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py:73`：`CrossAttention` 包装底层 backend。
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py:123`：cross attention KV cache / slot mapping 相关逻辑附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:68`：FlashAttention backend 支持 attention type 的声明附近。
 
 ---
 
@@ -317,7 +317,7 @@ CrossAttention 是 attention 语义 / 模型结构层的包装；
 
 vLLM 把 backend 集中注册在 `AttentionBackendEnum` 中。
 
-位置：`code/vllm/vllm/v1/attention/backends/registry.py:34`
+位置：`vllm/vllm/v1/attention/backends/registry.py:34`
 
 常见 backend 可以粗分为：
 
@@ -361,15 +361,15 @@ FlashMLA 是 MLA 场景下的特化 backend。
 
 普通 attention backend 选择入口是 `get_attn_backend()`。
 
-位置：`code/vllm/vllm/v1/attention/selector.py:21`
+位置：`vllm/vllm/v1/attention/selector.py:21`
 
 它会构造 `AttentionSelectorConfig`，再交给当前 platform 决定具体 backend。
 
 位置：
 
-- `code/vllm/vllm/v1/attention/selector.py:54`
-- `code/vllm/vllm/v1/attention/selector.py:90`
-- `code/vllm/vllm/v1/attention/selector.py:106`
+- `vllm/vllm/v1/attention/selector.py:54`
+- `vllm/vllm/v1/attention/selector.py:90`
+- `vllm/vllm/v1/attention/selector.py:106`
 
 大致可以理解成：
 
@@ -388,7 +388,7 @@ platform 按硬件和已安装库选择：
 
 CUDA 平台会按硬件能力、是否 MLA、KV cache dtype、backend 可用性等选择。
 
-位置：`code/vllm/vllm/platforms/cuda.py:82`
+位置：`vllm/vllm/platforms/cuda.py:82`
 
 粗略优先级可以记成：
 
@@ -406,16 +406,16 @@ MLA：
 
 相关位置：
 
-- `code/vllm/vllm/platforms/cuda.py:92`
-- `code/vllm/vllm/platforms/cuda.py:117`
-- `code/vllm/vllm/platforms/cuda.py:130`
-- `code/vllm/vllm/platforms/cuda.py:147`
+- `vllm/vllm/platforms/cuda.py:92`
+- `vllm/vllm/platforms/cuda.py:117`
+- `vllm/vllm/platforms/cuda.py:130`
+- `vllm/vllm/platforms/cuda.py:147`
 
 ### 5.4 配置覆盖
 
 `AttentionConfig` 提供显式配置入口。
 
-位置：`code/vllm/vllm/config/attention.py:16`
+位置：`vllm/vllm/config/attention.py:16`
 
 常见字段包括：
 
@@ -444,12 +444,12 @@ FlexAttention block 配置：
 
 位置：
 
-- `code/vllm/vllm/config/attention.py:19`
-- `code/vllm/vllm/config/attention.py:22`
-- `code/vllm/vllm/config/attention.py:26`
-- `code/vllm/vllm/config/attention.py:45`
-- `code/vllm/vllm/config/attention.py:49`
-- `code/vllm/vllm/config/attention.py:59`
+- `vllm/vllm/config/attention.py:19`
+- `vllm/vllm/config/attention.py:22`
+- `vllm/vllm/config/attention.py:26`
+- `vllm/vllm/config/attention.py:45`
+- `vllm/vllm/config/attention.py:49`
+- `vllm/vllm/config/attention.py:59`
 
 ---
 
@@ -501,9 +501,9 @@ GQA：
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类入口。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:196`：head 数、head size 等初始化参数附近。
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:616`：根据 layer 配置生成 KV cache spec。
+- `vllm/vllm/model_executor/layers/attention/attention.py:221`：`Attention` 类入口。
+- `vllm/vllm/model_executor/layers/attention/attention.py:196`：head 数、head size 等初始化参数附近。
+- `vllm/vllm/model_executor/layers/attention/attention.py:616`：根据 layer 配置生成 KV cache spec。
 
 在 backend 层，普通 `AttentionImpl` 看到的是已经整理好的：
 
@@ -549,7 +549,7 @@ MLA 不像 MHA / GQA 那样只是“head 数关系”的简单变化。
 
 MLA 走 `MLAAttention`。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:322`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:322`
 
 MLA 初始化时会选择：
 
@@ -562,9 +562,9 @@ MLA 初始化时会选择：
 
 相关位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:387`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:446`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:478`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:387`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:446`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:478`
 
 ### 7.3 MLA 的 prefill / decode 分流
 
@@ -580,9 +580,9 @@ forward_mqa：
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:943`
-- `code/vllm/vllm/v1/attention/backend.py:924`
-- `code/vllm/vllm/v1/attention/backend.py:939`
+- `vllm/vllm/v1/attention/backend.py:943`
+- `vllm/vllm/v1/attention/backend.py:924`
+- `vllm/vllm/v1/attention/backend.py:939`
 
 `MLACommonMetadata` 中会记录：
 
@@ -596,9 +596,9 @@ decode metadata
 
 位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1275`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1298`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1307`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:1275`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:1298`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:1307`
 
 forward 时大致是：
 
@@ -609,16 +609,16 @@ decode tokens  → forward_mqa()
 
 位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:681`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:688`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:713`
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:724`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:681`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:688`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:713`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:724`
 
 ### 7.4 MLA prefill backend
 
 MLA prefill backend 还有单独 registry。
 
-位置：`code/vllm/vllm/v1/attention/backends/mla/prefill/registry.py:34`
+位置：`vllm/vllm/v1/attention/backends/mla/prefill/registry.py:34`
 
 常见项包括：
 
@@ -629,7 +629,7 @@ TRTLLM_RAGGED
 TOKENSPEED_MLA
 ```
 
-选择器位置：`code/vllm/vllm/v1/attention/backends/mla/prefill/selector.py:48`
+选择器位置：`vllm/vllm/v1/attention/backends/mla/prefill/selector.py:48`
 
 这说明：
 
@@ -689,9 +689,9 @@ ModelRunner 先根据 Scheduler 分配的 block ids 更新 `InputBatch.block_tab
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2118`：`compute_slot_mapping()` 调用附近。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2330`：`CommonAttentionMetadata` 填充 block table / slot mapping 附近。
-- `code/vllm/vllm/v1/attention/backend.py:395`：`CommonAttentionMetadata` 定义附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2118`：`compute_slot_mapping()` 调用附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2330`：`CommonAttentionMetadata` 填充 block table / slot mapping 附近。
+- `vllm/vllm/v1/attention/backend.py:395`：`CommonAttentionMetadata` 定义附近。
 
 可以这样记：
 
@@ -704,7 +704,7 @@ slot mapping 决定“当前 token 写到哪个 KV slot”。
 
 vLLM 不只一种 KV cache spec。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:86`
+位置：`vllm/vllm/v1/kv_cache_interface.py:86`
 
 常见类型包括：
 
@@ -721,11 +721,11 @@ CrossAttentionSpec
 
 相关位置：
 
-- `code/vllm/vllm/v1/kv_cache_interface.py:204`：MLA spec 附近。
-- `code/vllm/vllm/v1/kv_cache_interface.py:366`：sliding window 相关 spec 附近。
-- `code/vllm/vllm/v1/kv_cache_interface.py:477`：`SlidingWindowSpec` 附近。
-- `code/vllm/vllm/v1/kv_cache_interface.py:549`：sink attention spec 附近。
-- `code/vllm/vllm/v1/kv_cache_interface.py:676`：encoder / cross attention spec 附近。
+- `vllm/vllm/v1/kv_cache_interface.py:204`：MLA spec 附近。
+- `vllm/vllm/v1/kv_cache_interface.py:366`：sliding window 相关 spec 附近。
+- `vllm/vllm/v1/kv_cache_interface.py:477`：`SlidingWindowSpec` 附近。
+- `vllm/vllm/v1/kv_cache_interface.py:549`：sink attention spec 附近。
+- `vllm/vllm/v1/kv_cache_interface.py:676`：encoder / cross attention spec 附近。
 
 这说明：
 
@@ -762,10 +762,10 @@ KV cache group / layout / allocation 组织方式。
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:74`：初始化 attention backend / metadata builders。
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:166`：KV cache tensor reshape / layout 处理附近。
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:250`：packed backing / page padding / stride 相关逻辑附近。
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:416`：hybrid attention layout 相关逻辑附近。
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:74`：初始化 attention backend / metadata builders。
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:166`：KV cache tensor reshape / layout 处理附近。
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:250`：packed backing / page padding / stride 相关逻辑附近。
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:416`：hybrid attention layout 相关逻辑附近。
 
 ---
 
@@ -795,7 +795,7 @@ backend 层回答：
 
 FlashAttention backend 的实现位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py`
+- `vllm/vllm/v1/attention/backends/flash_attn.py`
 
 它的特点：
 
@@ -810,17 +810,17 @@ FlashAttention backend 的实现位置：
 
 关键位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:68`：backend 能力声明附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:651`：sliding window 转换逻辑附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:701`：forward 主路径附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1490`：cascade attention 启发式判断附近。
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1568`：cascade attention 执行路径附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:68`：backend 能力声明附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:651`：sliding window 转换逻辑附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:701`：forward 主路径附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1490`：cascade attention 启发式判断附近。
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1568`：cascade attention 执行路径附近。
 
 ### 9.3 FlashInfer backend
 
 FlashInfer backend 的实现位置：
 
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py`
+- `vllm/vllm/v1/attention/backends/flashinfer.py`
 
 它的特点：
 
@@ -835,11 +835,11 @@ FlashInfer backend 的实现位置：
 
 关键位置：
 
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:519`：`FlashInferMetadata` 字段附近。
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:558`：prefill / decode wrapper 初始化附近。
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:937`：metadata build 中拆分 prefill / decode 附近。
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1436`：forward 主路径附近。
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1587`：prefill / decode 分流附近。
+- `vllm/vllm/v1/attention/backends/flashinfer.py:519`：`FlashInferMetadata` 字段附近。
+- `vllm/vllm/v1/attention/backends/flashinfer.py:558`：prefill / decode wrapper 初始化附近。
+- `vllm/vllm/v1/attention/backends/flashinfer.py:937`：metadata build 中拆分 prefill / decode 附近。
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1436`：forward 主路径附近。
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1587`：prefill / decode 分流附近。
 
 可以记成：
 
@@ -852,8 +852,8 @@ Triton unified attention 更强调用统一 metadata 表达 mixed batch。
 
 Triton backend 的实现位置：
 
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py`
-- `code/vllm/vllm/v1/attention/ops/triton_unified_attention.py`
+- `vllm/vllm/v1/attention/backends/triton_attn.py`
+- `vllm/vllm/v1/attention/ops/triton_unified_attention.py`
 
 它的特点：
 
@@ -867,17 +867,17 @@ Triton backend 的实现位置：
 
 关键位置：
 
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:58`：metadata 定义附近。
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:248`：backend 能力声明附近。
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:530`：forward 主路径附近。
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:642`：调用 `unified_attention()` 附近。
-- `code/vllm/vllm/v1/attention/ops/triton_unified_attention.py:179`：Triton unified kernel 入口附近。
+- `vllm/vllm/v1/attention/backends/triton_attn.py:58`：metadata 定义附近。
+- `vllm/vllm/v1/attention/backends/triton_attn.py:248`：backend 能力声明附近。
+- `vllm/vllm/v1/attention/backends/triton_attn.py:530`：forward 主路径附近。
+- `vllm/vllm/v1/attention/backends/triton_attn.py:642`：调用 `unified_attention()` 附近。
+- `vllm/vllm/v1/attention/ops/triton_unified_attention.py:179`：Triton unified kernel 入口附近。
 
 ### 9.5 FlexAttention backend
 
 FlexAttention backend 的实现位置：
 
-- `code/vllm/vllm/v1/attention/backends/flex_attention.py`
+- `vllm/vllm/v1/attention/backends/flex_attention.py`
 
 它的特点：
 
@@ -891,9 +891,9 @@ FlexAttention backend 的实现位置：
 
 关键位置：
 
-- `code/vllm/vllm/v1/attention/backends/flex_attention.py:85`：backend 能力声明附近。
-- `code/vllm/vllm/v1/attention/backends/flex_attention.py:362`：block mask / mask mod 构造附近。
-- `code/vllm/vllm/v1/attention/backends/flex_attention.py:454`：forward 路径附近。
+- `vllm/vllm/v1/attention/backends/flex_attention.py:85`：backend 能力声明附近。
+- `vllm/vllm/v1/attention/backends/flex_attention.py:362`：block mask / mask mod 构造附近。
+- `vllm/vllm/v1/attention/backends/flex_attention.py:454`：forward 路径附近。
 
 ---
 
@@ -926,17 +926,17 @@ Sliding window attention 的核心语义是：
 
 位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:215`
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:228`
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:308`
+- `vllm/vllm/model_executor/layers/attention/attention.py:215`
+- `vllm/vllm/model_executor/layers/attention/attention.py:228`
+- `vllm/vllm/model_executor/layers/attention/attention.py:308`
 
 生成 KV cache spec 时，如果是 sliding window，会返回 `SlidingWindowSpec`。
 
 位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:594`
-- `code/vllm/vllm/model_executor/layers/attention/attention.py:598`
-- `code/vllm/vllm/v1/kv_cache_interface.py:477`
+- `vllm/vllm/model_executor/layers/attention/attention.py:594`
+- `vllm/vllm/model_executor/layers/attention/attention.py:598`
+- `vllm/vllm/v1/kv_cache_interface.py:477`
 
 这意味着：
 
@@ -949,18 +949,18 @@ sliding window 不只影响 kernel mask，
 
 FlashAttention：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:651`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:825`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:651`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:825`
 
 Triton：
 
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:460`
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:655`
+- `vllm/vllm/v1/attention/backends/triton_attn.py:460`
+- `vllm/vllm/v1/attention/backends/triton_attn.py:655`
 
 FlashInfer：
 
-- `code/vllm/vllm/v1/attention/backends/utils.py:118`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1018`
+- `vllm/vllm/v1/attention/backends/utils.py:118`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1018`
 
 ### 10.4 chunked local attention
 
@@ -968,8 +968,8 @@ Local attention 可以通过“把请求拆成局部 virtual batches”来表达
 
 实现位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/chunked_local_attention.py:30`
-- `code/vllm/vllm/v1/attention/backends/utils.py:199`
+- `vllm/vllm/model_executor/layers/attention/chunked_local_attention.py:30`
+- `vllm/vllm/v1/attention/backends/utils.py:199`
 
 它的关键思路是：
 
@@ -1006,8 +1006,8 @@ vLLM 有工具函数将 batch 拆成 decode / prefill 段。
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/utils.py:538`：`split_decodes_and_prefills()`。
-- `code/vllm/vllm/v1/attention/backends/utils.py:637`：`reorder_batch_to_split_decodes_and_prefills()`。
+- `vllm/vllm/v1/attention/backends/utils.py:538`：`split_decodes_and_prefills()`。
+- `vllm/vllm/v1/attention/backends/utils.py:637`：`reorder_batch_to_split_decodes_and_prefills()`。
 
 这个函数假设 batch 已按类似顺序组织：
 
@@ -1031,8 +1031,8 @@ forward 时分别调用 prefill wrapper 和 decode wrapper。
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:519`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1587`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:519`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1587`
 
 Triton unified attention 则更像：
 
@@ -1043,8 +1043,8 @@ Triton unified attention 则更像：
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/triton_attn.py:58`
-- `code/vllm/vllm/v1/attention/ops/triton_unified_attention.py:179`
+- `vllm/vllm/v1/attention/backends/triton_attn.py:58`
+- `vllm/vllm/v1/attention/ops/triton_unified_attention.py:179`
 
 MLA 则显式走：
 
@@ -1053,7 +1053,7 @@ prefill → forward_mha
 decode  → forward_mqa
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:681`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:681`
 
 ---
 
@@ -1094,14 +1094,14 @@ chunked prefill 的思路是：
 
 位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`
+- `vllm/vllm/v1/worker/gpu_model_runner.py:1930`
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 ### 12.3 MLA chunked context
 
 MLA 文件顶部对 chunked prefill 有专门设计说明。
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:14`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:14`
 
 MLA 场景下，chunked context 的核心是：
 
@@ -1114,9 +1114,9 @@ MLA 场景下，chunked context 的核心是：
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:1235`：chunked context metadata 附近。
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:2060`：`_compute_prefill_context()` 附近。
-- `code/vllm/vllm/model_executor/layers/attention/mla_attention.py:2275`：`forward_mha()` 中 chunked context 合并路径附近。
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:1235`：chunked context metadata 附近。
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:2060`：`_compute_prefill_context()` 附近。
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py:2275`：`forward_mha()` 中 chunked context 合并路径附近。
 
 所以：
 
@@ -1169,9 +1169,9 @@ prefix / suffix KV lens
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:254`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:489`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:528`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:254`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:489`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:528`
 
 是否启用 cascade 有启发式判断，例如：
 
@@ -1185,16 +1185,16 @@ prefix / suffix KV lens
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1490`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1189`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1195`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1203`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1490`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1189`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1195`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1203`
 
 执行路径：
 
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1568`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1289`
-- `code/vllm/vllm/v1/attention/backends/flash_attn.py:1317`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1568`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1289`
+- `vllm/vllm/v1/attention/backends/flash_attn.py:1317`
 
 ### 13.3 FlashInfer 中的 cascade
 
@@ -1202,10 +1202,10 @@ FlashInfer metadata 中保留了 cascade wrapper / metadata 路径，但当前 `
 
 位置：
 
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:547`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:873`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1112`
-- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1325`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:547`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:873`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1112`
+- `vllm/vllm/v1/attention/backends/flashinfer.py:1325`
 
 ---
 
@@ -1233,8 +1233,8 @@ prefix cache 不是 backend，也不是 attention 公式。
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1920`：positions 根据 `num_computed_tokens` 计算附近。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2330`：metadata 携带 block table / slot mapping 附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:1920`：positions 根据 `num_computed_tokens` 计算附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2330`：metadata 携带 block table / slot mapping 附近。
 
 所以：
 
@@ -1258,8 +1258,8 @@ Spec decode 会让一个请求在一轮里出现 draft token、target token、bo
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 构造 spec decode metadata 的主入口附近。
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2254`：attention metadata 构造会接入 spec decode 相关公共 metadata。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:1930`：`_prepare_inputs()` 构造 spec decode metadata 的主入口附近。
+- `vllm/vllm/v1/worker/gpu_model_runner.py:2254`：attention metadata 构造会接入 spec decode 相关公共 metadata。
 
 ---
 
@@ -1276,8 +1276,8 @@ decoder attention 仍然保留 KV cache，
 
 实现位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py:17`
-- `code/vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py:73`
+- `vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py:17`
+- `vllm/vllm/model_executor/layers/attention/prefill_prefix_lm_attention.py:73`
 
 它会影响：
 
@@ -1298,9 +1298,9 @@ Static sink attention 的核心是：
 
 实现位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/static_sink_attention.py:40`
-- `code/vllm/vllm/model_executor/layers/attention/static_sink_attention.py:80`
-- `code/vllm/vllm/model_executor/layers/attention/static_sink_attention.py:196`
+- `vllm/vllm/model_executor/layers/attention/static_sink_attention.py:40`
+- `vllm/vllm/model_executor/layers/attention/static_sink_attention.py:80`
+- `vllm/vllm/model_executor/layers/attention/static_sink_attention.py:196`
 
 它会影响：
 
@@ -1319,7 +1319,7 @@ Static sink attention 的核心是：
 
 KV cache dtype / quant mode 会显著影响 backend 选择。
 
-位置：`code/vllm/vllm/v1/kv_cache_interface.py:33`
+位置：`vllm/vllm/v1/kv_cache_interface.py:33`
 
 常见模式包括：
 
@@ -1333,9 +1333,9 @@ NVFP4
 
 相关位置：
 
-- `code/vllm/vllm/v1/kv_cache_interface.py:40`
-- `code/vllm/vllm/v1/kv_cache_interface.py:60`
-- `code/vllm/vllm/v1/kv_cache_interface.py:77`
+- `vllm/vllm/v1/kv_cache_interface.py:40`
+- `vllm/vllm/v1/kv_cache_interface.py:60`
+- `vllm/vllm/v1/kv_cache_interface.py:77`
 
 这类信息不是 attention 语义，但会影响：
 
@@ -1353,10 +1353,10 @@ NVFP4
 
 相关位置：
 
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:166`
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:194`
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:303`
-- `code/vllm/vllm/v1/worker/gpu/attn_utils.py:312`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:166`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:194`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:303`
+- `vllm/vllm/v1/worker/gpu/attn_utils.py:312`
 
 可以记成：
 
@@ -1375,7 +1375,7 @@ layout 是 backend 与 KV cache tensor 之间的契约。
 
 Cross attention 用于 encoder-decoder 模型。
 
-实现位置：`code/vllm/vllm/model_executor/layers/attention/cross_attention.py:73`
+实现位置：`vllm/vllm/model_executor/layers/attention/cross_attention.py:73`
 
 它的特点：
 
@@ -1389,9 +1389,9 @@ Cross attention 用于 encoder-decoder 模型。
 
 关键位置：
 
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py:81`
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py:123`
-- `code/vllm/vllm/model_executor/layers/attention/cross_attention.py:189`
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py:81`
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py:123`
+- `vllm/vllm/model_executor/layers/attention/cross_attention.py:189`
 
 ### 17.2 Encoder-only attention
 
@@ -1408,8 +1408,8 @@ Encoder-only attention 常见于 embedding / rerank / encoder 模型。
 
 相关位置：
 
-- `code/vllm/vllm/v1/attention/backend.py:40`
-- `code/vllm/vllm/v1/kv_cache_interface.py:669`
+- `vllm/vllm/v1/attention/backend.py:40`
+- `vllm/vllm/v1/kv_cache_interface.py:669`
 
 ---
 

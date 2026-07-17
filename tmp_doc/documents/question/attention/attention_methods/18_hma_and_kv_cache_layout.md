@@ -1365,7 +1365,7 @@ Worker / ModelRunner
   → _prepare_inputs()
       → gather_block_tables()
       → compute_slot_mappings()
-  → build_attn_metadata()
+  → _build_attention_metadata()
       → CommonAttentionMetadata per group
       → AttentionMetadata per layer
   → set_forward_context()
@@ -1470,7 +1470,7 @@ cross-layer layout 是 connector 友好的单 group 物理布局优化；HMA 是
 | hybrid 协调 | `HybridKVCacheCoordinator` | multi-group cache hit / allocation | 对齐不同 attention/cache 类型的安全命中长度 |
 | 资源池 | `BlockPool` | `KVCacheBlock` | 管理真实 block 生命周期 |
 | Worker 索引 | `BlockTables` | block tables / slot mappings | 把 group block ids 翻译成 token slots |
-| metadata | `build_attn_metadata()` | per-layer metadata | attention backend 读取对应 group 的 block table |
+| metadata | `_build_attention_metadata()` | per-layer metadata | attention backend 读取对应 group 的 block table |
 | connector | `SupportsHMA` | `request_finished_all_groups()` | 外部 KV transfer 正确保存所有 groups |
 
 ---
