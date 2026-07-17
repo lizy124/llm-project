@@ -520,7 +520,7 @@ FlashAttention backend 不在 `forward()` 内部更新 KV cache：
 forward_includes_kv_cache_update = False
 ```
 
-真正写 KV cache 的方法是 `do_kv_cache_update()`，见 `vllm/v1/attention/backends/flash_attn.py:927`。
+真正写 KV cache 的方法是 `do_kv_cache_update()`，见 `vllm/v1/attention/backends/flash_attn.py:1067`。
 
 逻辑是：
 
@@ -542,7 +542,7 @@ reshape_and_cache_flash(
 
 ### 7.5 Forward 主路径
 
-普通 decoder 路径的核心调用在 `vllm/v1/attention/backends/flash_attn.py:870`：
+普通 decoder 路径的核心调用在 `vllm/v1/attention/backends/flash_attn.py:1010`：
 
 ```text
 flash_attn_varlen_func(
@@ -612,7 +612,7 @@ merge:
   用 LSE 合并 prefix/suffix 两部分 attention state。
 ```
 
-是否启用由 `use_cascade_attention()` 决定，见 `vllm/v1/attention/backends/flash_attn.py:1172`。
+是否启用由 `use_cascade_attention()` 决定，见 `vllm/v1/attention/backends/flash_attn.py:1490`。
 
 启用条件大致是：
 
