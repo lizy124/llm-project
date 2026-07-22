@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-vLLM Online DP Launch Script (35B, single-machine 8-GPU, 4P + 4D)
+vLLM Online DP Launch Script
 """
 import argparse
 import multiprocessing
@@ -17,7 +17,6 @@ def parse_args():
     parser.add_argument("--dp-address", type=str, required=True, help="IP address for data parallel master node.")
     parser.add_argument("--dp-rpc-port", type=str, default="12321", help="Port for data parallel master node.")
     parser.add_argument("--vllm-start-port", type=int, default=8000, help="Starting port for the engine.")
-    parser.add_argument("--template", type=str, default="run_dp_template.sh", help="Template script name.")
     return parser.parse_args()
 
 args = parse_args()
@@ -30,12 +29,11 @@ dp_rank_start = args.dp_rank_start
 dp_address = args.dp_address
 dp_rpc_port = args.dp_rpc_port
 vllm_start_port = args.vllm_start_port
-template = args.template
 
 def run_command(visible_devices, dp_rank, vllm_engine_port):
     command = [
         "bash",
-        f"./{template}",
+        "./run_dp_template.sh",
         visible_devices,
         str(vllm_engine_port),
         str(dp_size),
@@ -47,7 +45,7 @@ def run_command(visible_devices, dp_rank, vllm_engine_port):
     subprocess.run(command, check=True)
 
 if __name__ == "__main__":
-    template_path = f"./{template}"
+    template_path = "./run_dp_template.sh"
     if not os.path.exists(template_path):
         print(f"Template file {template_path} does not exist.")
         sys.exit(1)
@@ -58,8 +56,7 @@ if __name__ == "__main__":
     for i in range(dp_size_local):
         dp_rank = dp_rank_start + i
         vllm_engine_port = vllm_start_port + i
-        # Use dp_rank to assign GPUs globally across P and D
-        visible_devices = ",".join(str(x) for x in range(dp_rank * tp_size, (dp_rank + 1) * tp_size))
+        visible_devices = ",".join(str(x) for x in range(i * tp_size, (i + 1) * tp_size))
         process = multiprocessing.Process(
             target=run_command,
             args=(visible_devices, dp_rank, vllm_engine_port)

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # ============================================================
-# run_dp_template_p.sh — Prefill (kv_producer) for 35B on 8 GPUs
 # Arguments from launch_online_dp.py
 #   $1: visible_devices
 #   $2: vllm_engine_port
@@ -166,11 +165,11 @@ exec vllm serve /tmp/liaobiting/Qwen3.5-35B-A3B-w4a8-org \
                   "kv_port": "61001", 
                   "kv_connector_extra_config": {
                       "prefill": { 
-                          "dp_size": 8,
+                          "dp_size": 4,
                           "tp_size": 2
                       },
                       "decode": {
-                          "dp_size": 8,
+                          "dp_size": 4,
                           "tp_size": 2
                       }
                   }

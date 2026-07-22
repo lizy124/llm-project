@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # ============================================================
-# run_dp_template_d.sh — Decode (kv_consumer) for 35B on 8 GPUs
 # Arguments from launch_online_dp.py
 #   $1: visible_devices
 #   $2: vllm_engine_port
@@ -15,7 +14,7 @@ set -euo pipefail
 
 if [ "$#" -ne 7 ]; then
   echo "Usage: $0 <visible_devices> <port> <dp_size> <dp_rank> <dp_address> <dp_rpc_port> <tp_size>"
-  echo "Example: $0 4,5 8002 4 2 141.61.81.162 12321 2"
+  echo "Example: $0 8,9 8004 4 0 141.61.81.162 12322 2"
   exit 1
 fi
 
@@ -166,11 +165,11 @@ exec vllm serve /tmp/liaobiting/Qwen3.5-35B-A3B-w4a8-org \
                   "kv_port": "61001", 
                   "kv_connector_extra_config": {
                       "prefill": { 
-                          "dp_size": 8,
+                          "dp_size": 4,
                           "tp_size": 2
                       },
                       "decode": {
-                          "dp_size": 8,
+                          "dp_size": 4,
                           "tp_size": 2
                       }
                   }

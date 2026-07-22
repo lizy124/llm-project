@@ -6,8 +6,9 @@
 # Connector: MooncakeConnectorV1 (prefill-first)
 #
 # Single machine (162): 4 P instances (port 8000-8003) + 4 D instances (port 8004-8007)
-#   P: GPUs 0-7  (dp_rank 0-3)
-#   D: GPUs 8-15 (dp_rank 4-7)
+#   P: NPUs 0-7  (dp_rank 0-3, dp-rpc 12321)
+#   D: NPUs 8-15 (dp_rank 0-3, dp-rpc 12322)
+#   P/D 各自独立 DP 组，通过 Mooncake 传输 KV cache
 #
 
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
