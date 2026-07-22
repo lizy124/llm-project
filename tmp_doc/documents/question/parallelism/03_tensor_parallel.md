@@ -114,7 +114,7 @@ prefill_context_parallel_size: int = Field(default=1, ge=1)
 data_parallel_size: int = Field(default=1, ge=1)
 ```
 
-位置：`vllm/vllm/config/parallel.py:117` 到 `vllm/vllm/config/parallel.py:127`
+位置：`vllm/vllm/config/parallel.py:117` 到 `vllm/vllm/config/parallel.py:126`
 
 这里的 `tensor_parallel_size` 表示：
 
@@ -134,7 +134,7 @@ self.world_size = (
 )
 ```
 
-位置：`vllm/vllm/config/parallel.py:791` 到 `vllm/vllm/config/parallel.py:797`
+位置：`vllm/vllm/config/parallel.py:793` 到 `vllm/vllm/config/parallel.py:797`
 
 如果使用 `external_launcher`，还会把 DP 也乘进去：
 
@@ -143,7 +143,7 @@ if self.distributed_executor_backend == "external_launcher":
     self.world_size *= self.data_parallel_size
 ```
 
-位置：`vllm/vllm/config/parallel.py:799` 到 `vllm/vllm/config/parallel.py:801`
+位置：`vllm/vllm/config/parallel.py:799` 到 `vllm/vllm/config/parallel.py:800`
 
 因此普通内部执行里可以先记成：
 
@@ -170,7 +170,7 @@ if self.tensor_parallel_size % self.decode_context_parallel_size != 0:
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/config/parallel.py:500` 到 `vllm/vllm/config/parallel.py:507`
+位置：`vllm/vllm/config/parallel.py:503` 到 `vllm/vllm/config/parallel.py:507`
 
 这说明 DCP 复用 TP 相关 rank 来组织 decode context parallel，不会增加总 worker 数。
 
@@ -184,7 +184,7 @@ if self.tensor_parallel_size % self.decode_context_parallel_size != 0:
 self.model_config.verify_with_parallel_config(self.parallel_config)
 ```
 
-位置：`vllm/vllm/config/vllm.py:863` 到 `vllm/vllm/config/vllm.py:866`
+位置：`vllm/vllm/config/vllm.py:929` 到 `vllm/vllm/config/vllm.py:929`
 
 ### 5.1 attention heads 必须能被 TP 整除
 
@@ -195,7 +195,7 @@ if total_num_attention_heads % tensor_parallel_size != 0:
     raise ValueError(...)
 ```
 
-位置：`vllm/vllm/config/model.py:1159` 到 `vllm/vllm/config/model.py:1170`
+位置：`vllm/vllm/config/model.py:1212` 到 `vllm/vllm/config/model.py:1215`
 
 原因是：
 
@@ -214,7 +214,7 @@ def get_num_attention_heads(self, parallel_config: ParallelConfig) -> int:
     return num_heads // parallel_config.tensor_parallel_size
 ```
 
-位置：`vllm/vllm/config/model.py:1272` 到 `vllm/vllm/config/model.py:1274`
+位置：`vllm/vllm/config/model.py:1323` 到 `vllm/vllm/config/model.py:1325`
 
 本地 KV heads：
 
@@ -227,7 +227,7 @@ def get_num_kv_heads(self, parallel_config: ParallelConfig) -> int:
     return max(1, total_num_kv_heads // parallel_config.tensor_parallel_size)
 ```
 
-位置：`vllm/vllm/config/model.py:1259` 到 `vllm/vllm/config/model.py:1270`
+位置：`vllm/vllm/config/model.py:1310` 到 `vllm/vllm/config/model.py:1320`
 
 关键区别：
 
@@ -248,7 +248,7 @@ num_q_per_kv = total_num_attention_heads // total_num_kv_heads
 assert num_q_per_kv % decode_context_parallel_size == 0
 ```
 
-位置：`vllm/vllm/config/model.py:1184` 到 `vllm/vllm/config/model.py:1207`
+位置：`vllm/vllm/config/model.py:1238` 到 `vllm/vllm/config/model.py:1250`
 
 这说明：
 
@@ -275,7 +275,7 @@ def initialize_model_parallel(
 ) -> None:
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1694` 到 `vllm/vllm/distributed/parallel_state.py:1700`
+位置：`vllm/vllm/distributed/parallel_state.py:1713` 到 `vllm/vllm/distributed/parallel_state.py:1719`
 核心区别可以这么记：
 
 ```text
@@ -357,7 +357,7 @@ def get_tp_group() -> GroupCoordinator:
     return _TP
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1346` 到 `vllm/vllm/distributed/parallel_state.py:1351`
+位置：`vllm/vllm/distributed/parallel_state.py:1368` 到 `vllm/vllm/distributed/parallel_state.py:1371`
 
 以及：
 
@@ -369,7 +369,7 @@ def get_tensor_model_parallel_rank() -> int:
     return get_tp_group().rank_in_group
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:2012` 到 `vllm/vllm/distributed/parallel_state.py:2019`
+位置：`vllm/vllm/distributed/parallel_state.py:2031` 到 `vllm/vllm/distributed/parallel_state.py:2036`
 
 模型层不会自己算 global rank，而是通过这些 helper 知道：
 
@@ -429,7 +429,7 @@ Y = X A + b
 A is parallelized along its second dimension as A = [A_1, ..., A_p].
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:392` 到 `vllm/vllm/model_executor/layers/linear.py:416`
+位置：`vllm/vllm/model_executor/layers/linear.py:397` 到 `vllm/vllm/model_executor/layers/linear.py:421`
 
 也就是说：
 
@@ -449,7 +449,7 @@ self.output_size_per_partition = divide(output_size, self.tp_size)
 self.output_partition_sizes = [self.output_size_per_partition]
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:420` 到 `vllm/vllm/model_executor/layers/linear.py:439`
+位置：`vllm/vllm/model_executor/layers/linear.py:425` 到 `vllm/vllm/model_executor/layers/linear.py:448`
 
 因此权重形状大致是：
 
@@ -470,7 +470,7 @@ else:
     output = output_parallel
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:548` 到 `vllm/vllm/model_executor/layers/linear.py:562`
+位置：`vllm/vllm/model_executor/layers/linear.py:560` 到 `vllm/vllm/model_executor/layers/linear.py:564`
 
 默认 `gather_output=False`，所以：
 
@@ -493,7 +493,7 @@ Y = X A + b
 A is parallelized along its first dimension and X along its second dimension
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1491` 到 `vllm/vllm/model_executor/layers/linear.py:1524`
+位置：`vllm/vllm/model_executor/layers/linear.py:1537` 到 `vllm/vllm/model_executor/layers/linear.py:1569`
 
 也就是说：
 
@@ -512,7 +512,7 @@ self.output_size_per_partition = output_size
 self.output_partition_sizes = [output_size]
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1528` 到 `vllm/vllm/model_executor/layers/linear.py:1548`
+位置：`vllm/vllm/model_executor/layers/linear.py:1575` 到 `vllm/vllm/model_executor/layers/linear.py:1591`
 
 权重形状大致是：
 
@@ -532,7 +532,7 @@ else:
     input_parallel = split_input[self.tp_rank].contiguous()
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1628` 到 `vllm/vllm/model_executor/layers/linear.py:1639`
+位置：`vllm/vllm/model_executor/layers/linear.py:1676` 到 `vllm/vllm/model_executor/layers/linear.py:1680`
 
 常见主线里，前一个 column-parallel 层已经输出分片，所以 `input_is_parallel=True`。
 
@@ -547,7 +547,7 @@ else:
     output = output_parallel
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1640` 到 `vllm/vllm/model_executor/layers/linear.py:1650`
+位置：`vllm/vllm/model_executor/layers/linear.py:1690` 到 `vllm/vllm/model_executor/layers/linear.py:1693`
 
 默认 `reduce_results=True`，所以：
 
@@ -561,7 +561,7 @@ RowParallelLinear 通常是 TP dense block 中的通信汇合点。
 bias_ = None if (self.tp_rank > 0 or self.skip_bias_add) else self.bias
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1640` 到 `vllm/vllm/model_executor/layers/linear.py:1644`
+位置：`vllm/vllm/model_executor/layers/linear.py:1687` 到 `vllm/vllm/model_executor/layers/linear.py:1687`
 
 原因是：
 
@@ -585,7 +585,7 @@ self.gate_up_proj = MergedColumnParallelLinear(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:89` 到 `vllm/vllm/model_executor/models/llama.py:102`
+位置：`vllm/vllm/model_executor/models/llama.py:92` 到 `vllm/vllm/model_executor/models/llama.py:100`
 
 `MergedColumnParallelLinear` 是打包版 column parallel：
 
@@ -614,7 +614,7 @@ self.down_proj = RowParallelLinear(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:103` 到 `vllm/vllm/model_executor/models/llama.py:110`
+位置：`vllm/vllm/model_executor/models/llama.py:100` 到 `vllm/vllm/model_executor/models/llama.py:106`
 
 ### 10.3 forward 主线
 
@@ -624,7 +624,7 @@ x = self.act_fn(x)
 x, _ = self.down_proj(x)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:118` 到 `vllm/vllm/model_executor/models/llama.py:122`
+位置：`vllm/vllm/model_executor/models/llama.py:108` 到 `vllm/vllm/model_executor/models/llama.py:111`
 
 通信模式：
 
@@ -658,7 +658,7 @@ self.num_heads = self.total_num_heads // tp_size
 self.total_num_kv_heads = num_kv_heads
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:125` 到 `vllm/vllm/model_executor/models/llama.py:148`
+位置：`vllm/vllm/model_executor/models/llama.py:128` 到 `vllm/vllm/model_executor/models/llama.py:148`
 
 KV head 逻辑：
 
@@ -670,7 +670,7 @@ else:
 self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:148` 到 `vllm/vllm/model_executor/models/llama.py:156`
+位置：`vllm/vllm/model_executor/models/llama.py:148` 到 `vllm/vllm/model_executor/models/llama.py:153`
 
 含义：
 

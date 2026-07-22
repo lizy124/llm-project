@@ -76,7 +76,7 @@ Scheduler.update_from_output()
   → append output tokens
 ```
 
-入口在：`gpu_model_runner.py:3570`
+入口在：`gpu_model_runner.py:3623`
 
 ```python
 def _sample(
@@ -97,7 +97,7 @@ sampling_metadata = self.input_batch.sampling_metadata
 self.input_batch.update_async_output_token_ids()
 ```
 
-位置：`gpu_model_runner.py:3575` 到 `gpu_model_runner.py:3579`
+位置：`gpu_model_runner.py:3629` 到 `gpu_model_runner.py:3632`
 
 如果没有 spec decode metadata，直接走普通 sampler：
 
@@ -109,7 +109,7 @@ if spec_decode_metadata is None:
     )
 ```
 
-位置：`gpu_model_runner.py:3580` 到 `gpu_model_runner.py:3584`
+位置：`gpu_model_runner.py:3633` 到 `gpu_model_runner.py:3637`
 
 如果有 spec decode metadata：
 
@@ -123,7 +123,7 @@ sampler_output = self.rejection_sampler(
 )
 ```
 
-位置：`gpu_model_runner.py:3592` 到 `gpu_model_runner.py:3598`
+位置：`gpu_model_runner.py:3645` 到 `gpu_model_runner.py:3651`
 
 所以分流可以记成：
 
@@ -147,7 +147,7 @@ self.rejection_sampler = RejectionSampler(
 )
 ```
 
-位置：`gpu_model_runner.py:618` 到 `gpu_model_runner.py:620`
+位置：`gpu_model_runner.py:648` 到 `gpu_model_runner.py:652`
 
 `RejectionSampler` 持有普通 `Sampler`：
 
@@ -1069,7 +1069,7 @@ logprobs_tensors:
   如果请求需要 logprobs，则包含对应 logprobs；否则为 None。
 ```
 
-`SamplerOutput` 定义：`outputs.py:185`
+`SamplerOutput` 定义：`outputs.py:186`
 
 ```python
 @dataclass
@@ -1082,7 +1082,7 @@ class SamplerOutput:
     logprobs_tensors: LogprobsTensors | None
 ```
 
-位置：`outputs.py:185` 到 `outputs.py:192`
+位置：`outputs.py:186` 到 `outputs.py:192`
 
 ---
 
@@ -1212,7 +1212,7 @@ else:
     )
 ```
 
-位置：`gpu_model_runner.py:3656` 到 `gpu_model_runner.py:3674`
+位置：`gpu_model_runner.py:3710` 到 `gpu_model_runner.py:3727`
 
 判断逻辑：
 
@@ -1242,7 +1242,7 @@ req_state = self.requests[req_id]
 req_state.output_token_ids.extend(sampled_ids)
 ```
 
-位置：`gpu_model_runner.py:3693` 到 `gpu_model_runner.py:3725`
+位置：`gpu_model_runner.py:3751` 到 `gpu_model_runner.py:3777`
 
 注意：
 
@@ -1262,7 +1262,7 @@ generated_token_ids = sampled_token_ids[req_index] if sampled_token_ids else []
 scheduled_spec_token_ids = scheduler_output.scheduled_spec_decode_tokens.get(req_id)
 ```
 
-位置：`scheduler.py:1542` 到 `scheduler.py:1549`
+位置：`scheduler.py:1632` 到 `scheduler.py:1639`
 
 如果本轮有 scheduled draft：
 
@@ -1273,7 +1273,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`scheduler.py:1550` 到 `scheduler.py:1556`
+位置：`scheduler.py:1642` 到 `scheduler.py:1650`
 
 通常 `num_sampled_tokens_per_step = 1`，所以：
 
@@ -1309,7 +1309,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1557` 到 `scheduler.py:1567`
+位置：`scheduler.py:1651` 到 `scheduler.py:1668`
 
 原因：
 
@@ -1336,7 +1336,7 @@ if new_token_ids:
     )
 ```
 
-位置：`scheduler.py:1580` 到 `scheduler.py:1592`
+位置：`scheduler.py:1674` 到 `scheduler.py:1687`
 
 `_update_request_with_output()` 会逐个 append：
 
@@ -1349,7 +1349,7 @@ for num_new, output_token_id in enumerate(new_token_ids, 1):
         break
 ```
 
-位置：`scheduler.py:1848` 到 `scheduler.py:1864`
+位置：`scheduler.py:1954` 到 `scheduler.py:1969`
 
 也就是说：
 
@@ -1525,7 +1525,7 @@ else:
         self.input_batch.prev_sampled_token_ids = sampled_token_ids
 ```
 
-位置：`gpu_model_runner.py:3675` 到 `gpu_model_runner.py:3691`
+位置：`gpu_model_runner.py:3728` 到 `gpu_model_runner.py:3744`
 
 但 spec decode 的 padded-batch drafter 会在后续 proposal 中处理 GPU 上的 sampled tokens：
 
@@ -1537,7 +1537,7 @@ rejected tokens:
   value = -1
 ```
 
-相关注释位置：`gpu_model_runner.py:5020` 到 `gpu_model_runner.py:5027`
+相关 medusa 分支位置：`gpu_model_runner.py:5029` 到 `gpu_model_runner.py:5044`
 
 这就是 async spec decode 中很多 `prev_num_draft_len`、`valid_sampled_token_count`、`prev_sampled_token_ids` 逻辑存在的原因。
 

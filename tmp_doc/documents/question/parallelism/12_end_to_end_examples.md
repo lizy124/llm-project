@@ -73,7 +73,7 @@ Scheduler.schedule()
   → scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:490`
+位置：`code/vllm/vllm/v1/engine/core.py:499`
 
 这说明：
 
@@ -113,7 +113,7 @@ MultiprocExecutor.execute_model()
 只从最后一个 PP stage 的第一个 TP rank 返回 ModelRunnerOutput。
 ```
 
-源码注释：`code/vllm/vllm/v1/executor/multiproc_executor.py:495`
+源码注释：`code/vllm/vllm/v1/executor/multiproc_executor.py:499`
 
 计算逻辑：
 
@@ -121,7 +121,7 @@ MultiprocExecutor.execute_model()
 output_rank = world_size - tensor_parallel_size * prefill_context_parallel_size
 ```
 
-位置：`code/vllm/vllm/v1/executor/multiproc_executor.py:505`
+位置：`code/vllm/vllm/v1/executor/multiproc_executor.py:508`
 
 ### 2.3 ModelRunner 是并行真正落地的位置
 
@@ -171,7 +171,7 @@ all_ranks = torch.arange(world_size).reshape(
 )
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1749`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1788`
 
 可以理解为：
 

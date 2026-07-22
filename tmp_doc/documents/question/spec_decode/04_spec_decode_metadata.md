@@ -98,7 +98,7 @@ SpecDecodeMetadata.target_logits_indices / bonus_logits_indices：
 
 ## 4. SpecDecodeMetadata 的字段定义
 
-定义位置：`metadata.py:9`
+定义位置：`metadata.py:10`
 
 ```python
 @dataclass
@@ -119,7 +119,7 @@ class SpecDecodeMetadata:
     logits_indices: torch.Tensor
 ```
 
-位置：`metadata.py:9` 到 `metadata.py:24`
+位置：`metadata.py:10` 到 `metadata.py:24`
 
 字段含义：
 
@@ -198,7 +198,7 @@ target logits 要验证的 token id 是什么？
 
 ## 6. SpecDecodeMetadata 在哪里构造
 
-构造入口在 `GPUModelRunner._prepare_inputs()`：`gpu_model_runner.py:1889`
+构造入口在 `GPUModelRunner._prepare_inputs()`：`gpu_model_runner.py:1930`
 
 当本轮没有 spec decode：
 
@@ -210,7 +210,7 @@ if not use_spec_decode:
     num_sampled_tokens = np.ones(num_reqs, dtype=np.int32)
 ```
 
-位置：`gpu_model_runner.py:2153` 到 `gpu_model_runner.py:2162`
+位置：`gpu_model_runner.py:2202` 到 `gpu_model_runner.py:2211`
 
 当本轮有 scheduled draft tokens：
 
@@ -228,7 +228,7 @@ logits_indices = spec_decode_metadata.logits_indices
 num_sampled_tokens = num_draft_tokens + 1
 ```
 
-位置：`gpu_model_runner.py:2163` 到 `gpu_model_runner.py:2187`
+位置：`gpu_model_runner.py:2212` 到 `gpu_model_runner.py:2237`
 
 也就是说：
 
@@ -255,7 +255,7 @@ _calc_spec_decode_metadata()
 req_indices = np.repeat(self.arange_np[:num_reqs], num_scheduled_tokens)
 ```
 
-位置：`gpu_model_runner.py:1910` 到 `gpu_model_runner.py:1912`
+位置：`gpu_model_runner.py:1951` 到 `gpu_model_runner.py:1953`
 
 例子：
 
@@ -272,7 +272,7 @@ cu_num_tokens = self._get_cumsum_and_arange(
 )
 ```
 
-位置：`gpu_model_runner.py:1914` 到 `gpu_model_runner.py:1918`
+位置：`gpu_model_runner.py:1955` 到 `gpu_model_runner.py:1959`
 
 例子：
 
@@ -296,7 +296,7 @@ torch.index_select(
 )
 ```
 
-位置：`gpu_model_runner.py:1945` 到 `gpu_model_runner.py:1953`
+位置：`gpu_model_runner.py:1989` 到 `gpu_model_runner.py:1994`
 
 这一步之后，本轮 scheduled tokens 已经排成一个 flattened `input_ids`：
 
@@ -311,7 +311,7 @@ input_ids:
 
 ## 8. _calc_spec_decode_metadata() 的输入输出
 
-入口：`gpu_model_runner.py:2742`
+入口：`gpu_model_runner.py:2814`
 
 ```python
 def _calc_spec_decode_metadata(
@@ -321,7 +321,7 @@ def _calc_spec_decode_metadata(
 ) -> SpecDecodeMetadata:
 ```
 
-位置：`gpu_model_runner.py:2742` 到 `gpu_model_runner.py:2746`
+位置：`gpu_model_runner.py:2814` 到 `gpu_model_runner.py:2818`
 
 输入：
 
@@ -340,7 +340,7 @@ cu_num_scheduled_tokens:  [  4, 104, 107, 207, 209]
 num_draft_tokens:         [  3,   0,   2,   0,   1]
 ```
 
-位置：`gpu_model_runner.py:2747` 到 `gpu_model_runner.py:2749`
+位置：`gpu_model_runner.py:2819` 到 `gpu_model_runner.py:2821`
 
 输出：
 
@@ -352,7 +352,7 @@ target_logits_indices:    [  0,   1,   2,   5,   6,   9]
 bonus_logits_indices:     [  3,   4,   7,   8,  10]
 ```
 
-位置：`gpu_model_runner.py:2750` 到 `gpu_model_runner.py:2755`
+位置：`gpu_model_runner.py:2822` 到 `gpu_model_runner.py:2827`
 
 ---
 
@@ -364,7 +364,7 @@ bonus_logits_indices:     [  3,   4,   7,   8,  10]
 num_sampled_tokens = num_draft_tokens + 1
 ```
 
-位置：`gpu_model_runner.py:2757` 到 `gpu_model_runner.py:2759`
+位置：`gpu_model_runner.py:2829` 到 `gpu_model_runner.py:2831`
 
 如果：
 
@@ -406,7 +406,7 @@ cu_num_sampled_tokens = self._get_cumsum_and_arange(
 )
 ```
 
-位置：`gpu_model_runner.py:2763` 到 `gpu_model_runner.py:2766`
+位置：`gpu_model_runner.py:2833` 到 `gpu_model_runner.py:2838`
 
 例子：
 
@@ -424,7 +424,7 @@ logits_indices = np.repeat(
 )
 ```
 
-位置：`gpu_model_runner.py:2767` 到 `gpu_model_runner.py:2770`
+位置：`gpu_model_runner.py:2839` 到 `gpu_model_runner.py:2842`
 
 例子：
 
@@ -448,7 +448,7 @@ repeat 后：
 logits_indices += self._arange_scratch[: cu_num_sampled_tokens[-1]]
 ```
 
-位置：`gpu_model_runner.py:2771` 到 `gpu_model_runner.py:2772`
+位置：`gpu_model_runner.py:2843` 到 `gpu_model_runner.py:2844`
 
 最终：
 
@@ -509,7 +509,7 @@ logits_indices: torch.Tensor
 bonus_logits_indices = cu_num_sampled_tokens - 1
 ```
 
-位置：`gpu_model_runner.py:2774` 到 `gpu_model_runner.py:2775`
+位置：`gpu_model_runner.py:2846` 到 `gpu_model_runner.py:2847`
 
 例子：
 
@@ -555,7 +555,7 @@ cu_num_draft_tokens = self._get_cumsum_and_arange(
 )
 ```
 
-位置：`gpu_model_runner.py:2778` 到 `gpu_model_runner.py:2782`
+位置：`gpu_model_runner.py:2849` 到 `gpu_model_runner.py:2854`
 
 例子：
 
@@ -573,7 +573,7 @@ target_logits_indices = np.repeat(
 )
 ```
 
-位置：`gpu_model_runner.py:2783` 到 `gpu_model_runner.py:2786`
+位置：`gpu_model_runner.py:2855` 到 `gpu_model_runner.py:2858`
 
 再加上局部 draft offset：
 
@@ -581,7 +581,7 @@ target_logits_indices = np.repeat(
 target_logits_indices += self._arange_scratch[: cu_num_draft_tokens[-1]]
 ```
 
-位置：`gpu_model_runner.py:2787` 到 `gpu_model_runner.py:2788`
+位置：`gpu_model_runner.py:2859` 到 `gpu_model_runner.py:2860`
 
 最终例子：
 
@@ -602,7 +602,7 @@ draft_token_ids = self.input_ids.gpu[logits_indices]
 draft_token_ids = draft_token_ids[target_logits_indices + 1]
 ```
 
-位置：`gpu_model_runner.py:2807` 到 `gpu_model_runner.py:2810`
+位置：`gpu_model_runner.py:2874` 到 `gpu_model_runner.py:2877`
 
 这两步容易混淆。
 
@@ -762,7 +762,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu_model_runner.py:4354` 到 `gpu_model_runner.py:4355`
+位置：`gpu_model_runner.py:4414` 到 `gpu_model_runner.py:4415`
 
 这一步非常重要：
 
@@ -804,7 +804,7 @@ self.execute_model_state = ExecuteModelState(
 )
 ```
 
-位置：`gpu_model_runner.py:4386` 到 `gpu_model_runner.py:4397`
+位置：`gpu_model_runner.py:4446` 到 `gpu_model_runner.py:4457`
 
 随后 `sample_tokens()` 解包：
 
@@ -823,7 +823,7 @@ self.execute_model_state = ExecuteModelState(
 ) = self.execute_model_state
 ```
 
-位置：`gpu_model_runner.py:4436` 到 `gpu_model_runner.py:4448`
+位置：`gpu_model_runner.py:4496` 到 `gpu_model_runner.py:4508`
 
 因此：
 
@@ -838,7 +838,7 @@ _prepare_inputs() 生成的 SpecDecodeMetadata
 
 ## 19. _sample() 如何根据 metadata 分流
 
-入口：`gpu_model_runner.py:3570`
+入口：`gpu_model_runner.py:3623`
 
 如果没有 spec decode metadata：
 
@@ -850,7 +850,7 @@ if spec_decode_metadata is None:
     )
 ```
 
-位置：`gpu_model_runner.py:3580` 到 `gpu_model_runner.py:3584`
+位置：`gpu_model_runner.py:3633` 到 `gpu_model_runner.py:3637`
 
 如果有 metadata：
 
@@ -864,7 +864,7 @@ sampler_output = self.rejection_sampler(
 )
 ```
 
-位置：`gpu_model_runner.py:3592` 到 `gpu_model_runner.py:3598`
+位置：`gpu_model_runner.py:3645` 到 `gpu_model_runner.py:3651`
 
 所以：
 
@@ -1200,7 +1200,7 @@ for out, spec in zip(output_token_ids, spec_token_ids):
 draft_probs = self._get_spec_decode_draft_probs(spec_decode_metadata)
 ```
 
-位置：`gpu_model_runner.py:3592`
+位置：`gpu_model_runner.py:3645`
 
 `_get_spec_decode_draft_probs()` 会按 `spec_decode_metadata.num_draft_tokens` 拼接每个请求对应的 draft probs：
 
@@ -1214,7 +1214,7 @@ for req_id, num_draft in zip(
     draft_probs_rows.append(self._draft_probs[row_idx, :num_draft])
 ```
 
-位置：`gpu_model_runner.py:4823` 到 `gpu_model_runner.py:4850`
+位置：`gpu_model_runner.py:4911` 到 `gpu_model_runner.py:4938`
 
 如果没有 draft probs，例如 ngram spec decode，就可能传 `None`。
 
@@ -1248,7 +1248,7 @@ self.propose_draft_token_ids(
 )
 ```
 
-位置：`gpu_model_runner.py:4481` 到 `gpu_model_runner.py:4494`
+位置：`gpu_model_runner.py:4541` 到 `gpu_model_runner.py:4554`
 
 例如 Medusa 分支会根据 `spec_decode_metadata.num_draft_tokens` 从 `sample_hidden_states` 中取每个请求最后有效 token 的 hidden state：
 
@@ -1260,7 +1260,7 @@ for num_draft, tokens in zip(
     offset += num_draft + 1
 ```
 
-位置：`gpu_model_runner.py:4947` 到 `gpu_model_runner.py:4956`
+位置：`gpu_model_runner.py:5025` 到 `gpu_model_runner.py:5044`
 
 含义：
 
@@ -1282,7 +1282,7 @@ self.num_decode_draft_tokens.np[:num_reqs] = num_decode_draft_tokens
 self.num_decode_draft_tokens.copy_to_gpu()
 ```
 
-位置：`gpu_model_runner.py:2188` 到 `gpu_model_runner.py:2191`
+位置：`gpu_model_runner.py:2233` 到 `gpu_model_runner.py:2237`
 
 后续 `_build_attention_metadata()` 在某些 backend 下会传入 spec decode 额外信息：
 
@@ -1296,7 +1296,7 @@ if use_spec_decode and isinstance(
     )
 ```
 
-位置：`gpu_model_runner.py:2399` 到 `gpu_model_runner.py:2408`
+位置：`gpu_model_runner.py:2463` 到 `gpu_model_runner.py:2480`
 
 也就是说：
 
@@ -1320,7 +1320,7 @@ num_decode_draft_tokens / num_accepted_tokens：
 tuple[attn_metadata, spec_decode_common_attn_metadata]
 ```
 
-位置：`gpu_model_runner.py:2222` 到 `gpu_model_runner.py:2226`
+位置：`gpu_model_runner.py:2254` 到 `gpu_model_runner.py:2272`
 
 它会为 drafter 选择一个合适的 `CommonAttentionMetadata`：
 
@@ -1333,7 +1333,7 @@ if self.speculative_config and spec_decode_common_attn_metadata is None:
         spec_decode_common_attn_metadata = cm
 ```
 
-位置：`gpu_model_runner.py:2467` 到 `gpu_model_runner.py:2480`
+位置：`gpu_model_runner.py:2539` 到 `gpu_model_runner.py:2552`
 
 如果当前 forward 使用了 padding，还会给 drafter unpad：
 
@@ -1343,7 +1343,7 @@ spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`gpu_model_runner.py:2499` 到 `gpu_model_runner.py:2507`
+位置：`gpu_model_runner.py:2571` 到 `gpu_model_runner.py:2579`
 
 注意：
 
@@ -1390,7 +1390,7 @@ flattened_draft_token_ids = sum(draft_token_ids, [])
 logits_indices = query_start_loc[1:] - 1
 ```
 
-位置：`gpu_model_runner.py:2153` 到 `gpu_model_runner.py:2161`
+位置：`gpu_model_runner.py:2202` 到 `gpu_model_runner.py:2211`
 
 含义：
 
@@ -1404,7 +1404,7 @@ spec decode：
 logits_indices = spec_decode_metadata.logits_indices
 ```
 
-位置：`gpu_model_runner.py:2183` 到 `gpu_model_runner.py:2187`
+位置：`gpu_model_runner.py:2229` 到 `gpu_model_runner.py:2233`
 
 含义：
 
@@ -1479,7 +1479,7 @@ draft_token_ids = self.input_ids.gpu[logits_indices]
 draft_token_ids = draft_token_ids[target_logits_indices + 1]
 ```
 
-位置：`gpu_model_runner.py:2807` 到 `gpu_model_runner.py:2810`
+位置：`gpu_model_runner.py:2874` 到 `gpu_model_runner.py:2877`
 
 这也是 spec decode 输入要包含 `draft_len + 1` 个 sampled rows 的根本原因：
 
@@ -1522,19 +1522,16 @@ bonus_logits_indices 中有 1 个 row
 num_decode_draft_tokens = np.full(num_reqs, -1, dtype=np.int32)
 ```
 
-位置：`gpu_model_runner.py:2167` 到 `gpu_model_runner.py:2170`
+位置：`gpu_model_runner.py:2216` 到 `gpu_model_runner.py:2219`
 
-只有当请求已经进入 decode 阶段时才写入 draft_len：
+只有当本轮为 decode 形态（scheduled token 数正好等于 `draft_len + 1`）时才写入 draft_len：
 
 ```python
-if (
-    self.input_batch.num_computed_tokens_cpu[req_idx]
-    >= self.input_batch.num_prompt_tokens[req_idx]
-):
+if num_scheduled_tokens[req_idx] == draft_len + 1:
     num_decode_draft_tokens[req_idx] = draft_len
 ```
 
-位置：`gpu_model_runner.py:2178` 到 `gpu_model_runner.py:2182`
+位置：`gpu_model_runner.py:2227` 到 `gpu_model_runner.py:2228`
 
 注释说明：
 
@@ -1543,7 +1540,7 @@ For chunked prefills, use -1 as mask rather than 0,
 as guided decoding may rollback speculative tokens.
 ```
 
-位置：`gpu_model_runner.py:2167` 到 `gpu_model_runner.py:2170`
+位置：`gpu_model_runner.py:2216` 到 `gpu_model_runner.py:2219`
 
 也就是说：
 

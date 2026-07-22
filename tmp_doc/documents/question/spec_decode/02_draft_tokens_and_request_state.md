@@ -86,7 +86,7 @@ self.spec_token_ids: list[int] = []
 self.num_computed_tokens = 0
 ```
 
-位置：`request.py:152` 到 `request.py:153`
+位置：`request.py:167` 到 `request.py:168`
 
 另外，async scheduling 还会用到：
 
@@ -95,7 +95,7 @@ self.num_output_placeholders = 0
 self.async_tokens_to_discard = 0
 ```
 
-位置：`request.py:140` 到 `request.py:142`
+位置：`request.py:150` 到 `request.py:152`
 
 这些字段表达的是 Scheduler 侧的请求进度：
 
@@ -118,7 +118,7 @@ def num_tokens(self) -> int:
     return len(self._all_token_ids)
 ```
 
-位置：`request.py:246` 到 `request.py:248`
+位置：`request.py:262` 到 `request.py:263`
 
 `Request.num_tokens_with_spec`：
 
@@ -128,7 +128,7 @@ def num_tokens_with_spec(self) -> int:
     return len(self._all_token_ids) + len(self.spec_token_ids)
 ```
 
-位置：`request.py:250` 到 `request.py:252`
+位置：`request.py:266` 到 `request.py:267`
 
 区别是：
 
@@ -149,7 +149,7 @@ num_tokens_with_spec =
   len(prompt_token_ids) + len(output_token_ids) + len(spec_token_ids)
 ```
 
-位置：`scheduler.py:389` 到 `scheduler.py:398`
+位置：`scheduler.py:435` 到 `scheduler.py:444`
 
 ---
 
@@ -165,7 +165,7 @@ def propose_draft_token_ids(sampled_token_ids):
     self._copy_draft_token_ids_to_cpu(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:4481` 到 `gpu_model_runner.py:4495`
+位置：`gpu_model_runner.py:4541` 到 `gpu_model_runner.py:4555`
 
 也就是说：
 
@@ -188,7 +188,7 @@ target model 本轮 forward + sample 完成
 def propose_draft_token_ids(...)
 ```
 
-位置：`gpu_model_runner.py:4852`
+位置：`gpu_model_runner.py:4940`
 
 它会根据 speculative config 走不同分支。
 
@@ -205,7 +205,7 @@ if spec_config.method == "ngram":
     )
 ```
 
-位置：`gpu_model_runner.py:4870` 到 `gpu_model_runner.py:4881`
+位置：`gpu_model_runner.py:4963` 到 `gpu_model_runner.py:4969`
 
 `NgramProposer.propose()` 定义在：`ngram_proposer.py:135`
 
@@ -239,9 +239,9 @@ medusa：Medusa head 基于 hidden states 预测 draft
 
 相关分支位置：
 
-- `custom_class`：`gpu_model_runner.py:4882`
-- `suffix`：`gpu_model_runner.py:4928`
-- `medusa`：`gpu_model_runner.py:4937`
+- `custom_class`：`gpu_model_runner.py:4970`
+- `suffix`：`gpu_model_runner.py:5016`
+- `medusa`：`gpu_model_runner.py:5025`
 
 ### 6.3 EAGLE / DFlash / draft model / Gemma4
 
@@ -262,7 +262,7 @@ sampling_metadata
 draft_token_ids = self.drafter.propose(...)
 ```
 
-位置：`gpu_model_runner.py:5110` 到 `gpu_model_runner.py:5122`
+位置：`gpu_model_runner.py:5198` 到 `gpu_model_runner.py:5210`
 
 这类 drafter 往往更接近“轻量模型或辅助 head 预测下一段 token”，而 ngram 更像“从已有上下文中查找可复用片段”。
 
@@ -323,7 +323,7 @@ self._draft_token_ids
 self._draft_token_req_ids
 ```
 
-相关字段位置：`gpu_model_runner.py:834` 到 `gpu_model_runner.py:838`
+相关字段位置：`gpu_model_runner.py:870` 到 `gpu_model_runner.py:888`
 
 然后通过：
 
@@ -331,7 +331,7 @@ self._draft_token_req_ids
 def take_draft_token_ids(self) -> DraftTokenIds | None:
 ```
 
-位置：`gpu_model_runner.py:4731`
+位置：`gpu_model_runner.py:4819`
 
 逻辑是：
 
@@ -342,7 +342,7 @@ draft_token_ids, req_ids = self._get_draft_token_ids_cpu()
 return DraftTokenIds(req_ids, draft_token_ids)
 ```
 
-位置：`gpu_model_runner.py:4731` 到 `gpu_model_runner.py:4735`
+位置：`gpu_model_runner.py:4819` 到 `gpu_model_runner.py:4823`
 
 这说明：
 
@@ -357,7 +357,7 @@ ModelRunner 不直接修改 Scheduler Request。
 
 `_copy_draft_token_ids_to_cpu()` 负责把 GPU 上的 draft token tensor 拷到 CPU buffer。
 
-入口：`gpu_model_runner.py:4737`
+入口：`gpu_model_runner.py:4825`
 
 关键逻辑：
 
@@ -371,7 +371,7 @@ if self.use_async_scheduling and not (
 self._draft_token_req_ids = self.input_batch.req_ids.copy()
 ```
 
-位置：`gpu_model_runner.py:4743` 到 `gpu_model_runner.py:4751`
+位置：`gpu_model_runner.py:4831` 到 `gpu_model_runner.py:4839`
 
 含义：
 
@@ -392,7 +392,7 @@ self.draft_token_ids_cpu[:num_reqs, :num_spec_tokens].copy_(
 )
 ```
 
-位置：`gpu_model_runner.py:4762` 到 `gpu_model_runner.py:4772`
+位置：`gpu_model_runner.py:4850` 到 `gpu_model_runner.py:4860`
 
 ---
 
@@ -400,7 +400,7 @@ self.draft_token_ids_cpu[:num_reqs, :num_spec_tokens].copy_(
 
 普通同步调度路径中，EngineCore 在每一步结束后调用 `post_step()`。
 
-入口：`engine/core.py:510`
+入口：`engine/core.py:519`
 
 ```python
 if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
@@ -409,7 +409,7 @@ if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
         self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`engine/core.py:510` 到 `engine/core.py:517`
+位置：`engine/core.py:519` 到 `engine/core.py:527`
 
 这一步完成：
 
@@ -431,7 +431,7 @@ Worker draft output
 
 ## 11. Scheduler.update_draft_token_ids() 如何写入 Request
 
-入口：`scheduler.py:1895`
+入口：`scheduler.py:2005`
 
 ```python
 def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
@@ -459,7 +459,7 @@ for req_id, spec_token_ids in zip(
     request.spec_token_ids = spec_token_ids
 ```
 
-位置：`scheduler.py:1895` 到 `scheduler.py:1915`
+位置：`scheduler.py:2005` 到 `scheduler.py:2025`
 
 这里有几个重要规则。
 
@@ -488,7 +488,7 @@ draft tokens 是异步产生或 step 后产生的。
 spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 ```
 
-位置：`scheduler.py:1911` 到 `scheduler.py:1915`
+位置：`scheduler.py:2021` 到 `scheduler.py:2025`
 
 这意味着：
 
@@ -501,7 +501,7 @@ spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 
 ## 12. Scheduler.schedule() 如何消费 Request.spec_token_ids
 
-Scheduler 的主循环入口：`scheduler.py:387`
+Scheduler 的主循环入口：`scheduler.py:433`
 
 它计算每个 running request 本轮需要调度的 token 数：
 
@@ -513,7 +513,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:462` 到 `scheduler.py:466`
+位置：`scheduler.py:510` 到 `scheduler.py:514`
 
 这里 `num_tokens_with_spec` 已经包含：
 
@@ -546,7 +546,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:581` 到 `scheduler.py:597`
+位置：`scheduler.py:630` 到 `scheduler.py:647`
 
 这个公式可以理解为：
 
@@ -575,7 +575,7 @@ Scheduler 可能因为 token budget、max_model_len、encoder budget、KV block 
 
 ## 14. SchedulerOutput 中的 scheduled_spec_decode_tokens
 
-`SchedulerOutput` 定义在：`output.py:180`
+`SchedulerOutput` 定义在：`output.py:183`
 
 字段：
 
@@ -586,7 +586,7 @@ Scheduler 可能因为 token budget、max_model_len、encoder budget、KV block 
 scheduled_spec_decode_tokens: dict[str, list[int]]
 ```
 
-位置：`output.py:197` 到 `output.py:200`
+位置：`output.py:199` 到 `output.py:202`
 
 它的含义是：
 
@@ -623,7 +623,7 @@ scheduler_output = SchedulerOutput(
 )
 ```
 
-位置：`scheduler.py:1057` 到 `scheduler.py:1074`
+位置：`scheduler.py:1135` 到 `scheduler.py:1160`
 
 同时，Scheduler 还会设置：
 
@@ -631,7 +631,7 @@ scheduler_output = SchedulerOutput(
 num_spec_tokens_to_schedule=num_spec_tokens_to_schedule
 ```
 
-位置：`scheduler.py:1050` 到 `scheduler.py:1073`
+位置：`scheduler.py:1135` 到 `scheduler.py:1160`
 
 这个字段用于告诉下一次 drafter：
 
@@ -647,7 +647,7 @@ num_spec_tokens_to_schedule=num_spec_tokens_to_schedule
 
 Scheduler 在 `_update_after_schedule()` 中推进请求进度。
 
-入口：`scheduler.py:1128`
+入口：`scheduler.py:1215`
 
 ```python
 for req_id, num_scheduled_token in num_scheduled_tokens.items():
@@ -655,7 +655,7 @@ for req_id, num_scheduled_token in num_scheduled_tokens.items():
     request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1138` 到 `scheduler.py:1141`
+位置：`scheduler.py:1225` 到 `scheduler.py:1229`
 
 注释说明：
 
@@ -664,7 +664,7 @@ for req_id, num_scheduled_token in num_scheduled_tokens.items():
 num_computed_tokens 会在 update_from_output 中再修正。
 ```
 
-位置：`scheduler.py:1131` 到 `scheduler.py:1137`
+位置：`scheduler.py:1215` 到 `scheduler.py:1224`
 
 这点非常关键：
 
@@ -684,7 +684,7 @@ req_data = scheduler_output.scheduled_cached_reqs
 scheduled_spec_tokens = scheduler_output.scheduled_spec_decode_tokens
 ```
 
-位置：`gpu_model_runner.py:1261` 到 `gpu_model_runner.py:1264`
+位置：`gpu_model_runner.py:1302` 到 `gpu_model_runner.py:1305`
 
 对已经在 `InputBatch` 中的请求，会调用：
 
@@ -692,7 +692,7 @@ scheduled_spec_tokens = scheduler_output.scheduled_spec_decode_tokens
 self.input_batch.update_req_spec_token_ids(req_state, scheduled_spec_tokens)
 ```
 
-位置：`gpu_model_runner.py:1430` 到 `gpu_model_runner.py:1431`
+位置：`gpu_model_runner.py:1471` 到 `gpu_model_runner.py:1472`
 
 对新加入或恢复的请求，也会在 `add_request()` 后调用：
 
@@ -701,7 +701,7 @@ self.input_batch.add_request(request)
 self.input_batch.update_req_spec_token_ids(request, scheduled_spec_tokens)
 ```
 
-位置：`gpu_model_runner.py:1438` 到 `gpu_model_runner.py:1442`
+位置：`gpu_model_runner.py:1481` 到 `gpu_model_runner.py:1483`
 
 所以 Worker 侧的状态同步顺序是：
 
@@ -723,7 +723,7 @@ self.num_accepted_tokens_cpu_tensor = torch.ones(...)
 self.num_accepted_tokens_cpu = self.num_accepted_tokens_cpu_tensor.numpy()
 ```
 
-位置：`gpu_input_batch.py:238` 到 `gpu_input_batch.py:242`
+位置：`gpu_input_batch.py:241` 到 `gpu_input_batch.py:245`
 
 以及：
 
@@ -731,7 +731,7 @@ self.num_accepted_tokens_cpu = self.num_accepted_tokens_cpu_tensor.numpy()
 self.spec_token_ids: list[list[int]] = [[] for _ in range(max_num_reqs)]
 ```
 
-位置：`gpu_input_batch.py:284` 到 `gpu_input_batch.py:285`
+位置：`gpu_input_batch.py:287` 到 `gpu_input_batch.py:288`
 
 它们分别用于：
 
@@ -747,7 +747,7 @@ spec_token_ids：
 
 ## 19. update_req_spec_token_ids() 做什么
 
-入口：`gpu_input_batch.py:483`
+入口：`gpu_input_batch.py:486`
 
 ```python
 def update_req_spec_token_ids(
@@ -775,7 +775,7 @@ self.is_token_ids[req_index, start_index:end_token_index] = True
 cur_spec_token_ids.extend(spec_token_ids)
 ```
 
-位置：`gpu_input_batch.py:483` 到 `gpu_input_batch.py:508`
+位置：`gpu_input_batch.py:486` 到 `gpu_input_batch.py:511`
 
 它做了四件事：
 
@@ -809,7 +809,7 @@ token_ids_cpu row:
 
 ## 20. CachedRequestState.prev_num_draft_len 的作用
 
-`CachedRequestState` 定义在：`gpu_input_batch.py:33`
+`CachedRequestState` 定义在：`gpu_input_batch.py:34`
 
 字段：
 
@@ -818,13 +818,13 @@ token_ids_cpu row:
 prev_num_draft_len: int = 0
 ```
 
-位置：`gpu_input_batch.py:59` 到 `gpu_input_batch.py:60`
+位置：`gpu_input_batch.py:60` 到 `gpu_input_batch.py:61`
 
 它记录上一轮放进 batch 的 draft token 数。
 
 在 async scheduling + spec decode 下，Worker 可能需要先乐观推进 token 状态，再等真实采样结果回来修正。
 
-相关逻辑在：`gpu_model_runner.py:1292`
+相关逻辑在：`gpu_model_runner.py:1333`
 
 ```python
 if req_state.prev_num_draft_len and self.use_async_scheduling:
@@ -833,7 +833,7 @@ if req_state.prev_num_draft_len and self.use_async_scheduling:
     deferred_spec_decode_corrections.append(...)
 ```
 
-位置：`gpu_model_runner.py:1292` 到 `gpu_model_runner.py:1317`
+位置：`gpu_model_runner.py:1333` 到 `gpu_model_runner.py:1358`
 
 含义：
 
@@ -844,7 +844,7 @@ Worker 先假设这些 draft 都 accepted，用 -1 占位扩展 output_token_ids
 等拿到真实 accepted 数量后再修正。
 ```
 
-后续修正在：`gpu_model_runner.py:1463` 到 `gpu_model_runner.py:1493`
+后续修正在：`gpu_model_runner.py:1504` 到 `gpu_model_runner.py:1534`
 
 ---
 
@@ -888,7 +888,7 @@ target model 验证和采样后，`ModelRunnerOutput.sampled_token_ids` 会返�
 
 Scheduler 在 `update_from_output()` 中处理输出。
 
-相关片段位置：`scheduler.py:1518` 起
+相关片段位置：`scheduler.py:1632` 起
 
 它先取出：
 
@@ -898,7 +898,7 @@ generated_token_ids = sampled_token_ids[req_index] if sampled_token_ids else []
 scheduled_spec_token_ids = scheduler_output.scheduled_spec_decode_tokens.get(req_id)
 ```
 
-位置：`scheduler.py:1542` 到 `scheduler.py:1549`
+位置：`scheduler.py:1632` 到 `scheduler.py:1639`
 
 如果本轮有 scheduled draft tokens：
 
@@ -909,7 +909,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`scheduler.py:1550` 到 `scheduler.py:1556`
+位置：`scheduler.py:1643` 到 `scheduler.py:1650`
 
 这里的含义是：
 
@@ -940,7 +940,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1557` 到 `scheduler.py:1567`
+位置：`scheduler.py:1651` 到 `scheduler.py:1661`
 
 为什么要回退？
 
@@ -973,7 +973,7 @@ def _update_request_with_output(
 ) -> tuple[list[int], bool]:
 ```
 
-位置：`scheduler.py:1848`
+位置：`scheduler.py:1954`
 
 核心逻辑：
 
@@ -986,7 +986,7 @@ for num_new, output_token_id in enumerate(new_token_ids, 1):
         break
 ```
 
-位置：`scheduler.py:1848` 到 `scheduler.py:1864`
+位置：`scheduler.py:1954` 到 `scheduler.py:1970`
 
 而 `Request.append_output_token_ids()` 会同时更新：
 
@@ -996,7 +996,7 @@ _request._all_token_ids
 block hashes
 ```
 
-位置：`request.py:224` 到 `request.py:235`
+位置：`request.py:239` 到 `request.py:250`
 
 所以 accepted draft tokens 的最终归宿是：
 
@@ -1065,7 +1065,7 @@ so we update draft token ids in the worker process and don't
 need to update draft token ids here.
 ```
 
-位置：`engine/core.py:510` 到 `engine/core.py:513`
+位置：`engine/core.py:519` 到 `engine/core.py:523`
 
 也就是说，async scheduling 不走普通 `post_step()` 写回 request 的节奏。
 
@@ -1079,7 +1079,7 @@ if draft_token_ids is not None:
     )
 ```
 
-位置：`engine/core.py:612` 到 `engine/core.py:623`
+位置：`engine/core.py:621` 到 `engine/core.py:632`
 
 这不是写 `Request.spec_token_ids`，而是直接修正已经生成的：
 
@@ -1091,7 +1091,7 @@ SchedulerOutput.scheduled_spec_decode_tokens
 
 ## 27. update_draft_token_ids_in_output() 做什么
 
-入口：`scheduler.py:1917`
+入口：`scheduler.py:2027`
 
 它用于 async / deferred 场景：
 
@@ -1123,7 +1123,7 @@ sched_spec_tokens[req_id] = spec_token_ids
 scheduler_output.num_invalid_spec_tokens = num_invalid_spec_tokens
 ```
 
-位置：`scheduler.py:1917` 到 `scheduler.py:1953`
+位置：`scheduler.py:2027` 到 `scheduler.py:2063`
 
 它解决的问题是：
 
@@ -1158,7 +1158,7 @@ spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`scheduler.py:1911` 到 `scheduler.py:1915`
+位置：`scheduler.py:2021` 到 `scheduler.py:2025`
 
 这会直接减少挂在 request 上的 draft token 数。
 
@@ -1170,7 +1170,7 @@ request.spec_token_ids = spec_token_ids
 spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 ```
 
-位置：`scheduler.py:1940` 到 `scheduler.py:1945`
+位置：`scheduler.py:2050` 到 `scheduler.py:2054`
 
 如果变短，会 padding `-1` 并记录：
 
@@ -1178,7 +1178,7 @@ spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 num_invalid_spec_tokens[req_id] = num_invalid_tokens
 ```
 
-位置：`scheduler.py:1946` 到 `scheduler.py:1953`
+位置：`scheduler.py:2055` 到 `scheduler.py:2063`
 
 这些 invalid token 会影响 acceptance rate 统计和 grammar bitmask 计算。
 
@@ -1195,7 +1195,7 @@ if request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:1905` 到 `scheduler.py:1909`
+位置：`scheduler.py:2015` 到 `scheduler.py:2019`
 
 原因是：
 
@@ -1220,7 +1220,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:1117` 到 `scheduler.py:1120`
+位置：`scheduler.py:1203` 到 `scheduler.py:1206`
 
 含义：
 
@@ -1340,7 +1340,7 @@ KV block allocation
   把 rejected token 数从 num_computed_tokens 中减掉。
 ```
 
-这就是为什么 `scheduler.py:1131` 到 `scheduler.py:1137` 的注释强调：
+这就是为什么 `scheduler.py:1215` 到 `scheduler.py:1224` 的注释强调：
 
 ```text
 spec tokens rejected later 时，num_computed_tokens 会在 update_from_output 中调整。

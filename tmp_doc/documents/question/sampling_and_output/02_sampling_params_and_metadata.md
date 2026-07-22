@@ -251,6 +251,12 @@ bad_words：
 
 extra_args：
   扩展参数。
+
+routed_experts_prompt_start：
+  enable_return_routed_experts 时跳过已经返回过的 prompt routed experts 前缀。
+
+thinking_token_budget / repetition_detection：
+  reasoning thinking token 预算和重复 n-gram 早停配置。
 ```
 
 源码位置：
@@ -258,8 +264,11 @@ extra_args：
 - `code/vllm/vllm/sampling_params.py:316`
 - `code/vllm/vllm/sampling_params.py:318`
 - `code/vllm/vllm/sampling_params.py:321`
-- `code/vllm/vllm/sampling_params.py:337`
 - `code/vllm/vllm/sampling_params.py:324`
+- `code/vllm/vllm/sampling_params.py:328`
+- `code/vllm/vllm/sampling_params.py:337`
+- `code/vllm/vllm/sampling_params.py:343`
+- `code/vllm/vllm/sampling_params.py:347`
 
 ---
 
@@ -288,17 +297,18 @@ extra_args：
 
 源码位置：
 
-- `code/vllm/vllm/sampling_params.py:429`
-- `code/vllm/vllm/sampling_params.py:440`
-- `code/vllm/vllm/sampling_params.py:447`
-- `code/vllm/vllm/sampling_params.py:452`
-- `code/vllm/vllm/sampling_params.py:455`
-- `code/vllm/vllm/sampling_params.py:458`
-- `code/vllm/vllm/sampling_params.py:464`
+- `code/vllm/vllm/sampling_params.py:448`
+- `code/vllm/vllm/sampling_params.py:459`
+- `code/vllm/vllm/sampling_params.py:462`
+- `code/vllm/vllm/sampling_params.py:466`
 - `code/vllm/vllm/sampling_params.py:471`
-- `code/vllm/vllm/sampling_params.py:479`
-- `code/vllm/vllm/sampling_params.py:481`
-- `code/vllm/vllm/sampling_params.py:604`
+- `code/vllm/vllm/sampling_params.py:474`
+- `code/vllm/vllm/sampling_params.py:477`
+- `code/vllm/vllm/sampling_params.py:480`
+- `code/vllm/vllm/sampling_params.py:483`
+- `code/vllm/vllm/sampling_params.py:490`
+- `code/vllm/vllm/sampling_params.py:497`
+- `code/vllm/vllm/sampling_params.py:500`
 
 这里有一个关键点：
 
@@ -330,19 +340,19 @@ prompt_logprobs 会影响 prefix cache 行为。
 
 源码位置：
 
-- `code/vllm/vllm/sampling_params.py:487`
-- `code/vllm/vllm/sampling_params.py:499`
-- `code/vllm/vllm/sampling_params.py:507`
-- `code/vllm/vllm/sampling_params.py:517`
-- `code/vllm/vllm/sampling_params.py:535`
-- `code/vllm/vllm/sampling_params.py:542`
-- `code/vllm/vllm/sampling_params.py:550`
-- `code/vllm/vllm/sampling_params.py:552`
-- `code/vllm/vllm/sampling_params.py:567`
-- `code/vllm/vllm/sampling_params.py:573`
-- `code/vllm/vllm/sampling_params.py:584`
-- `code/vllm/vllm/sampling_params.py:589`
-- `code/vllm/vllm/sampling_params.py:597`
+- `code/vllm/vllm/sampling_params.py:506`
+- `code/vllm/vllm/sampling_params.py:511`
+- `code/vllm/vllm/sampling_params.py:518`
+- `code/vllm/vllm/sampling_params.py:522`
+- `code/vllm/vllm/sampling_params.py:526`
+- `code/vllm/vllm/sampling_params.py:536`
+- `code/vllm/vllm/sampling_params.py:548`
+- `code/vllm/vllm/sampling_params.py:554`
+- `code/vllm/vllm/sampling_params.py:560`
+- `code/vllm/vllm/sampling_params.py:569`
+- `code/vllm/vllm/sampling_params.py:571`
+- `code/vllm/vllm/sampling_params.py:586`
+- `code/vllm/vllm/sampling_params.py:603`
 
 ### 4.3 `verify()` 做模型相关校验
 
@@ -356,12 +366,13 @@ _validate_logit_bias
 _validate_logits_processors
 _validate_allowed_token_ids
 _validate_spec_decode
+_validate_diffusion
 _validate_structured_outputs
 ```
 
 源码位置：
 
-- `code/vllm/vllm/sampling_params.py:717`
+- `code/vllm/vllm/sampling_params.py:736`
 
 典型逻辑：
 
@@ -375,16 +386,22 @@ logprob_token_ids：
 spec decode：
   当前不支持部分采样配置，例如 min_p / logit_bias。
 
+diffusion：
+  扩散模型禁用 temperature、min_p、seed、min_tokens、logit_bias、bad_words、allowed_token_ids 等 per-request 采样能力。
+
 structured outputs：
   校验 tokenizer、backend、grammar / schema，并在 auto backend 下选择实现。
 ```
 
 源码位置：
 
-- `code/vllm/vllm/sampling_params.py:733`
-- `code/vllm/vllm/sampling_params.py:750`
-- `code/vllm/vllm/sampling_params.py:848`
-- `code/vllm/vllm/sampling_params.py:862`
+- `code/vllm/vllm/sampling_params.py:753`
+- `code/vllm/vllm/sampling_params.py:815`
+- `code/vllm/vllm/sampling_params.py:835`
+- `code/vllm/vllm/sampling_params.py:842`
+- `code/vllm/vllm/sampling_params.py:868`
+- `code/vllm/vllm/sampling_params.py:882`
+- `code/vllm/vllm/sampling_params.py:904`
 
 ---
 
@@ -573,7 +590,8 @@ new_req_data.sampling_params
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1203`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1235`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1244`
 
 如果请求使用随机种子，会创建请求级 `torch.Generator`：
 
@@ -583,13 +601,13 @@ torch.Generator(device=self.device).manual_seed(sampling_params.seed)
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1206`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1247`
 
 然后创建 `CachedRequestState`，保存 sampling params 和 generator。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1224`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1265`
 
 如果请求需要 `prompt_logprobs`，还会记录到：
 
@@ -599,7 +617,7 @@ self.num_prompt_logprobs[req_id]
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1241`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1282`
 
 ### 8.3 InputBatch.add_request 拆成列式状态
 
@@ -644,14 +662,16 @@ bad_words_token_ids：
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:381`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:390`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:399`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:411`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:416`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:423`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:427`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:450`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:383`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:392`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:395`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:401`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:407`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:413`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:418`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:426`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:429`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:452`
 
 ### 8.4 删除、swap、condense 时也要同步 sampling 状态
 
@@ -669,9 +689,10 @@ swap / condense：
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:511`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:567`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:684`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:513`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:569`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:670`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:797`
 
 这和 `InputBatch` 的职责一致：
 
@@ -738,7 +759,7 @@ thinking budget 相关状态
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:832`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:834`
 
 它会做几个重要优化：
 
@@ -750,7 +771,7 @@ thinking budget 相关状态
   top_p / top_k 传 None。
 
 没有 penalty：
-  penalty tensors 传 None。
+  通过 no_penalties 标记让 sampler 跳过 penalty 处理，penalty tensor 本身仍以当前 batch 切片传入。
 
 只有 penalty / bad_words / logits processors / thinking budget 需要 token ids 时：
   才构造 prompt_token_ids / output_token_ids。
@@ -764,14 +785,14 @@ logprob_token_ids：
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:832`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:840`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:845`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:861`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:878`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:896`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:906`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:915`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:834`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:842`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:847`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:863`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:886`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:898`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:908`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:917`
 
 可以把它理解成：
 
@@ -792,7 +813,7 @@ self.sampling_metadata
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:812`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:814`
 
 这一步通常发生在：
 
@@ -833,11 +854,12 @@ self.sampling_metadata
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4047`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4088`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4357`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4389`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4097`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4139`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4181`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4380`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4414`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4446`
 
 ### 10.2 EngineCore 再调用 sample_tokens
 
@@ -872,9 +894,10 @@ sample_tokens：
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4426`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4455`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4461`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4483`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4513`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4519`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4521`
 
 ### 10.4 _sample 中真正把 SamplingMetadata 交给 sampler
 
@@ -906,8 +929,9 @@ self.rejection_sampler(
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3573`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3589`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3623`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3634`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3646`
 
 ---
 
@@ -943,7 +967,7 @@ logprobs_mode_override：
 
 `SamplerOutput` 定义在：
 
-- `code/vllm/vllm/v1/outputs.py:185`
+- `code/vllm/vllm/v1/outputs.py:186`
 
 主要包含：
 
@@ -957,8 +981,9 @@ logprobs_tensors：
 
 相关位置：
 
-- `code/vllm/vllm/v1/sample/sampler.py:141`
+- `code/vllm/vllm/v1/sample/sampler.py:142`
 - `code/vllm/vllm/v1/outputs.py:52`
+- `code/vllm/vllm/v1/outputs.py:191`
 
 ---
 
@@ -990,8 +1015,10 @@ logits
 
 - `code/vllm/vllm/v1/sample/sampler.py:84`
 - `code/vllm/vllm/v1/sample/sampler.py:95`
+- `code/vllm/vllm/v1/sample/sampler.py:98`
 - `code/vllm/vllm/v1/sample/sampler.py:255`
 - `code/vllm/vllm/v1/sample/sampler.py:273`
+- `code/vllm/vllm/v1/sample/sampler.py:276`
 - `code/vllm/vllm/v1/sample/sampler.py:280`
 - `code/vllm/vllm/v1/sample/sampler.py:285`
 - `code/vllm/vllm/v1/sample/sampler.py:296`
@@ -999,6 +1026,7 @@ logits
 - `code/vllm/vllm/v1/sample/sampler.py:399`
 - `code/vllm/vllm/v1/sample/sampler.py:403`
 - `code/vllm/vllm/v1/sample/sampler.py:407`
+- `code/vllm/vllm/v1/sample/sampler.py:409`
 
 logprobs 相关收集：
 
@@ -1016,6 +1044,7 @@ logprobs=-1：
 源码位置：
 
 - `code/vllm/vllm/v1/sample/sampler.py:111`
+- `code/vllm/vllm/v1/sample/sampler.py:120`
 - `code/vllm/vllm/v1/sample/sampler.py:122`
 - `code/vllm/vllm/v1/sample/sampler.py:128`
 
@@ -1044,10 +1073,10 @@ Sampler：
 源码位置：
 
 - `code/vllm/vllm/sampling_params.py:236`
-- `code/vllm/vllm/sampling_params.py:517`
-- `code/vllm/vllm/sampling_params.py:471`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:381`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:832`
+- `code/vllm/vllm/sampling_params.py:536`
+- `code/vllm/vllm/sampling_params.py:490`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:383`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:834`
 - `code/vllm/vllm/v1/sample/sampler.py:228`
 
 ### 13.2 top_p / top_k
@@ -1072,8 +1101,10 @@ Sampler：
 
 - `code/vllm/vllm/sampling_params.py:240`
 - `code/vllm/vllm/sampling_params.py:243`
-- `code/vllm/vllm/sampling_params.py:535`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:390`
+- `code/vllm/vllm/sampling_params.py:554`
+- `code/vllm/vllm/sampling_params.py:560`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:392`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:395`
 - `code/vllm/vllm/v1/sample/sampler.py:285`
 - `code/vllm/vllm/v1/sample/ops/topk_topp_sampler.py:345`
 
@@ -1097,7 +1128,7 @@ Sampler：
 源码位置：
 
 - `code/vllm/vllm/sampling_params.py:246`
-- `code/vllm/vllm/sampling_params.py:550`
+- `code/vllm/vllm/sampling_params.py:569`
 - `code/vllm/vllm/v1/sample/logits_processor/__init__.py:49`
 - `code/vllm/vllm/v1/sample/logits_processor/builtin.py:23`
 - `code/vllm/vllm/v1/sample/logits_processor/builtin.py:47`
@@ -1126,10 +1157,10 @@ Sampler：
 - `code/vllm/vllm/sampling_params.py:224`
 - `code/vllm/vllm/sampling_params.py:228`
 - `code/vllm/vllm/sampling_params.py:232`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:399`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:845`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:861`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:878`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:401`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:847`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:863`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:886`
 - `code/vllm/vllm/v1/sample/sampler.py:422`
 - `code/vllm/vllm/v1/sample/ops/penalties.py:10`
 
@@ -1154,11 +1185,11 @@ TopKTopPSampler：
 源码位置：
 
 - `code/vllm/vllm/sampling_params.py:250`
-- `code/vllm/vllm/sampling_params.py:440`
-- `code/vllm/vllm/sampling_params.py:679`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1206`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:411`
-- `code/vllm/vllm/v1/sample/ops/topk_topp_sampler.py:446`
+- `code/vllm/vllm/sampling_params.py:459`
+- `code/vllm/vllm/sampling_params.py:699`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1247`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:413`
+- `code/vllm/vllm/v1/sample/ops/topk_topp_sampler.py:448`
 
 ### 13.6 logprobs
 
@@ -1181,10 +1212,10 @@ Sampler：
 源码位置：
 
 - `code/vllm/vllm/sampling_params.py:267`
-- `code/vllm/vllm/sampling_params.py:700`
-- `code/vllm/vllm/sampling_params.py:733`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:416`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:1121`
+- `code/vllm/vllm/sampling_params.py:720`
+- `code/vllm/vllm/sampling_params.py:753`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:418`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:924`
 - `code/vllm/vllm/v1/sample/sampler.py:84`
 - `code/vllm/vllm/v1/sample/sampler.py:120`
 
@@ -1211,11 +1242,12 @@ ModelRunnerOutput：
 源码位置：
 
 - `code/vllm/vllm/sampling_params.py:275`
-- `code/vllm/vllm/sampling_params.py:481`
-- `code/vllm/vllm/sampling_params.py:783`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1241`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5461`
-- `code/vllm/vllm/v1/outputs.py:251`
+- `code/vllm/vllm/sampling_params.py:480`
+- `code/vllm/vllm/sampling_params.py:500`
+- `code/vllm/vllm/sampling_params.py:803`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1282`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5548`
+- `code/vllm/vllm/v1/outputs.py:234`
 
 ### 13.8 stop / stop_token_ids / eos / min_tokens
 
@@ -1235,9 +1267,11 @@ min_tokens：
 
 源码位置：
 
-- `code/vllm/vllm/sampling_params.py:447`
-- `code/vllm/vllm/sampling_params.py:464`
-- `code/vllm/vllm/v1/engine/output_processor.py:639`
+- `code/vllm/vllm/sampling_params.py:466`
+- `code/vllm/vllm/sampling_params.py:483`
+- `code/vllm/vllm/sampling_params.py:497`
+- `code/vllm/vllm/v1/engine/output_processor.py:584`
+- `code/vllm/vllm/v1/engine/output_processor.py:647`
 - `code/vllm/vllm/v1/core/sched/utils.py:94`
 - `code/vllm/vllm/v1/sample/logits_processor/builtin.py:165`
 
@@ -1268,12 +1302,12 @@ SamplingParams.structured_outputs
 - `code/vllm/vllm/v1/request.py:87`
 - `code/vllm/vllm/v1/request.py:111`
 - `code/vllm/vllm/v1/structured_output/request.py:31`
-- `code/vllm/vllm/v1/engine/core.py:867`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1140`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1440`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4455`
+- `code/vllm/vllm/v1/engine/core.py:500`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1236`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1527`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4513`
 - `code/vllm/vllm/v1/structured_output/utils.py:85`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1599`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1693`
 
 关键理解：
 
@@ -1317,9 +1351,11 @@ spec decode：
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2162`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2171`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2750`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2209`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2229`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2232`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:2814`
 
 ### 15.2 普通 sampler 和 rejection sampler 共用 SamplingMetadata
 
@@ -1337,7 +1373,9 @@ RejectionSampler(..., sampling_metadata)
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3573`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3623`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3634`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3646`
 - `code/vllm/vllm/v1/sample/rejection_sampler.py:88`
 
 Spec decode 中：
@@ -1352,11 +1390,11 @@ Spec decode 中：
 源码位置：
 
 - `code/vllm/vllm/v1/sample/rejection_sampler.py:129`
-- `code/vllm/vllm/v1/sample/rejection_sampler.py:285`
-- `code/vllm/vllm/v1/sample/rejection_sampler.py:510`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1896`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1918`
-- `code/vllm/vllm/v1/structured_output/utils.py:112`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py:288`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py:513`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:2022`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:2051`
+- `code/vllm/vllm/v1/structured_output/utils.py:85`
 
 ---
 

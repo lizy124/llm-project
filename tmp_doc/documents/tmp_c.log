@@ -91,58 +91,152 @@
 - [x] 5. executor_worker_model_runner：已按新 commit 复审并修正 README.md、01_executor_role.md、02_worker_role.md、03_model_runner_role.md、04_execute_model_flow.md、05_input_batch_and_state_update.md、06_prepare_inputs_and_attention_metadata.md、07_model_forward_and_logits.md、08_sampling_and_model_runner_output.md、09_worker_kv_cache_interaction.md、10_executor_worker_lifecycle.md、executor_worker_model_runner_overview.md。
 - [x] 6. kv_cache_transfer：已按新 commit 复审并修正 README.md、01_kv_cache_manager_role.md、02_block_pool_and_block_lifecycle.md、03_prefix_cache_lookup.md、04_scheduler_kv_connector_flow.md、05_external_kv_load_flow.md、06_external_kv_save_flow.md、07_worker_kv_connector_flow.md、08_invalid_blocks_and_recompute.md、09_deferred_free_and_async_safety.md、10_kvpool_end_to_end.md、kv_cache_transfer_overview.md。
 - [x] 7. attention：已按新 commit 轻量复审并修正 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md、05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md，以及 attention_methods 子目录 11_attention_variants_overview.md 到 18_hma_and_kv_cache_layout.md。
-- [ ] 8. parallelism：待按新 commit 复审。
-- [ ] 9. sampling_and_output：待按新 commit 复审。
-- [ ] 10. spec_decode：待按新 commit 复审。
+- [ ] 8. parallelism：处理中；当前批次已按新 commit 轻量复审并修正 README.md、parallelism_overview.md、01_parallel_config_and_topology.md、02_distributed_groups.md、03_tensor_parallel.md、04_pipeline_parallel.md、05_data_parallel.md、06_expert_parallel.md、07_context_parallel.md、10_communication_primitives.md、12_end_to_end_examples.md，并继续收尾其余条目。
+- [ ] 9. sampling_and_output：处理中；本次已按新 commit 轻量复审并修正 01_sampling_output_role.md、02_sampling_params_and_metadata.md、03_logits_and_logprobs.md、04_sampler_flow.md、05_spec_decode_sampling.md、06_structured_output_and_grammar.md、07_model_runner_output.md、08_scheduler_update_output.md、09_output_processor_request_output.md、10_streaming_and_client_outputs.md、11_pooling_and_embedding_outputs.md、sampling_and_output_overview.md。
+- [ ] 10. spec_decode：处理中；本次已按新 commit 轻量复审并修正 01_spec_decode_role.md、02_draft_tokens_and_request_state.md、03_scheduler_spec_decode_flow.md、04_spec_decode_metadata.md、06_rejection_sampler_flow.md、07_kv_cache_and_num_computed_tokens.md、08_structured_output_interaction.md。
 
-当前文件：llm-project\tmp_doc\documents\question\attention\attention_methods\18_hma_and_kv_cache_layout.md
-下一个文件：llm-project\tmp_doc\documents\question\parallelism
+复审记录后任务清单：
+- llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\parallelism_overview.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\01_parallel_config_and_topology.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\02_distributed_groups.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\03_tensor_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\04_pipeline_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\05_data_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\06_expert_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\07_context_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\07_sequence_parallel.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\08_kv_cache_and_parallelism.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\09_attention_and_parallelism.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\10_communication_primitives.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\11_parallel_composition.md，否，是
+- llm-project\tmp_doc\documents\question\parallelism\12_end_to_end_examples.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\README.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\01_sampling_output_role.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\02_sampling_params_and_metadata.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\03_logits_and_logprobs.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\04_sampler_flow.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\05_spec_decode_sampling.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\06_structured_output_and_grammar.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\07_model_runner_output.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\08_scheduler_update_output.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\09_output_processor_request_output.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\10_streaming_and_client_outputs.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\11_pooling_and_embedding_outputs.md，否，是
+- llm-project\tmp_doc\documents\question\sampling_and_output\sampling_and_output_overview.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\README.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\01_spec_decode_role.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\02_draft_tokens_and_request_state.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\03_scheduler_spec_decode_flow.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\04_spec_decode_metadata.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\05_model_runner_spec_forward.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\06_rejection_sampler_flow.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\07_kv_cache_and_num_computed_tokens.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\08_structured_output_interaction.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\09_output_recovery_and_scheduler_update.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\10_limitations_and_edge_cases.md，是，否
+- llm-project\tmp_doc\documents\question\spec_decode\spec_decode_overview.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\README.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\01_quantization_role.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\02_quantization_config.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\03_weight_loading_and_param_mapping.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\04_quantized_linear_layers.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\05_weight_only_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\06_activation_and_dynamic_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\07_kv_cache_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\08_attention_backend_interaction.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\09_moe_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\10_lora_and_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\11_parallelism_and_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\12_accuracy_performance_tradeoffs.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\13_limitations_and_debugging.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\quantization_overview.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\README.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\01_config_entry_and_engine_args.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\02_vllm_config_aggregation.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\03_model_config_and_hf_config.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\04_load_config_and_model_loader.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\05_model_registry_and_arch_resolution.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\06_weight_loading_and_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\07_worker_load_model_flow.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\09_advanced_config_hooks.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\10_config_to_runtime_lifecycle.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\README.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\01_model_architecture_role.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\02_model_registry_and_resolution.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\03_model_config_and_task_detection.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\04_model_class_construction.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\05_forward_interface_contract.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\06_attention_mlp_norm_blocks.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\07_embedding_and_lm_head.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\08_moe_model_architectures.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\09_pooling_embedding_rerank_models.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\11_weight_loading_and_name_mapping.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\12_quant_lora_parallelism_hooks.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\13_add_new_model_checklist.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\model_architectures_overview.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\README.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\01_multimodal_role.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\02_multimodal_request_entry.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\03_parser_processor_mapper.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\04_placeholders_and_prompt_alignment.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\05_feature_spec_and_cache.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\06_encoder_budget_and_scheduler.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\07_encoder_cache_lifecycle.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\08_model_runner_mm_encoder_flow.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\09_multimodal_model_interfaces.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\10_multimodal_runtime_interactions.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\multimodel_overview.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\README.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\01_lora_role.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\02_lora_request_and_engine_flow.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\03_lora_manager_and_cache.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\04_worker_model_runner_lora_state.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\05_lora_layer_injection.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\06_batch_mixed_lora_execution.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\07_lora_loading_and_weight_mapping.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\08_lora_and_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\09_lora_and_parallelism.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\10_lora_lifecycle_and_control.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\11_lora_limitations_and_debugging.md，否，否
+- llm-project\tmp_doc\documents\question\lora_and_adapters\lora_and_adapters_overview.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\README.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\01_compilation_cuda_graph_role.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\02_compile_config_and_runtime_modes.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\03_warmup_and_capture_lifecycle.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\04_batch_padding_and_shape_stability.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\05_cudagraph_dispatch_flow.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\06_attention_metadata_capture.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\07_model_forward_compile_wrapper.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\08_sampler_and_output_interaction.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\09_parallelism_and_cudagraph.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\10_limitations_and_fallbacks.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\11_debugging_and_metrics.md，否，否
+- llm-project\tmp_doc\documents\question\compilation_and_cuda_graph\compilation_and_cuda_graph_overview.md，否，否
+- llm-project\tmp_doc\documents\question\operators\README.md，否，否
+- llm-project\tmp_doc\documents\question\operators\01_operator_system_role.md，否，否
+- llm-project\tmp_doc\documents\question\operators\02_python_to_native_ops.md，否，否
+- llm-project\tmp_doc\documents\question\operators\03_attention_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\04_kv_cache_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\05_quantization_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\06_fused_moe_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\07_norm_activation_rope_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\08_sampling_logits_kernels.md，否，否
+- llm-project\tmp_doc\documents\question\operators\09_backend_selection_and_fallback.md，否，否
+- llm-project\tmp_doc\documents\question\operators\10_cuda_graph_compile_interaction.md，否，否
+- llm-project\tmp_doc\documents\question\operators\11_parallelism_operator_interaction.md，否，否
+- llm-project\tmp_doc\documents\question\operators\12_operator_debugging_and_profiling.md，否，否
+- llm-project\tmp_doc\documents\question\operators\operators_overview.md，否，否
+- 重要说明：下面的“agent 执行说明”是本文件的最高优先级规则，属于重中之重。任何 agent 在回答状态、判断文件是否有人接手、选择下一个文件、开始修改、或回写进度前，都必须先核对并严格遵守这段说明；禁止凭印象、局部上下文或主观判断跳过。
+- 额外强调：这也是重中之重。除非用户明确要求暂停、停止或改方向，否则默认直接有最大权限，不要反复询问我，不要打断我，直接按这份日志继续执行当前应做的步骤。
+- agent 执行说明：进来先按上面清单顺序查找第一个“否，否”的未做文件，先把自己要接手的文件改成“是，否”，按本轮轻量复审规则只修路径、行号、锚点漂移，只有文档结论与源码直接冲突时才做最小源码核对，完成后立刻回写为“否，是”并同步更新上方复审记录。
 
-复审记录：
-- 2026-07-13：完成 engine 第三批 07_request_lifecycle.md、08_output_lifecycle.md、09_initialization_and_config.md；按新 commit 核对并修正 EngineCoreRequest / EngineCoreOutput 行号，补充 EC transfer 参数链路，更新 OutputProcessor 与 EngineCore / EngineCoreProc / CoreEngineActorManager 相关源码位置。
-- 2026-07-13：完成 engine 第四批 10_lifecycle_and_control.md、11_engine_vs_engine_core_boundaries.md、engine_overview.md；按新 commit 修正 EngineCore / OutputProcessor 行号，补充 wake_up partial wake 语义、DPLB abort / utility 差异、EngineCoreProc 请求预处理链路、EC transfer 与 streaming output 说明。
-- 2026-07-13：完成 engine_core 第一批 README.md、01_engine_core_role.md、02_request_entry.md；按新 commit 修正 EngineCore / EngineCoreProc / Scheduler 行号，补充 non_block=True / future.result() / _process_aborts_queue 主链路、EC transfer 入队检查、EngineCoreProc 请求预处理与 streaming request 入口行号。
-- 2026-07-13：完成 engine_core 第二批 03_step_loop.md、04_scheduler_output_flow.md、05_worker_execution.md；按新 commit 修正 EngineCore.step / step_with_batch_queue / DP busy loop、SchedulerOutput、Executor、GPUWorker、GPUModelRunner、ModelRunnerOutput 相关行号，补充 SchedulerOutput.kv_cache_block_copies、GPUWorker 等待上一轮 PP send、ModelRunner deferred state corrections 与 DP sleeping dummy batch 条件。
-- 2026-07-13：完成 engine_core 第三批 06_update_from_output_bridge.md、07_engine_core_outputs.md、08_lifecycle_and_async.md；按新 commit 修正 Scheduler.update_from_output、EngineCoreOutput/EngineCoreOutputs、EngineCoreProc、pause/sleep/wake_up、shutdown 与 output socket 相关行号，补充 ec_transfer_params、EC connector request_finished、wake_up partial wake 和 EngineCoreProc pause Future 语义。
-- 2026-07-13：完成 engine_core 收尾与 scheduler 第一批 engine_core_overview.md、scheduler/README.md、scheduler/01_request_states.md；按新 commit 修正 EngineCore 总览中的 step / SchedulerOutput / Worker / ModelRunner / EngineCoreOutput(s) / EngineCoreProc / wake_up / shutdown 行号，补充 kv_cache_block_copies、ec_transfer_params 与 EC connector 语义；按新 commit 修正 Scheduler 请求队列、blocked waiting、add_request、running/waiting 调度、抢占、async KV load、streaming、finish/free 与 unfinished 统计相关行号，并补充 _free_request 返回 KV/EC params、preempt 清理 spec_token_ids / reset_preempted_req_ids。
-- 2026-07-14：完成 scheduler 第二批 02_token_budget.md、03_running_decode_prefill.md、04_waiting_to_running.md；按新 commit 修正 Scheduler.schedule、running/waiting 调度、_make_cached_request_data、_update_after_schedule、update_from_output、blocked waiting promotion、encoder input 与 SchedulerOutput 相关行号；补充 waiting 新 decode 的 spec padding 分支、waiting running-slot 计数包含 WAITING_FOR_STREAMING_REQ、defer_prefills 新条件、async KV load lookahead 限制从 Eagle 语义改为 num_lookahead_tokens 语义，并修正 Mamba block 对齐描述。
-- 2026-07-14：完成 scheduler 第三批 05_prefix_and_external_kv_hits.md；按新 commit 修正 Scheduler waiting cache-hit 主路径、KVCacheManager.get_computed_blocks、KVCacheCoordinator.allocate_new_computed_blocks、SingleTypeKVCacheManager local/external computed blocks、SimpleCPUOffload 与 OffloadingConnector 相关行号；补充 Hybrid/Mamba FA hit 语义、async KV load lookahead/reserved blocks 限制、partial local hit CoW redirect、_record_new_block_ids 和 OffloadingConnector deferred lookup / in-flight transfer 返回 None 的说明。
-- 2026-07-14：完成 scheduler 第四批 06_kv_block_allocation_and_preemption.md；按新 commit 修正 running/waiting allocate_slots、KVCacheManager.allocate_slots 三阶段、watermark/full_sequence_must_fit/remove_skipped_blocks/get_num_blocks_to_allocate、running 抢占循环、_preempt_request、waiting 分配失败、_free_request/_free_blocks/deferred free 相关行号；补充 remove_skipped_blocks processed-token basis、num_local_computed_tokens 参数、reset_preempted_req_ids、EC Connector finished hook 返回值、CoW retained blocks 延迟释放说明。
-- 2026-07-14：完成 scheduler 第五批 07_auxiliary_scheduling_features.md；按新 commit 修正 Scheduler 初始化、schedule、_try_schedule_encoder_inputs、get_grammar_bitmask、update_from_output、blocked waiting promotion、KV/EC connector metadata、KVCacheManager.allocate_slots 相关行号；补充 DSpark lookahead 分支，修正 async KV load lookahead 限制为 num_lookahead_tokens 语义，更新 structured output reasoning trim 后推进 grammar、SchedulerOutput reset_preempted_req_ids / finished_req_ids / kv_cache_block_copies 字段和 Mamba block-aligned split 描述。
-- 2026-07-15：完成 scheduler 第六批 08_update_after_worker_output.md；按新 commit 修正 update_from_output、_update_after_schedule、_free_encoder_inputs、_handle_stopped_request、_free_request、_connector_finished、_update_from_kv_xfer_finished 相关行号；补充 num_in_flight_tokens 回收、async stale frame spec 回退保护、EAGLE encoder free spec_lookahead、structured output reasoning trim、KV/EC transfer params、processed-token basis block ids 与 async/sync KV load failure 处理说明。
-- 2026-07-15：完成 scheduler 第七批 token_states.md；按新 commit 补充 Request / Scheduler / AsyncScheduler 具体源码位置，新增 num_in_flight_tokens 与 async_tokens_to_discard 状态线，修正 _update_after_schedule 同步推进 computed/in-flight、AsyncScheduler placeholder 由 num_sampled_tokens_per_step + cur_num_spec_tokens 决定、diffusion 无 AR bonus token、reset_prefix_cache stale async output frame 丢弃，以及 spec padding [-1] placeholder 说明。
-- 2026-07-15：完成 scheduler 第八批 spec_decode_token_states.md；按新 commit 修正 Request / Scheduler / AsyncScheduler 行号，补充 running spec token 裁剪、new decode [-1] spec padding、num_in_flight_tokens、async_tokens_to_discard stale frame、diffusion num_sampled_tokens_per_step=0、structured output validate_tokens / num_invalid_spec_tokens 与 make_spec_decoding_stats 语义。
-- 2026-07-15：完成 scheduler 第九批 vllm_scheduler.md；按新 commit 修正 Scheduler 总览中队列、初始化、running/waiting 调度、SchedulerOutput、_update_after_schedule、update_from_output、spec decode、structured output、encoder input、释放、KV Connector、pause/reset、Mamba、deferred free、add_request 与 KVPool 插入点相关行号；补充 num_in_flight_tokens、dynamic spec token count、kv_cache_block_copies、spec padding、async stale frame、reasoning trim、KV/EC transfer params 和 invalid KV block async/sync 处理说明。
-- 2026-07-15：完成 executor_worker_model_runner 第一批 README.md；按新 commit 核对 Executor、WorkerBase、GPUWorker、CPUWorker、XPUWorker、GPUModelRunner 与执行层输出结构的源码位置，修正 WorkerBase 抽象接口和 KV/EC/ModelRunnerOutput 行号。
-- 2026-07-15：完成 executor_worker_model_runner 第二批 01_executor_role.md；按新 commit 核对 Executor 抽象、UniProcExecutor、MultiprocExecutor、RayDistributedExecutor、RayExecutorV2 与 EngineCore 调用链，修正 RayExecutorV2 / MultiprocExecutor 行号，并补充 execute_dummy_batch / save_sharded_state 控制面接口。
-- 2026-07-15：完成 executor_worker_model_runner 第三批 02_worker_role.md；按新 commit 核对 WorkerBase、WorkerWrapperBase、GPU Worker 与 GPUModelRunner 主入口，修正大量 gpu_worker.py / gpu_model_runner.py 行号，补充 visible device 映射、workspace manager、SleepModeBackend、V2 warmup、GPU sync check、KV-zero metadata 与 weight update session 语义。
-- 2026-07-15：完成 executor_worker_model_runner 第四批 03_model_runner_role.md；按新 commit 核对 GPUModelRunner V1/V2 定位、初始化状态、InputBatch、load_model、KV cache 初始化/spec、execute_model/sample_tokens 主链路、SchedulerOutput 和 ModelRunnerOutput，修正行号并补充 routed experts、async output copy、KV block zero/copy、dynamic spec token count、deferred state corrections、KV connector finalize 与 AsyncGPUModelRunnerOutput 语义。
-- 2026-07-15：完成 executor_worker_model_runner 第五批 04_execute_model_flow.md；按新 commit 核对 EngineCore.step / step_with_batch_queue、Executor 抽象、UniProc/Multiproc/Ray 后端、WorkerWrapperBase、GPUWorker 和 GPUModelRunner.execute_model/sample_tokens 链路，修正行号并补充 batch queue 中 pending_structured_output_tokens 延后 sampling、DBO/ubatch、KV scales/encoder input compile 跳过、KV connector finalize 与 async routed experts snapshot 说明。
-- 2026-07-15：完成 executor_worker_model_runner 第六批 05_input_batch_and_state_update.md；按新 commit 核对 SchedulerOutput、CachedRequestState、InputBatch、GPUModelRunner._update_states / _update_streaming_request / _update_states_after_model_execute 与 sample_tokens 调用位置，修正行号并补充 kv_cache_block_copies、num_spec_tokens_to_schedule、req_prompt_embeds、structured-output spec draft 为空、attention backend batch reorder、Mamba align/all postprocess 和 async spec deferred correction 说明。
-- 2026-07-15：完成 executor_worker_model_runner 第七批 06_prepare_inputs_and_attention_metadata.md；按新 commit 核对 GPUModelRunner._prepare_inputs / _build_attention_metadata / _preprocess / _get_slot_mappings、MultiGroupBlockTable / BlockTable、CommonAttentionMetadata / AttentionMetadataBuilder 和 set_forward_context，修正行号与失效 attention/backends/abstract.py 路径，并补充 prompt_embeds 分散拷贝、async spec GPU num_computed 修正、SlotMappingMode.NONE、独立 KV update padded slot mapping、R-SWA prefix、routed experts slot mapping 快照与 spec placeholder clamp 说明。
-- 2026-07-15：完成 executor_worker_model_runner 第八批 07_model_forward_and_logits.md；按新 commit 核对 GPUModelRunner.execute_model / _model_forward / _pool / set_forward_context / KV connector forward context、GPUWorker PP 收发，以及 V2 gpu/model_runner execute_model / sample，修正行号并补充 KV scales 强制 eager、encoder input skip_compiled、ExecuteModelState 后 deferred spec correction、V2 FULL/PIECEWISE/NONE 调用位置和 logits 在 sample 阶段计算的说明。
-- 2026-07-15：完成 executor_worker_model_runner 第九批 08_sampling_and_model_runner_output.md；按新 commit 核对 GPUModelRunner.sample_tokens / _sample / _bookkeeping_sync / _get_prompt_logprobs_dict / AsyncGPUModelRunnerOutput、Sampler / SamplingMetadata、ModelRunnerOutput / SamplerOutput / RoutedExperts 结构和 EngineCore grammar 入口，修正行号并补充动态 num_spec_tokens_to_schedule、async draft token CPU copy 条件、valid sampled count GPU 修正、EPLB step、routed experts step-level slot mapping、AsyncGPU check_ep_fault 与 set_async_sampled_token_ids 说明。
-- 2026-07-15：完成 executor_worker_model_runner 第十批 09_worker_kv_cache_interaction.md；按新 commit 核对 GPUWorker.initialize_from_config、GPUModelRunner.initialize_kv_cache / _update_states / _prepare_inputs / _build_attention_metadata / execute_model / sample_tokens、InputBatch block_table、KVConnectorModelRunnerMixin、SchedulerOutput 与 Scheduler KV transfer 回传链路，修正行号并补充 new_block_ids_to_zero、kv_cache_block_copies / CoW copy、KVConnectorOutput.expected_finished_count、invalid_block_ids 和 WAITING_FOR_REMOTE_KVS promotion 说明。
-- 2026-07-15：完成 executor_worker_model_runner 第十一批 10_executor_worker_lifecycle.md；按新 commit 核对 Executor / Worker / ModelRunner 生命周期与控制面接口，修正初始化、profile、KV cache 初始化、sleep/wake_up、reset_prefix_cache、shutdown、collective_rpc、dummy batch 与 weight update 相关源码位置和行号。
-- 2026-07-15：完成 executor_worker_model_runner 收尾 executor_worker_model_runner_overview.md；按新 commit 核对 Executor / WorkerBase / GPUWorker / GPUModelRunner / SchedulerOutput / ModelRunnerOutput / EngineCore.step / Scheduler.update_from_output 主入口，统一源码路径，修正行号，并补充 structured_output_request_ids、EngineCore abort 队列处理、KV transfer no-forward 与 PP KV output 透传说明。
-- 2026-07-15：完成 kv_cache_transfer 第一批 README.md；按新 commit 核对 KVCacheManager、Scheduler KV connector、SchedulerOutput.kv_connector_metadata / ec_connector_metadata、finished_recving / finished_sending、invalid_block_ids 与 deferred_frees 主入口，统一源码路径，并补充 EC connector metadata 作为并行边界说明。
-- 2026-07-15：完成 kv_cache_transfer 第二批 01_kv_cache_manager_role.md；按新 commit 核对 KVCacheManager / KVCacheBlocks / Scheduler waiting-running allocate_slots / BlockPool 主入口，统一源码路径并修正行号，补充 max_in_flight_tokens、kv_cache_report_mode=full 事件、processed-token basis remove_skipped_blocks、get_num_blocks_to_allocate num_local_computed_tokens、take_kv_cache_block_copies 与 KV cache event metadata 说明。
-- 2026-07-15：完成 kv_cache_transfer 第三批 02_block_pool_and_block_lifecycle.md；按新 commit 核对 BlockPool、KVCacheBlock、FreeKVCacheBlockQueue、BlockHashToBlockMap、KVCacheManager.allocate_slots、SingleTypeKVCacheManager、KVCacheCoordinator、Scheduler 释放/deferred free/reset/events 主链路，统一源码路径并修正行号，补充 block_mask / partial-to-full cache promotion、processed-token basis skipped block 释放、SchedulerOutput.kv_cache_block_copies 与 CoW retained blocks fence 释放说明。
-- 2026-07-15：完成 kv_cache_transfer 第四批 03_prefix_cache_lookup.md；按新 commit 核对 EngineCore request_block_hasher、Request.block_hashes / skip_reading_prefix_cache、kv_cache_utils hash 生成、BlockPool cache_full_blocks / get_cached_block、KVCacheManager.get_computed_blocks、KVCacheCoordinator / SingleTypeKVCacheManager find_longest_cache_hit、Scheduler waiting prefix/external 命中合并、SchedulerOutput 与 Worker CachedRequestState/InputBatch 主链路，统一源码路径并修正行号，补充 kv_cache_report_mode=full 复用事件和 Hybrid/Mamba find_longest_cache_hit_per_group 的 FA hit 语义。
-- 2026-07-16：完成 kv_cache_transfer 第五批 04_scheduler_kv_connector_flow.md；按新 commit 核对 Scheduler、KVConnectorFactory、KVConnectorBase_V1、MooncakeStoreScheduler、ExampleConnector 与 Worker GPU KVConnector 主链路，统一源码路径并修正行号，补充 async load 关闭 speculative lookahead、MooncakeStore async lookup None 重试、request_finished processed-token basis 清理与 get_block_ids_for_computed_tokens 语义。
-- 2026-07-16：完成 kv_cache_transfer 第六批 05_external_kv_load_flow.md；按新 commit 核对 Request.kv_transfer_params、Scheduler async load 分支、KVCacheManager.allocate_slots、SingleTypeKVCacheManager external blocks、NIXL pull、Offloading、legacy/V2 GPU ModelRunner 与 KVConnectorOutput 回传链路，修正行号并补充 Offloading in-flight transfer 返回 None、async load 关闭所有 speculative lookahead、Offloading submit_load 命名和 invalid blocks 新行号。
-- 2026-07-16：完成 kv_cache_transfer 第七批 06_external_kv_save_flow.md；按新 commit 核对 Scheduler _free_request / _connector_finished / _update_from_kv_xfer_finished、KVConnectorBase_V1、KVConnectorModelRunnerMixin、attention KV wrapper、NIXL push、LMCache 与 Offloading save/store 链路，修正行号并补充 SupportsHMA 接口归属、wait_for_layer_load、NIXL do_remote_prefill abort 空 recv、pp_size、WRITE handles 原子发布、Offloading completed_jobs / has_pending_push_work / jobs_to_flush / request_finished 当前语义。
-- 2026-07-16：完成 kv_cache_transfer 第八批 07_worker_kv_connector_flow.md；按新 commit 核对 Worker KV connector 初始化、KV cache 注册、legacy GPUModelRunner、V2 GPU model runner ActiveKVConnector、KVConnectorModelRunnerMixin、attention hook、KVOutputAggregator、ExampleConnector、MooncakeStore 与 shutdown 链路，修正行号并补充 legacy/V2 pre_forward/post_forward/no_forward 分流、V2 spec 后 post_forward、PP connector output 处理和 MooncakeStore get_finished 发起 I/O 的当前语义。
-- 2026-07-16：完成 kv_cache_transfer 第九批 08_invalid_blocks_and_recompute.md；按新 commit 核对 KVConnectorOutput.invalid_block_ids、legacy/V2 Worker 上报、KVConnectorBase load failure 接口、NIXL/LMCache/FlexKV/MultiConnector、KVOutputAggregator、Scheduler invalid block 处理与 failure policy、async/sync recompute/fail 恢复链路和相关测试，修正 Scheduler 与 NIXL worker 行号，补充 NIXL failed_recv_reqs / done_recving / 跳过 post-processing 语义，并统一源码引用路径。
-- 2026-07-16：完成 kv_cache_transfer 第十批 09_deferred_free_and_async_safety.md；按新 commit 核对 VllmConfig.max_concurrent_batches、Request.last_sched_seq、Scheduler deferred free fence、KVCacheManager / KVCacheCoordinator / SingleTypeKVCacheManager pop/free、BlockPool.free_blocks、WAITING_FOR_REMOTE_KVS、offloading flush 与 has_requests 相关行号，补充 KV block CoW copy retained source/destination blocks 复用 sched_step_seq + 1 fence、near-monotonic deferred_frees drain 语义和 failed_recving 状态清理说明。
-- 2026-07-16：完成 kv_cache_transfer 第十一批 10_kvpool_end_to_end.md；按新 commit 核对 Scheduler waiting/query/allocate/meta、SchedulerOutput/KVConnectorOutput、legacy/V2 GPUModelRunner KV connector hooks、KVConnectorModelRunnerMixin no-forward/finalize、_connector_finished、finished_sending/finished_recving、async load 恢复、invalid_block_ids 和 KVOutputAggregator 相关行号，补充 kv_cache_block_copies、async load reserved blocks / lookahead 限制、no-forward wait_for_save=False、V2 no_forward/pre_forward/post_forward 位置和 async/sync load failure 差异说明。
-- 2026-07-16：完成 kv_cache_transfer 收尾 kv_cache_transfer_overview.md；按新 commit 修正 KVCacheManager / BlockPool 起始行号，补充 V2 GPU model runner 路径、SchedulerOutput.kv_cache_block_copies、SingleType pending CoW 状态、async load reserved/lookahead 限制、processed-token basis remove_skipped_blocks、invalid load failure 当前语义和 CoW retained blocks 复用 deferred free fence 的总览说明。
-- 2026-07-16：完成 attention 第一批 attention_overview.md；按新 commit 核对 AttentionBackend / CommonAttentionMetadata / AttentionMetadataBuilder / AttentionImpl、Attention layer、ForwardContext、selector / registry / CUDA backend selection、legacy GPUModelRunner metadata 构造、cascade attention、KV connector hook、CUDA graph / compile 相关行号，补充 seq_lens_cpu_upper_bound / rswa_prefix_lens / logits_indices_padded、FlashAttention DiffKV / sparse MLA backend 枚举、V2 runner no_forward/pre_forward/post_forward 和 custom op 注册位置说明。
-- 2026-07-17：完成 attention 第二批 01_attention_role.md；按新 commit 核对 AttentionBackend / selector / GPUModelRunner / ForwardContext / Attention.forward / unified_attention / KV connector hook 相关源码位置，修正行号，补充 AttentionBackend capability checks、CommonAttentionMetadata 的 dcp_local_seq_lens_cpu / rswa_prefix_lens、ForwardContext 的 is_padding / moe_layer_index，并同步 Attention.forward 当前签名和 key/value 可为空的 reshape 分支。
-- 2026-07-17：完成 attention 第三批 02_backend_selection.md；按新 commit 核对 AttentionConfig / arg_utils / registry / selector / AttentionBackend / CUDA、ROCm、CPU、XPU platform / Attention 与 MLAAttention / GPUModelRunner / KV cache reshape / forward 相关源码位置，修正行号，补充 CUDA SM12 MLA priority、ROCm encoder-decoder 跳过 ROCM_ATTN、XPU multimodal prefix fallback、CommonAttentionMetadata 当前字段和 registry 新增 backend 示例。
-- 2026-07-17：完成 attention 第四批 03_attention_metadata_builder.md；按新 commit 核对 AttentionBackend / AttentionMetadata / CommonAttentionMetadata / AttentionCGSupport / AttentionMetadataBuilder、AttentionGroup、GPUModelRunner `_build_attention_metadata` / `initialize_attn_backend` / `initialize_metadata_builders` / `calculate_reorder_batch_threshold`、`set_forward_context` / `get_attention_context` / `unified_attention_with_output`、ubatch 与 batch reorder 相关源码位置，修正行号，补充 `rswa_prefix_lens` 字段，并把 `list[dict[layer_name, metadata]]` 的说明改回当前以 speculative-decoding 多上下文为主、而非 ubatching 默认外部语义。
-- 2026-07-17：完成 attention 第五批 04_prefill_decode_metadata.md；按新 commit 核对 SchedulerOutput spec decode 字段、GPUModelRunner `_prepare_inputs` / `_build_attention_metadata`、CommonAttentionMetadata、batch reorder、FlashInfer、Mamba、GDN 与 cascade / CUDA graph 相关源码位置，修正行号，补充 `rswa_prefix_lens` 字段，明确 FlashInfer 仅在 `causal=True` 时显式 split、`causal=False` 时整批按 prefill 处理，并把单 token prefill 改判为 decode/update row 的特例明确归因到 Mamba FULL-CG 而非通用 GDN 规则。
-- 2026-07-17：完成 attention 第六批 05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md；按轻量复核口径只修正明显漂移的源码位置和局部语义：更新 GPUModelRunner / Attention.forward / get_attention_context / KV cache interface 与初始化入口行号，补充 `Attention.forward` 当前 key/value 可为 None、`output_dtype` 参数，以及 FullAttentionSpec page size 使用 `head_size + head_size_v`、SlidingWindowSpec admission 上界使用 `max_in_flight_tokens` 的当前语义。
-- 2026-07-17：完成 attention 第七批 08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md；按轻量复核口径修正旧绝对源码根路径和明显漂移的源码位置，重点更新 cascade attention 计算 / FlashAttention cascade / KV connector hook / CUDA graph dispatcher / ForwardContext / unified attention custom op / GPUModelRunner graph 决策与 KV connector 输出相关行号，不展开整篇语义重审。
-- 2026-07-17：完成 attention_methods 子目录 11_attention_variants_overview.md 到 18_hma_and_kv_cache_layout.md；按用户要求主要修正源码路径和明显漂移行号，只在文档逻辑与当前代码直接冲突处做最小语义修正：同步 FullAttentionSpec page size 的 head_size_v 口径、FlashInfer_MLA decode LSE 返回语义、MLAAttentionSpec 当前物理语义，以及 HMA/ModelRunner 当前路径与 _prepare_inputs / _build_attention_metadata 命名。
 
+重点中的重点：记住再接手任务之前，先回答：
+1，确认明白自己获得最大权限，自己判断，不要问用户要权限，我已经说了给你最大权限，再问打死你。
+2，做之前明确自己应该怎么做，分成几步，然后做的时候及时更新状态。对于一个文档，必须做完，状态必须更新完！
+
+- [x] 本轮新增：已完成 `llm-project/tmp_doc/notes/vllm_page_attention_block_lifecycle.md`，整理 page attention 的 block 申请、block table/slot mapping、kernel 读写与释放链路。

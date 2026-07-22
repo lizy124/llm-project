@@ -103,23 +103,21 @@ DP 不是把一个 SchedulerOutput 切成多份给多个 replica，而是每个 
 
 ### 4.1 TP / PP / CP 是副本内部并行
 
-`ParallelConfig.world_size` 的定义是：
+`ParallelConfig.world_size` 先描述单个 DP replica 内部需要多少 worker rank；当前实现里，它不是这里显式定义的方法，而是由 `world_size_across_dp()` 用作“副本内 world size”的乘数项。
 
-位置：`vllm/vllm/config/parallel.py:791`
+位置：`vllm/vllm/config/parallel.py:517`
 
 ```text
-world_size = pipeline_parallel_size
-           * tensor_parallel_size
-           * prefill_context_parallel_size
+world_size_across_dp = world_size * data_parallel_size
 ```
 
-也就是说，`world_size` 先描述单个 DP replica 内部需要多少 worker rank。
+也就是说，这里的 `world_size` 语义仍然是单个 DP replica 内部的 `PP × TP × PCP` worker 数。
 
 ### 4.2 DP 把这个副本复制多份
 
 `world_size_across_dp` 才把 DP 算进去：
 
-位置：`vllm/vllm/config/parallel.py:516`
+位置：`vllm/vllm/config/parallel.py:517`
 
 ```text
 world_size_across_dp = world_size * data_parallel_size
@@ -138,7 +136,7 @@ world_size_across_dp = world_size * data_parallel_size
 
 `initialize_model_parallel()` 的注释给了全局 rank 维度顺序：
 
-位置：`vllm/vllm/distributed/parallel_state.py:1760`
+位置：`vllm/vllm/distributed/parallel_state.py:1713`
 
 ```text
 ExternalDP x DP x PP x PCP x TP
@@ -158,7 +156,7 @@ ExternalDP x DP x PP x PCP x TP
 
 DP group 的构造在：
 
-位置：`vllm/vllm/distributed/parallel_state.py:1853`
+位置：`vllm/vllm/distributed/parallel_state.py:1874`
 
 ```text
 all_ranks.transpose(1, 4)

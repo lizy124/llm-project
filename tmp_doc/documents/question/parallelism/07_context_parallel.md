@@ -5,8 +5,9 @@
 - `vllm/vllm/config/parallel.py`
 - `vllm/vllm/distributed/parallel_state.py`
 - `vllm/vllm/v1/worker/cp_utils.py`
+- `vllm/vllm/v1/worker/gpu/cp_utils.py`
 - `vllm/vllm/v1/worker/gpu_model_runner.py`
-- `vllm/vllm/v1/worker/block_table.py`
+- `vllm/vllm/v1/worker/gpu/block_table.py`
 - `vllm/vllm/v1/worker/attn_utils.py`
 - `vllm/vllm/v1/core/kv_cache_utils.py`
 - `vllm/vllm/v1/core/sched/scheduler.py`
@@ -469,6 +470,8 @@ dcp_local_seq_lens
 每个 request 在当前 DCP rank 上实际可见的本地 KV 长度。
 ```
 
+源码位置：`code/vllm/vllm/v1/worker/gpu/cp_utils.py:8`
+
 `prepare_dcp_local_seq_lens()` 的核心公式：
 
 ```text
@@ -489,6 +492,8 @@ local_seq_lens = rounds * cp_interleave + local_remainder
 ---
 
 ## 13. Attention metadata 中的 CP 字段
+
+源码位置：`code/vllm/vllm/v1/attention/backend.py:395`
 
 `CommonAttentionMetadata` 是 attention backend 的公共 metadata。
 
@@ -519,6 +524,8 @@ seq_lens：仍保留全局语义，用于 batch / query 组织。
 ---
 
 ## 14. attention backend 的 CP 能力检查
+
+源码位置：`code/vllm/vllm/v1/worker/cp_utils.py:22`
 
 `check_attention_cp_compatibility()` 会逐层检查 attention impl。
 

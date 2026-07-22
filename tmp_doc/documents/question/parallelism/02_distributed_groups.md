@@ -102,7 +102,7 @@ get_ep_group()
 get_eplb_group()
 ```
 
-位置：`get_world_group()` 在 `vllm/vllm/distributed/parallel_state.py:1242` 附近，`get_tp_group()` / `get_dcp_group()` / `get_pp_group()` 等 getter 从 `vllm/vllm/distributed/parallel_state.py:1334` 附近开始。
+位置：`get_world_group()` 在 `vllm/vllm/distributed/parallel_state.py:1276`，`get_inner_dp_world_group()` 在 `vllm/vllm/distributed/parallel_state.py:1281`，`get_tp_group()` / `get_dcp_group()` / `get_pp_group()` 等 getter 从 `vllm/vllm/distributed/parallel_state.py:1368` 开始。
 
 ---
 
@@ -112,7 +112,7 @@ get_eplb_group()
 
 V1 GPU worker 初始化分布式环境的入口在：
 
-`vllm/vllm/v1/worker/gpu_worker.py:1208`
+`vllm/vllm/v1/worker/gpu_worker.py:1326`
 
 核心调用顺序是：
 
@@ -171,7 +171,7 @@ DP 状态同步：
 
 `GroupCoordinator` 是 vLLM 对 PyTorch `ProcessGroup` 的包装。
 
-位置：`vllm/vllm/distributed/parallel_state.py:351`
+位置：`vllm/vllm/distributed/parallel_state.py:358`
 
 它不是单纯保存一个 `ProcessGroup`，而是同时管理：
 
@@ -199,7 +199,7 @@ Process | Node | Global Rank | Local Rank | Rank in Group
    3    |  1   |      3      |     1      |       3
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:361`
+位置：`vllm/vllm/distributed/parallel_state.py:374`
 
 区别是：
 
@@ -221,7 +221,7 @@ cpu_group：
   用于 object / metadata / barrier / tensor_dict metadata，通常走 gloo。
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:424`
+位置：`vllm/vllm/distributed/parallel_state.py:414`
 
 这点很重要，因为：
 
@@ -230,13 +230,13 @@ NCCL barrier 可能隐式创建 GPU tensor，容易干扰当前 device；
 vLLM 的 GroupCoordinator.barrier() 明确使用 CPU group。
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1160`
+位置：`vllm/vllm/distributed/parallel_state.py:1179`
 
 ### 5.3 device communicator 是什么
 
 `device_communicator` 是平台相关通信实现。
 
-位置：`vllm/vllm/distributed/parallel_state.py:468`
+位置：`vllm/vllm/distributed/parallel_state.py:484`
 
 创建时会根据当前平台选择：
 
@@ -256,7 +256,7 @@ MoE dispatch / combine
 prepare_communication_buffer_for_model
 ```
 
-基础接口见：`vllm/vllm/distributed/device_communicators/base_device_communicator.py:118`
+基础接口见：`vllm/vllm/distributed/device_communicators/base_device_communicator.py:127`
 
 可以把三者关系理解为：
 

@@ -4,12 +4,15 @@
 
 - `vllm/vllm/config/parallel.py`
 - `vllm/vllm/distributed/parallel_state.py`
-- `vllm/vllm/distributed/device_communicators/all2all.py`
-- `vllm/vllm/model_executor/layers/fused_moe/runner/moe_runner.py`
-- `vllm/vllm/model_executor/layers/fused_moe/all2all_utils.py`
 - `vllm/vllm/model_executor/layers/fused_moe/prepare_finalize/naive_dp_ep.py`
+- `vllm/vllm/v1/worker/utils.py`
 - `vllm/vllm/v1/worker/gpu_worker.py`
 - `vllm/vllm/v1/worker/gpu_model_runner.py`
+
+当前源码里和 SP 直接相关的入口，主要分成两类：
+
+1. `ParallelConfig.use_sequence_parallel_moe`：MoE / EP 路径里的 sequence-parallel token 布局优化。
+2. `compilation_config.pass_config.enable_sp`：V1 worker 编译路径下的 SP 开关，用于让 residual / intermediate tensors 在 TP rank 间按 sequence 维分片传递。
 
 本问题关注：Sequence Parallel 和 Context Parallel 的区别，vLLM 中为什么没有独立的 `sequence_parallel_size` 并行维度，`use_sequence_parallel_moe` 解决什么问题，SP 如何影响 MoE dispatch / combine、PP IntermediateTensors、residual all-gather，以及它和 TP / DP / EP / PP / CP 的关系。
 
@@ -100,6 +103,13 @@ SP 通常不触碰这些 attention 语义。
 DP / PP / TP / EP / PCP / DCP
 ```
 
+而 SP 在当前代码里不是一个单独的并行拓扑维度，更像两类已有 group 上的张量布局规则：
+
+```text
+1. MoE 路径：通过 use_sequence_parallel_moe 告诉 EP dispatch/combine，输入 token 已经是 sequence-sharded；
+2. 编译路径：通过 enable_sp 让 residual / intermediate tensors 在 TP ranks 之间按 sequence 维 scattered，并在需要 attention/QKV 前 all-gather 回完整 residual。
+```
+
 DCP 比较特殊：
 
 ```text
@@ -147,6 +157,15 @@ ParallelConfig.use_sequence_parallel_moe
 ```
 
 它主要服务 MoE。
+
+但这不是当前代码里唯一可见的 SP 入口。V1 worker 还会通过：
+
+```text
+compilation_config.pass_config.enable_sp
+is_residual_scattered_for_sp(...)
+```
+
+决定 residual 是否在 TP ranks 间按 sequence 维 scattered，以及 PP stage 间发送 `IntermediateTensors` 时哪些 tensor 需要先 all-gather。
 
 在 TP + DP + EP + 某些 all-to-all backend 同时启用时，会遇到一个问题：
 
@@ -309,6 +328,15 @@ SP 切 token；
 ## 9. SP 和 PP IntermediateTensors 的关系
 
 SP 也会影响 Pipeline Parallel 的中间张量传递。
+
+当前源码里，这部分不是抽象口径，而是直接体现在 `gpu_worker.py` / `gpu_model_runner.py`：
+
+```text
+- `is_residual_scattered_for_sp(...)` 判断 residual 当前是否仍是 sequence-sharded；
+- `get_pp_group().irecv_tensor_dict(..., all_gather_tensors=...)` / `isend_tensor_dict(...)`
+  决定 PP rank 间收发 `IntermediateTensors` 时，哪些张量需要借助 TP group 先做 all-gather；
+- `gpu_model_runner._sync_intermediate_tensors(...)` 会在 QKV + Attention 需要完整 residual 前，对 scattered residual 做 `get_tp_group().all_gather(..., dim=0)`。
+```
 
 PP stage 之间传递的是 hidden states / residual / intermediate tensors：
 
@@ -567,9 +595,14 @@ SP 没有单独的 sequence_parallel_size rank 维度；
 
 ### 16.3 SP 是不是只在 MoE 里有意义？
 
-在当前 vLLM 文档和源码路径里，SP 最明显的使用点是 MoE，尤其是 sequence parallel MoE。
+在当前 vLLM 源码里，SP 最明显的两个使用点是：
 
-但 SP 的影响也会出现在 PP IntermediateTensors / residual 的布局处理中。
+```text
+1. sequence parallel MoE；
+2. V1 编译路径下的 residual / IntermediateTensors sequence-sharded 布局。
+```
+
+所以它不只是“MoE 里的一个布尔开关”，只是 MoE 这条线最容易看见；另一条是 PP + TP + full-graph compile 下 residual 的 scattered / all-gather 协议。
 
 ### 16.4 SP 是否需要 LSE？
 

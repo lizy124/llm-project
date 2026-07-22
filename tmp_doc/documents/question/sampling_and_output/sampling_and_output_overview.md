@@ -2,35 +2,35 @@
 
 源码位置：
 
-- `vllm/vllm/sampling_params.py`
-- `vllm/vllm/outputs.py`
-- `vllm/vllm/logprobs.py`
-- `vllm/vllm/v1/outputs.py`
-- `vllm/vllm/v1/engine/core.py`
-- `vllm/vllm/v1/engine/__init__.py`
-- `vllm/vllm/v1/engine/output_processor.py`
-- `vllm/vllm/v1/engine/logprobs.py`
-- `vllm/vllm/v1/core/sched/scheduler.py`
-- `vllm/vllm/v1/core/sched/output.py`
-- `vllm/vllm/v1/worker/gpu_model_runner.py`
-- `vllm/vllm/v1/worker/gpu/model_runner.py`
-- `vllm/vllm/v1/worker/gpu/async_utils.py`
-- `vllm/vllm/v1/worker/gpu/structured_outputs.py`
-- `vllm/vllm/v1/worker/gpu/sample/sampler.py`
-- `vllm/vllm/v1/worker/gpu/sample/output.py`
-- `vllm/vllm/v1/worker/gpu/sample/logprob.py`
-- `vllm/vllm/v1/worker/gpu/sample/prompt_logprob.py`
-- `vllm/vllm/v1/worker/gpu/sample/logit_bias.py`
-- `vllm/vllm/v1/worker/gpu/sample/penalties.py`
-- `vllm/vllm/v1/worker/gpu/sample/bad_words.py`
-- `vllm/vllm/v1/worker/gpu/sample/min_p.py`
-- `vllm/vllm/v1/worker/gpu/sample/gumbel.py`
-- `vllm/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py`
-- `vllm/vllm/v1/sample/sampler.py`
-- `vllm/vllm/v1/sample/metadata.py`
-- `vllm/vllm/v1/sample/rejection_sampler.py`
-- `vllm/vllm/v1/sample/ops/topk_topp_sampler.py`
-- `vllm/vllm/v1/sample/ops/logprobs.py`
+- `code/vllm/vllm/sampling_params.py`
+- `code/vllm/vllm/outputs.py`
+- `code/vllm/vllm/logprobs.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/engine/__init__.py`
+- `code/vllm/vllm/v1/engine/output_processor.py`
+- `code/vllm/vllm/v1/engine/logprobs.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu/async_utils.py`
+- `code/vllm/vllm/v1/worker/gpu/structured_outputs.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/sampler.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/output.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/logprob.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/prompt_logprob.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/logit_bias.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/penalties.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/bad_words.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/min_p.py`
+- `code/vllm/vllm/v1/worker/gpu/sample/gumbel.py`
+- `code/vllm/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py`
+- `code/vllm/vllm/v1/sample/sampler.py`
+- `code/vllm/vllm/v1/sample/metadata.py`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py`
+- `code/vllm/vllm/v1/sample/ops/topk_topp_sampler.py`
+- `code/vllm/vllm/v1/sample/ops/logprobs.py`
 
 本文按“先定边界，再走主链路，再拆关键阶段，最后总结接口和数据结构”的方式，梳理 vLLM V1 中 sampling 与 output 的关系。
 
@@ -121,11 +121,11 @@ EngineCore.step()
 
 对应关键入口：
 
-- `vllm/vllm/v1/engine/core.py:479`
-- `vllm/vllm/v1/worker/gpu/model_runner.py:1101`
-- `vllm/vllm/v1/worker/gpu/model_runner.py:1326`
-- `vllm/vllm/v1/core/sched/scheduler.py:1464`
-- `vllm/vllm/v1/engine/output_processor.py:576`
+- `code/vllm/vllm/v1/engine/core.py:488`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py:1129`
+- `code/vllm/vllm/v1/worker/gpu/model_runner.py:1373`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1551`
+- `code/vllm/vllm/v1/engine/output_processor.py:584`
 
 一句话记忆：
 
@@ -314,7 +314,7 @@ if model_output is None:
 engine_core_outputs = self.scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-源码位置：`vllm/vllm/v1/engine/core.py:490` 到 `vllm/vllm/v1/engine/core.py:505`
+源码位置：`code/vllm/vllm/v1/engine/core.py:499` 到 `code/vllm/vllm/v1/engine/core.py:514`
 
 这里的关键点是：
 
@@ -385,7 +385,7 @@ OutputProcessor 更靠近 frontend，它持有 tokenizer 和 frontend RequestSta
 
 ### 5.1 SamplingParams 是用户采样参数的源头
 
-`SamplingParams` 定义在：`vllm/vllm/sampling_params.py:199`
+`SamplingParams` 定义在：`code/vllm/vllm/sampling_params.py:199`
 
 核心字段包括：
 
@@ -425,18 +425,18 @@ repetition_detection
 - 校验 top_p、top_k、min_p、penalty、max_tokens 等范围。
 ```
 
-源码位置：`vllm/vllm/sampling_params.py:429` 到 `vllm/vllm/sampling_params.py:551`
+源码位置：`code/vllm/vllm/sampling_params.py:448` 到 `code/vllm/vllm/sampling_params.py:553`
 
 ### 5.2 新 GPU sampler 用 stateful 方式保存参数
 
-在新的 `vllm/vllm/v1/worker/gpu/model_runner.py` 路径中，新请求加入 batch 时：
+在新的 `code/vllm/vllm/v1/worker/gpu/model_runner.py` 路径中，新请求加入 batch 时：
 
 ```python
 self.sampler.add_request(req_index, prompt_len, new_req_data.sampling_params)
 self.prompt_logprobs_worker.add_request(req_id, req_index, new_req_data.sampling_params)
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:801` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:809`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:804` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:812`
 
 `Sampler.add_request()` 会把一个 `SamplingParams` 拆到多个状态对象：
 
@@ -457,7 +457,7 @@ LogprobTokenIdsState：
   用户指定 token ids 的 logprobs 请求
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:56` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:70`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:56` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:70`
 
 一句话：
 
@@ -467,7 +467,7 @@ SamplingParams 是请求级配置，Sampler state 是 batch/GPU 可消费的运�
 
 ### 5.3 旧 SamplingMetadata 路径
 
-旧 `vllm/vllm/v1/sample/sampler.py` 路径使用 `SamplingMetadata`。
+旧 `code/vllm/vllm/v1/sample/sampler.py` 路径使用 `SamplingMetadata`。
 
 `SamplingMetadata` 把每个请求的采样参数整理成一次 forward 可用的 batch 结构，包括：
 
@@ -512,7 +512,7 @@ sample_hidden_states = hidden_states[input_batch.logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1043` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1044`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1069` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1070`
 
 这说明：
 
@@ -553,11 +553,11 @@ max_per_req_token_ids = self.logprob_token_ids_state.max_num_token_ids(idx_mappi
 return_logprobs = max_num_logprobs != NO_LOGPROBS or max_per_req_token_ids > 0
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:88` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:92`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:88` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:92`
 
 之后通过 `compute_topk_logprobs()` 只计算需要返回的部分。
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:104` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:118`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:104` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:118`
 
 ### 6.3 prompt logprobs 属于 prompt token
 
@@ -576,7 +576,7 @@ prompt_logprobs_dict = self.prompt_logprobs_worker.compute_prompt_logprobs(
 )
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1373` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1381`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1421` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1428`
 
 所以要区分：
 
@@ -594,7 +594,7 @@ prompt logprobs：
 
 ### 7.1 新 GPU sampler 的入口
 
-新 GPU sampler 定义在：`vllm/vllm/v1/worker/gpu/sample/sampler.py:30`
+新 GPU sampler 定义在：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:30`
 
 入口：
 
@@ -602,7 +602,7 @@ prompt logprobs：
 def __call__(self, logits: torch.Tensor, input_batch: InputBatch) -> SamplerOutput:
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:72`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:72`
 
 它从 `InputBatch` 取出：
 
@@ -615,13 +615,13 @@ positions[input_batch.logits_indices]：当前 logits 对应位置；
 input_ids[input_batch.logits_indices]：当前 logits 对应输入 token。
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:77` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:82`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:77` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:82`
 
 ### 7.2 apply_sampling_params 的顺序
 
 真正修改 logits 的顺序在 `apply_sampling_params()` 中。
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:146`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:146`
 
 处理顺序是：
 
@@ -636,7 +636,7 @@ raw logits
   → top_k / top_p
 ```
 
-对应源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:156` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:196`
+对应源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:156` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:196`
 
 这个顺序可以理解为：
 
@@ -657,7 +657,7 @@ processed_logits = apply_sampling_params(..., skip_top_k_top_p=True)
   → 否则 apply_top_k_top_p() + gumbel_sample()
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/sample/sampler.py:198` 到 `vllm/vllm/v1/worker/gpu/sample/sampler.py:244`
+源码位置：`code/vllm/vllm/v1/worker/gpu/sample/sampler.py:198` 到 `code/vllm/vllm/v1/worker/gpu/sample/sampler.py:244`
 
 关键判断：
 
@@ -681,7 +681,7 @@ temperature > 0：
   加 gumbel noise，再 argmax，相当于按分布随机采样。
 ```
 
-旧 `vllm/vllm/v1/sample/sampler.py` 路径则更显式：
+旧 `code/vllm/vllm/v1/sample/sampler.py` 路径则更显式：
 
 ```text
 1. 如果不是 all_random，先 greedy argmax；
@@ -692,7 +692,7 @@ temperature > 0：
 6. 对 batch 中 greedy 行和 random 行做混合。
 ```
 
-源码位置：`vllm/vllm/v1/sample/sampler.py:243` 到 `vllm/vllm/v1/sample/sampler.py:302`
+源码位置：`code/vllm/vllm/v1/sample/sampler.py:243` 到 `code/vllm/vllm/v1/sample/sampler.py:302`
 
 ---
 
@@ -708,7 +708,7 @@ Scheduler 在执行结果返回前，先根据本轮 `SchedulerOutput` 生成 gr
 grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 ```
 
-源码位置：`vllm/vllm/v1/engine/core.py:492`
+源码位置：`code/vllm/vllm/v1/engine/core.py:501`
 
 `Scheduler.get_grammar_bitmask()` 会：
 
@@ -719,7 +719,7 @@ grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
 4. 返回 GrammarOutput(structured_output_request_ids, bitmask)。
 ```
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1440` 到 `vllm/vllm/v1/core/sched/scheduler.py:1462`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1527` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1549`
 
 ### 8.2 bitmask 在采样前应用
 
@@ -735,11 +735,11 @@ if grammar_output is not None:
     )
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1045` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1053`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1071` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1079`
 
 `StructuredOutputsWorker.apply_grammar_bitmask()` 会把 CPU bitmask 异步复制到 GPU，再把不允许的 token logits 写成 `-inf`。
 
-源码位置：`vllm/vllm/v1/worker/gpu/structured_outputs.py:23` 到 `vllm/vllm/v1/worker/gpu/structured_outputs.py:80`
+源码位置：`code/vllm/vllm/v1/worker/gpu/structured_outputs.py:23` 到 `code/vllm/vllm/v1/worker/gpu/structured_outputs.py:80`
 
 因此顺序是：
 
@@ -762,7 +762,7 @@ new_token_ids
   → grammar.accept_tokens(req_id, new_token_ids)
 ```
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1599` 到 `vllm/vllm/v1/core/sched/scheduler.py:1615`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1693` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1717`
 
 也就是说：
 
@@ -792,7 +792,7 @@ else:
     )
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1055` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1067`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1081` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1093`
 
 含义是：
 
@@ -813,7 +813,7 @@ bonus tokens：全部 draft 接受后额外补的 token；
 output tokens = accepted + recovered + bonus。
 ```
 
-源码位置：`vllm/vllm/v1/sample/rejection_sampler.py:37` 到 `vllm/vllm/v1/sample/rejection_sampler.py:58`
+源码位置：`code/vllm/vllm/v1/sample/rejection_sampler.py:37` 到 `code/vllm/vllm/v1/sample/rejection_sampler.py:58`
 
 ### 9.2 Scheduler 修正 accepted / rejected 状态
 
@@ -829,7 +829,7 @@ scheduled_spec_token_ids
   → 记录 spec decoding stats
 ```
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1548` 到 `vllm/vllm/v1/core/sched/scheduler.py:1575`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1637` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1668`
 
 这解释了为什么 `ModelRunnerOutput.sampled_token_ids` 是 `list[list[int]]`：
 
@@ -851,7 +851,7 @@ current sampled tokens / hidden states
   → 下一轮 SchedulerOutput.scheduled_spec_decode_tokens
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1429` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1461`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1481` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1498`
 
 这部分不是用户输出本身，而是下一轮 spec decode 的输入准备。
 
@@ -861,7 +861,7 @@ current sampled tokens / hidden states
 
 `ModelRunnerOutput` 是 Worker / ModelRunner 返回给 Scheduler 的 batch 级内部协议对象。
 
-源码位置：`vllm/vllm/v1/outputs.py:234`
+源码位置：`code/vllm/vllm/v1/outputs.py:234`
 
 它的设计目标是：
 
@@ -909,7 +909,7 @@ routed_experts：
   MoE routed experts 信息。
 ```
 
-源码位置：`vllm/vllm/v1/outputs.py:235` 到 `vllm/vllm/v1/outputs.py:281`
+源码位置：`code/vllm/vllm/v1/outputs.py:235` 到 `code/vllm/vllm/v1/outputs.py:286`
 
 它有两个重要特点：
 
@@ -977,7 +977,7 @@ async_output = AsyncOutput(
 )
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1392` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1399`
+源码位置：`code/vllm/vllm/v1/worker/gpu/model_runner.py:1440` 到 `code/vllm/vllm/v1/worker/gpu/model_runner.py:1447`
 
 `AsyncOutput` 做的事情：
 
@@ -995,7 +995,7 @@ get_output()：
   回填 ModelRunnerOutput。
 ```
 
-源码位置：`vllm/vllm/v1/worker/gpu/async_utils.py:12` 到 `vllm/vllm/v1/worker/gpu/async_utils.py:69`
+源码位置：`code/vllm/vllm/v1/worker/gpu/async_utils.py:12` 到 `code/vllm/vllm/v1/worker/gpu/async_utils.py:70`
 
 一句话：
 
@@ -1009,7 +1009,7 @@ AsyncOutput 不是新的语义层，它只是让 GPU→CPU 输出拷贝和后续
 
 `Scheduler.update_from_output()` 是 worker 输出进入 request 状态机的入口。
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py:1463`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 输入：
 
@@ -1043,18 +1043,18 @@ model_runner_output：
 
 关键源码位置：
 
-- 遍历 scheduled requests：`vllm/vllm/v1/core/sched/scheduler.py:1527`
-- 查找 request 输出 index：`vllm/vllm/v1/core/sched/scheduler.py:1543`
-- spec decode 修正：`vllm/vllm/v1/core/sched/scheduler.py:1548`
-- append token / stop check：`vllm/vllm/v1/core/sched/scheduler.py:1589`
-- grammar advance：`vllm/vllm/v1/core/sched/scheduler.py:1599`
-- logprobs slice：`vllm/vllm/v1/core/sched/scheduler.py:1671`
-- EngineCoreOutput 构造：`vllm/vllm/v1/core/sched/scheduler.py:1690`
-- EngineCoreOutputs 构造：`vllm/vllm/v1/core/sched/scheduler.py:1770`
+- 遍历 scheduled requests：`code/vllm/vllm/v1/core/sched/scheduler.py:1614`
+- 查找 request 输出 index：`code/vllm/vllm/v1/core/sched/scheduler.py:1632`
+- spec decode 修正：`code/vllm/vllm/v1/core/sched/scheduler.py:1637`
+- append token / stop check：`code/vllm/vllm/v1/core/sched/scheduler.py:1683`
+- grammar advance：`code/vllm/vllm/v1/core/sched/scheduler.py:1693`
+- logprobs slice：`code/vllm/vllm/v1/core/sched/scheduler.py:1773`
+- EngineCoreOutput 构造：`code/vllm/vllm/v1/core/sched/scheduler.py:1793`
+- EngineCoreOutputs 构造：`code/vllm/vllm/v1/core/sched/scheduler.py:1876`
 
 `EngineCoreOutput` 是 request 级内部输出。
 
-源码位置：`vllm/vllm/v1/engine/__init__.py:175`
+源码位置：`code/vllm/vllm/v1/engine/__init__.py:175`
 
 主要字段：
 
@@ -1075,7 +1075,7 @@ num_nans_in_logits
 
 `EngineCoreOutputs` 是按 client 分组的一批输出。
 
-源码位置：`vllm/vllm/v1/engine/__init__.py:220`
+源码位置：`code/vllm/vllm/v1/engine/__init__.py:220`
 
 一句话：
 
@@ -1089,9 +1089,9 @@ ModelRunnerOutput 是 batch 级执行结果，EngineCoreOutput 是 request 级�
 
 `OutputProcessor` 是内部输出到用户输出的最后一层适配器。
 
-源码位置：`vllm/vllm/v1/engine/output_processor.py:417`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:424`
 
-主入口：`vllm/vllm/v1/engine/output_processor.py:576`
+主入口：`code/vllm/vllm/v1/engine/output_processor.py:584`
 
 它的核心流程是：
 
@@ -1116,22 +1116,22 @@ OutputProcessor.process_outputs(engine_core_outputs)
 
 关键源码位置：
 
-- 取 request state：`vllm/vllm/v1/engine/output_processor.py:606`
-- detokenize：`vllm/vllm/v1/engine/output_processor.py:635`
-- stop string check：`vllm/vllm/v1/engine/output_processor.py:639`
-- logprobs update：`vllm/vllm/v1/engine/output_processor.py:648`
-- make request output：`vllm/vllm/v1/engine/output_processor.py:651`
-- AsyncLLM queue：`vllm/vllm/v1/engine/output_processor.py:661`
-- LLMEngine return list：`vllm/vllm/v1/engine/output_processor.py:665`
-- finish cleanup：`vllm/vllm/v1/engine/output_processor.py:668`
+- 取 request state：`code/vllm/vllm/v1/engine/output_processor.py:615`
+- detokenize：`code/vllm/vllm/v1/engine/output_processor.py:648`
+- stop string check：`code/vllm/vllm/v1/engine/output_processor.py:651`
+- logprobs update：`code/vllm/vllm/v1/engine/output_processor.py:657`
+- make request output：`code/vllm/vllm/v1/engine/output_processor.py:659`
+- AsyncLLM queue：`code/vllm/vllm/v1/engine/output_processor.py:668`
+- LLMEngine return list：`code/vllm/vllm/v1/engine/output_processor.py:676`
+- finish cleanup：`code/vllm/vllm/v1/engine/output_processor.py:678`
 
 ### 13.1 RequestOutput / CompletionOutput
 
-用户可见 generation 输出定义在 `vllm/vllm/outputs.py`。
+用户可见 generation 输出定义在 `code/vllm/vllm/outputs.py`。
 
 `CompletionOutput` 表示一个 completion 分支。
 
-源码位置：`vllm/vllm/outputs.py:21`
+源码位置：`code/vllm/vllm/outputs.py:21`
 
 主要字段：
 
@@ -1149,7 +1149,7 @@ lora_request
 
 `RequestOutput` 表示一个用户请求。
 
-源码位置：`vllm/vllm/outputs.py:85`
+源码位置：`code/vllm/vllm/outputs.py:85`
 
 主要字段：
 
@@ -1188,11 +1188,11 @@ CUMULATIVE：
   返回累计 token / text。
 ```
 
-源码位置：`vllm/vllm/v1/engine/output_processor.py:280` 到 `vllm/vllm/v1/engine/output_processor.py:319`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:272` 到 `code/vllm/vllm/v1/engine/output_processor.py:319`
 
 `RequestOutput.add()` 还支持把后续增量输出合并到已有输出中。
 
-源码位置：`vllm/vllm/outputs.py:145`
+源码位置：`code/vllm/vllm/outputs.py:145`
 
 ---
 
@@ -1236,9 +1236,9 @@ model forward
   → 上层可转换为 EmbeddingRequestOutput / ClassificationRequestOutput / ScoringRequestOutput 等
 ```
 
-用户可见的 pooling 基类在：`vllm/vllm/outputs.py:204`
+用户可见的 pooling 基类在：`code/vllm/vllm/outputs.py:208`
 
-embedding 输出在：`vllm/vllm/outputs.py:240`
+embedding 输出在：`code/vllm/vllm/outputs.py:271`
 
 特点：
 
@@ -1299,7 +1299,7 @@ prefill / decode / spec decode 的边界在哪里。
 
 worker 内部采样结果，偏 GPU tensor 形态。
 
-新 GPU sampler 输出定义在：`vllm/vllm/v1/worker/gpu/sample/output.py:10`
+新 GPU sampler 输出定义在：`code/vllm/vllm/v1/worker/gpu/sample/output.py:10`
 
 ```text
 sampled_token_ids

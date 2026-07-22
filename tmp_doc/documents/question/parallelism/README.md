@@ -13,7 +13,7 @@
 - `vllm/vllm/v1/worker/`
 - `vllm/vllm/v1/attention/`
 
-这个目录按问题拆解 vLLM V1 的并行体系，重点回答：vLLM 里有哪些并行策略，它们分别切分什么，如何建立 rank / group 拓扑，forward 中如何通信，KV cache / attention / scheduler / sampling 如何受并行影响，以及 TP / PP / DP / EP / SP / CP 等策略如何组合。
+这个目录按问题拆解 vLLM V1 的并行体系，重点回答：vLLM 里有哪些并行策略，它们分别切分什么，如何建立 rank / group 拓扑，forward 中如何通信，KV cache / attention / scheduler / sampling 如何受并行影响，以及 TP / PP / DP / EP / PCP / DCP / SP 等策略如何组合。
 
 ---
 

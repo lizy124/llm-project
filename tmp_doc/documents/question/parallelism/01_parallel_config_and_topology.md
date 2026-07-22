@@ -5,7 +5,6 @@
 - `vllm/vllm/config/parallel.py`
 - `vllm/vllm/distributed/parallel_state.py`
 - `vllm/vllm/v1/worker/gpu_worker.py`
-- `vllm/vllm/v1/worker/utils.py`
 - `vllm/vllm/v1/executor/multiproc_executor.py`
 - `vllm/vllm/v1/executor/ray_executor.py`
 - `vllm/vllm/v1/engine/core.py`
@@ -84,7 +83,7 @@ Multiproc / Ray / external launcher 下 rank 如何分配？
 
 `ParallelConfig.__post_init__()` 中计算：
 
-位置：`vllm/config/parallel.py:791`
+位置：`vllm/config/parallel.py:793`
 
 ```text
 self.world_size = pipeline_parallel_size
@@ -113,13 +112,13 @@ DCP 不乘进 world_size；
 DCP 复用 TP group 内的 GPU，要求 tp_size 能被 dcp_size 整除。
 ```
 
-校验位置：`vllm/config/parallel.py:498` 到 `vllm/config/parallel.py:507`
+校验位置：`vllm/config/parallel.py:503` 到 `vllm/config/parallel.py:507`
 
 ### 3.2 包含 DP 后的 world_size_across_dp
 
 `world_size_across_dp` 是属性：
 
-位置：`vllm/config/parallel.py:516`
+位置：`vllm/config/parallel.py:517`
 
 ```text
 world_size_across_dp = world_size * data_parallel_size
@@ -142,7 +141,7 @@ world_size_across_dp = world_size * data_parallel_size
   并把 torch world_size 调整成 world_size_across_dp。
 ```
 
-对应逻辑在 `vllm/distributed/parallel_state.py:1536` 到 `vllm/distributed/parallel_state.py:1586`。
+对应逻辑在 `vllm/distributed/parallel_state.py:1555` 到 `vllm/distributed/parallel_state.py:1586`。
 
 ### 3.3 external launcher 是特殊情况
 
@@ -268,7 +267,7 @@ DCP 不改变 world size；
 一个 TP group 会被拆成 tp_size / dcp_size 个 DCP groups。
 ```
 
-对应校验位置：`vllm/config/parallel.py:498` 到 `vllm/config/parallel.py:507`。
+对应校验位置：`vllm/config/parallel.py:503` 到 `vllm/config/parallel.py:507`。
 
 ---
 
@@ -370,7 +369,7 @@ DP rank ..., PP rank ..., PCP rank ..., TP rank ..., EP rank ..., EPLB rank ...
 
 `GPUWorker.init_device()` 中，如果不是 Ray / external launcher，并且不是跨 DP 多节点特殊场景，会根据 DP local rank 调整本地 GPU 编号。
 
-位置：`vllm/v1/worker/gpu_worker.py:249`
+位置：`vllm/v1/worker/gpu_worker.py:252`
 
 核心逻辑：
 
@@ -379,7 +378,7 @@ tp_pp_world_size = pipeline_parallel_size * tensor_parallel_size
 local_rank += dp_local_rank * tp_pp_world_size
 ```
 
-位置：`vllm/v1/worker/gpu_worker.py:266` 到 `vllm/v1/worker/gpu_worker.py:273`
+位置：`vllm/v1/worker/gpu_worker.py:313` 到 `vllm/v1/worker/gpu_worker.py:316`
 
 含义是：
 
@@ -399,7 +398,7 @@ device = torch.device(f"cuda:{visible_device_index}")
 torch.accelerator.set_device_index(device)
 ```
 
-位置：`vllm/v1/worker/gpu_worker.py:310` 到 `vllm/v1/worker/gpu_worker.py:314`
+位置：`vllm/v1/worker/gpu_worker.py:357` 到 `vllm/v1/worker/gpu_worker.py:360`
 
 这一步决定当前 worker 真正用哪张卡。
 
@@ -430,9 +429,9 @@ NCCL buffers 会占显存；
 
 ## 7. distributed 初始化主链路
 
-入口在 `vllm/v1/worker/utils.py`：
+入口在 `vllm/v1/worker/gpu_worker.py`：
 
-位置：`vllm/v1/worker/utils.py:1200`
+位置：`vllm/v1/worker/gpu_worker.py:1326`
 
 主链路：
 
@@ -448,10 +447,9 @@ init_worker_distributed_environment()
       prefill_context_parallel_size,
       decode_context_parallel_size,
     )
-  → ensure_ec_transfer_initialized(...)
 ```
 
-对应源码位置：`vllm/v1/worker/utils.py:1200` 到 `vllm/v1/worker/utils.py:1234`。
+对应源码位置：`vllm/v1/worker/gpu_worker.py:1326` 到 `vllm/v1/worker/gpu_worker.py:1357`。
 
 这里有两个阶段：
 
@@ -467,7 +465,7 @@ init_worker_distributed_environment()
 
 ## 8. init_distributed_environment 如何处理 DP
 
-入口：`vllm/distributed/parallel_state.py:1536`
+入口：`vllm/distributed/parallel_state.py:1555`
 
 普通情况下它会按传入的：
 
@@ -516,13 +514,13 @@ data_parallel_master_port / get_next_dp_init_port()
 
 ## 9. initialize_model_parallel 如何切 rank mesh
 
-入口：`vllm/distributed/parallel_state.py:1694`
+入口：`vllm/distributed/parallel_state.py:1713`
 
 ### 9.1 rank mesh 的布局顺序
 
 源码中明确写了 layout order：
 
-位置：`vllm/distributed/parallel_state.py:1760`
+位置：`vllm/distributed/parallel_state.py:1779`
 
 ```text
 ExternalDP x DP x PP x TP
@@ -540,7 +538,7 @@ all_ranks = torch.arange(world_size).reshape(
 )
 ```
 
-位置：`vllm/distributed/parallel_state.py:1769` 到 `vllm/distributed/parallel_state.py:1775`
+位置：`vllm/distributed/parallel_state.py:1788` 到 `vllm/distributed/parallel_state.py:1793`
 
 也就是可以理解成：
 
@@ -569,7 +567,7 @@ TP：
 
 ### 9.2 TP group
 
-构造位置：`vllm/distributed/parallel_state.py:1777`
+构造位置：`vllm/distributed/parallel_state.py:1799`
 
 ```text
 group_ranks = all_ranks.view(-1, tensor_model_parallel_size)
@@ -586,7 +584,7 @@ group_ranks = all_ranks.view(-1, tensor_model_parallel_size)
 
 ### 9.3 DCP group
 
-构造位置：`vllm/distributed/parallel_state.py:1794`
+构造位置：`vllm/distributed/parallel_state.py:1820`
 
 ```text
 group_ranks = all_ranks.reshape(-1, decode_context_model_parallel_size)
@@ -602,7 +600,7 @@ DCP 不是新扩展 world_size 的维度；
 
 ### 9.4 PCP group
 
-构造位置：`vllm/distributed/parallel_state.py:1816`
+构造位置：`vllm/distributed/parallel_state.py:1838`
 
 ```text
 group_ranks = all_ranks.transpose(3, 4)
@@ -618,7 +616,7 @@ PCP 是显式乘进 world_size 的维度；
 
 ### 9.5 PP group
 
-构造位置：`vllm/distributed/parallel_state.py:1835`
+构造位置：`vllm/distributed/parallel_state.py:1858`
 
 ```text
 group_ranks = all_ranks.transpose(2, 4)
@@ -642,7 +640,7 @@ group_ranks = all_ranks.transpose(2, 4)
 
 ### 9.6 DP group
 
-构造位置：`vllm/distributed/parallel_state.py:1853`
+构造位置：`vllm/distributed/parallel_state.py:1874`
 
 ```text
 group_ranks = all_ranks.transpose(1, 4)
@@ -660,7 +658,7 @@ group_ranks = all_ranks.transpose(1, 4)
 
 ### 9.7 EP group
 
-构造位置：`vllm/distributed/parallel_state.py:1870`
+构造位置：`vllm/distributed/parallel_state.py:1892`
 
 只有 MoE 模型或 model_config 还未确定时才创建 EP group：
 
@@ -676,7 +674,7 @@ data_parallel_size
 * tensor_model_parallel_size
 ```
 
-构造逻辑：`vllm/distributed/parallel_state.py:1874` 到 `vllm/distributed/parallel_state.py:1884`
+构造逻辑：`vllm/distributed/parallel_state.py:1893` 到 `vllm/distributed/parallel_state.py:1903`
 
 含义：
 
@@ -1054,7 +1052,7 @@ Dense：每个 DP rank 更像独立 EngineCore，把 data_parallel_size 重置�
 4. vllm/v1/worker/gpu_worker.py
    看 Worker 如何调整 local_rank、绑定 device、初始化 distributed。
 
-5. vllm/v1/worker/utils.py
+5. vllm/v1/worker/gpu_worker.py
    看 init_worker_distributed_environment 主链路。
 
 6. vllm/distributed/parallel_state.py

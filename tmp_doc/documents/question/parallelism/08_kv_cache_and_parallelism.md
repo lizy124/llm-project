@@ -142,7 +142,7 @@ page_size_padded
 indexes_kv_by_block_stride
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:95`、`vllm/vllm/v1/kv_cache_interface.py:159`、`vllm/vllm/v1/kv_cache_interface.py:205`
+位置：`vllm/vllm/v1/kv_cache_interface.py:100`、`vllm/vllm/v1/kv_cache_interface.py:228`、`vllm/vllm/v1/kv_cache_interface.py:385`
 
 它表达的是：
 
@@ -190,7 +190,7 @@ _raw tensor
   → _reshape_attention_kv_cache(...)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7072`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7195`
 
 这说明：
 
@@ -214,7 +214,7 @@ request row → block ids
 BlockTables.block_tables[group_id][req_index, block_index] = block_id
 ```
 
-位置：`vllm/vllm/v1/worker/block_table.py:17`
+位置：`vllm/vllm/v1/worker/block_table.py:24`
 
 它不直接告诉某个 token 写哪个 slot，而是告诉：
 
@@ -239,7 +239,7 @@ block_number = block_table[request, block_index]
 slot_id      = block_number * block_size + block_offset
 ```
 
-位置：`vllm/vllm/v1/worker/block_table.py:283`
+位置：`vllm/vllm/v1/worker/block_table.py:153`
 
 attention update 时通常只消费 slot mapping，不再重新理解 request 的 block 表。
 
@@ -255,7 +255,7 @@ attention update 时通常只消费 slot mapping，不再重新理解 request �
 local_num_heads = total_num_attention_heads // tensor_parallel_size
 ```
 
-位置：`vllm/vllm/config/model.py:1272`
+位置：`vllm/vllm/config/model.py:1323`
 
 这意味着传给 `Attention(...)` 的 `num_heads` 通常已经不是全局值。
 
@@ -269,7 +269,7 @@ return max(1, total_num_kv_heads // parallel_config.tensor_parallel_size)
 
 决定。
 
-位置：`vllm/vllm/config/model.py:1259`
+位置：`vllm/vllm/config/model.py:1310`
 
 关键点是 `max(1, ...)`：
 
@@ -292,7 +292,7 @@ return max(1, total_num_kv_heads // parallel_config.tensor_parallel_size)
 get_num_kv_heads() 直接返回 1。
 ```
 
-位置：`vllm/vllm/config/model.py:1261`
+位置：`vllm/vllm/config/model.py:1310`
 
 因为 MLA decode 路径更接近 MQA：KV cache 存的是 compressed latent KV，而不是传统每个 query head 对应一组 K/V。
 
@@ -438,7 +438,7 @@ pp_rank = (rank // tensor_parallel_size) % pipeline_parallel_size
 start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 ```
 
-位置：`vllm/vllm/config/model.py:1282`
+位置：`vllm/vllm/config/model.py:1333`
 
 所以 PP 对 KV cache 的直接影响是：
 
@@ -625,7 +625,7 @@ EP 会影响 attention 前后的 hidden states 如何 dispatch / combine，但 a
 
 `parallel_state.py` 中 EP group 提供 expert dispatch / combine 相关通信能力。
 
-位置：`vllm/vllm/distributed/parallel_state.py:1201`
+位置：`vllm/vllm/distributed/parallel_state.py:1400`
 
 ### 9.3 DP + EP 场景需要更关注一致性
 
@@ -679,7 +679,7 @@ tp_size needs to be divisible by dcp_size.
 tensor_parallel_size % decode_context_parallel_size == 0
 ```
 
-位置：`vllm/vllm/config/parallel.py:498`
+位置：`vllm/vllm/config/parallel.py:503`
 
 所以 DCP 和 TP 的关系是：
 
@@ -769,7 +769,7 @@ slot_id      = block_number * block_size + local_offset
 slot_id = PAD_SLOT_ID
 ```
 
-位置：`vllm/vllm/v1/worker/block_table.py:289`
+位置：`vllm/vllm/v1/worker/block_table.py:153`
 
 这就是 CP 对 KV cache 写入最直接的影响：
 
@@ -847,7 +847,7 @@ get_dcp_local_seq_lens(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2357`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2415`
 
 然后写入：
 
@@ -856,7 +856,7 @@ cm_base.dcp_local_seq_lens
 cm_base.dcp_local_seq_lens_cpu
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2367`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2424`
 
 ### 12.2 attention backend 需要它做本地 context attention
 
@@ -877,7 +877,7 @@ dcp_local_seq_lens
 dcp_local_seq_lens_cpu
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:432`
+位置：`vllm/vllm/v1/attention/backend.py:395`
 
 ---
 
@@ -927,7 +927,7 @@ CP 不只是 attention backend 的通信优化；
 get_kv_cache_shape(num_blocks, block_size, num_kv_heads, head_size, cache_dtype_str)
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:87`
+位置：`vllm/vllm/v1/attention/backend.py:90`
 
 原因是不同 backend 的 KV cache layout 不一样。
 
@@ -954,7 +954,7 @@ backend 还可以提供：
 get_kv_cache_stride_order()
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:119`
+位置：`vllm/vllm/v1/attention/backend.py:120`
 
 它描述的是：
 
@@ -1018,7 +1018,7 @@ GPUModelRunner 的 `_reshape_kv_cache_tensors()` 会：
 5. 构造最终 per-layer kv_cache tensor view。
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7072`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7195`
 
 所以：
 
@@ -1051,7 +1051,7 @@ is_prefilling
 seq_lens_cpu_upper_bound
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:393`
+位置：`vllm/vllm/v1/attention/backend.py:395`
 
 可以按职责理解：
 
@@ -1239,7 +1239,7 @@ supports_kv_connector()
 
 默认返回 `True`，但某些平台 / backend 可能因为 KV layout 不兼容而不支持。
 
-位置：`vllm/vllm/v1/attention/backend.py:276`
+位置：`vllm/vllm/v1/attention/backend.py:277`
 
 例如 ROCm 平台注释提到：
 
@@ -1488,7 +1488,7 @@ use_batch_invariant
 use_kv_connector
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:308`
+位置：`vllm/vllm/v1/attention/backend.py:309`
 
 其中和 KV cache / 并行关系较强的是：
 
@@ -1508,7 +1508,7 @@ block size：影响 paged attention kernel 支持性。
 need_to_return_lse_for_decode = dcp_world_size > 1 and can_return_lse_for_decode
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:780`
+位置：`vllm/vllm/v1/attention/backend.py:851`
 
 DCP 下 partial attention output 不能直接相加，必须用 LSE 修正。
 
@@ -1722,13 +1722,13 @@ layer / group / block id / rank / backend layout / CP interleave / load-save 状
 
 | 并行维度 | 对 KV cache 的直接影响 | 对 block table / slot mapping 的影响 | 关键源码 |
 |---|---|---|---|
-| TP | 改变本 rank `num_heads / num_kv_heads`，KV cache 保存 local KV heads | block id 仍是本地 block；slot 对应本 rank local heads | `config/model.py:1259`、`attention.py:581` |
-| PP | 当前 rank 只持有本 stage layers 的 KV cache | block table 指向本 stage 本地 layers 的 blocks | `config/model.py:1282`、`worker/utils.py:462` |
+| TP | 改变本 rank `num_heads / num_kv_heads`，KV cache 保存 local KV heads | block id 仍是本地 block；slot 对应本 rank local heads | `config/model.py:1310`、`attention.py:616` |
+| PP | 当前 rank 只持有本 stage layers 的 KV cache | block table 指向本 stage 本地 layers 的 blocks | `config/model.py:1333`、`worker/utils.py:482` |
 | DP | 每个 replica 有独立 KV cache 副本 | 每个 replica 独立维护 block table / slot mapping | `config/parallel.py:516` |
-| EP | 不直接改变 dense attention KV cache | 不直接改变 block table / slot mapping | `parallel_state.py:1201` |
-| DCP | 同一请求 context KV 按 decode CP ranks 分片 | global position → local slot；非本 rank → `PAD_SLOT_ID` | `config/parallel.py:339`、`gpu/block_table.py:289` |
-| PCP | prefill context parallel，与 DCP 共同组成 total CP rank | 使用同一套 CP interleave 语义 | `config/parallel.py:359`、`attention/backend.py:780` |
-| backend layout | 决定 KV cache tensor shape / stride | connector 和 kernel 必须按 backend layout 解释 KV blocks | `attention/backend.py:87`、`gpu_model_runner.py:7072` |
+| EP | 不直接改变 dense attention KV cache | 不直接改变 block table / slot mapping | `parallel_state.py:1400` |
+| DCP | 同一请求 context KV 按 decode CP ranks 分片 | global position → local slot；非本 rank → `PAD_SLOT_ID` | `config/parallel.py:339`、`v1/worker/block_table.py:153` |
+| PCP | prefill context parallel，与 DCP 共同组成 total CP rank | 使用同一套 CP interleave 语义 | `config/parallel.py:359`、`attention/backend.py:851` |
+| backend layout | 决定 KV cache tensor shape / stride | connector 和 kernel 必须按 backend layout 解释 KV blocks | `attention/backend.py:90`、`gpu_model_runner.py:7195` |
 | KV connector | 跨实例 load/save KV blocks | 需要理解 rank-local block、group、layout、finished 状态 | `kv_connector_model_runner_mixin.py:78` |
 
 ---

@@ -131,9 +131,9 @@ EngineCore.step()
 
 对应入口：
 
-- `EngineCore.step()`：`code/vllm/vllm/v1/engine/core.py:479`
+- `EngineCore.step()`：`code/vllm/vllm/v1/engine/core.py:488`
 - `Executor.execute_model()`：`code/vllm/vllm/v1/executor/abstract.py:221`
-- `GPUModelRunner`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:418`
+- `GPUModelRunner`：`code/vllm/vllm/v1/worker/gpu_model_runner.py:445`
 
 在这个链路里：
 
@@ -169,7 +169,7 @@ world_size = pipeline_parallel_size
            * prefill_context_parallel_size
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:782`
+位置：`code/vllm/vllm/config/parallel.py:793`
 
 这表示：
 
@@ -195,7 +195,7 @@ EPLB 不乘进 world_size。
 world_size_across_dp = world_size * data_parallel_size
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:508`
+位置：`code/vllm/vllm/config/parallel.py:517`
 
 也就是：
 
@@ -223,7 +223,7 @@ DCP 复用 TP rank，所以要求：
 tensor_parallel_size % decode_context_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:490`
+位置：`code/vllm/vllm/config/parallel.py:503`
 
 源码注释说明：
 
@@ -233,7 +233,7 @@ DCP 不改变 world size；
 把一个 TP group 切成 tp_size // dcp_size 个 DCP groups。
 ```
 
-对应 group 构造位置：`code/vllm/vllm/distributed/parallel_state.py:1774`
+对应 group 构造位置：`code/vllm/vllm/distributed/parallel_state.py:1820`
 
 ### 3.4 EP 的特殊地位
 
@@ -245,7 +245,7 @@ MoE 模型中，EP group 从 rank mesh 里取：
 data_parallel_size * prefill_context_parallel_size * tensor_parallel_size
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1850`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1898`
 
 含义是：
 
@@ -269,7 +269,7 @@ all_ranks = torch.arange(world_size).reshape(
 )
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1749`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1788`
 
 可以理解成：
 
@@ -311,12 +311,12 @@ EP group：
 
 对应源码位置：
 
-- TP group：`code/vllm/vllm/distributed/parallel_state.py:1757`
-- DCP group：`code/vllm/vllm/distributed/parallel_state.py:1774`
-- PCP group：`code/vllm/vllm/distributed/parallel_state.py:1796`
-- PP group：`code/vllm/vllm/distributed/parallel_state.py:1815`
-- DP group：`code/vllm/vllm/distributed/parallel_state.py:1833`
-- EP group：`code/vllm/vllm/distributed/parallel_state.py:1850`
+- TP group：`code/vllm/vllm/distributed/parallel_state.py:1799`
+- DCP group：`code/vllm/vllm/distributed/parallel_state.py:1820`
+- PCP group：`code/vllm/vllm/distributed/parallel_state.py:1838`
+- PP group：`code/vllm/vllm/distributed/parallel_state.py:1856`
+- DP group：`code/vllm/vllm/distributed/parallel_state.py:1874`
+- EP group：`code/vllm/vllm/distributed/parallel_state.py:1898`
 
 一个例子：
 

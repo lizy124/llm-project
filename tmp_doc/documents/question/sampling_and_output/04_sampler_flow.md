@@ -39,7 +39,7 @@ Sampler 的职责是：
 sampler_output = self.sampler(logits, input_batch)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1055` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1058`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1081` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1083`
 
 所以可以记成：
 
@@ -73,7 +73,7 @@ sample_hidden_states = hidden_states[input_batch.logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1043` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1044`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1069` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1070`
 
 如果有 structured output，则先修改 logits，再采样：
 
@@ -81,7 +81,7 @@ logits = self.model.compute_logits(sample_hidden_states)
 self.structured_outputs_worker.apply_grammar_bitmask(...)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1045` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1053`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1071` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1079`
 
 然后才进入：
 
@@ -89,7 +89,7 @@ self.structured_outputs_worker.apply_grammar_bitmask(...)
 sampler_output = self.sampler(logits, input_batch)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1055` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1058`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1081` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1083`
 
 ---
 
@@ -129,7 +129,7 @@ LogprobTokenIdsState：指定 token ids 的 logprobs 请求。
 self.sampler.add_request(req_index, prompt_len, new_req_data.sampling_params)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:801` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:805`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:804` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:808`
 
 然后统一执行 staged writes：
 
@@ -137,7 +137,7 @@ self.sampler.add_request(req_index, prompt_len, new_req_data.sampling_params)
 self.sampler.apply_staged_writes()
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:811` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:815`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:814` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:818`
 
 ### 3.2 通用 SamplingMetadata sampler
 
@@ -240,7 +240,7 @@ bad_words
 structured_outputs
 ```
 
-位置：`vllm/vllm/sampling_params.py:224` 到 `vllm/vllm/sampling_params.py:341`
+位置：`vllm/vllm/sampling_params.py:224` 到 `vllm/vllm/sampling_params.py:347`
 
 在新 GPU sampler 中，这些参数被拆到多个 state：
 
@@ -275,7 +275,7 @@ prompt_logprobs=True → 1；
 temperature 接近 0 时转为 greedy，并重置 top_p/top_k/min_p。
 ```
 
-位置：`vllm/vllm/sampling_params.py:429` 到 `vllm/vllm/sampling_params.py:476`
+位置：`vllm/vllm/sampling_params.py:448` 到 `vllm/vllm/sampling_params.py:495`
 
 基础范围校验包括：
 
@@ -288,7 +288,7 @@ presence_penalty / frequency_penalty ∈ [-2, 2]
 repetition_penalty > 0
 ```
 
-位置：`vllm/vllm/sampling_params.py:499` 到 `vllm/vllm/sampling_params.py:551`
+位置：`vllm/vllm/sampling_params.py:518` 到 `vllm/vllm/sampling_params.py:570`
 
 ### 5.2 greedy 的特殊规则
 
@@ -301,7 +301,7 @@ self.min_p = 0.0
 self._verify_greedy_sampling()
 ```
 
-位置：`vllm/vllm/sampling_params.py:471` 到 `vllm/vllm/sampling_params.py:476`
+位置：`vllm/vllm/sampling_params.py:490` 到 `vllm/vllm/sampling_params.py:495`
 
 含义是：
 
@@ -409,7 +409,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1045` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1053`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1071` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1079`
 
 旧 `gpu_model_runner.py` 路径中也一样：
 
@@ -420,7 +420,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4455` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 因此顺序是：
 
@@ -466,7 +466,7 @@ min_tokens：没达到最小生成长度前，屏蔽 stop tokens。
    把 stop_token_ids 写成 -inf。
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/sample/logit_bias.py:177` 到 `vllm/vllm/v1/worker/gpu/sample/logit_bias.py:235`
+位置：`vllm/vllm/v1/worker/gpu/sample/logit_bias.py:177` 到 `vllm/vllm/v1/worker/gpu/sample/logit_bias.py:239`
 
 可以理解为：
 
@@ -827,7 +827,7 @@ if temp != 0.0:
 value, idx = tl.max(logits, axis=0, return_indices=True)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/sample/gumbel.py:124` 到 `vllm/vllm/v1/worker/gpu/sample/gumbel.py:147`
+位置：`vllm/vllm/v1/worker/gpu/sample/gumbel.py:135` 到 `vllm/vllm/v1/worker/gpu/sample/gumbel.py:157`
 
 所以：
 
@@ -871,7 +871,7 @@ pos = tl.load(pos_ptr + token_idx)
 gumbel_seed = tl.randint(seed, pos)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/sample/gumbel.py:124` 到 `vllm/vllm/v1/worker/gpu/sample/gumbel.py:128`
+位置：`vllm/vllm/v1/worker/gpu/sample/gumbel.py:135` 到 `vllm/vllm/v1/worker/gpu/sample/gumbel.py:139`
 
 含义是：
 
@@ -1042,7 +1042,7 @@ if input_batch.num_draft_tokens == 0 or self.rejection_sampler is None:
     sampler_output = self.sampler(logits, input_batch)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1055` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1058`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1081` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1083`
 
 如果有 draft tokens，则走 rejection sampling：
 
@@ -1054,7 +1054,7 @@ sampler_output = self.rejection_sampler(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1059` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1067`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1084` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1093`
 
 区别是：
 
@@ -1089,7 +1089,7 @@ SamplerOutput.num_rejected
 9. 返回 AsyncOutput。
 ```
 
-对应代码范围：`vllm/vllm/v1/worker/gpu/model_runner.py:1359` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1467`
+对应代码范围：`vllm/vllm/v1/worker/gpu/model_runner.py:1373` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1509`
 
 关键对象：
 
@@ -1103,7 +1103,7 @@ async_output = AsyncOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1392` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1399`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1440` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1446`
 
 也就是说：
 
@@ -1145,7 +1145,7 @@ prompt_logprobs_dict = self.prompt_logprobs_worker.compute_prompt_logprobs(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1373` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1381`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1420` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1428`
 
 因此要区分：
 
@@ -1332,7 +1332,7 @@ top_k = 0
 min_p = 0.0
 ```
 
-位置：`vllm/vllm/sampling_params.py:471` 到 `vllm/vllm/sampling_params.py:476`
+位置：`vllm/vllm/sampling_params.py:490` 到 `vllm/vllm/sampling_params.py:495`
 
 因此 greedy 请求不需要 top-k/top-p/min-p。
 
@@ -1363,7 +1363,7 @@ spec decode：一轮可能接受多个 token。
 
 新 GPU ModelRunner 中采样结果还在 GPU 上，`AsyncOutput` 会让 GPU→CPU 拷贝和后续工作重叠。
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1392` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1399`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1440` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1446`
 
 ---
 

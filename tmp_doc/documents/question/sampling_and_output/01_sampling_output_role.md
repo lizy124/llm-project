@@ -158,7 +158,7 @@ ModelRunner 负责“把模型数值输出变成 Scheduler 能消费的内部结
 
 `Scheduler.update_from_output()` 是 Worker 输出进入请求状态机的入口。
 
-源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 它负责：
 
@@ -200,7 +200,7 @@ Scheduler 负责“把模型输出对账回请求状态和资源账本”。
 
 `OutputProcessor` 是内部输出到用户输出的最后一层适配器。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:417`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:584`
 
 它负责：
 
@@ -276,7 +276,7 @@ if model_output is None:
     model_output = model_executor.sample_tokens(grammar_output)
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/core.py:497` 到 `code/vllm/vllm/v1/engine/core.py:498`
+源码位置：`code/vllm/vllm/v1/engine/core.py:499` 到 `code/vllm/vllm/v1/engine/core.py:507`
 
 ### 4.2 ExecuteModelState 是 execute_model 和 sample_tokens 的桥
 
@@ -751,7 +751,7 @@ model_runner_output：
   Worker 实际执行结果。
 ```
 
-源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
+源码位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 它会逐个 request 对账：
 
@@ -805,7 +805,7 @@ ModelRunnerOutput 是 batch 级执行结果，EngineCoreOutput 是 request 级�
 
 ### 11.1 process_outputs 的主流程
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:576`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:584`
 
 主流程：
 

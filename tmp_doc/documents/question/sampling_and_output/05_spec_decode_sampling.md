@@ -124,7 +124,7 @@ Scheduler.update_from_output()
 self.spec_token_ids: list[int] = []
 ```
 
-位置：`vllm/vllm/v1/request.py:152`
+位置：`vllm/vllm/v1/request.py:167`
 
 同时 `num_tokens_with_spec` 定义为：
 
@@ -132,7 +132,7 @@ self.spec_token_ids: list[int] = []
 return len(self._all_token_ids) + len(self.spec_token_ids)
 ```
 
-位置：`vllm/vllm/v1/request.py:251`
+位置：`vllm/vllm/v1/request.py:266`
 
 这表示：
 
@@ -150,7 +150,7 @@ Scheduler 不区分 decoding phase / prefill phase；
 调度目标是让 num_computed_tokens 追上 num_tokens_with_spec。
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:388`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:433`
 
 这套抽象能同时覆盖：
 
@@ -180,7 +180,7 @@ num_scheduled_spec_tokens = (
 scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:582`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:631`
 
 随后清空 request 上旧的 spec tokens：
 
@@ -188,7 +188,7 @@ scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 request.spec_token_ids = []
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:596`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:646`
 
 含义是：
 
@@ -205,7 +205,7 @@ request.spec_token_ids = []
 scheduled_spec_decode_tokens: dict[str, list[int]]
 ```
 
-位置：`vllm/vllm/v1/core/sched/output.py:180`
+位置：`vllm/vllm/v1/core/sched/output.py:183`
 
 注释说明：
 
@@ -227,7 +227,7 @@ scheduled_spec_decode_tokens: dict[str, list[int]]
 use_spec_decode = len(scheduler_output.scheduled_spec_decode_tokens) > 0
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2161`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2202`
 
 如果没有 spec decode：
 
@@ -246,7 +246,7 @@ logits_indices = spec_decode_metadata.logits_indices
 num_sampled_tokens = num_draft_tokens + 1
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2171`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2229`
 
 ### 5.2 为什么 num_sampled_tokens = num_draft_tokens + 1
 
@@ -276,7 +276,7 @@ prev_sampled_token_ids → input_ids
 draft_token_ids → input_ids
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1790`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1771`
 
 这说明：
 
@@ -289,7 +289,7 @@ spec decode 的 target model forward 真正会看到 draft token 序列，
 
 ## 6. SpecDecodeMetadata 是什么
 
-`SpecDecodeMetadata` 定义在：`vllm/vllm/v1/spec_decode/metadata.py:9`
+`SpecDecodeMetadata` 定义在：`vllm/vllm/v1/spec_decode/metadata.py:10`
 
 字段包括：
 
@@ -314,7 +314,7 @@ shape: [num_draft_tokens_total]
 
 它来自 `input_ids.gpu[logits_indices]` 再按 target logits 位置取对应 draft token。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2810`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2874`
 
 ### 6.2 num_draft_tokens
 
@@ -378,7 +378,7 @@ cu_num_sampled_tokens: [4, 5, 8, 9, 11]
 logits_indices: [0, 1, 2, 3, 103, 104, 105, 106, 206, 207, 208]
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2755`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2814`
 
 它最终会成为：
 
@@ -402,7 +402,7 @@ spec_decode_metadata.logits_indices
 target_logits_indices: [0, 1, 2, 5, 6, 9]
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2791`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2855`
 
 ### 6.7 bonus_logits_indices
 
@@ -419,7 +419,7 @@ target_logits_indices: [0, 1, 2, 5, 6, 9]
 bonus_logits_indices = cu_num_sampled_tokens - 1
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2782`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2846`
 
 ### 6.8 max_spec_len
 
@@ -498,7 +498,7 @@ def _sample(
 ) -> SamplerOutput:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3573`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3623`
 
 如果没有 spec decode：
 
@@ -518,7 +518,7 @@ sampler_output = self.rejection_sampler(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3583`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3645`
 
 因此：
 
@@ -701,7 +701,7 @@ accept draft token x with probability min(1, p_target(x) / p_draft(x))
 accepted = draft_prob > 0 and target_prob / draft_prob >= uniform_prob
 ```
 
-位置：`vllm/vllm/v1/sample/rejection_sampler.py:803`
+位置：`vllm/vllm/v1/sample/rejection_sampler.py:816`
 
 如果被拒绝，就从 recovered distribution 采一个 token。
 
@@ -738,7 +738,7 @@ which is the case for ngram spec decode.
 draft_prob = 1
 ```
 
-位置：`vllm/vllm/v1/sample/rejection_sampler.py:812`
+位置：`vllm/vllm/v1/sample/rejection_sampler.py:816`
 
 这是一种特殊 fallback / 近似路径，适配没有完整 draft probability distribution 的 proposer。
 
@@ -846,7 +846,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4455`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4512`
 
 这意味着：
 
@@ -864,7 +864,7 @@ draft_token_ids = self.model_executor.take_draft_token_ids()
 self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510`
+位置：`vllm/vllm/v1/engine/core.py:519`
 
 Scheduler 里：
 
@@ -874,7 +874,7 @@ if self.structured_output_manager.should_advance(request):
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1896`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2005`
 
 也就是说：
 
@@ -902,7 +902,7 @@ update_draft_token_ids_in_output(draft_token_ids, deferred_scheduler_output)
 4. 记录 num_invalid_spec_tokens。
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1918`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2027`
 
 这些 `-1` 会让 grammar bitmask 和后续统计知道哪些 draft tokens 无效。
 
@@ -942,7 +942,7 @@ update_draft_token_ids_in_output(draft_token_ids, deferred_scheduler_output)
 10. 构造 ModelRunnerOutput。
 ```
 
-对应源码：`vllm/vllm/v1/worker/gpu_model_runner.py:4426`
+对应源码：`vllm/vllm/v1/worker/gpu_model_runner.py:4482`
 
 ---
 
@@ -972,7 +972,7 @@ def propose_draft_token_ids(sampled_token_ids):
     self._copy_draft_token_ids_to_cpu(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4484`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4541`
 
 它会把新的 draft tokens 缓存在 worker 里，等待 executor / EngineCore 调用：
 
@@ -1000,7 +1000,7 @@ ExtractHiddenStatesProposer
 Gemma4Proposer
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4507`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4571`
 
 这些路径可以在 bookkeeping 前生成 draft，因为它们能直接使用 GPU 上的 sampled tokens。
 
@@ -1018,7 +1018,7 @@ bookkeeping 完成后再：
 propose_draft_token_ids(valid_sampled_token_ids)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4594`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4663`
 
 ### 15.5 如果输入不适合 drafter，要清零 draft tokens
 
@@ -1030,7 +1030,7 @@ self._draft_probs = None
 self._copy_draft_token_ids_to_cpu(..., zeros_only=True)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4564`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4633`
 
 原因是：
 
@@ -1046,7 +1046,7 @@ self._copy_draft_token_ids_to_cpu(..., zeros_only=True)
 
 ### 16.1 DraftTokenIds 结构
 
-`DraftTokenIds` 定义在：`vllm/vllm/v1/outputs.py:310`
+`DraftTokenIds` 定义在：`vllm/vllm/v1/outputs.py:311`
 
 字段：
 
@@ -1066,7 +1066,7 @@ if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
         self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:510`
+位置：`vllm/vllm/v1/engine/core.py:519`
 
 ### 16.3 Scheduler 写回 request.spec_token_ids
 
@@ -1083,7 +1083,7 @@ DraftTokenIds.draft_token_ids
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1896`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2005`
 
 这就是下一轮 spec decode 的来源。
 
@@ -1097,7 +1097,7 @@ if request.is_prefill_chunk:
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1906`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2015`
 
 原因是：
 
@@ -1117,7 +1117,7 @@ chunked prefill 不是稳定的 decode 推进点，不能直接把 draft tokens 
 sampled_token_ids=valid_sampled_token_ids
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4612`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4696`
 
 spec decode 下 `valid_sampled_token_ids` 已经经过：
 
@@ -1136,7 +1136,7 @@ req_index = model_runner_output.req_id_to_index[req_id]
 generated_token_ids = sampled_token_ids[req_index] if sampled_token_ids else []
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1543`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1632`
 
 这里的 `generated_token_ids` 对 spec decode 来说是：
 
@@ -1157,7 +1157,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1548`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1647`
 
 这里 `num_sampled_tokens_per_step` 通常代表非 draft 的真实采样 token 数，常规生成是 1。
 
@@ -1193,7 +1193,7 @@ num_rejected = N - (k - 1)
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1558`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1656`
 
 原因是：
 
@@ -1213,7 +1213,7 @@ async scheduling 下还有：
 request.num_output_placeholders -= num_rejected
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1565`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1660`
 
 原因是：
 
@@ -1232,7 +1232,7 @@ new_token_ids, stopped = self._update_request_with_output(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1589`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1683`
 
 只有 `new_token_ids` 中的 tokens 会真正进入 request 输出状态。
 
@@ -1258,7 +1258,7 @@ self.make_spec_decoding_stats(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1569`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1662`
 
 `SpecDecodingStats` 记录：
 
@@ -1305,7 +1305,7 @@ num_accepted_tokens_per_pos：每个 draft 位置的接受次数。
 -1
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1947`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2056`
 
 并记录：
 
@@ -1322,7 +1322,7 @@ if num_invalid_spec_tokens:
     num_draft_tokens -= num_invalid_spec_tokens.get(request_id, 0)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2274`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2393`
 
 这意味着：
 
@@ -1416,7 +1416,7 @@ Pipeline parallel 下非 last rank 可能只传递 intermediate tensors。
 self._pp_broadcast_prev_sampled_token_ids(sampler_output.sampled_token_ids)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4467`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4529`
 
 非 last rank 在没有 execute_model_state 时会接收：
 
@@ -1424,7 +1424,7 @@ self._pp_broadcast_prev_sampled_token_ids(sampler_output.sampled_token_ids)
 self._pp_receive_prev_sampled_token_ids_to_input_batch()
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4429`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4486`
 
 ### 21.2 async scheduling 下 token 可以先留在 GPU
 
@@ -1436,7 +1436,7 @@ self._pp_receive_prev_sampled_token_ids_to_input_batch()
 下一步 prepare_inputs 直接使用 GPU sampled tokens。
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3678`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3728`
 
 ### 21.3 spec decode 下 async 的 draft token 也要同步状态
 
@@ -1447,7 +1447,7 @@ draft_token_ids_cpu, _ = self._get_draft_token_ids_cpu()
 self.input_batch.update_async_spec_token_ids(draft_token_ids_cpu)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3589`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3639`
 
 这样 logits processors 才能看到正确的 spec token 历史。
 

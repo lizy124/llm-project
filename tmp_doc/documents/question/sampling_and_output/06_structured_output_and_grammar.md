@@ -18,6 +18,7 @@
 - `vllm/vllm/v1/worker/gpu_model_runner.py`
 - `vllm/vllm/v1/worker/gpu/model_runner.py`
 - `vllm/vllm/v1/worker/gpu/sample/sampler.py`
+- `vllm/vllm/v1/sample/sampler.py`
 
 本问题关注：guided decoding / structured output / grammar 如何从请求参数变成 grammar FSM，Scheduler 如何在每轮采样前生成合法 token bitmask，Worker 如何用 bitmask 屏蔽 logits，采样后 Scheduler 又如何推进 grammar 状态；同时说明它和 stop condition、spec decode、reasoning、prefill chunk 的关系。
 
@@ -118,12 +119,13 @@ Scheduler.update_from_output()
 
 对应入口：
 
-- 参数校验：`vllm/vllm/sampling_params.py:862`
+- 参数校验：`vllm/vllm/sampling_params.py:904`
 - Request 创建 structured request：`vllm/vllm/v1/request.py:87`
-- grammar 初始化：`vllm/vllm/v1/engine/core.py:867`
-- grammar bitmask 生成：`vllm/vllm/v1/core/sched/scheduler.py:1440`
-- Worker 侧应用 bitmask：`vllm/vllm/v1/worker/gpu_model_runner.py:4455`
-- 采样后推进 FSM：`vllm/vllm/v1/core/sched/scheduler.py:1599`
+- grammar 初始化：`vllm/vllm/v1/engine/core.py:879`
+- grammar bitmask 生成：`vllm/vllm/v1/core/sched/scheduler.py:1527`
+- Worker 侧应用 bitmask：`vllm/vllm/v1/worker/gpu_model_runner.py:4513`
+- 新 GPU runner 侧应用 bitmask：`vllm/vllm/v1/worker/gpu/model_runner.py:1071`
+- 采样后推进 FSM：`vllm/vllm/v1/core/sched/scheduler.py:1693`
 
 ---
 
@@ -228,7 +230,7 @@ params.verify(
 SamplingParams._validate_structured_outputs()
 ```
 
-位置：`vllm/vllm/sampling_params.py:862`
+位置：`vllm/vllm/sampling_params.py:904`
 
 ### 6.1 基础限制
 
@@ -239,10 +241,11 @@ SamplingParams._validate_structured_outputs()
 2. structured outputs 需要 tokenizer，不能 skip_tokenizer_init。
 3. V1 不支持 request-level backend 混用。
 4. choice 不能为空列表。
-5. grammar 不能为空字符串。
+5. grammar 和 json schema 不能为空字符串。
+6. json_object 如果显式设置，只能是 True。
 ```
 
-对应代码：`vllm/vllm/sampling_params.py:871` 到 `vllm/vllm/sampling_params.py:921`
+对应代码：`vllm/vllm/sampling_params.py:913` 到 `vllm/vllm/sampling_params.py:975`
 
 ### 6.2 backend=auto 的选择策略
 
@@ -257,7 +260,7 @@ SamplingParams._validate_structured_outputs()
    - 否则 fallback 到 guidance
 ```
 
-对应代码：`vllm/vllm/sampling_params.py:967` 到 `vllm/vllm/sampling_params.py:1005`
+对应代码：`vllm/vllm/sampling_params.py:1027` 到 `vllm/vllm/sampling_params.py:1059`
 
 这说明 backend 不是每步动态选择，而是在请求校验阶段就写入：
 
@@ -293,7 +296,7 @@ request.status = WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 self.structured_output_request is not None
 ```
 
-对应代码：`vllm/vllm/v1/request.py:243`
+对应代码：`vllm/vllm/v1/request.py:258`
 
 ### 7.1 StructuredOutputRequest 保存什么
 
@@ -334,7 +337,7 @@ grammar       → (GRAMMAR, grammar)
 structural_tag→ (STRUCTURAL_TAG, structural_tag)
 ```
 
-对应代码：`vllm/vllm/v1/structured_output/request.py:77` 到 `vllm/vllm/v1/structured_output/request.py:98`
+对应代码：`vllm/vllm/v1/structured_output/request.py:83` 到 `vllm/vllm/v1/structured_output/request.py:104`
 
 ---
 
@@ -352,7 +355,7 @@ grammar 编译由 `StructuredOutputManager` 负责。
 self.structured_output_manager.grammar_init(req)
 ```
 
-对应代码：`vllm/vllm/v1/engine/core.py:867` 到 `vllm/vllm/v1/engine/core.py:874`
+对应代码：`vllm/vllm/v1/engine/core.py:879` 到 `vllm/vllm/v1/engine/core.py:885`
 
 注释强调：
 
@@ -396,6 +399,7 @@ self.executor.submit(self._create_grammar, request)
 
 - 是否启用异步：`vllm/vllm/v1/structured_output/__init__.py:47` 到 `vllm/vllm/v1/structured_output/__init__.py:56`
 - 编译提交：`vllm/vllm/v1/structured_output/__init__.py:167` 到 `vllm/vllm/v1/structured_output/__init__.py:171`
+- fill bitmask 大 batch 并行线程池：`vllm/vllm/v1/structured_output/__init__.py:61` 到 `vllm/vllm/v1/structured_output/__init__.py:69`
 
 ### 8.4 Scheduler 如何等待 grammar ready
 
@@ -414,7 +418,7 @@ if request.status == WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR:
     request.status = WAITING
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:2402` 到 `vllm/vllm/v1/core/sched/scheduler.py:2407`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:2543` 到 `vllm/vllm/v1/core/sched/scheduler.py:2548`
 
 `StructuredOutputRequest.grammar` 属性内部会检查 Future 是否完成。
 
@@ -554,7 +558,7 @@ _is_terminated = matcher.is_terminated()
 
 Scheduler 每轮 schedule 后会调用 `_update_after_schedule()`。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1130`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1215`
 
 它会更新每个请求的 `num_computed_tokens`，并判断当前请求是否还处于 prefill chunk：
 
@@ -572,7 +576,7 @@ scheduler_output.has_structured_output_requests |= (
 )
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1147` 到 `vllm/vllm/v1/core/sched/scheduler.py:1152`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1233` 到 `vllm/vllm/v1/core/sched/scheduler.py:1238`
 
 这说明：
 
@@ -591,7 +595,7 @@ prefill chunk 阶段不生成 structured output bitmask；
 Scheduler.get_grammar_bitmask(scheduler_output)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1440`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1527`
 
 主逻辑：
 
@@ -603,7 +607,7 @@ Scheduler.get_grammar_bitmask(scheduler_output)
 5. 返回 GrammarOutput(structured_output_request_ids, bitmask)
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1440` 到 `vllm/vllm/v1/core/sched/scheduler.py:1462`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1527` 到 `vllm/vllm/v1/core/sched/scheduler.py:1549`
 
 `GrammarOutput` 里保存两样东西：
 
@@ -630,7 +634,7 @@ if model_output is None:
     model_output = model_executor.sample_tokens(grammar_output)
 ```
 
-对应代码：`vllm/vllm/v1/engine/core.py:490` 到 `vllm/vllm/v1/engine/core.py:500`
+对应代码：`vllm/vllm/v1/engine/core.py:499` 到 `vllm/vllm/v1/engine/core.py:508`
 
 ---
 
@@ -692,12 +696,14 @@ scheduled_spec_decode_tokens[req_id] + [-1]
 
 ```text
 1. 先 fill 当前 grammar 状态下的 bitmask。
-2. 如果 token 不是 -1，则临时 accept_tokens(token)，推进 FSM。
-3. 累计推进次数。
-4. 处理完后 rollback(state_advancements)。
+2. 如果 token 是 -1，则后续位置不再应用 grammar bitmask。
+3. 如果 token 不是 -1，且当前阶段应推进 grammar，则临时 accept_tokens(token)，推进 FSM。
+4. reasoning 可能在 spec window 中间结束；此时后续行开始应用 grammar，但跳过 reasoning 结束标记本身的推进。
+5. 累计推进次数。
+6. 处理完 bonus / normal sampled token 行后 rollback(state_advancements)。
 ```
 
-对应代码：`vllm/vllm/v1/structured_output/__init__.py:275` 到 `vllm/vllm/v1/structured_output/__init__.py:295`
+对应代码：`vllm/vllm/v1/structured_output/__init__.py:284` 到 `vllm/vllm/v1/structured_output/__init__.py:340`
 
 这个设计解决了 spec decode 的问题：
 
@@ -776,7 +782,7 @@ if grammar_output is not None:
     )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4455` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 ### 16.1 为什么要重新排序 bitmask
 
@@ -876,7 +882,7 @@ self.structured_outputs_worker.apply_grammar_bitmask(
 )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu/model_runner.py:1037` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1053`
+对应代码：`vllm/vllm/v1/worker/gpu/model_runner.py:1071` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1079`
 
 ### 17.1 mapping 如何构造
 
@@ -932,9 +938,10 @@ Sampler.__call__()
 
 对应代码：
 
-- sampler 入口：`vllm/vllm/v1/worker/gpu/sample/sampler.py:72`
-- sampling params 应用：`vllm/vllm/v1/worker/gpu/sample/sampler.py:146`
-- sample 主流程：`vllm/vllm/v1/worker/gpu/sample/sampler.py:198`
+- worker GPU sampler 入口：`vllm/vllm/v1/worker/gpu/sample/sampler.py:72`
+- worker GPU sampling params 应用：`vllm/vllm/v1/worker/gpu/sample/sampler.py:146`
+- worker GPU sample 主流程：`vllm/vllm/v1/worker/gpu/sample/sampler.py:198`
+- 新 runner sampler 顺序说明：`vllm/vllm/v1/sample/sampler.py:20` 到 `vllm/vllm/v1/sample/sampler.py:58`
 
 因此结构化约束和其他采样参数的关系是：
 
@@ -951,7 +958,7 @@ Sampler.__call__()
 
 采样完成后，`Scheduler.update_from_output()` 会更新 request。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1464`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 核心顺序是：
 
@@ -963,7 +970,7 @@ Sampler.__call__()
 4. 如果 grammar 拒绝，则 request FINISHED_ERROR。
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1589` 到 `vllm/vllm/v1/core/sched/scheduler.py:1615`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1683` 到 `vllm/vllm/v1/core/sched/scheduler.py:1717`
 
 这说明：
 
@@ -999,7 +1006,7 @@ update_draft_token_ids()
 spec_token_ids = metadata.grammar.validate_tokens(spec_token_ids)
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1896` 到 `vllm/vllm/v1/core/sched/scheduler.py:1916`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:2005` 到 `vllm/vllm/v1/core/sched/scheduler.py:2025`
 
 这会过滤掉不符合 grammar 的 draft token。
 
@@ -1016,17 +1023,17 @@ batch queue / async 场景下，可能需要在已生成的 `SchedulerOutput` �
 4. 记录 num_invalid_spec_tokens。
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1918` 到 `vllm/vllm/v1/core/sched/scheduler.py:1954`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:2027` 到 `vllm/vllm/v1/core/sched/scheduler.py:2063`
 
 EngineCore 的 batch queue 路径也说明：在计算 deferred request 的 grammar bitmask 前，要先过滤 draft tokens。
 
-对应代码：`vllm/vllm/v1/engine/core.py:612` 到 `vllm/vllm/v1/engine/core.py:629`
+对应代码：`vllm/vllm/v1/engine/core.py:624` 到 `vllm/vllm/v1/engine/core.py:638`
 
 ### 20.3 bitmask 生成时模拟 draft token 推进
 
 如前文所述，`grammar_bitmask()` 会为 spec tokens 临时 accept，再 rollback。
 
-对应代码：`vllm/vllm/v1/structured_output/__init__.py:275` 到 `vllm/vllm/v1/structured_output/__init__.py:295`
+对应代码：`vllm/vllm/v1/structured_output/__init__.py:284` 到 `vllm/vllm/v1/structured_output/__init__.py:340`
 
 所以 spec decode 下的原则是：
 
@@ -1101,7 +1108,7 @@ Scheduler 标记 structured output 请求时有条件：
 request.use_structured_output and not request.is_prefill_chunk
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1150` 到 `vllm/vllm/v1/core/sched/scheduler.py:1152`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1236` 到 `vllm/vllm/v1/core/sched/scheduler.py:1238`
 
 原因是：
 
@@ -1149,7 +1156,7 @@ torch.tensor(-1, dtype=torch.int32)
 FINISHED_ERROR
 ```
 
-对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1603` 到 `vllm/vllm/v1/core/sched/scheduler.py:1615`
+对应代码：`vllm/vllm/v1/core/sched/scheduler.py:1706` 到 `vllm/vllm/v1/core/sched/scheduler.py:1717`
 
 ---
 

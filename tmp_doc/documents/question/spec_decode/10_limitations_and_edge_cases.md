@@ -131,7 +131,7 @@ Scheduler.update_from_output() 决定最终状态是否一致。
 num_speculative_tokens: int = Field(default=None, gt=0)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:81`
+位置：`code/vllm/vllm/config/speculative.py:86`
 
 后续 validator 还会检查：
 
@@ -143,7 +143,7 @@ if self.num_speculative_tokens <= 0:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:1022` 到 `code/vllm/vllm/config/speculative.py:1033`
+位置：`code/vllm/vllm/config/speculative.py:1165` 到 `code/vllm/vllm/config/speculative.py:1173`
 
 含义：
 
@@ -175,7 +175,7 @@ if target_vocab_size != draft_vocab_size:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:1060` 到 `code/vllm/vllm/config/speculative.py:1075`
+位置：`code/vllm/vllm/config/speculative.py:1215` 到 `code/vllm/vllm/config/speculative.py:1229`
 
 原因：
 
@@ -207,7 +207,7 @@ elif speculative_draft_tensor_parallel_size not in (
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:956` 到 `code/vllm/vllm/config/speculative.py:963`
+位置：`code/vllm/vllm/config/speculative.py:1099` 到 `code/vllm/vllm/config/speculative.py:1107`
 
 含义：
 
@@ -227,7 +227,7 @@ Draft TP 不能任意设置。
 result = min(draft_max_model_len, target_max_model_len)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:919` 到 `code/vllm/vllm/config/speculative.py:929`
+位置：`code/vllm/vllm/config/speculative.py:1031` 到 `code/vllm/vllm/config/speculative.py:1060`
 
 如果用户显式设置 `speculative_max_model_len`，还会检查不能超过 draft / target：
 
@@ -239,7 +239,7 @@ if speculative_max_model_len > target_max_model_len:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:904` 到 `code/vllm/vllm/config/speculative.py:917`
+位置：`code/vllm/vllm/config/speculative.py:1047` 到 `code/vllm/vllm/config/speculative.py:1060`
 
 这会影响运行时边界：
 
@@ -248,7 +248,7 @@ if speculative_max_model_len > target_max_model_len:
 ModelRunner 会 zero out draft tokens，避免 scheduler 继续消费 stale drafts。
 ```
 
-相关运行时代码：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4500` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4573`
+相关运行时代码：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4565` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4644`
 
 ---
 
@@ -269,7 +269,7 @@ eagle / eagle3 / mtp / dflash / 多种 MTP model type
 ngram_gpu
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:60` 到 `code/vllm/vllm/config/speculative.py:69`
+位置：`code/vllm/vllm/config/speculative.py:64` 到 `code/vllm/vllm/config/speculative.py:74`
 
 但 GPU V1 worker 的 `init_speculator()` 只处理：
 
@@ -286,7 +286,7 @@ eagle / eagle3 / mtp / dflash 这类 use_eagle() 路径
 raise NotImplementedError(f"{speculative_config.method} is not supported yet.")
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/__init__.py:8` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/__init__.py:34`
+位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/__init__.py:8` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/__init__.py:40`
 
 这说明要区分两件事：
 
@@ -307,7 +307,7 @@ V2 model runner unsupported features 中对 spec decode 有额外限制：
 - EAGLE3 + pipeline parallelism 不支持。
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:2037` 到 `code/vllm/vllm/config/vllm.py:2059`
+位置：`code/vllm/vllm/config/vllm.py:2121` 到 `code/vllm/vllm/config/vllm.py:2143`
 
 所以同样的 speculative config，在 V1 runner 和 V2 runner 下可用性可能不同。
 
@@ -327,7 +327,7 @@ if self.speculative_config is not None:
         raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:950` 到 `code/vllm/vllm/config/vllm.py:969`
+位置：`code/vllm/vllm/config/vllm.py:1019` 到 `code/vllm/vllm/config/vllm.py:1034`
 
 也就是说 async scheduling 当前只支持：
 
@@ -350,11 +350,11 @@ logger.warning_once(
 self.scheduler_config.async_scheduling = False
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:987` 到 `code/vllm/vllm/config/vllm.py:996`
+位置：`code/vllm/vllm/config/vllm.py:1053` 到 `code/vllm/vllm/config/vllm.py:1065`
 
 如果 `disable_padded_drafter_batch=True`，也会关闭 async scheduling：
 
-位置：`code/vllm/vllm/config/vllm.py:997` 到 `code/vllm/vllm/config/vllm.py:1005`
+位置：`code/vllm/vllm/config/vllm.py:1065` 到 `code/vllm/vllm/config/vllm.py:1072`
 
 ### 6.3 async spec decode 需要 placeholders 回滚
 
@@ -367,7 +367,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1564` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1567`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1661`
 
 否则会出现：
 
@@ -396,7 +396,7 @@ if vllm_config.speculative_config:
     )
 ```
 
-位置：`code/vllm/vllm/v1/sample/logits_processor/__init__.py:200` 到 `code/vllm/vllm/v1/sample/logits_processor/__init__.py:209`
+位置：`code/vllm/vllm/v1/sample/logits_processor/__init__.py:202` 到 `code/vllm/vllm/v1/sample/logits_processor/__init__.py:209`
 
 错误信息定义：
 
@@ -404,7 +404,7 @@ if vllm_config.speculative_config:
 "Custom logits processors are not supported when speculative decoding is enabled."
 ```
 
-位置：`code/vllm/vllm/v1/sample/logits_processor/__init__.py:41` 到 `code/vllm/vllm/v1/sample/logits_processor/__init__.py:45`
+位置：`code/vllm/vllm/v1/sample/logits_processor/__init__.py:44`
 
 含义：
 
@@ -454,7 +454,7 @@ bonus_sampler_output = self.sampler(
 )
 ```
 
-位置：`code/vllm/vllm/v1/sample/rejection_sampler.py:121` 到 `code/vllm/vllm/v1/sample/rejection_sampler.py:143`
+位置：`code/vllm/vllm/v1/sample/rejection_sampler.py:130` 到 `code/vllm/vllm/v1/sample/rejection_sampler.py:143`
 
 所以：
 
@@ -610,7 +610,7 @@ cu_num_generated_tokens: list[int] | None = None
 Used for slicing the logprobs in cases like speculative decoding where the number of generated tokens may be different for each request.
 ```
 
-位置：`code/vllm/vllm/v1/outputs.py:27` 到 `code/vllm/vllm/v1/outputs.py:38`
+位置：`code/vllm/vllm/v1/outputs.py:27` 到 `code/vllm/vllm/v1/outputs.py:46`
 
 Scheduler 回收时按实际 `len(new_token_ids)` 切片：
 
@@ -618,7 +618,7 @@ Scheduler 回收时按实际 `len(new_token_ids)` 切片：
 new_logprobs = logprobs.slice_request(req_index, len(new_token_ids))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1669` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1675`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1779`
 
 这解决的是：
 
@@ -668,7 +668,7 @@ if self.skip_reading_prefix_cache is None:
     self.skip_reading_prefix_cache = self.prompt_logprobs is not None
 ```
 
-位置：`code/vllm/vllm/sampling_params.py:481` 到 `code/vllm/vllm/sampling_params.py:485`
+位置：`code/vllm/vllm/sampling_params.py:500` 到 `code/vllm/vllm/sampling_params.py:504`
 
 这不是 spec decode 专属限制，但和 spec decode 同时出现时容易混淆：
 
@@ -691,7 +691,7 @@ logit_index = batch_index + cumulative_offset
 cumulative_offset += len(spec_tokens.get(req_id, ()))
 ```
 
-位置：`code/vllm/vllm/v1/structured_output/utils.py:113` 到 `code/vllm/vllm/v1/structured_output/utils.py:121`
+位置：`code/vllm/vllm/v1/structured_output/utils.py:112` 到 `code/vllm/vllm/v1/structured_output/utils.py:120`
 
 对 structured output 请求，会为 `1 + num_spec_tokens` 行填 bitmask：
 
@@ -701,7 +701,7 @@ for i in range(1 + num_spec_tokens):
     sorted_bitmask[bitmask_index] = grammar_bitmask[cumulative_index + i]
 ```
 
-位置：`code/vllm/vllm/v1/structured_output/utils.py:132` 到 `code/vllm/vllm/v1/structured_output/utils.py:139`
+位置：`code/vllm/vllm/v1/structured_output/utils.py:132` 到 `code/vllm/vllm/v1/structured_output/utils.py:140`
 
 所以 structured output 下，bitmask 不是简单按 batch index 对齐。
 
@@ -724,7 +724,7 @@ if self.structured_output_manager.should_advance(request):
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1911` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1915`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2023` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2025`
 
 batch queue / deferred sampling 路径还会把无效 token 计入 `num_invalid_spec_tokens`：
 
@@ -736,7 +736,7 @@ if num_invalid_tokens:
     num_invalid_spec_tokens[req_id] = num_invalid_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1936` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1953`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2030` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2064`
 
 含义：
 
@@ -746,23 +746,27 @@ structured output 可以提前让某些 draft tokens 失效；
 统计时要通过 num_invalid_spec_tokens 修正 acceptance rate。
 ```
 
-### 11.3 最终 accept_tokens 只接受 confirmed tokens
+### 11.3 最终 accept_tokens 只接受 confirmed grammar content
 
 输出回收阶段：
 
 ```python
 if new_token_ids and self.structured_output_manager.should_advance(request):
-    if not grammar.accept_tokens(req_id, new_token_ids):
+    advance_token_ids = self.structured_output_manager.trim_reasoning_for_advance(
+        request, new_token_ids
+    )
+    if advance_token_ids and not grammar.accept_tokens(req_id, advance_token_ids):
         request.status = RequestStatus.FINISHED_ERROR
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1598` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1614`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1698` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1717`
 
 注意这里传的是：
 
 ```text
 new_token_ids = accepted draft tokens + recovered token 或 bonus token；
-不包含 rejected draft tokens。
+不包含 rejected draft tokens；
+如果包含 reasoning 结束 marker 前后的混合内容，会先 trim 掉 reasoning 前缀，只把 grammar content 交给 grammar。
 ```
 
 如果 grammar 在这里拒绝，说明前面的 draft validation / grammar bitmask / logits row 对齐出现不一致，vLLM 会把请求置为 `FINISHED_ERROR`。
@@ -780,7 +784,7 @@ There's no "decoding phase" nor "prefill phase" in the scheduler.
 Each request just has num_computed_tokens and num_tokens_with_spec.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:387` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:398`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:433` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:445`
 
 这使得：
 
@@ -801,7 +805,7 @@ if request.is_prefill_chunk:
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1905` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1909`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2015` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2019`
 
 含义：
 
@@ -819,7 +823,7 @@ orig_num_spec_tokens = len(placeholder_spec_tokens)
 del spec_token_ids[orig_num_spec_tokens:]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1936` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1939`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2046` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2049`
 
 注释说明这对 chunked prefill 等场景是必要的。
 
@@ -846,7 +850,7 @@ num_new_tokens = min(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:471` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:478`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:519` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:527`
 
 注释写明：
 
@@ -885,7 +889,7 @@ num_rejected = num_draft_tokens - num_accepted
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1550` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1563`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1649` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1659`
 
 核心原则：
 
@@ -912,7 +916,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     failed_kv_load_req_ids = self._handle_invalid_blocks(...)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1490` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1498`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1578` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1584`
 
 随后：
 
@@ -921,7 +925,7 @@ if failed_kv_load_req_ids and req_id in failed_kv_load_req_ids:
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1526` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1530`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1619` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1621`
 
 含义：
 
@@ -938,7 +942,7 @@ ModelRunner forward 外层会设置：
 defer_kv_connector_finalize = self.speculative_config is not None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4297` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4301`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4357`
 
 sample_tokens 之后再 finalize：
 
@@ -947,7 +951,7 @@ if spec_config is not None:
     self.finalize_kv_connector()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4596` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4600`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4683` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4687`
 
 原因：
 
@@ -968,7 +972,7 @@ num_tokens_with_spec 包含 prompt + output + spec tokens；
 Scheduler 让 num_computed_tokens 追赶 num_tokens_with_spec。
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:387` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:398`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:433` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:445`
 
 但边界在于：
 
@@ -990,10 +994,10 @@ rejected spec tokens 不能进入 prefix cache 的真实进度语义。
 encoder cache 释放中也能看到 placeholder 边界：
 
 ```python
-start_pos + num_tokens <= request.num_computed_tokens - request.num_output_placeholders
+start_pos + num_tokens + spec_lookahead <= request.num_computed_tokens - request.num_output_placeholders
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1886` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1893`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1997` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2003`
 
 这说明：
 
@@ -1028,7 +1032,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1550` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1556`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1649` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1650`
 
 这说明：
 
@@ -1090,7 +1094,7 @@ for num_new, output_token_id in enumerate(new_token_ids, 1):
         break
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1848` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1864`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1961` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1970`
 
 边界：
 
@@ -1121,7 +1125,7 @@ if not input_fits_in_drafter:
     self._copy_draft_token_ids_to_cpu(scheduler_output, zeros_only=True)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4561` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4573`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4634` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4644`
 
 注释说明：
 
@@ -1155,7 +1159,7 @@ when using PP, the scheduler sends the sampled tokens back,
 because there's no direct communication between the first-stage worker and the last-stage worker.
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3693` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3697`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3748` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3750`
 
 原因：
 
@@ -1171,7 +1175,7 @@ V2 还有更明确的不支持项：
 EAGLE3 with pipeline parallelism unsupported。
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:2055` 到 `code/vllm/vllm/config/vllm.py:2059`
+位置：`code/vllm/vllm/config/vllm.py:2143`
 
 ---
 
@@ -1184,7 +1188,7 @@ if vllm_config.speculative_config is not None and interleave_size > 1:
     assert layer_impl.supports_mtp_with_cp_non_trivial_interleave_size, (...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/cp_utils.py:14` 到 `code/vllm/vllm/v1/worker/cp_utils.py:29`
+位置：`code/vllm/vllm/v1/worker/cp_utils.py:22` 到 `code/vllm/vllm/v1/worker/cp_utils.py:33`
 
 含义：
 
@@ -1214,7 +1218,7 @@ self.adjust_cudagraph_sizes_for_spec_decode(
 )
 ```
 
-位置：`code/vllm/vllm/config/compilation.py:1426` 到 `code/vllm/vllm/config/compilation.py:1433`
+位置：`code/vllm/vllm/config/compilation.py:1437` 到 `code/vllm/vllm/config/compilation.py:1443`
 
 其中 `uniform_decode_query_len` 对 spec decode 通常可以理解为：
 
@@ -1229,7 +1233,7 @@ if multiple_of % uniform_decode_query_len != 0 or multiple_of % tensor_parallel_
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/compilation.py:1462` 到 `code/vllm/vllm/config/compilation.py:1479`
+位置：`code/vllm/vllm/config/compilation.py:1469` 到 `code/vllm/vllm/config/compilation.py:1489`
 
 报错提示也明确说：
 
@@ -1264,7 +1268,7 @@ else:
     routed_experts = routing_data[end - len(new_token_ids) : end]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1645` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1653`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1750` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1757`
 
 边界：
 
@@ -1276,7 +1280,7 @@ rejected draft 位于后面，不能作为输出 routed experts 返回。
 
 V2 runner 里 routed experts capture 还被列为 unsupported：
 
-位置：`code/vllm/vllm/config/vllm.py:2067` 到 `code/vllm/vllm/config/vllm.py:2069`
+位置：`code/vllm/vllm/config/vllm.py:2151` 到 `code/vllm/vllm/config/vllm.py:2152`
 
 ---
 
@@ -1290,7 +1294,7 @@ if not input_batch.has_structured_output_reqs:
     return
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:21` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:30`
+位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:22` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:30`
 
 如果 batch 有 structured output request，才异步把 draft tokens 拷回 CPU：
 
@@ -1306,7 +1310,7 @@ self.draft_tokens_np = async_copy_to_np(draft_tokens)
 draft_token_ids = [[-1] * self.num_draft_tokens for _ in self.req_ids]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:44` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:51`
+位置：`code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:45` 到 `code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py:52`
 
 含义：
 
@@ -1335,7 +1339,7 @@ use_gpu_toks = (
 ) and not spec_config.disable_padded_drafter_batch
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4497` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4509`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4565` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4584`
 
 如果可以使用 GPU sampled tokens，drafter 可以在 bookkeeping 前运行：
 
@@ -1344,7 +1348,7 @@ if input_fits_in_drafter:
     propose_draft_token_ids(sampled_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4520` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4523`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4588`
 
 否则：
 
@@ -1352,7 +1356,7 @@ if input_fits_in_drafter:
 propose_drafts_after_bookkeeping = input_fits_in_drafter
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4558` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4559`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4631`
 
 注释说明：
 
@@ -1361,7 +1365,7 @@ ngram and other speculative decoding methods use the sampled tokens on the CPU,
 so they are run after bookkeeping.
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4591` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4594`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4664`
 
 所以不同 proposer 的性能边界不同：
 
@@ -1381,7 +1385,7 @@ disable_padded_drafter_batch=True：会影响这一优化路径，也会禁用 a
 rejection_sample_method = standard | synthetic
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:200` 到 `code/vllm/vllm/config/speculative.py:204`
+位置：`code/vllm/vllm/config/speculative.py:211` 到 `code/vllm/vllm/config/speculative.py:219`
 
 synthetic 模式要求二选一：
 
@@ -1398,7 +1402,7 @@ if (rates is None) == (length is None):
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:230` 到 `code/vllm/vllm/config/speculative.py:242`
+位置：`code/vllm/vllm/config/speculative.py:244` 到 `code/vllm/vllm/config/speculative.py:274`
 
 并要求：
 
@@ -1409,7 +1413,7 @@ rates 单调不增；
 acceptance_length 在 [1, num_speculative_tokens + 1]。
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:243` 到 `code/vllm/vllm/config/speculative.py:263`
+位置：`code/vllm/vllm/config/speculative.py:244` 到 `code/vllm/vllm/config/speculative.py:274`
 
 运行时：
 
@@ -1493,7 +1497,7 @@ scheduled_spec_token_ids and (...)
 
 成立时才计算 accepted / rejected。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1547` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1574`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1640` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1644`
 
 所以没有 draft 的请求会退化成普通输出回收。
 
@@ -1525,7 +1529,7 @@ if request is None or request.is_finished():
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1531` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1540`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1624` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1630`
 
 即使 ModelRunner 已经产生 tokens，请求如果执行期间被 abort / finish，也不会继续落账。
 
@@ -1539,7 +1543,7 @@ discard_sampled_tokens_req_indices = np.nonzero(...)
 valid_sampled_token_ids[int(i)].clear()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3621` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3664`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4803` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4812`
 
 spec decode 的 `parse_output()` 也支持 `discard_req_indices`：
 
@@ -1638,7 +1642,7 @@ OutputProcessor 的 logprobs processor 也承认这个场景：
 Outer lists are only of len > 1 if EngineCore made >1 tokens in prior step (e.g. in spec decoding).
 ```
 
-位置：`code/vllm/vllm/v1/engine/logprobs.py:69` 到 `code/vllm/vllm/v1/engine/logprobs.py:78`
+位置：`code/vllm/vllm/v1/engine/logprobs.py:72` 到 `code/vllm/vllm/v1/engine/logprobs.py:73`
 
 ---
 

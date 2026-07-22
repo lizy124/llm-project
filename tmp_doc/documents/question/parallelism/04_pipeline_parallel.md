@@ -108,10 +108,10 @@ rank N-1 / last stage:
 
 源码中 `LlamaModel` 和 `LlamaForCausalLM` 就是这个模式：
 
-- first rank 创建 `embed_tokens`：`vllm/vllm/model_executor/models/llama.py:365`
-- 每个 rank 用 `make_layers()` 创建自己的 layer 区间：`vllm/vllm/model_executor/models/llama.py:375`
-- last rank 创建 `norm`：`vllm/vllm/model_executor/models/llama.py:380`
-- last rank 创建 `lm_head / logits_processor`：`vllm/vllm/model_executor/models/llama.py:518`
+- first rank 创建 `embed_tokens`：`vllm/vllm/model_executor/models/llama.py:373`
+- 每个 rank 用 `make_layers()` 创建自己的 layer 区间：`vllm/vllm/model_executor/models/llama.py:383`
+- last rank 创建 `norm`：`vllm/vllm/model_executor/models/llama.py:388`
+- last rank 创建 `lm_head / logits_processor`：`vllm/vllm/model_executor/models/llama.py:484`
 
 ---
 
@@ -119,7 +119,7 @@ rank N-1 / last stage:
 
 PP group 在 `initialize_model_parallel()` 中创建。
 
-位置：`vllm/vllm/distributed/parallel_state.py:1694`
+位置：`vllm/vllm/distributed/parallel_state.py:1713`
 
 ### 4.1 rank mesh 的维度顺序
 
@@ -129,7 +129,9 @@ vLLM 的模型并行 rank layout 注释写得很关键：
 ExternalDP x DP x PP x PCP x TP
 ```
 
-对应代码：`vllm/vllm/distributed/parallel_state.py:1760` 到 `vllm/vllm/distributed/parallel_state.py:1775`
+虽然源码注释现在简写成 `ExternalDP x DP x PP x TP`，但实际 `reshape` 仍包含 `prefill_context_model_parallel_size` 这一维，因此本文继续按实际 rank mesh 写成 `ExternalDP x DP x PP x PCP x TP`。
+
+对应代码：`vllm/vllm/distributed/parallel_state.py:1779` 到 `vllm/vllm/distributed/parallel_state.py:1794`
 
 也就是说，world ranks 会先 reshape 成一个多维网格：
 
@@ -148,7 +150,7 @@ all_ranks.transpose(2, 4)
   .reshape(-1, pipeline_model_parallel_size)
 ```
 
-对应代码：`vllm/vllm/distributed/parallel_state.py:1835` 到 `vllm/vllm/distributed/parallel_state.py:1851`
+对应代码：`vllm/vllm/distributed/parallel_state.py:1854` 到 `vllm/vllm/distributed/parallel_state.py:1869`
 
 它表达的是：
 
@@ -192,7 +194,7 @@ PP group 纵向串不同层。
 
 PP group 本质是一个 `GroupCoordinator`。
 
-位置：`vllm/vllm/distributed/parallel_state.py:351`
+位置：`vllm/vllm/distributed/parallel_state.py:358`
 
 ### 5.1 first / last / next / prev
 
@@ -236,10 +238,10 @@ irecv_tensor_dict(...)
 
 对应代码：
 
-- send：`vllm/vllm/distributed/parallel_state.py:941`
-- isend：`vllm/vllm/distributed/parallel_state.py:979`
-- recv：`vllm/vllm/distributed/parallel_state.py:1036`
-- irecv：`vllm/vllm/distributed/parallel_state.py:1074`
+- send：`vllm/vllm/distributed/parallel_state.py:960`
+- isend：`vllm/vllm/distributed/parallel_state.py:998`
+- recv：`vllm/vllm/distributed/parallel_state.py:1055`
+- irecv：`vllm/vllm/distributed/parallel_state.py:1093`
 
 ### 5.3 为什么传 tensor dict
 
@@ -272,7 +274,7 @@ all_gather_group=get_tp_group()
 all_gather_tensors={...}
 ```
 
-对应代码：`vllm/vllm/distributed/parallel_state.py:941` 到 `vllm/vllm/distributed/parallel_state.py:964`
+对应代码：`vllm/vllm/distributed/parallel_state.py:960` 到 `vllm/vllm/distributed/parallel_state.py:983`
 
 作用是：
 
@@ -290,7 +292,7 @@ sequence parallelism 下，`residual` 是否可这样处理要额外判断，后
 
 模型通常通过 `make_layers()` 构建 transformer layers。
 
-位置：`vllm/vllm/model_executor/models/utils.py:640`
+位置：`vllm/vllm/model_executor/models/utils.py:687`
 
 ### 6.1 get_pp_indices 计算 start/end
 
@@ -300,12 +302,12 @@ sequence parallelism 下，`residual` 是否可这样处理要额外判断，后
 get_pp_indices(num_hidden_layers, pp_rank, pp_size)
 ```
 
-对应代码：`vllm/vllm/model_executor/models/utils.py:656` 到 `vllm/vllm/model_executor/models/utils.py:662`
+对应代码：`vllm/vllm/model_executor/models/utils.py:707` 到 `vllm/vllm/model_executor/models/utils.py:709`
 
 `get_pp_indices()` 定义在：
 
 ```text
-vllm/vllm/distributed/utils.py:109
+vllm/vllm/distributed/utils.py:127
 ```
 
 它返回：
@@ -331,7 +333,7 @@ partitions = [layers_per_partition] * pp_size
 
 如果不能整除，剩余 layers 会被分配到除 last partition 外的若干 stage，尽量平衡首尾 embedding / norm / lm_head 的额外开销。
 
-对应代码：`vllm/vllm/distributed/utils.py:138` 到 `vllm/vllm/distributed/utils.py:149`
+对应代码：`vllm/vllm/distributed/utils.py:156` 到 `vllm/vllm/distributed/utils.py:167`
 
 ### 6.3 VLLM_PP_LAYER_PARTITION 手动指定
 
@@ -362,7 +364,7 @@ sum(partitions) == num_hidden_layers
 + [PPMissingLayer() for _ in range(end_layer, num_hidden_layers)]
 ```
 
-对应代码：`vllm/vllm/model_executor/models/utils.py:664` 到 `vllm/vllm/model_executor/models/utils.py:670`
+对应代码：`vllm/vllm/model_executor/models/utils.py:711` 到 `vllm/vllm/model_executor/models/utils.py:717`
 
 这样做的好处是：
 
@@ -380,7 +382,7 @@ sum(partitions) == num_hidden_layers
 `PPMissingLayer` 定义在：
 
 ```text
-vllm/vllm/model_executor/models/utils.py:627
+vllm/vllm/model_executor/models/utils.py:674
 ```
 
 它是一个占位层，forward 时直接返回输入。
@@ -407,7 +409,7 @@ get_pp_missing_layer_names(model)
 is_pp_missing_parameter(name, model)
 ```
 
-定义位置：`vllm/vllm/model_executor/models/utils.py:679` 到 `vllm/vllm/model_executor/models/utils.py:705`
+定义位置：`vllm/vllm/model_executor/models/utils.py:726` 到 `vllm/vllm/model_executor/models/utils.py:752`
 
 典型模型加载权重时会检查：
 
@@ -418,8 +420,8 @@ if is_pp_missing_parameter(name, self):
 
 Llama 例子见：
 
-- stacked 参数路径：`vllm/vllm/model_executor/models/llama.py:464`
-- 普通参数路径：`vllm/vllm/model_executor/models/llama.py:476`
+- stacked 参数路径：`vllm/vllm/model_executor/models/llama.py:455`
+- 普通参数路径：`vllm/vllm/model_executor/models/llama.py:535`
 
 所以 PP 下每个 stage 只加载本 stage 真实存在的层和必要的 embedding / norm / lm_head。
 
@@ -480,9 +482,9 @@ hidden_states + residual + 模型特定的额外中间张量
 make_empty_intermediate_tensors_factory(["hidden_states", "residual"], hidden_size)
 ```
 
-对应代码：`vllm/vllm/model_executor/models/utils.py:708` 到 `vllm/vllm/model_executor/models/utils.py:721`
+对应代码：`vllm/vllm/model_executor/models/utils.py:755` 到 `vllm/vllm/model_executor/models/utils.py:764`
 
-Llama 中注册位置：`vllm/vllm/model_executor/models/llama.py:385`
+Llama 中注册位置：`vllm/vllm/model_executor/models/llama.py:393`
 
 这个工厂在 dummy run / CUDA graph / 非首 PP rank 准备 buffer 时会用到。
 
@@ -492,7 +494,7 @@ Llama 中注册位置：`vllm/vllm/model_executor/models/llama.py:385`
 
 以 `LlamaModel.forward()` 为例。
 
-位置：`vllm/vllm/model_executor/models/llama.py:392`
+位置：`vllm/vllm/model_executor/models/llama.py:400`
 
 ### 9.1 first rank：从 input_ids / inputs_embeds 开始
 
@@ -507,7 +509,7 @@ if get_pp_group().is_first_rank:
     residual = None
 ```
 
-对应代码：`vllm/vllm/model_executor/models/llama.py:400` 到 `vllm/vllm/model_executor/models/llama.py:405`
+对应代码：`vllm/vllm/model_executor/models/llama.py:408` 到 `vllm/vllm/model_executor/models/llama.py:413`
 
 这说明只有 first stage 真正消费 token ids 或外部 embeddings。
 
@@ -521,7 +523,7 @@ hidden_states = intermediate_tensors["hidden_states"]
 residual = intermediate_tensors["residual"]
 ```
 
-对应代码：`vllm/vllm/model_executor/models/llama.py:406` 到 `vllm/vllm/model_executor/models/llama.py:409`
+对应代码：`vllm/vllm/model_executor/models/llama.py:414` 到 `vllm/vllm/model_executor/models/llama.py:417`
 
 所以非首 stage 的 forward 输入不是 token，而是上一个 stage 的中间状态。
 
@@ -533,7 +535,7 @@ forward 中只遍历：
 islice(self.layers, self.start_layer, self.end_layer)
 ```
 
-对应代码：`vllm/vllm/model_executor/models/llama.py:412` 到 `vllm/vllm/model_executor/models/llama.py:417`
+对应代码：`vllm/vllm/model_executor/models/llama.py:420` 到 `vllm/vllm/model_executor/models/llama.py:425`
 
 这就是 `make_layers()` 返回 `start_layer / end_layer` 的运行时作用。
 
@@ -545,7 +547,7 @@ islice(self.layers, self.start_layer, self.end_layer)
 return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 ```
 
-对应代码：`vllm/vllm/model_executor/models/llama.py:422` 到 `vllm/vllm/model_executor/models/llama.py:425`
+对应代码：`vllm/vllm/model_executor/models/llama.py:430` 到 `vllm/vllm/model_executor/models/llama.py:433`
 
 ### 9.5 last rank：做最终 norm 并返回 hidden_states
 
@@ -556,7 +558,7 @@ hidden_states, _ = self.norm(hidden_states, residual)
 return hidden_states
 ```
 
-对应代码：`vllm/vllm/model_executor/models/llama.py:427` 到 `vllm/vllm/model_executor/models/llama.py:431`
+对应代码：`vllm/vllm/model_executor/models/llama.py:435` 到 `vllm/vllm/model_executor/models/llama.py:439`
 
 这也是为什么 logits / sampling 只能在 last stage 正常发生。
 
@@ -566,7 +568,7 @@ return hidden_states
 
 PP 的跨 stage 通信主要在 `Worker.execute_model()` 中完成。
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:836`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1002`
 
 ### 10.1 先等待上一轮异步发送完成
 
@@ -578,7 +580,7 @@ if self._pp_send_work:
     self._pp_send_work = []
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:839` 到 `vllm/vllm/v1/worker/gpu_worker.py:843`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:1005` 到 `vllm/vllm/v1/worker/gpu_worker.py:1009`
 
 这样可以避免上一轮中间状态还没发完，本轮就复用或覆盖 buffer。
 
@@ -593,7 +595,7 @@ get_pp_group().irecv_tensor_dict(
 )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:881` 到 `vllm/vllm/v1/worker/gpu_worker.py:887`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:1047` 到 `vllm/vllm/v1/worker/gpu_worker.py:1053`
 
 返回结果会被包装成：
 
@@ -601,14 +603,14 @@ get_pp_group().irecv_tensor_dict(
 AsyncIntermediateTensors
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:889` 到 `vllm/vllm/v1/worker/gpu_worker.py:893`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:1055` 到 `vllm/vllm/v1/worker/gpu_worker.py:1059`
 
 ### 10.3 AsyncIntermediateTensors 延迟等待通信完成
 
 `AsyncIntermediateTensors` 定义在：
 
 ```text
-vllm/vllm/v1/worker/gpu_worker.py:85
+vllm/vllm/v1/worker/gpu_worker.py:98
 ```
 
 它持有：
@@ -625,7 +627,7 @@ comm_postprocess
 wait_for_comm()
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:99` 到 `vllm/vllm/v1/worker/gpu_worker.py:114`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:101` 到 `vllm/vllm/v1/worker/gpu_worker.py:119`
 
 这样可以让通信和本地输入准备尽量重叠。
 
@@ -640,7 +642,7 @@ output = self.model_runner.execute_model(
 )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:895` 到 `vllm/vllm/v1/worker/gpu_worker.py:898`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:1061` 到 `vllm/vllm/v1/worker/gpu_worker.py:1064`
 
 ### 10.5 如果返回 IntermediateTensors，就发送给下个 stage
 
@@ -657,7 +659,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(
 return None
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_worker.py:910` 到 `vllm/vllm/v1/worker/gpu_worker.py:924`
+对应代码：`vllm/vllm/v1/worker/gpu_worker.py:1083` 到 `vllm/vllm/v1/worker/gpu_worker.py:1088`
 
 所以：
 
@@ -672,7 +674,7 @@ Worker 负责把 IntermediateTensors 发给下一段 pipeline。
 
 `GPUModelRunner._preprocess()` 是模型 forward 前最后一层输入整形。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3430`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3476`
 
 ### 11.1 first rank 准备 token 输入
 
@@ -684,7 +686,7 @@ input_ids / inputs_embeds / positions / model_kwargs
 
 多模态、prompt embeds、encoder-decoder 等特殊输入也主要在 first rank 或对应 encoder 路径处理。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3451` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3536`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3501` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3577`
 
 ### 11.2 非 first rank 同步并拷贝 intermediate_tensors
 
@@ -700,13 +702,13 @@ else:
     )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3547` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3553`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3597` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3603`
 
 这说明非首 PP rank 会把收到的中间张量同步到 ModelRunner 自己的持久 buffer，再切出本轮需要的 view。
 
 ### 11.3 sync_and_gather_intermediate_tensors 做什么
 
-函数位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3285`
+函数位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3331`
 
 它主要做两件事：
 
@@ -715,11 +717,11 @@ else:
 2. 返回只覆盖 num_tokens 的 IntermediateTensors view。
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3296` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3313`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3345` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3359`
 
 如果启用了 sequence parallelism，且 `residual` 被 TP rank 分片，它还会先通过 TP group all_gather 还原 residual。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3293` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3306`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3345` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3355`
 
 ---
 
@@ -727,7 +729,7 @@ else:
 
 `GPUModelRunner.execute_model()` 负责本 rank 的模型 forward 和后处理。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4047`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4097`
 
 ### 12.1 所有 PP stage 都会准备本地执行状态
 
@@ -774,7 +776,7 @@ self._model_forward(
 )
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4323` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4329`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4380` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 模型内部再根据 `get_pp_group().is_first_rank / is_last_rank` 决定如何使用这些输入。
 
@@ -788,7 +790,7 @@ self.kv_connector_output = kv_connector_output
 return hidden_states
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4340` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4346`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4399` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 这会回到 Worker，由 Worker 发给下一个 PP stage。
 
@@ -801,11 +803,11 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4357` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4358`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 然后保存 `ExecuteModelState`，等待 `sample_tokens()` 继续采样。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4389` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4408`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4446` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4458`
 
 ---
 
@@ -860,11 +862,11 @@ broadcast_pp_output = distributed_executor_backend == "external_launcher"
                       and pp_world_size > 1
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:472` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:479`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:504` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:507`
 
 这种模式下，last rank 会把 logits broadcast 给其他 PP rank，保证 torchrun external launcher 下各 PP rank 同步。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4359` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4387`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4420` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4444`
 
 但文档主线可以先记普通模式：
 
@@ -911,11 +913,11 @@ self.kv_connector_output
 
 然后返回 IntermediateTensors。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4342` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4346`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4401` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 如果后续 `sample_tokens()` 没有 execute state，也会构造 KV connector only output。
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4429` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4437`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:4486` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4494`
 
 ---
 
@@ -959,7 +961,7 @@ ModelRunner 接收后，如果发现 residual 是 scattered 的，会执行 TP a
 v = get_tp_group().all_gather(v[:local_len], dim=0)
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3293` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3306`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:3345` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3355`
 
 所以：
 
@@ -1082,7 +1084,7 @@ Worker / ModelRunner 后处理:
 TODO: Support overlapping micro-batches
 ```
 
-对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:472` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:475`
+对应代码：`vllm/vllm/v1/worker/gpu_model_runner.py:502` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:503`
 
 ### 19.2 非 first rank 也会准备 input metadata
 

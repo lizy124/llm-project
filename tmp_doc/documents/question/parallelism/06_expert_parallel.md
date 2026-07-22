@@ -217,7 +217,7 @@ EPLB 是 Expert Parallel Load Balancing。配置校验要求：
 
 EP group 在 `initialize_model_parallel()` 里创建。
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1694`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1713`
 
 整体并行 rank layout 是：
 
@@ -225,7 +225,7 @@ EP group 在 `initialize_model_parallel()` 里创建。
 ExternalDP x DP x PP x PCP x TP
 ```
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1760`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1799`
 
 `initialize_model_parallel()` 会依次创建：
 
@@ -248,7 +248,7 @@ all_ranks.transpose(1, 2)
   .reshape(-1, data_parallel_size * pcp_size * tp_size)
 ```
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1870`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1894`
 
 这意味着：
 
@@ -274,17 +274,17 @@ Don't create EP group for dense models.
 
 如果 `model_config` 存在且不是 MoE，则 `_EP` 保持 `None`。
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1870`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1891`
 
 `get_ep_group()` 也明确说明：EP group 只为 MoE 模型创建。
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1378`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1400`
 
 ### 5.3 EPLB group 为什么单独建
 
 如果启用 EPLB，会用和 EP 相同的 ranks 创建单独的 EPLB group。
 
-源码位置：`vllm/vllm/distributed/parallel_state.py:1898`
+源码位置：`vllm/vllm/distributed/parallel_state.py:1921`
 
 原因是：
 
@@ -298,7 +298,7 @@ EPLB 通信要和 MoE forward pass collectives 隔离，避免 forward 中的 di
 
 MoE 层构造时会调用 `make_parallel_config()`。
 
-源码位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:43`
+源码位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:44`
 
 它再调用：
 
@@ -306,7 +306,7 @@ MoE 层构造时会调用 `make_parallel_config()`。
 FusedMoEParallelConfig.make(...)
 ```
 
-源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1107`
+源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1110`
 
 ### 6.1 use_ep 的判定
 
@@ -317,7 +317,7 @@ dp_size * pcp_size * tp_size > 1
 and parallel_config.enable_expert_parallel
 ```
 
-源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1188`
+源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1190`
 
 也就是说：
 
@@ -334,7 +334,7 @@ flatten_tp_size = dp_size * pcp_size * tp_size
 flatten_tp_rank = dp_rank * pcp_size * tp_size + pcp_rank * tp_size + tp_rank
 ```
 
-源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1097`
+源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1099`
 
 含义是：
 
@@ -354,7 +354,7 @@ tp_size = 1
 tp_rank = 0
 ```
 
-源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1216`
+源码位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:1220`
 
 源码注释直接说明：
 

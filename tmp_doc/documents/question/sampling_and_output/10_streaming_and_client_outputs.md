@@ -116,7 +116,7 @@ num_nans_in_logits
 
 `EngineCoreOutputs` 是一批 `EngineCoreOutput`。
 
-源码位置：`code/vllm/vllm/v1/engine/__init__.py:220`
+源码位置：`code/vllm/vllm/v1/engine/__init__.py:221`
 
 它包含：
 
@@ -133,7 +133,7 @@ finished_requests
 
 `OutputProcessor.process_outputs()` 是内部输出到客户端输出的关键入口。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:576`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:584`
 
 主流程：
 
@@ -152,14 +152,14 @@ for engine_core_output in engine_core_outputs:
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:606`
-- `code/vllm/vllm/v1/engine/output_processor.py:618`
-- `code/vllm/vllm/v1/engine/output_processor.py:635`
-- `code/vllm/vllm/v1/engine/output_processor.py:639`
+- `code/vllm/vllm/v1/engine/output_processor.py:614`
+- `code/vllm/vllm/v1/engine/output_processor.py:626`
+- `code/vllm/vllm/v1/engine/output_processor.py:632`
+- `code/vllm/vllm/v1/engine/output_processor.py:644`
 - `code/vllm/vllm/v1/engine/output_processor.py:648`
-- `code/vllm/vllm/v1/engine/output_processor.py:651`
-- `code/vllm/vllm/v1/engine/output_processor.py:661`
-- `code/vllm/vllm/v1/engine/output_processor.py:669`
+- `code/vllm/vllm/v1/engine/output_processor.py:657`
+- `code/vllm/vllm/v1/engine/output_processor.py:660`
+- `code/vllm/vllm/v1/engine/output_processor.py:671`
 
 一句话：
 
@@ -169,7 +169,7 @@ OutputProcessor 是唯一应该全量遍历 EngineCoreOutputs 的 Python 层输�
 
 源码注释也强调：为了减少 Python overhead，vLLM V1 尽量只在 `process_outputs()` 里循环处理 batch。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:594` 到 `code/vllm/vllm/v1/engine/output_processor.py:601`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:602` 到 `code/vllm/vllm/v1/engine/output_processor.py:609`
 
 ---
 
@@ -215,7 +215,7 @@ routed_experts_chunks
 
 ### 4.2 FINAL_ONLY：未完成时不输出
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:280` 到 `code/vllm/vllm/v1/engine/output_processor.py:285`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:281` 到 `code/vllm/vllm/v1/engine/output_processor.py:286`
 
 逻辑是：
 
@@ -233,7 +233,7 @@ FINAL_ONLY 不是模型不生成中间 token，
 
 ### 4.3 stream_interval：控制几 token 输出一次
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:287` 到 `code/vllm/vllm/v1/engine/output_processor.py:300`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:288` 到 `code/vllm/vllm/v1/engine/output_processor.py:300`
 
 当 `stream_interval > 1` 时，只有满足以下条件才输出：
 
@@ -254,7 +254,7 @@ FINAL_ONLY 不是模型不生成中间 token，
 
 在 `make_request_output()` 中，DELTA 模式会按 `sent_tokens_offset` 取新增 token。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:302` 到 `code/vllm/vllm/v1/engine/output_processor.py:309`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:303` 到 `code/vllm/vllm/v1/engine/output_processor.py:309`
 
 逻辑是：
 
@@ -269,7 +269,7 @@ sent_tokens_offset = detokenizer.num_output_tokens()
 detokenizer.get_next_output_text(finished, delta=True)
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:376` 到 `code/vllm/vllm/v1/engine/output_processor.py:389`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:383` 到 `code/vllm/vllm/v1/engine/output_processor.py:398`
 
 所以 DELTA 模式下：
 
@@ -291,9 +291,9 @@ logprobs = logprobs_processor.logprobs
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:388`
-- `code/vllm/vllm/v1/engine/output_processor.py:389`
-- `code/vllm/vllm/v1/engine/output_processor.py:392`
+- `code/vllm/vllm/v1/engine/output_processor.py:395`
+- `code/vllm/vllm/v1/engine/output_processor.py:397`
+- `code/vllm/vllm/v1/engine/output_processor.py:400`
 
 所以 CUMULATIVE 模式下：
 
@@ -329,7 +329,7 @@ generation 输出会先调用：
 detokenizer.update(new_token_ids, finish_reason == FinishReason.STOP)
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:639`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:648`
 
 `IncrementalDetokenizer.update()` 会：
 
@@ -345,7 +345,7 @@ detokenizer.update(new_token_ids, finish_reason == FinishReason.STOP)
 
 如果 detokenizer 发现 stop string，会把 `finish_reason` 改成 `STOP`，并把 stop string 作为 `stop_reason`。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:642` 到 `code/vllm/vllm/v1/engine/output_processor.py:644`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:651` 到 `code/vllm/vllm/v1/engine/output_processor.py:653`
 
 ### 5.3 get_next_output_text() 决定输出多少 text
 
@@ -680,7 +680,7 @@ wait_for_completion()
 
 OpenAI-compatible Completion API 的 streaming 入口在：
 
-`code/vllm/vllm/entrypoints/openai/completion/serving.py:280`
+`code/vllm/vllm/entrypoints/openai/completion/serving.py:282`
 
 ### 9.1 请求先变成 AsyncLLM result_generator
 
@@ -695,14 +695,14 @@ render request
 
 源码位置：
 
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:139`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:170`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:205`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:141`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:163`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:207`
 - `code/vllm/vllm/entrypoints/openai/completion/serving.py:217`
 
 如果 `request.stream` 为真，则进入 `completion_stream_generator()`。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:225`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:227`
 
 ### 9.2 Completion stream chunk 处理
 
@@ -718,26 +718,26 @@ async for prompt_idx, res in result_generator:
 
 源码位置：
 
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:305`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:326`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:335`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:359`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:398`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:436`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:309`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:327`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:338`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:356`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:397`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:431`
 
 它会跳过 chunked prefill 产生的空 chunk：
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:370` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:376`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:374` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:380`
 
 ### 9.3 usage 和 [DONE]
 
 如果启用 continuous usage，stream 中每个 chunk 可以携带 usage。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:427` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:434`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:431` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:438`
 
 如果启用 include_usage，则最后额外发一个 usage chunk。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:452` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:464`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:456` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:486`
 
 最后发送：
 
@@ -745,7 +745,7 @@ async for prompt_idx, res in result_generator:
 data: [DONE]\n\n
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:475`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:497`
 
 ### 9.4 非 streaming completion
 
@@ -753,9 +753,9 @@ data: [DONE]\n\n
 
 源码位置：
 
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:238`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:240`
 - `code/vllm/vllm/entrypoints/openai/completion/serving.py:255`
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:477`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:499`
 
 最终 response 会包含：
 
@@ -766,7 +766,7 @@ system_fingerprint
 kv_transfer_params
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:596` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:604`
+源码位置：`code/vllm/vllm/entrypoints/openai/completion/serving.py:601` 到 `code/vllm/vllm/entrypoints/openai/completion/serving.py:605`
 
 ---
 
@@ -774,7 +774,7 @@ kv_transfer_params
 
 Chat Completion 的 streaming 入口在：
 
-`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:409`
+`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:408`
 
 ### 10.1 第一帧先发送 role
 
@@ -784,7 +784,7 @@ Chat streaming 会在第一轮先发送 role chunk：
 DeltaMessage(role=role, content="")
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:478` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:535`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:480` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:526`
 
 这和 Completion API 不同：
 
@@ -806,17 +806,17 @@ output.text / output.token_ids
 
 源码位置：
 
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:573`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:591`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:603`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:627`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:677`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:724`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:751`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:565`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:583`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:595`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:623`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:671`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:721`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:746`
 
 如果没有 delta_text / token_ids 且是 chunked prefill 的空输出，也会跳过。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:593` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:599`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:585` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:591`
 
 ### 10.3 reasoning / tool calls parser
 
@@ -832,7 +832,7 @@ parser.parse_delta(
 )
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:603` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:610`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:595` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:602`
 
 parser 可以把模型输出拆成：
 
@@ -844,13 +844,13 @@ tool_calls
 
 如果 parser 暂时不产生可发送内容，则可能跳过当前 token chunk；如果 `return_token_ids` 启用，则仍可能发送 token ids。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:634` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:647`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:629` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:637`
 
 ### 10.4 finish chunk / usage / DONE
 
 当 `output.finish_reason` 非空时，Chat stream 会发送带 finish_reason 的最后一个 choice chunk。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:691` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:721`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:689` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:711`
 
 如果产生了 tool calls，finish_reason 可能转换为：
 
@@ -858,11 +858,11 @@ tool_calls
 tool_calls
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:697` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:707`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:694` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:699`
 
 如果启用 usage，则发送额外 usage chunk。
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:754` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:781`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:746` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:787`
 
 最后发送：
 
@@ -870,7 +870,7 @@ tool_calls
 data: [DONE]\n\n
 ```
 
-源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:815` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:816`
+源码位置：`code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:821` 到 `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:822`
 
 ---
 
@@ -970,18 +970,21 @@ AsyncGenerator[StreamingInput, None]
 
 如果 `OutputProcessor.add_request()` 发现 request state 已存在，会调用 `_update_streaming_request_state()`。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:520` 到 `code/vllm/vllm/v1/engine/output_processor.py:524`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:520` 到 `code/vllm/vllm/v1/engine/output_processor.py:532`
 
-streaming update 会进入队列，等当前 sub-request 完成后再应用。
+streaming update 会进入队列，等当前 sub-request 完成后再应用；当前 sub-request 结束后，如果队列里还有输入 chunk，会调用 `apply_streaming_update()` 继续复用同一 `RequestState`，否则清空 `input_chunk_queue`。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:543` 到 `code/vllm/vllm/v1/engine/output_processor.py:575`
+源码位置：
+
+- `code/vllm/vllm/v1/engine/output_processor.py:551` 到 `code/vllm/vllm/v1/engine/output_processor.py:582`
+- `code/vllm/vllm/v1/engine/output_processor.py:678` 到 `code/vllm/vllm/v1/engine/output_processor.py:685`
 
 当输入最终结束且需要 unblock generate loop 时，OutputProcessor 可能发送 `STREAM_FINISHED`。
 
 源码位置：
 
-- `code/vllm/vllm/outputs.py:191`
-- `code/vllm/vllm/v1/engine/output_processor.py:551` 到 `code/vllm/vllm/v1/engine/output_processor.py:555`
+- `code/vllm/vllm/outputs.py:195`
+- `code/vllm/vllm/v1/engine/output_processor.py:555` 到 `code/vllm/vllm/v1/engine/output_processor.py:563`
 
 AsyncLLM.generate() 会识别并跳过这个 sentinel，不把它 yield 给用户。
 
@@ -1018,11 +1021,11 @@ finish_reason = STOP
 stop_reason = stop_string
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:639` 到 `code/vllm/vllm/v1/engine/output_processor.py:644`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:648` 到 `code/vllm/vllm/v1/engine/output_processor.py:653`
 
 如果 OutputProcessor 侧发现 stop string，但 EngineCore 还没 finished，需要 abort EngineCore 中的请求。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:677` 到 `code/vllm/vllm/v1/engine/output_processor.py:681`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:678` 到 `code/vllm/vllm/v1/engine/output_processor.py:691`
 
 LLMEngine 和 AsyncLLM 都会把 `reqs_to_abort` 转发给 EngineCore：
 
@@ -1038,7 +1041,7 @@ finish_reason = str(finish_reason) if finished else None
 stop_reason = stop_reason if finished else None
 ```
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:402` 到 `code/vllm/vllm/v1/engine/output_processor.py:410`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:409` 到 `code/vllm/vllm/v1/engine/output_processor.py:417`
 
 ---
 
@@ -1048,17 +1051,17 @@ Pooling 请求不走 completion detokenize。
 
 在 `RequestState.make_request_output()` 中，如果 `pooling_output is not None`，直接创建 pooling 输出。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:312` 到 `code/vllm/vllm/v1/engine/output_processor.py:317`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:313` 到 `code/vllm/vllm/v1/engine/output_processor.py:318`
 
 `_new_request_output()` 会识别 `PoolingOutput` 并返回 `PoolingRequestOutput`。
 
-源码位置：`code/vllm/vllm/v1/engine/output_processor.py:346` 到 `code/vllm/vllm/v1/engine/output_processor.py:355`
+源码位置：`code/vllm/vllm/v1/engine/output_processor.py:352` 到 `code/vllm/vllm/v1/engine/output_processor.py:361`
 
 用户可见 pooling 类型定义在：
 
-- `code/vllm/vllm/outputs.py:66`
-- `code/vllm/vllm/outputs.py:204`
-- `code/vllm/vllm/outputs.py:240`
+- `code/vllm/vllm/outputs.py:67`
+- `code/vllm/vllm/outputs.py:208`
+- `code/vllm/vllm/outputs.py:245`
 
 包括：
 
@@ -1152,8 +1155,8 @@ chunked prefill 可能产生空 text / 空 token 的中间输出。OpenAI stream
 
 源码位置：
 
-- `code/vllm/vllm/entrypoints/openai/completion/serving.py:370`
-- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:593`
+- `code/vllm/vllm/entrypoints/openai/completion/serving.py:374`
+- `code/vllm/vllm/entrypoints/openai/chat_completion/serving.py:585`
 
 ### 16.5 stop string 是 Scheduler 判断的吗？
 

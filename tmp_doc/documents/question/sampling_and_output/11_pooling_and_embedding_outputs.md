@@ -313,8 +313,9 @@ worker 侧后续会把它展开成模型 forward 需要的 `token_type_ids`。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1024`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1063`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1061`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1071`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1094`
 
 ### 3.4 serving 层统一调用 encode
 
@@ -399,8 +400,9 @@ pooling_params
 
 源码位置：
 
-- `code/vllm/vllm/v1/request.py:197`
-- `code/vllm/vllm/v1/request.py:222`
+- `code/vllm/vllm/v1/request.py:213`
+- `code/vllm/vllm/v1/request.py:225`
+- `code/vllm/vllm/v1/request.py:226`
 
 `Request.__init__()` 保存：
 
@@ -410,8 +412,8 @@ self.pooling_params
 
 源码位置：
 
-- `code/vllm/vllm/v1/request.py:81`
-- `code/vllm/vllm/v1/request.py:119`
+- `code/vllm/vllm/v1/request.py:84`
+- `code/vllm/vllm/v1/request.py:85`
 
 对 pooling 请求来说：
 
@@ -423,15 +425,17 @@ self.max_tokens = 1
 
 源码位置：
 
+- `code/vllm/vllm/v1/request.py:106`
 - `code/vllm/vllm/v1/request.py:107`
-- `code/vllm/vllm/v1/request.py:119`
+- `code/vllm/vllm/v1/request.py:108`
 
 `Request.skip_reading_prefix_cache` 也会读取 `PoolingParams.skip_reading_prefix_cache`。
 
 源码位置：
 
-- `code/vllm/vllm/v1/request.py:266`
-- `code/vllm/vllm/v1/request.py:277`
+- `code/vllm/vllm/v1/request.py:281`
+- `code/vllm/vllm/v1/request.py:288`
+- `code/vllm/vllm/v1/request.py:291`
 
 ---
 
@@ -491,15 +495,16 @@ num_new_tokens = request.num_tokens - num_computed_tokens
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:792`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:812`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:843`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:847`
 
 源码注释说明：pooling 请求如果要 chunked prefill，必须显式启用 `enable_chunked_prefill`，否则 token budget 不够时会停止调度。
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:801`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:809`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:871`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:874`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:879`
 
 原因是：
 
@@ -515,15 +520,16 @@ pooling 请求仍然会分配 KV cache slots。
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:874`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:884`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:942`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:954`
 
 调度成功后，同样进入 `RUNNING`，并更新 `num_computed_tokens`。
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:940`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:963`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1008`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1027`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1028`
 
 这说明：
 
@@ -546,8 +552,10 @@ prompt_token_ids
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/output.py:31`
-- `code/vllm/vllm/v1/core/sched/output.py:64`
+- `code/vllm/vllm/v1/core/sched/output.py:32`
+- `code/vllm/vllm/v1/core/sched/output.py:38`
+- `code/vllm/vllm/v1/core/sched/output.py:55`
+- `code/vllm/vllm/v1/core/sched/output.py:60`
 
 ---
 
@@ -561,12 +569,11 @@ prompt_token_ids
 model_config.runner_type == "pooling"
 ```
 
-判断当前模型是否是 pooling runner。
+设置 `self.is_pooling_model`，并据此判断当前模型是否是 pooling runner。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:441`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:453`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:480`
 
 ### 6.2 新请求进入 worker 时应用 pooling params
 
@@ -581,8 +588,9 @@ model_config.runner_type == "pooling"
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1203`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1222`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1256`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1261`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:1263`
 
 这一步对应生成式请求里的 sampling params 缓存，但 pooling 还要让模型 pooler 根据 task 做参数更新。
 
@@ -592,8 +600,9 @@ model_config.runner_type == "pooling"
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:937`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:939`
 - `code/vllm/vllm/v1/worker/gpu_input_batch.py:943`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:947`
 
 这些状态用于后续构造 `PoolingMetadata`。
 
@@ -614,8 +623,9 @@ model_config.runner_type == "pooling"
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:945`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py:958`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:947`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:954`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py:959`
 
 `PoolingMetadata` 要求每个 pooling param 都有 task。
 
@@ -682,17 +692,17 @@ GPUModelRunner 仍会构造 slot mapping 和 attention metadata。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4247`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4256`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4258`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4271`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4297`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4308`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4324`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 随后仍在 `set_forward_context(attn_metadata, ...)` 下执行模型 forward。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4300`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4329`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4379`
 
 ### 8.2 forward 后拿到 hidden states
 
@@ -700,8 +710,9 @@ GPUModelRunner 仍会构造 slot mapping 和 attention metadata。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4331`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4338`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4380`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4388`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4394`
 
 这里是 generation 和 pooling 的真正分叉点。
 
@@ -715,8 +726,9 @@ return self._pool(...)
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4348`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4355`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4405`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4407`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4412`
 
 生成式模型才会继续：
 
@@ -727,8 +739,8 @@ logits = self.model.compute_logits(sample_hidden_states)
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4357`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4358`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4414`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 因此最关键的分叉是：
 
@@ -764,7 +776,8 @@ list[torch.Tensor | None] | None
 
 源码位置：
 
-- `code/vllm/vllm/v1/outputs.py:231`
+- `code/vllm/vllm/v1/outputs.py:233`
+- `code/vllm/vllm/v1/outputs.py:259`
 - `code/vllm/vllm/v1/outputs.py:260`
 
 ### 9.2 _pool 主流程
@@ -784,21 +797,18 @@ list[torch.Tensor | None] | None
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3358`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3361`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3367`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3369`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3372`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3374`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3377`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3378`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3383`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3391`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3393`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3395`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3402`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3392`
 - `code/vllm/vllm/v1/worker/gpu_model_runner.py:3404`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3409`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3407`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3408`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3415`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3416`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3420`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3424`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3431`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3437`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3443`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3450`
 
 ### 9.3 为什么 pooler_output 里会有 None
 
@@ -812,8 +822,8 @@ seq_len == prompt_len
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3374`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3377`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3420`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3423`
 
 如果当前 step 只是 chunked prefill 的中间段，请求还没有完整 prompt hidden states，则这个请求的 pooler output 是 `None`。
 
@@ -835,10 +845,10 @@ CUDA-like 平台会返回 `AsyncGPUPoolingModelRunnerOutput`，异步把 pooler 
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:322`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:364`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3404`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3409`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:345`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:390`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:412`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:3450`
 
 ---
 
@@ -854,14 +864,15 @@ pooler_outputs = model_runner_output.pooler_output
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1468`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1474`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1551`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1560`
 
 每个 request 通过 `req_id_to_index` 找到自己在 batch 中的位置。
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1543`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1632`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1677`
 
 ### 10.2 生成式和 pooling 的回收分支
 
@@ -883,8 +894,10 @@ pooler_outputs[req_index]
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1543`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1584`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1632`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1677`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1684`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1688`
 
 如果有 `new_token_ids`，走生成式更新：
 
@@ -894,8 +907,8 @@ _update_request_with_output()
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1589`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1593`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1684`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1685`
 
 如果没有新 token，但请求是 pooling 且 `pooler_output is not None`，则直接完成请求：
 
@@ -905,8 +918,8 @@ FINISHED_STOPPED
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1594`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1597`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1688`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1690`
 
 这说明 pooling 的完成条件不是 EOS / stop token，而是：
 
@@ -924,8 +937,9 @@ pooling_output
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1683`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1698`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1793`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1795`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1801`
 
 `EngineCoreOutput` 同时有生成式字段和 pooling 字段：
 
@@ -966,7 +980,8 @@ pooling 请求不靠 stop token / EOS / max_tokens 结束，
 源码位置：
 
 - `code/vllm/vllm/v1/engine/output_processor.py:222`
-- `code/vllm/vllm/v1/engine/output_processor.py:237`
+- `code/vllm/vllm/v1/engine/output_processor.py:226`
+- `code/vllm/vllm/v1/engine/output_processor.py:230`
 
 对 pooling 请求：
 
@@ -978,8 +993,9 @@ output_kind = request.pooling_params.output_kind
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:238`
-- `code/vllm/vllm/v1/engine/output_processor.py:247`
+- `code/vllm/vllm/v1/engine/output_processor.py:239`
+- `code/vllm/vllm/v1/engine/output_processor.py:240`
+- `code/vllm/vllm/v1/engine/output_processor.py:246`
 
 原因很直接：
 
@@ -998,15 +1014,17 @@ pooling_output
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:618`
-- `code/vllm/vllm/v1/engine/output_processor.py:620`
+- `code/vllm/vllm/v1/engine/output_processor.py:584`
+- `code/vllm/vllm/v1/engine/output_processor.py:626`
+- `code/vllm/vllm/v1/engine/output_processor.py:627`
 
 只有当 `pooling_output is None` 时，才走生成式的 detokenize 和 logprobs 更新。
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:635`
-- `code/vllm/vllm/v1/engine/output_processor.py:649`
+- `code/vllm/vllm/v1/engine/output_processor.py:644`
+- `code/vllm/vllm/v1/engine/output_processor.py:647`
+- `code/vllm/vllm/v1/engine/output_processor.py:657`
 
 如果 `pooling_output is not None`，后面会构造 pooling request output。
 
@@ -1021,9 +1039,11 @@ PoolingRequestOutput(...)
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:312`
-- `code/vllm/vllm/v1/engine/output_processor.py:317`
-- `code/vllm/vllm/v1/engine/output_processor.py:333`
+- `code/vllm/vllm/v1/engine/output_processor.py:313`
+- `code/vllm/vllm/v1/engine/output_processor.py:316`
+- `code/vllm/vllm/v1/engine/output_processor.py:330`
+- `code/vllm/vllm/v1/engine/output_processor.py:338`
+- `code/vllm/vllm/v1/engine/output_processor.py:353`
 - `code/vllm/vllm/v1/engine/output_processor.py:355`
 
 对外的 `PoolingOutput` 只是包装一个 tensor：
@@ -1039,8 +1059,10 @@ data: torch.Tensor
 
 `PoolingRequestOutput` 定义在：
 
-- `code/vllm/vllm/outputs.py:204`
-- `code/vllm/vllm/outputs.py:228`
+- `code/vllm/vllm/outputs.py:205`
+- `code/vllm/vllm/outputs.py:208`
+- `code/vllm/vllm/outputs.py:220`
+- `code/vllm/vllm/outputs.py:232`
 
 它包含：
 
@@ -1094,8 +1116,10 @@ list[float]
 
 源码位置：
 
-- `code/vllm/vllm/outputs.py:240`
-- `code/vllm/vllm/outputs.py:257`
+- `code/vllm/vllm/outputs.py:244`
+- `code/vllm/vllm/outputs.py:255`
+- `code/vllm/vllm/outputs.py:256`
+- `code/vllm/vllm/outputs.py:261`
 
 ### 12.3 ClassificationRequestOutput
 
@@ -1120,8 +1144,10 @@ list[float]
 
 源码位置：
 
-- `code/vllm/vllm/outputs.py:279`
-- `code/vllm/vllm/outputs.py:297`
+- `code/vllm/vllm/outputs.py:283`
+- `code/vllm/vllm/outputs.py:294`
+- `code/vllm/vllm/outputs.py:295`
+- `code/vllm/vllm/outputs.py:301`
 
 HTTP classification serving 会：
 
@@ -1142,14 +1168,17 @@ HTTP classification serving 会：
 
 源码位置：
 
-- `code/vllm/vllm/outputs.py:319`
-- `code/vllm/vllm/outputs.py:338`
+- `code/vllm/vllm/outputs.py:323`
+- `code/vllm/vllm/outputs.py:333`
+- `code/vllm/vllm/outputs.py:334`
+- `code/vllm/vllm/outputs.py:342`
 
 `ScoringRequestOutput.from_base()` 包装 score 输出。
 
 源码位置：
 
-- `code/vllm/vllm/outputs.py:344`
+- `code/vllm/vllm/outputs.py:348`
+- `code/vllm/vllm/outputs.py:350`
 - `code/vllm/vllm/outputs.py:353`
 
 HTTP score response 会将每个 `PoolingRequestOutput` 转成 `ScoringRequestOutput`，并写入：
@@ -1221,7 +1250,9 @@ ModelRunnerOutput.pooler_output
 
 源码位置：
 
-- `code/vllm/vllm/v1/outputs.py:240`
+- `code/vllm/vllm/v1/outputs.py:244`
+- `code/vllm/vllm/v1/outputs.py:249`
+- `code/vllm/vllm/v1/outputs.py:255`
 - `code/vllm/vllm/v1/outputs.py:260`
 
 ### 13.2 GPUModelRunner 分叉不同
@@ -1243,8 +1274,9 @@ hidden_states
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4348`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4358`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4405`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4407`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 ### 13.3 Scheduler 停止条件不同
 
@@ -1265,8 +1297,9 @@ pooler_output is not None
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1589`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:1597`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1684`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1688`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:1690`
 
 ### 13.4 OutputProcessor 不同
 
@@ -1289,10 +1322,11 @@ pooling_output tensor
 
 源码位置：
 
-- `code/vllm/vllm/v1/engine/output_processor.py:635`
-- `code/vllm/vllm/v1/engine/output_processor.py:649`
-- `code/vllm/vllm/v1/engine/output_processor.py:312`
-- `code/vllm/vllm/v1/engine/output_processor.py:317`
+- `code/vllm/vllm/v1/engine/output_processor.py:644`
+- `code/vllm/vllm/v1/engine/output_processor.py:647`
+- `code/vllm/vllm/v1/engine/output_processor.py:657`
+- `code/vllm/vllm/v1/engine/output_processor.py:313`
+- `code/vllm/vllm/v1/engine/output_processor.py:316`
 
 ### 13.5 输出模式不同
 
@@ -1346,8 +1380,8 @@ pooling 请求仍分配 KV cache slots。
 
 源码位置：
 
-- `code/vllm/vllm/v1/core/sched/scheduler.py:874`
-- `code/vllm/vllm/v1/core/sched/scheduler.py:884`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:942`
+- `code/vllm/vllm/v1/core/sched/scheduler.py:954`
 
 KV slots 分配逻辑会综合：
 
@@ -1370,10 +1404,10 @@ GPUModelRunner 仍然构造 attention slot mappings 和 attention metadata。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4247`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4256`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4258`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4271`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4297`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4308`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4324`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:4363`
 
 也就是说：
 

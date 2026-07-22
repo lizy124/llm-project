@@ -2,17 +2,17 @@
 
 源码位置：
 
-- `vllm/vllm/v1/worker/gpu_model_runner.py`
-- `vllm/vllm/v1/worker/gpu_input_batch.py`
-- `vllm/vllm/model_executor/layers/logits_processor.py`
-- `vllm/vllm/v1/sample/sampler.py`
-- `vllm/vllm/v1/sample/metadata.py`
-- `vllm/vllm/v1/outputs.py`
-- `vllm/vllm/v1/core/sched/scheduler.py`
-- `vllm/vllm/v1/engine/logprobs.py`
-- `vllm/vllm/v1/engine/output_processor.py`
-- `vllm/vllm/logprobs.py`
-- `vllm/vllm/outputs.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/model_executor/layers/logits_processor.py`
+- `code/vllm/vllm/v1/sample/sampler.py`
+- `code/vllm/vllm/v1/sample/metadata.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/engine/logprobs.py`
+- `code/vllm/vllm/v1/engine/output_processor.py`
+- `code/vllm/vllm/logprobs.py`
+- `code/vllm/vllm/outputs.py`
 
 本问题关注：模型 forward 产生 hidden states 后，哪些位置会被拿去算 logits；`logits_indices` 如何决定采样位置；`LogitsProcessor` 如何把 hidden states 变成 vocab logits；sample logprobs 和 prompt logprobs 分别在哪里计算、如何穿过 `ModelRunnerOutput / Scheduler / EngineCoreOutput / OutputProcessor`，最后进入 `RequestOutput / CompletionOutput`。
 
@@ -147,11 +147,11 @@ prompt logprobs：
 
 在 `GPUModelRunner._prepare_inputs()` 中：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:1889`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1930`
 
 非 speculative decoding 时：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:2161` 到 `vllm/v1/worker/gpu_model_runner.py:2169`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2202` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2211`
 
 ```text
 logits_indices = query_start_loc[1:] - 1
@@ -177,7 +177,7 @@ chunked prefills 中 partial requests 理论上不应该采样，
 当前为了简单仍会采样，后续忽略这些 sampled tokens。
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:2163` 到 `vllm/v1/worker/gpu_model_runner.py:2167`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2204` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2208`。
 
 ### 3.3 spec decode 的 logits_indices
 
@@ -189,7 +189,7 @@ use_spec_decode = len(scheduler_output.scheduled_spec_decode_tokens) > 0
 
 则会构造 `spec_decode_metadata`：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:2171` 到 `vllm/v1/worker/gpu_model_runner.py:2195`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2212` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2237`
 
 ```text
 spec_decode_metadata = self._calc_spec_decode_metadata(...)
@@ -213,7 +213,7 @@ spec decode 不只是每个 request 取一个最后位置；
 
 模型 forward 后，普通生成路径会执行：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4357`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 ```text
 sample_hidden_states = hidden_states[logits_indices]
@@ -230,15 +230,15 @@ last PP rank 才 compute_logits。
 相关位置：
 
 ```text
-非 last PP rank 返回 intermediate：vllm/v1/worker/gpu_model_runner.py:4340
-last rank compute_logits：vllm/v1/worker/gpu_model_runner.py:4377
+非 last PP rank 返回 intermediate：code/vllm/vllm/v1/worker/gpu_model_runner.py:4397 到 code/vllm/vllm/v1/worker/gpu_model_runner.py:4403
+last rank compute_logits：code/vllm/vllm/v1/worker/gpu_model_runner.py:4414 到 code/vllm/vllm/v1/worker/gpu_model_runner.py:4415
 ```
 
 ### 4.2 broadcast_pp_output 稀有路径
 
 如果 `broadcast_pp_output=True`，最后 PP rank 算出 logits 后会通过 PP group broadcast 给其他 rank。
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4379` 到 `vllm/v1/worker/gpu_model_runner.py:4387`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4436` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4444`
 
 ```text
 model_output_broadcast_data["logits"] = logits.contiguous()
@@ -254,11 +254,11 @@ logits = broadcasted["logits"]
 
 `model.compute_logits()` 最终会走模型的 lm head / logits processor。
 
-核心实现：`vllm/model_executor/layers/logits_processor.py`
+核心实现：`code/vllm/vllm/model_executor/layers/logits_processor.py`
 
 ### 5.1 LogitsProcessor 的职责
 
-类定义位置：`vllm/model_executor/layers/logits_processor.py:18`
+类定义位置：`code/vllm/vllm/model_executor/layers/logits_processor.py:19`
 
 它做三件事：
 
@@ -268,11 +268,11 @@ logits = broadcasted["logits"]
 3. 应用 soft cap / scale，并裁掉 padded vocab。
 ```
 
-源码注释位置：`vllm/model_executor/layers/logits_processor.py:19` 到 `vllm/model_executor/layers/logits_processor.py:26`。
+源码注释位置：`code/vllm/vllm/model_executor/layers/logits_processor.py:20` 到 `code/vllm/vllm/model_executor/layers/logits_processor.py:26`。
 
 ### 5.2 forward 主逻辑
 
-位置：`vllm/model_executor/layers/logits_processor.py:54`
+位置：`code/vllm/vllm/model_executor/layers/logits_processor.py:54`
 
 ```text
 if logits_as_input:
@@ -289,7 +289,7 @@ if scale != 1.0:
 
 ### 5.3 TP 下 logits 如何 gather
 
-位置：`vllm/model_executor/layers/logits_processor.py:75`
+位置：`code/vllm/vllm/model_executor/layers/logits_processor.py:75`
 
 ```text
 if self.use_all_gather:
@@ -310,7 +310,7 @@ lm_head 通常是 vocab parallel；
 
 ### 5.4 裁掉 vocab padding
 
-位置：`vllm/model_executor/layers/logits_processor.py:101`
+位置：`code/vllm/vllm/model_executor/layers/logits_processor.py:101`
 
 ```text
 logits = logits[..., : self.org_vocab_size]
@@ -334,7 +334,7 @@ vLLM 里有两个容易混淆的名字。
 文件：
 
 ```text
-vllm/model_executor/layers/logits_processor.py
+code/vllm/vllm/model_executor/layers/logits_processor.py
 ```
 
 职责：
@@ -348,7 +348,7 @@ hidden states → vocab logits
 文件：
 
 ```text
-vllm/v1/sample/logits_processor/
+code/vllm/vllm/v1/sample/logits_processor/
 ```
 
 职责：
@@ -370,7 +370,7 @@ vllm/v1/sample/logits_processor/
 
 ## 7. SamplingMetadata 里和 logprobs 相关的字段
 
-`SamplingMetadata` 定义位置：`vllm/v1/sample/metadata.py:14`
+`SamplingMetadata` 定义位置：`code/vllm/vllm/v1/sample/metadata.py:15`
 
 和 logprobs 直接相关的是：
 
@@ -386,13 +386,13 @@ logprob_token_ids：
   用于 generative scoring 之类场景，避免 materialize full vocab logprobs。
 ```
 
-位置：`vllm/v1/sample/metadata.py:25` 到 `vllm/v1/sample/metadata.py:49`。
+位置：`code/vllm/vllm/v1/sample/metadata.py:25` 到 `code/vllm/vllm/v1/sample/metadata.py:49`。
 
 这些字段来自 `InputBatch` 对请求 `sampling_params` 的整理。
 
 例如：
 
-位置：`vllm/v1/worker/gpu_input_batch.py:416` 到 `vllm/v1/worker/gpu_input_batch.py:425`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:418` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:427`
 
 ```text
 sampling_params.logprobs
@@ -406,13 +406,13 @@ sampling_params.logprob_token_ids
 
 ## 8. Sampler 如何计算 sample logprobs
 
-核心文件：`vllm/v1/sample/sampler.py`
+核心文件：`code/vllm/vllm/v1/sample/sampler.py`
 
 ### 8.1 Sampler.forward 的顺序
 
-`Sampler` 类定义位置：`vllm/v1/sample/sampler.py:20`
+`Sampler` 类定义位置：`code/vllm/vllm/v1/sample/sampler.py:20`
 
-源码注释已经列出完整顺序，位置：`vllm/v1/sample/sampler.py:20` 到 `vllm/v1/sample/sampler.py:59`。
+源码注释已经列出完整顺序，位置：`code/vllm/vllm/v1/sample/sampler.py:20` 到 `code/vllm/vllm/v1/sample/sampler.py:59`。
 
 和 logprobs 最相关的是：
 
@@ -432,7 +432,7 @@ sampling_params.logprob_token_ids
 
 ### 8.2 raw logprobs 在采样前计算
 
-位置：`vllm/v1/sample/sampler.py:72`
+位置：`code/vllm/vllm/v1/sample/sampler.py:72`
 
 关键逻辑：
 
@@ -446,7 +446,7 @@ if num_logprobs is not None or sampling_metadata.logprob_token_ids:
     raw_logprobs = logits.clone().to(float32)
 ```
 
-对应位置：`vllm/v1/sample/sampler.py:84` 到 `vllm/v1/sample/sampler.py:94`。
+对应位置：`code/vllm/vllm/v1/sample/sampler.py:84` 到 `code/vllm/vllm/v1/sample/sampler.py:94`。
 
 这里有个重要点：
 
@@ -455,11 +455,11 @@ V1 sampler 默认用原始 logits 的 logprobs 作为返回 logprobs，
 不同于 V0 使用采样后经过 penalties / temperature 的 logits。
 ```
 
-源码注释位置：`vllm/v1/sample/sampler.py:80` 到 `vllm/v1/sample/sampler.py:83`。
+源码注释位置：`code/vllm/vllm/v1/sample/sampler.py:80` 到 `code/vllm/vllm/v1/sample/sampler.py:83`。
 
 ### 8.3 compute_logprobs
 
-位置：`vllm/v1/sample/sampler.py:304`
+位置：`code/vllm/vllm/v1/sample/sampler.py:304`
 
 ```text
 logits.log_softmax(dim=-1, dtype=torch.float32)
@@ -469,7 +469,7 @@ logits.log_softmax(dim=-1, dtype=torch.float32)
 
 ### 8.4 gather_logprobs
 
-位置：`vllm/v1/sample/sampler.py:309`
+位置：`code/vllm/vllm/v1/sample/sampler.py:309`
 
 输入：
 
@@ -499,7 +499,7 @@ indices = cat(sampled_or_prompt_token_id, topk_indices)
 logprobs = cat(sampled_or_prompt_token_logprob, topk_logprobs)
 ```
 
-位置：`vllm/v1/sample/sampler.py:333` 到 `vllm/v1/sample/sampler.py:356`。
+位置：`code/vllm/vllm/v1/sample/sampler.py:333` 到 `code/vllm/vllm/v1/sample/sampler.py:356`。
 
 所以第 0 列有特殊含义：
 
@@ -518,7 +518,7 @@ logprobs = cat(sampled_or_prompt_token_logprob, topk_logprobs)
 gather_specific_token_logprobs(...)
 ```
 
-位置：`vllm/v1/sample/sampler.py:151`
+位置：`code/vllm/vllm/v1/sample/sampler.py:151`
 
 作用：
 
@@ -533,9 +533,9 @@ gather_specific_token_logprobs(...)
 
 ### 9.1 Worker / Scheduler 之间的 tensor 和 list 容器
 
-定义文件：`vllm/v1/outputs.py`
+定义文件：`code/vllm/vllm/v1/outputs.py`
 
-`LogprobsTensors`：位置 `vllm/v1/outputs.py:52`
+`LogprobsTensors`：位置 `code/vllm/vllm/v1/outputs.py:52`
 
 ```text
 GPU / CPU tensor 侧容器：
@@ -545,7 +545,7 @@ GPU / CPU tensor 侧容器：
   cu_num_generated_tokens
 ```
 
-`LogprobsLists`：位置 `vllm/v1/outputs.py:27`
+`LogprobsLists`：位置 `code/vllm/vllm/v1/outputs.py:27`
 
 ```text
 CPU / numpy 侧容器：
@@ -563,11 +563,11 @@ ModelRunnerOutput 要跨进程 / 交给 Scheduler，torch.Tensor 序列化贵；
 所以 sample logprobs 通常会转成 numpy-backed LogprobsLists。
 ```
 
-`LogprobsTensors.tolists()` 位置：`vllm/v1/outputs.py:62`。
+`LogprobsTensors.tolists()` 位置：`code/vllm/vllm/v1/outputs.py:62`。
 
 ### 9.2 最终 RequestOutput 使用的 Python 容器
 
-文件：`vllm/logprobs.py`
+文件：`code/vllm/vllm/logprobs.py`
 
 核心结构：
 
@@ -585,11 +585,11 @@ FlatLogprobs：
   扁平化存储，减少大量 dict/list 对象带来的 GC 开销。
 ```
 
-`Logprob` 定义位置：`vllm/logprobs.py:13`。
+`Logprob` 定义位置：`code/vllm/vllm/logprobs.py:13`。
 
-`PromptLogprobs / SampleLogprobs` 定义位置：`vllm/logprobs.py:155`。
+`PromptLogprobs / SampleLogprobs` 定义位置：`code/vllm/vllm/logprobs.py:155`。
 
-`create_prompt_logprobs()` 位置：`vllm/logprobs.py:162`。
+`create_prompt_logprobs()` 位置：`code/vllm/vllm/logprobs.py:162`。
 
 这里有一个重要约定：
 
@@ -597,9 +597,9 @@ FlatLogprobs：
 prompt 第一个 token 没有上文，logprob 固定为 None。
 ```
 
-位置：`vllm/logprobs.py:165` 到 `vllm/logprobs.py:166`。
+位置：`code/vllm/vllm/logprobs.py:165` 到 `code/vllm/vllm/logprobs.py:166`。
 
-`append_logprobs_for_next_position()` 位置：`vllm/logprobs.py:175`。
+`append_logprobs_for_next_position()` 位置：`code/vllm/vllm/logprobs.py:175`。
 
 它同样遵守：
 
@@ -620,7 +620,7 @@ prompt logprobs 不是 sampler 的普通 sample logprobs。
 _get_prompt_logprobs_dict(hidden_states, num_scheduled_tokens)
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5461`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5548`。
 
 ### 10.1 什么时候计算
 
@@ -632,7 +632,7 @@ self.num_prompt_logprobs
 
 如果为空，直接返回 `{}`。
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5466` 到 `vllm/v1/worker/gpu_model_runner.py:5468`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5553` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5555`。
 
 `self.num_prompt_logprobs` 来自新请求的：
 
@@ -652,7 +652,7 @@ request.in_progress_prompt_logprobs_cpu
 
 如果还没有，就创建完整 prompt 长度的 CPU `LogprobsTensors.empty_cpu(...)`。
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5492` 到 `vllm/v1/worker/gpu_model_runner.py:5501`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5580` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5587`。
 
 每个 chunk 只填当前 chunk 对应 slice。
 
@@ -660,7 +660,7 @@ request.in_progress_prompt_logprobs_cpu
 
 核心逻辑：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5524` 到 `vllm/v1/worker/gpu_model_runner.py:5541`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5611` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5628`
 
 ```text
 prompt_hidden_states = hidden_states[offset : offset + num_logits]
@@ -688,7 +688,7 @@ prompt 位置 i 的 hidden state 用来预测 prompt 位置 i+1 的 token；
 
 每个 chunk 的结果会 copy 到 CPU tensor：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5543` 到 `vllm/v1/worker/gpu_model_runner.py:5551`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5630` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5638`
 
 如果某个 request 完成 prefill，会放入：
 
@@ -696,17 +696,17 @@ prompt 位置 i 的 hidden state 用来预测 prompt 位置 i+1 的 token；
 prompt_logprobs_dict[req_id] = logprobs_tensors
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5513` 到 `vllm/v1/worker/gpu_model_runner.py:5517`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5600` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5603`。
 
 最后如果有 prompt logprobs，要同步 GPU→CPU 拷贝：
 
-位置：`vllm/v1/worker/gpu_model_runner.py:5559` 到 `vllm/v1/worker/gpu_model_runner.py:5561`。
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5646` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5648`。
 
 ---
 
 ## 11. ModelRunnerOutput 中如何承载 logprobs
 
-定义位置：`vllm/v1/outputs.py:233`
+定义位置：`code/vllm/vllm/v1/outputs.py:234`
 
 相关字段：
 
@@ -724,7 +724,7 @@ num_nans_in_logits：
   req_id -> logits 中 NaN 数量，用于诊断。
 ```
 
-位置：`vllm/v1/outputs.py:240` 到 `vllm/v1/outputs.py:267`。
+位置：`code/vllm/vllm/v1/outputs.py:244` 到 `code/vllm/vllm/v1/outputs.py:267`。
 
 为什么 sample logprobs 是 `LogprobsLists`，prompt logprobs 还是 `LogprobsTensors`？
 
@@ -744,9 +744,9 @@ prompt logprobs 是按 req_id 存放的完整 prompt tensor，可能跨 chunk �
 scheduler.update_from_output(scheduler_output, model_output)
 ```
 
-位置：`vllm/v1/engine/core.py:504`。
+位置：`code/vllm/vllm/v1/engine/core.py:513`。
 
-Scheduler 中处理 logprobs 的关键位置：`vllm/v1/core/sched/scheduler.py:1464`
+Scheduler 中处理 logprobs 的关键位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 ### 12.1 取 batch 级输出
 
@@ -758,13 +758,13 @@ logprobs
 prompt_logprobs_dict
 ```
 
-位置：`vllm/v1/core/sched/scheduler.py:1469` 到 `vllm/v1/core/sched/scheduler.py:1471`。
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1556` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1559`。
 
 ### 12.2 sample logprobs 按 request 切片
 
 如果请求需要 logprobs：
 
-位置：`vllm/v1/core/sched/scheduler.py:1670` 到 `vllm/v1/core/sched/scheduler.py:1676`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1773` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1779`
 
 ```text
 new_logprobs = logprobs.slice_request(req_index, len(new_token_ids))
@@ -778,11 +778,11 @@ spec decode / jump decoding 下一个 request 本轮可能产生多个 token；
 所以 LogprobsLists 支持 cu_num_generated_tokens 来定位每个 request 的 slice。
 ```
 
-`slice_request()` 定义位置：`vllm/v1/outputs.py:40`。
+`slice_request()` 定义位置：`code/vllm/vllm/v1/outputs.py:40`。
 
 ### 12.3 prompt logprobs 按 req_id 取
 
-位置：`vllm/v1/core/sched/scheduler.py:1681` 到 `vllm/v1/core/sched/scheduler.py:1682`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1784` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1785`
 
 ```text
 prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
@@ -790,7 +790,7 @@ prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
 
 ### 12.4 放入 EngineCoreOutput
 
-位置：`vllm/v1/core/sched/scheduler.py:1691` 到 `vllm/v1/core/sched/scheduler.py:1697`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1793` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1801`
 
 ```text
 EngineCoreOutput(
@@ -811,7 +811,7 @@ EngineCoreOutput(
 
 `OutputProcessor.process_outputs()` 中：
 
-位置：`vllm/v1/engine/output_processor.py:646` 到 `vllm/v1/engine/output_processor.py:648`
+位置：`code/vllm/vllm/v1/engine/output_processor.py:644` 到 `code/vllm/vllm/v1/engine/output_processor.py:657`
 
 ```text
 req_state.logprobs_processor.update_from_output(engine_core_output)
@@ -819,11 +819,11 @@ req_state.logprobs_processor.update_from_output(engine_core_output)
 
 之后才创建 RequestOutput：
 
-位置：`vllm/v1/engine/output_processor.py:650`。
+位置：`code/vllm/vllm/v1/engine/output_processor.py:659` 到 `code/vllm/vllm/v1/engine/output_processor.py:667`。
 
 ### 13.2 LogprobsProcessor 初始化
 
-`LogprobsProcessor.from_new_request()` 位置：`vllm/v1/engine/logprobs.py:42`
+`LogprobsProcessor.from_new_request()` 位置：`code/vllm/vllm/v1/engine/logprobs.py:42`
 
 它根据：
 
@@ -841,11 +841,11 @@ self.prompt_logprobs
 self.cumulative_logprob
 ```
 
-位置：`vllm/v1/engine/logprobs.py:48` 到 `vllm/v1/engine/logprobs.py:67`。
+位置：`code/vllm/vllm/v1/engine/logprobs.py:48` 到 `code/vllm/vllm/v1/engine/logprobs.py:67`。
 
 ### 13.3 更新 sample logprobs
 
-`_update_sample_logprobs()` 位置：`vllm/v1/engine/logprobs.py:69`
+`_update_sample_logprobs()` 位置：`code/vllm/vllm/v1/engine/logprobs.py:69`
 
 它会：
 
@@ -857,13 +857,13 @@ self.cumulative_logprob
 5. 如有 tokenizer，顺便把 token ids 转 decoded_token，并修正 UTF-8 边界。
 ```
 
-第 0 列 sampled token 约定的位置：`vllm/v1/engine/logprobs.py:107`。
+第 0 列 sampled token 约定的位置：`code/vllm/vllm/v1/engine/logprobs.py:107`。
 
-累加 cumulative logprob 的位置：`vllm/v1/engine/logprobs.py:109`。
+累加 cumulative logprob 的位置：`code/vllm/vllm/v1/engine/logprobs.py:109`。
 
 ### 13.4 更新 prompt logprobs
 
-`_update_prompt_logprobs()` 位置：`vllm/v1/engine/logprobs.py:121`
+`_update_prompt_logprobs()` 位置：`code/vllm/vllm/v1/engine/logprobs.py:121`
 
 它会：
 
@@ -874,11 +874,11 @@ self.cumulative_logprob
 4. 处理 tokenizer decoded token 和 UTF-8 修正。
 ```
 
-追加位置：`vllm/v1/engine/logprobs.py:179` 到 `vllm/v1/engine/logprobs.py:187`。
+追加位置：`code/vllm/vllm/v1/engine/logprobs.py:179` 到 `code/vllm/vllm/v1/engine/logprobs.py:187`。
 
 ### 13.5 update_from_output 总入口
 
-位置：`vllm/v1/engine/logprobs.py:348`
+位置：`code/vllm/vllm/v1/engine/logprobs.py:348`
 
 ```text
 if output.new_logprobs is not None:
@@ -894,7 +894,7 @@ if output.new_prompt_logprobs_tensors is not None:
 
 ### 14.1 CompletionOutput
 
-定义位置：`vllm/outputs.py:21`
+定义位置：`code/vllm/vllm/outputs.py:21`
 
 字段：
 
@@ -903,11 +903,11 @@ cumulative_logprob
 logprobs
 ```
 
-位置：`vllm/outputs.py:40` 到 `vllm/outputs.py:44`。
+位置：`code/vllm/vllm/outputs.py:40` 到 `code/vllm/vllm/outputs.py:44`。
 
 `RequestState._new_completion_output()` 构造它：
 
-位置：`vllm/v1/engine/output_processor.py:376`
+位置：`code/vllm/vllm/v1/engine/output_processor.py:383`
 
 ```text
 logprobs = self.logprobs_processor.logprobs
@@ -922,11 +922,11 @@ CompletionOutput(
 )
 ```
 
-对应位置：`vllm/v1/engine/output_processor.py:392` 到 `vllm/v1/engine/output_processor.py:408`。
+对应位置：`code/vllm/vllm/v1/engine/output_processor.py:399` 到 `code/vllm/vllm/v1/engine/output_processor.py:417`。
 
 ### 14.2 RequestOutput
 
-定义位置：`vllm/outputs.py:85`
+定义位置：`code/vllm/vllm/outputs.py:85`
 
 字段：
 
@@ -935,11 +935,11 @@ prompt_logprobs
 outputs: list[CompletionOutput]
 ```
 
-位置：`vllm/outputs.py:109` 到 `vllm/outputs.py:136`。
+位置：`code/vllm/vllm/outputs.py:109` 到 `code/vllm/vllm/outputs.py:136`。
 
 `RequestState._new_request_output()` 构造它：
 
-位置：`vllm/v1/engine/output_processor.py:333`
+位置：`code/vllm/vllm/v1/engine/output_processor.py:338`
 
 关键逻辑：
 
@@ -952,11 +952,11 @@ else:
 RequestOutput(prompt_logprobs=prompt_logprobs, outputs=...)
 ```
 
-位置：`vllm/v1/engine/output_processor.py:356` 到 `vllm/v1/engine/output_processor.py:368`。
+位置：`code/vllm/vllm/v1/engine/output_processor.py:363` 到 `code/vllm/vllm/v1/engine/output_processor.py:375`。
 
 ### 14.3 DELTA 模式下 prompt_logprobs 只输出一次
 
-`pop_prompt_logprobs()` 位置：`vllm/v1/engine/logprobs.py:189`
+`pop_prompt_logprobs()` 位置：`code/vllm/vllm/v1/engine/logprobs.py:189`
 
 源码注释说明：
 
@@ -965,7 +965,7 @@ DELTA 语义下，prompt logprobs 在 prefill 结束时一次性返回，
 返回后 LogprobsProcessor 会忘记它们。
 ```
 
-位置：`vllm/v1/engine/logprobs.py:189` 到 `vllm/v1/engine/logprobs.py:206`。
+位置：`code/vllm/vllm/v1/engine/logprobs.py:189` 到 `code/vllm/vllm/v1/engine/logprobs.py:206`。
 
 ---
 
@@ -1043,34 +1043,34 @@ Scheduler.slice_request(req_index, len(new_token_ids)) 用新增 token 数切片
 ## 16. 最小源码阅读路线
 
 ```text
-1. vllm/v1/worker/gpu_model_runner.py
+1. code/vllm/vllm/v1/worker/gpu_model_runner.py
    看 _prepare_inputs() 如何生成 logits_indices，forward 后如何 compute_logits。
 
-2. vllm/model_executor/layers/logits_processor.py
+2. code/vllm/vllm/model_executor/layers/logits_processor.py
    看 hidden_states 如何通过 lm_head、TP gather、soft cap / scale 变成 logits。
 
-3. vllm/v1/sample/metadata.py
+3. code/vllm/vllm/v1/sample/metadata.py
    看 SamplingMetadata 中 max_num_logprobs / logprob_token_ids。
 
-4. vllm/v1/sample/sampler.py
+4. code/vllm/vllm/v1/sample/sampler.py
    看 raw_logprobs、sample、gather_logprobs。
 
-5. vllm/v1/outputs.py
+5. code/vllm/vllm/v1/outputs.py
    看 LogprobsTensors / LogprobsLists / ModelRunnerOutput。
 
-6. vllm/v1/worker/gpu_model_runner.py 的 _get_prompt_logprobs_dict()
+6. code/vllm/vllm/v1/worker/gpu_model_runner.py 的 _get_prompt_logprobs_dict()
    看 prompt_logprobs 如何额外计算。
 
-7. vllm/v1/core/sched/scheduler.py
+7. code/vllm/vllm/v1/core/sched/scheduler.py
    看 Scheduler 如何把 batch logprobs 拆回 request。
 
-8. vllm/v1/engine/logprobs.py
+8. code/vllm/vllm/v1/engine/logprobs.py
    看 LogprobsProcessor 如何累计 sample / prompt logprobs。
 
-9. vllm/v1/engine/output_processor.py
+9. code/vllm/vllm/v1/engine/output_processor.py
    看 RequestOutput / CompletionOutput 如何组装。
 
-10. vllm/logprobs.py 和 vllm/outputs.py
+10. code/vllm/vllm/logprobs.py 和 code/vllm/vllm/outputs.py
     看最终用户可见的数据结构。
 ```
 

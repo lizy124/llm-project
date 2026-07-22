@@ -112,7 +112,7 @@ ParallelConfig / ModelConfig
 total_num_attention_heads % tensor_parallel_size == 0
 ```
 
-位置：`vllm/vllm/config/model.py:1159`
+位置：`vllm/vllm/config/model.py:1206`
 
 否则每个 TP rank 无法拿到相同数量的 Q heads。
 
@@ -124,7 +124,7 @@ total_num_attention_heads % tensor_parallel_size == 0
 num_heads = total_num_attention_heads // tensor_parallel_size
 ```
 
-位置：`vllm/vllm/config/model.py:1272`
+位置：`vllm/vllm/config/model.py:1323`
 
 这意味着模型定义里传给 `Attention(...)` 的 `num_heads` 已经是本 rank 局部值，而不是全局值。
 
@@ -136,7 +136,7 @@ num_heads = total_num_attention_heads // tensor_parallel_size
 return max(1, total_num_kv_heads // tensor_parallel_size)
 ```
 
-位置：`vllm/vllm/config/model.py:1259`
+位置：`vllm/vllm/config/model.py:1310`
 
 这个 `max(1, ...)` 很关键：
 
@@ -164,7 +164,7 @@ if self.use_mla:
 self.num_kv_heads = 1
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:368`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:385`
 
 原因是 MLA decode 路径在计算形态上更接近 MQA：KV cache 存的是 compressed latent KV，而不是每个 query head 一份传统 K/V。
 
@@ -214,7 +214,7 @@ TP 后可能出现两种情况：
 self.num_queries_per_kv = self.num_heads // self.num_kv_heads
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:663`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:766`
 
 注意这里的 `num_heads / num_kv_heads` 都是本 rank 局部值。
 
@@ -251,7 +251,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:318`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:349`
 
 MLA 则调用：
 
@@ -266,7 +266,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:387`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:404`
 
 ### 6.2 selector 会把能力需求打包成 AttentionSelectorConfig
 
@@ -288,7 +288,7 @@ use_batch_invariant
 use_kv_connector
 ```
 
-位置：`vllm/vllm/v1/attention/selector.py:20`
+位置：`vllm/vllm/v1/attention/selector.py:21`
 
 这些不全是“并行配置”，但很多会和并行一起决定 backend 能不能用：
 
@@ -317,7 +317,7 @@ supports_per_head_quant_scales
 get_required_kv_cache_layout
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:55`
+位置：`vllm/vllm/v1/attention/backend.py:56`
 
 backend 不是在 forward 时才发现不支持，而是在选择和初始化阶段尽量过滤。
 
@@ -339,7 +339,7 @@ FullAttentionSpec(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:581`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:616`
 
 Sliding window attention 类似，只是返回 `SlidingWindowSpec`。
 
@@ -354,7 +354,7 @@ MLAAttentionSpec(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:985`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1000`
 
 这说明：
 
@@ -374,11 +374,11 @@ KV cache 的物理形状是 per-rank 的，已经包含 TP 后的本地 KV heads
 compilation_config.static_forward_context[prefix] = self
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:410`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:443`
 
 MLA 也一样：
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:472`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:491`
 
 这使得后续 attention custom op 能通过 `layer_name` 找回 layer 对象。
 
@@ -390,7 +390,7 @@ Worker 初始化 KV cache 后，会调用 `bind_kv_cache()`：
 kv_caches[layer_name] → forward_context[layer_name].kv_cache
 ```
 
-位置：`vllm/vllm/v1/worker/utils.py:462`
+位置：`vllm/vllm/v1/worker/utils.py:482`
 
 它说明：
 
@@ -409,7 +409,7 @@ kv_cache
 layer_slot_mapping
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:670`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:726`
 
 所以 attention forward 的隐式输入是：
 
@@ -427,7 +427,7 @@ layer_name
 
 `CommonAttentionMetadata` 是所有 backend builder 的公共输入。
 
-位置：`vllm/vllm/v1/attention/backend.py:393`
+位置：`vllm/vllm/v1/attention/backend.py:395`
 
 和并行最相关的字段包括：
 
@@ -461,7 +461,7 @@ self.dcp_local_seq_lens.cpu[:num_reqs] = get_dcp_local_seq_lens(...)
 cm_base.dcp_local_seq_lens = self.dcp_local_seq_lens.gpu[:num_reqs_padded]
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2357`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2415`
 
 ---
 
@@ -469,7 +469,7 @@ cm_base.dcp_local_seq_lens = self.dcp_local_seq_lens.gpu[:num_reqs_padded]
 
 所有 attention impl 都继承 `AttentionImplBase`。
 
-位置：`vllm/vllm/v1/attention/backend.py:734`
+位置：`vllm/vllm/v1/attention/backend.py:769`
 
 它在 `__new__()` 里尝试读取：
 
@@ -480,7 +480,7 @@ self.pcp_world_size = get_pcp_group().world_size
 self.pcp_rank = get_pcp_group().rank_in_group
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:780`
+位置：`vllm/vllm/v1/attention/backend.py:834`
 
 并计算：
 
@@ -534,7 +534,7 @@ need_to_return_lse_for_decode = self.dcp_world_size > 1
 随后兼容性检查会要求 backend 具备返回 decode LSE 的能力。
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:803`
+位置：`vllm/vllm/v1/attention/backend.py:851`
 
 `ops/common.py` 中 `correct_attn_out()` 正是在做这件事：
 
@@ -545,7 +545,7 @@ all-gather 各 rank lse
   → reduce_scatter / all_reduce 合并 output
 ```
 
-位置：`vllm/vllm/v1/attention/ops/common.py:110`
+位置：`vllm/vllm/v1/attention/ops/common.py:111`
 
 ---
 
@@ -559,7 +559,7 @@ all-gather 各 rank lse
 can_return_lse_for_decode = True
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:626`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:729`
 
 这使它可以参与 DCP 合并。
 
@@ -572,7 +572,7 @@ self.dcp_world_size = get_dcp_group().world_size
 self.dcp_rank = get_dcp_group().rank_in_group
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:353`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:318`
 
 在 `build()` 中，如果 `dcp_world_size > 1`，它会：
 
@@ -584,7 +584,7 @@ self.dcp_rank = get_dcp_group().rank_in_group
 5. scheduler_metadata 用 local context length 生成。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:498`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:418`
 
 ### 12.3 forward 时分两段计算
 
@@ -595,7 +595,7 @@ if self.dcp_world_size > 1:
     self._forward_with_dcp(...)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:810`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:916`
 
 `_forward_with_dcp()` 做两段 attention：
 
@@ -610,7 +610,7 @@ if self.dcp_world_size > 1:
    用 LSE 把 context attention 和 query attention 合并。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:962`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1103`
 
 其中 context attention 会调用：
 
@@ -618,7 +618,7 @@ if self.dcp_world_size > 1:
 query_across_dcp = get_dcp_group().all_gather(query, dim=1)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:983`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1151`
 
 然后通过：
 
@@ -626,7 +626,7 @@ query_across_dcp = get_dcp_group().all_gather(query, dim=1)
 self.dcp_combine(..., get_dcp_group(), return_lse=True)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1018`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:1240`
 
 把跨 DCP rank 的 partial context 输出合并。
 
@@ -650,7 +650,7 @@ all-gather LSE
   → reduce-scatter output head 维度
 ```
 
-位置：`vllm/vllm/v1/attention/ops/common.py:212`
+位置：`vllm/vllm/v1/attention/ops/common.py:213`
 
 如果配置：
 
@@ -666,11 +666,11 @@ dcp_a2a_lse_reduce
 
 相关选择在 FlashAttention：
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:689`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:756`
 
 MLA 中也有相同判断：
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:493`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:508`
 
 两者目标相同：
 
@@ -691,7 +691,7 @@ num_heads=self.num_heads
 num_kv_heads=1
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:446`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:463`
 
 ### 14.2 MLA decode 是 MQA-style
 
@@ -725,7 +725,7 @@ prefill metadata
 decode metadata
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1274`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1291`
 
 `MLACommonMetadataBuilder.build()` 会调用：
 
@@ -733,7 +733,7 @@ decode metadata
 split_decodes_and_prefills(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1623`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:1641`
 
 这使 MLA 可以：
 
@@ -753,7 +753,7 @@ attn_out, lse = self.impl.forward_mqa(...)
 attn_out = cp_lse_ag_out_rs(...) 或 dcp_a2a_lse_reduce(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:787`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:802`
 
 这和 FlashAttention 的核心思想一致：
 
@@ -763,15 +763,11 @@ DCP 下先扩大 query heads / 可见上下文，再用 LSE 做正确合并。
 
 ### 14.5 MLA DCP 对 FP8 KV cache 的限制
 
-MLA 当前代码中有断言：
+MLA 当前实现里，DCP 分支只在 `fp8_attention and self.impl.supports_quant_query_input` 时走量化 query 拼接，否则退回非量化拼接；对应 DCP all-gather 和 LSE merge 逻辑见：
 
-```python
-assert not fp8_attention, "DCP not support fp8 kvcache now."
-```
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:794`
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:787`
-
-所以 MLA + DCP + FP8 KV cache 不是无条件可用。
+所以这里更稳妥的结论是：MLA + DCP 对 FP8 KV cache 不是“无条件支持”，具体要看底层 impl 是否支持 quant query input，而不是一条通用断言。
 
 ---
 
@@ -788,7 +784,7 @@ total_cp_world_size = pcp_world_size * dcp_world_size
 total_cp_rank = pcp_rank * dcp_world_size + dcp_rank
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:792`
+位置：`vllm/vllm/v1/attention/backend.py:843`
 
 `ParallelConfig.cp_kv_cache_interleave_size` 的注释说明，DCP 和 PCP 会共同决定 KV cache token 在 total CP ranks 上的 interleave 方式：
 
@@ -814,15 +810,15 @@ total_cp_world_size = pcp_world_size * dcp_world_size
 
 Pipeline parallel 会把 transformer layers 切到不同 PP ranks。
 
-`ModelConfig.get_layers_start_end_indices()` 根据：
+`ModelConfig.get_layers_start_end_indices()` 当前按 `DP x PP x TP` 布局计算：
 
 ```text
-pp_rank = (rank // (tensor_parallel_size * prefill_context_parallel_size)) % pipeline_parallel_size
+pp_rank = (rank // tensor_parallel_size) % pipeline_parallel_size
 ```
 
 计算当前 rank 负责的 layer 范围。
 
-位置：`vllm/vllm/config/model.py:1282`
+位置：`vllm/vllm/config/model.py:1333`
 
 这意味着：
 
@@ -904,7 +900,7 @@ The zero fill is required when used with DP + EP
 to ensure all ranks within a DP group compute the same expert outputs.
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:657`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:672`
 
 所以 EP 不直接改 attention kernel，但会影响 attention 周边 tensor 在 MoE 前后的并行布局约束。
 
@@ -923,7 +919,7 @@ supports_attn_type 支持 decoder / encoder / encoder_only / encoder_decoder
 get_supported_kernel_block_sizes 要求 block size 是 16 的倍数
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:68`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:80`
 
 ### 19.2 impl class 负责声明“能不能返回 LSE / 支持 CP”
 
@@ -936,7 +932,7 @@ supports_mtp_with_cp_non_trivial_interleave_size
 supports_quant_query_input
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:734`
+位置：`vllm/vllm/v1/attention/backend.py:769`
 
 FlashAttention 设置：
 
@@ -958,7 +954,7 @@ reorder_batch_threshold
 supports_update_block_table
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:565`
+位置：`vllm/vllm/v1/attention/backend.py:600`
 
 DCP 下如果 backend 不支持 varlen DCP，builder 会把 batch reorder threshold 限制成 decode-only：
 
@@ -967,7 +963,7 @@ if decode_context_parallel_size > 1 and not supports_dcp_with_varlen:
     self.reorder_batch_threshold = 1
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:625`
+位置：`vllm/vllm/v1/attention/backend.py:664`
 
 ---
 
@@ -1019,11 +1015,11 @@ UNIFORM_SINGLE_TOKEN_DECODE
 NEVER
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:548`
+位置：`vllm/vllm/v1/attention/backend.py:583`
 
 FlashAttention builder 对 FA3 / XPU 设置更强支持，对 FA2 则更保守。
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:294`
+位置：`vllm/vllm/v1/attention/backends/flash_attn.py:318`
 
 batch invariance 也会影响 backend：
 
@@ -1092,13 +1088,13 @@ EP 主要作用在 MoE expert 层，但会影响 attention 前后 hidden states 
 
 | 并行维度 | 对 attention 的直接影响 | 关键源码 |
 |---|---|---|
-| TP | 切分 Q heads / KV heads，决定本 rank `num_heads / num_kv_heads` | `config/model.py:1259`、`attention.py:304` |
-| PP | 决定当前 rank 持有哪些 attention layers / KV cache | `config/model.py:1282`、`worker/utils.py:462` |
-| DCP | 切分 decode context，要求 LSE merge partial attention | `backend.py:780`、`flash_attn.py:962`、`ops/common.py:110` |
-| PCP | 切分 prefill context，和 DCP 共同组成 total CP rank | `backend.py:792`、`config/parallel.py:359` |
-| DP | replica-local attention state，外层同步执行状态 | `config/parallel.py:688` |
-| EP | 不改 dense attention kernel，但影响 MoE 交替层和 hidden layout | `parallel_state.py:1201`、`mla_attention.py:657` |
-| paged KV | 本 rank KV cache 读写依赖 block table / slot mapping | `gpu_model_runner.py:2216`、`attention.py:713` |
+| TP | 切分 Q heads / KV heads，决定本 rank `num_heads / num_kv_heads` | `config/model.py:1310`、`attention.py:349` |
+| PP | 决定当前 rank 持有哪些 attention layers / KV cache | `config/model.py:1333`、`worker/utils.py:482` |
+| DCP | 切分 decode context，要求 LSE merge partial attention | `backend.py:834`、`flash_attn.py:1103`、`ops/common.py:111` |
+| PCP | 切分 prefill context，和 DCP 共同组成 total CP rank | `backend.py:843`、`config/parallel.py:359` |
+| DP | replica-local attention state，外层同步执行状态 | `config/parallel.py:517` |
+| EP | 不改 dense attention kernel，但影响 MoE 交替层和 hidden layout | `parallel_state.py:1400`、`mla_attention.py:672` |
+| paged KV | 本 rank KV cache 读写依赖 block table / slot mapping | `gpu_model_runner.py:2415`、`attention.py:726` |
 
 ---
 

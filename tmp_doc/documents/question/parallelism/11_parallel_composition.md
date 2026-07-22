@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `D:/lzy/project/kv_pool/code/vllm/vllm/config/parallel.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/config/model.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/distributed/parallel_state.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/distributed/communication_op.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu_worker.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/worker/dp_utils.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/linear.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/logits_processor.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/attention/attention.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/attention/mla_attention.py`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/model_executor/layers/fused_moe/`
-- `D:/lzy/project/kv_pool/code/vllm/vllm/v1/attention/`
+- `vllm/vllm/config/parallel.py`
+- `vllm/vllm/config/model.py`
+- `vllm/vllm/distributed/parallel_state.py`
+- `vllm/vllm/distributed/communication_op.py`
+- `vllm/vllm/v1/worker/gpu_worker.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/worker/dp_utils.py`
+- `vllm/vllm/model_executor/layers/linear.py`
+- `vllm/vllm/model_executor/layers/logits_processor.py`
+- `vllm/vllm/model_executor/layers/attention/attention.py`
+- `vllm/vllm/model_executor/layers/attention/mla_attention.py`
+- `vllm/vllm/model_executor/layers/fused_moe/`
+- `vllm/vllm/v1/attention/`
 
 本问题关注：TP / PP / DP / EP / PCP / DCP 同时开启时，vLLM 如何理解 rank mesh；哪些并行维度会乘进 worker world size，哪些只是复用已有 rank；单个请求的一次 forward 会经过哪些 group；模型权重、请求状态、KV cache、attention metadata、logits / sampling 分别归属于哪个并行维度；以及组合并行下最容易混淆的约束和执行边界。
 
@@ -90,7 +90,7 @@ world_size = pipeline_parallel_size
            * prefill_context_parallel_size
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:782`
+位置：`vllm/vllm/config/parallel.py:793`
 
 这个 `world_size` 表示：
 
@@ -104,7 +104,7 @@ world_size = pipeline_parallel_size
 world_size_across_dp = world_size * data_parallel_size
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:508`
+位置：`vllm/vllm/config/parallel.py:517`
 
 所以默认情况下：
 
@@ -135,9 +135,9 @@ ensure_model_parallel_initialized(...)
 
 位置：
 
-- `code/vllm/vllm/v1/worker/gpu_worker.py:1188`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:1197`
-- `code/vllm/vllm/distributed/parallel_state.py:1674`
+- `vllm/vllm/v1/worker/gpu_worker.py:1326`
+- `vllm/vllm/v1/worker/gpu_worker.py:1359`
+- `vllm/vllm/distributed/parallel_state.py:1713`
 
 `initialize_model_parallel()` 创建：
 
@@ -151,7 +151,7 @@ EP group
 EPLB group
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1757`
+位置：`vllm/vllm/distributed/parallel_state.py:1799`
 
 ### 3.3 执行层：不同模块查询不同 group
 
@@ -175,7 +175,7 @@ tensor_model_parallel_all_gather()     → get_tp_group().all_gather(...)
 tensor_model_parallel_reduce_scatter() → get_tp_group().reduce_scatter(...)
 ```
 
-位置：`code/vllm/vllm/distributed/communication_op.py:12`
+位置：`vllm/vllm/distributed/communication_op.py:12`
 
 ---
 
@@ -199,7 +199,7 @@ all_ranks = torch.arange(world_size).reshape(
 )
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1740`
+位置：`vllm/vllm/distributed/parallel_state.py:1788`
 
 因此完整 rank mesh 可以理解为：
 
@@ -282,7 +282,7 @@ TP group 创建逻辑：
 group_ranks = all_ranks.view(-1, tensor_model_parallel_size)
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1757`
+位置：`vllm/vllm/distributed/parallel_state.py:1799`
 
 因为 TP 是最后一维，所以每个 TP group 是 mesh 中固定：
 
@@ -321,7 +321,7 @@ self.tp_size = get_tensor_model_parallel_world_size()
 output_size_per_partition = output_size / tp_size
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:434`
+位置：`vllm/vllm/model_executor/layers/linear.py:438`
 
 如果需要完整输出：
 
@@ -329,7 +329,7 @@ output_size_per_partition = output_size / tp_size
 output = tensor_model_parallel_all_gather(output_parallel)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:557`
+位置：`vllm/vllm/model_executor/layers/linear.py:562`
 
 ---
 
@@ -342,7 +342,7 @@ group_ranks = all_ranks.transpose(2, 4)
                      .reshape(-1, pipeline_model_parallel_size)
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1815`
+位置：`vllm/vllm/distributed/parallel_state.py:1858`
 
 这表示：
 
@@ -369,10 +369,12 @@ V1 worker 中非 first rank 接收：
 
 ```text
 if forward_pass and not get_pp_group().is_first_rank:
-    intermediate_tensors = get_pp_group().irecv_tensor_dict(...)
+    tensor_dict, comm_handles, comm_postprocess = (
+        get_pp_group().irecv_tensor_dict(...)
+    )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:853`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1049`
 
 非 last rank 发送：
 
@@ -380,7 +382,7 @@ if forward_pass and not get_pp_group().is_first_rank:
 self._pp_send_work = get_pp_group().isend_tensor_dict(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:889`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1084`
 
 `GPUModelRunner` 中也有同步 send：
 
@@ -388,7 +390,7 @@ self._pp_send_work = get_pp_group().isend_tensor_dict(...)
 get_pp_group().send_tensor_dict(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4367`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4427`
 
 ---
 
@@ -401,7 +403,7 @@ group_ranks = all_ranks.transpose(3, 4)
                      .reshape(-1, prefill_context_model_parallel_size)
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1796`
+位置：`vllm/vllm/distributed/parallel_state.py:1838`
 
 这表示：
 
@@ -439,7 +441,7 @@ total_cp_rank = pcp_rank * dcp_world_size + dcp_rank
 total_cp_world_size = pcp_world_size * dcp_world_size
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:351`
+位置：`vllm/vllm/config/parallel.py:351`
 
 ---
 
@@ -451,7 +453,7 @@ DCP group 创建逻辑：
 group_ranks = all_ranks.reshape(-1, decode_context_model_parallel_size)
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1774`
+位置：`vllm/vllm/distributed/parallel_state.py:1820`
 
 因为 TP 是最后一维，而 DCP 直接 reshape 成 `decode_context_model_parallel_size`，所以 DCP 复用 TP 相关 rank，在现有 rank mesh 上按 DCP size 成组。
 
@@ -461,7 +463,7 @@ group_ranks = all_ranks.reshape(-1, decode_context_model_parallel_size)
 tensor_parallel_size % decode_context_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:490`
+位置：`vllm/vllm/config/parallel.py:503`
 
 源码注释说得很直接：
 
@@ -471,7 +473,7 @@ it reuses the GPUs of TP group;
 it splits one TP group into tp_size // dcp_size DCP groups.
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:490`
+位置：`vllm/vllm/config/parallel.py:503`
 
 举例：
 
@@ -500,7 +502,7 @@ group_ranks = all_ranks.transpose(1, 4)
                      .reshape(-1, data_parallel_size)
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1833`
+位置：`vllm/vllm/distributed/parallel_state.py:1874`
 
 这表示：
 
@@ -544,7 +546,7 @@ sync_dp_state(...)
 sync_kv_cache_memory_size(...)
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:680`
+位置：`vllm/vllm/config/parallel.py:688`
 
 ---
 
@@ -562,7 +564,7 @@ group_ranks = all_ranks.transpose(1, 2)
                      )
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1850`
+位置：`vllm/vllm/distributed/parallel_state.py:1894`
 
 这表示：
 
@@ -588,7 +590,7 @@ if config.model_config is None or config.model_config.is_moe:
     create EP group
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1852`
+位置：`vllm/vllm/distributed/parallel_state.py:1898`
 
 MoE all-to-all manager 通过：
 
@@ -598,7 +600,7 @@ get_ep_group().device_communicator.all2all_manager
 
 取得通信管理器。
 
-位置：`code/vllm/vllm/model_executor/layers/fused_moe/all2all_utils.py:59`
+位置：`vllm/vllm/model_executor/layers/fused_moe/all2all_utils.py:59`
 
 ---
 
@@ -618,7 +620,7 @@ vLLM 会创建和 EP ranks 相同的一组 EPLB group：
 Create EPLB group with the same ranks as EP if EPLB is enabled.
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1878`
+位置：`vllm/vllm/distributed/parallel_state.py:1917`
 
 但它是单独的 process group。
 
@@ -636,7 +638,7 @@ This is a separate process group to isolate EPLB communications
 from MoE forward pass collectives and prevent deadlocks.
 ```
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1878`
+位置：`vllm/vllm/distributed/parallel_state.py:1917`
 
 所以：
 
@@ -687,11 +689,13 @@ PP group：同一个 TP lane 上纵向串 stage。
 `ModelConfig.get_layers_start_end_indices()` 用 PP rank 决定本 rank 持有哪些层：
 
 ```text
-pp_rank = (parallel_config.rank // (tensor_parallel_size * prefill_context_parallel_size)) % pipeline_parallel_size
+pp_rank = (
+    parallel_config.rank // parallel_config.tensor_parallel_size
+) % parallel_config.pipeline_parallel_size
 start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1280`
+位置：`vllm/vllm/config/model.py:1333`
 
 这说明：
 
@@ -752,7 +756,7 @@ if data_parallel_size > 1:
     coordinate_batch_across_dp(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3879`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3863`
 
 ---
 
@@ -770,7 +774,7 @@ DP replica 处理的是不同请求，所以每个 DP rank 本轮 token 数可�
 3. 同步 cudagraph_mode，取最保守值。
 ```
 
-位置：`code/vllm/vllm/v1/worker/dp_utils.py:164`
+位置：`vllm/vllm/v1/worker/dp_utils.py:164`
 
 内部通过 DP group all-reduce：
 
@@ -782,7 +786,7 @@ tensor[3][dp_rank] = cudagraph_mode
 dist.all_reduce(tensor, group=get_dp_group())
 ```
 
-位置：`code/vllm/vllm/v1/worker/dp_utils.py:36`
+位置：`vllm/vllm/v1/worker/dp_utils.py:36`
 
 如果需要 DP padding：
 
@@ -790,7 +794,7 @@ dist.all_reduce(tensor, group=get_dp_group())
 所有 DP ranks pad 到最大 token 数。
 ```
 
-位置：`code/vllm/vllm/v1/worker/dp_utils.py:77`
+位置：`vllm/vllm/v1/worker/dp_utils.py:77`
 
 这说明：
 
@@ -820,7 +824,7 @@ data_parallel_size:
   the product of tensor_parallel_size and data_parallel_size.
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:126`
+位置：`vllm/vllm/config/parallel.py:126`
 
 开启 EP：
 
@@ -828,7 +832,7 @@ data_parallel_size:
 enable_expert_parallel = True
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:162`
+位置：`vllm/vllm/config/parallel.py:162`
 
 MoE all-to-all backend：
 
@@ -836,7 +840,7 @@ MoE all-to-all backend：
 all2all_backend
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:185`
+位置：`vllm/vllm/config/parallel.py:185`
 
 MoE dispatch 的核心不是普通 TP all-reduce，而是：
 
@@ -867,7 +871,7 @@ tensor_parallel_size > 1
 data_parallel_size > 1
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:625`
+位置：`vllm/vllm/config/parallel.py:642`
 
 源码注释解释原因：
 
@@ -877,7 +881,7 @@ TP attention o_proj 后的 all_reduce 会让输入在 TP group 内复制。
 会产生无用的重复 expert 计算和通信。
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:625`
+位置：`vllm/vllm/config/parallel.py:642`
 
 所以 sequence parallel MoE 的目的：
 
@@ -908,17 +912,17 @@ dcp_local_seq_lens
 dcp_local_seq_lens_cpu
 ```
 
-位置：`code/vllm/vllm/v1/attention/backend.py:400`
+位置：`vllm/vllm/v1/attention/backend.py:400`
 
 在 `_build_attention_metadata()` 中，如果 DCP 开启：
 
 ```text
-self.dcp_local_seq_lens = get_dcp_local_seq_lens(...)
+self.dcp_local_seq_lens.cpu[:num_reqs] = get_dcp_local_seq_lens(...)
 cm_base.dcp_local_seq_lens = ...
 cm_base.dcp_local_seq_lens_cpu = ...
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2349`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:2254`
 
 slot mapping 也会受 CP 影响：
 
@@ -948,7 +952,7 @@ MLA 中可以看到 DCP group 通信，例如：
 mqa_q = get_dcp_group().all_gather(mqa_q, dim=1)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/mla_attention.py:786`
+位置：`vllm/vllm/model_executor/layers/attention/mla_attention.py:786`
 
 ---
 
@@ -982,7 +986,7 @@ DCP 约束：
 tensor_parallel_size % decode_context_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:490`
+位置：`vllm/vllm/config/parallel.py:503`
 
 非 MLA 的 GQA / MQA 模型上，DCP 还有额外校验：
 
@@ -992,7 +996,7 @@ decode_context_parallel_size <= tensor_parallel_size // total_num_kv_heads
 num_q_per_kv % decode_context_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/model.py:1182`
+位置：`vllm/vllm/config/model.py:1236`
 
 原因：
 
@@ -1012,7 +1016,7 @@ DCP 要在复制 KV heads 的 TP ranks 上切 context；
 total_num_attention_heads % tensor_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/model.py:1157`
+位置：`vllm/vllm/config/model.py:1212`
 
 本 rank Q heads：
 
@@ -1020,7 +1024,7 @@ total_num_attention_heads % tensor_parallel_size == 0
 num_heads = total_num_attention_heads // tensor_parallel_size
 ```
 
-位置：`code/vllm/vllm/config/model.py:1270`
+位置：`vllm/vllm/config/model.py:1302`
 
 本 rank KV heads：
 
@@ -1028,7 +1032,7 @@ num_heads = total_num_attention_heads // tensor_parallel_size
 num_kv_heads = max(1, total_num_kv_heads // tensor_parallel_size)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1257`
+位置：`vllm/vllm/config/model.py:1290`
 
 注意这个 `max(1, ...)`：
 
@@ -1057,11 +1061,13 @@ PP 决定每个 rank 持有哪些 layers。
 `get_layers_start_end_indices()` 中：
 
 ```text
-pp_rank = (rank // tensor_parallel_size) % pipeline_parallel_size
+pp_rank = (
+    parallel_config.rank // parallel_config.tensor_parallel_size
+) % parallel_config.pipeline_parallel_size
 start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1280`
+位置：`vllm/vllm/config/model.py:1333`
 
 因此：
 
@@ -1120,7 +1126,7 @@ DP group 做的是跨 replica 的协调，而不是共享 KV cache。
 coordinate_batch_across_dp(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/dp_utils.py:164`
+位置：`vllm/vllm/v1/worker/dp_utils.py:164`
 
 同步是否还有未完成请求：
 
@@ -1128,7 +1134,7 @@ coordinate_batch_across_dp(...)
 ParallelConfig.has_unfinished_dp(...)
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:680`
+位置：`vllm/vllm/config/parallel.py:688`
 
 ---
 
@@ -1179,7 +1185,7 @@ if not get_pp_group().is_last_rank:
     return intermediate_tensors
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4337`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4399`
 
 last stage 才继续：
 
@@ -1189,7 +1195,7 @@ compute_logits(...)
 sample(...)
 ```
 
-相关位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4337`
+相关位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4399`
 
 ### 24.2 TP：logits 可能需要 gather vocab shards
 
@@ -1341,7 +1347,7 @@ EP enabled
 total_num_attention_heads % tensor_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/model.py:1157`
+位置：`vllm/vllm/config/model.py:1212`
 
 否则每个 TP rank 无法获得相同数量 Q heads。
 
@@ -1369,7 +1375,7 @@ self.registry.is_pp_supported_model(...)
 tensor_parallel_size % decode_context_parallel_size == 0
 ```
 
-位置：`code/vllm/vllm/config/parallel.py:490`
+位置：`vllm/vllm/config/parallel.py:503`
 
 ### 27.4 DCP + GQA / MQA 还有额外限制
 
@@ -1381,7 +1387,7 @@ dcp_size <= tp_size // total_num_kv_heads
 num_q_per_kv % dcp_size == 0
 ```
 
-位置：`code/vllm/vllm/config/model.py:1182`
+位置：`vllm/vllm/config/model.py:1236`
 
 ### 27.5 dcp_comm_backend=a2a 要求 DCP > 1
 
@@ -1710,7 +1716,7 @@ MoE layer 属于某个 pipeline stage；
 
 `initialize_model_parallel()` 中 EP 创建固定 PP 维度，将 DP x PCP x TP 合并。
 
-位置：`code/vllm/vllm/distributed/parallel_state.py:1850`
+位置：`vllm/vllm/distributed/parallel_state.py:1894`
 
 所以：
 

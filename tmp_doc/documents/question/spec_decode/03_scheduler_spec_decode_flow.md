@@ -2,11 +2,11 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\engine\core.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/request.py`
+- `code/vllm/vllm/v1/engine/core.py`
+- `code/vllm/vllm/v1/outputs.py`
 
 本问题关注：Scheduler 在 speculative decoding 中到底做什么；它如何把 `Request.spec_token_ids` 转成 `SchedulerOutput.scheduled_spec_decode_tokens`；`token_budget`、`num_computed_tokens`、`num_tokens_with_spec`、`num_lookahead_tokens` 如何共同决定本轮验证多少 draft tokens；KV block 分配、preemption、structured output、async scheduling、batch queue 和 `update_from_output()` 又如何修正接受 / 拒绝后的请求状态。
 
@@ -141,7 +141,7 @@ self.spec_token_ids: list[int] = []
 self.num_computed_tokens = 0
 ```
 
-位置：`code/vllm/vllm/v1/request.py:140` 到 `code/vllm/vllm/v1/request.py:153`
+位置：`code/vllm/vllm/v1/request.py:150` 到 `code/vllm/vllm/v1/request.py:168`
 
 ### 3.1 `spec_token_ids`
 
@@ -177,7 +177,7 @@ def num_tokens(self) -> int:
     return len(self._all_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/request.py:247` 到 `code/vllm/vllm/v1/request.py:248`
+位置：`code/vllm/vllm/v1/request.py:261` 到 `code/vllm/vllm/v1/request.py:263`
 
 `Request.num_tokens_with_spec`：
 
@@ -187,7 +187,7 @@ def num_tokens_with_spec(self) -> int:
     return len(self._all_token_ids) + len(self.spec_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/request.py:250` 到 `code/vllm/vllm/v1/request.py:252`
+位置：`code/vllm/vllm/v1/request.py:265` 到 `code/vllm/vllm/v1/request.py:267`
 
 区别：
 
@@ -212,7 +212,7 @@ self.num_lookahead_tokens = 0
 self.dynamic_sd_lookup: list[int] | None = None
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:227` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:231`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:232` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:236`
 
 如果开启 dynamic speculative decoding：
 
@@ -221,7 +221,7 @@ if speculative_config.num_speculative_tokens_per_batch_size:
     self.dynamic_sd_lookup = build_dynamic_sd_schedule_lookup(...)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:232` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:238`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:237` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:243`
 
 不同方法会设置不同 lookahead：
 
@@ -233,9 +233,11 @@ if speculative_config.uses_draft_model():
     self.num_lookahead_tokens = self.num_spec_tokens
 if speculative_config.use_dflash():
     self.num_lookahead_tokens = self.num_spec_tokens + 1
+if speculative_config.use_dspark():
+    self.num_lookahead_tokens = self.num_spec_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:239` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:248`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:244` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:258`
 
 ### 4.1 `num_spec_tokens`
 
@@ -261,7 +263,7 @@ if speculative_config.use_dflash():
 3. 支持 EAGLE / draft model / DFlash 等需要多 token 前瞻的方式。
 ```
 
-DFlash 多一个 lookahead 的注释说明：
+DFlash 多一个 lookahead，而 DSpark 使用正好 `num_spec_tokens` 个 lookahead。DFlash 注释说明：
 
 ```text
 DFlash 使用 in-fill-style decoding，
@@ -273,7 +275,7 @@ DFlash 使用 in-fill-style decoding，
 
 ## 5. schedule() 的统一 token 模型
 
-`schedule()` 入口：`code/vllm/vllm/v1/core/sched/scheduler.py:387`
+`schedule()` 入口：`code/vllm/vllm/v1/core/sched/scheduler.py:433`
 
 开头注释非常关键：
 
@@ -284,7 +286,7 @@ num_tokens_with_spec =
   len(prompt_token_ids) + len(output_token_ids) + len(spec_token_ids).
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:389` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:398`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:435` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:444`
 
 这说明 Scheduler 没有单独设计一个 “spec decode phase”。
 
@@ -319,7 +321,7 @@ token_budget = self.max_num_scheduled_tokens
 scheduled_spec_decode_tokens: dict[str, list[int]] = {}
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:400` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:416`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:446` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:462`
 
 `scheduled_spec_decode_tokens` 是本轮 spec decode 的核心输出容器：
 
@@ -346,7 +348,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:462` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:466`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:510` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:514`
 
 这条公式非常重要。
 
@@ -378,7 +380,7 @@ spec_token_ids 非空，num_new_tokens 可能包含多个待验证 draft tokens�
 num_new_tokens = min(num_new_tokens, token_budget)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:467` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:469`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:515` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:517`
 
 如果 batch token budget 不够，本轮只能验证一部分 draft tokens。
 
@@ -395,7 +397,7 @@ num_new_tokens = min(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:471` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:478`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:519` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:526`
 
 注释明确说：
 
@@ -437,7 +439,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:521` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:528`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:570` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:576`
 
 这里的重点是：
 
@@ -461,7 +463,7 @@ KVCacheManager 如果无法分配，会触发 preemption：
 scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:542` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:548`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:590` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:596`
 
 这避免了：
 
@@ -483,7 +485,7 @@ num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:573` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:578`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:621` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:628`
 
 然后进入 spec decode 专门逻辑：
 
@@ -504,7 +506,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:581` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:597`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:630` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:646`
 
 ### 9.1 公式含义
 
@@ -590,7 +592,7 @@ if request.is_prefill_chunk:
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1905` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1909`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2015` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2019`
 
 这说明：
 
@@ -613,7 +615,7 @@ if self.dynamic_sd_lookup is not None and len(num_scheduled_tokens) > 0:
     ]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1050` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1055`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1135` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1140`
 
 这个字段写入：
 
@@ -623,7 +625,7 @@ SchedulerOutput(...,
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1057` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1074`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1142` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1160`
 
 语义是：
 
@@ -644,7 +646,7 @@ Scheduler 根据当前 batch size 决定下一轮 proposer 最多 draft 多少 t
 
 ## 12. SchedulerOutput 中的 spec decode 字段
 
-`SchedulerOutput` 定义在：`code/vllm/vllm/v1/core/sched/output.py:180`
+`SchedulerOutput` 定义在：`code/vllm/vllm/v1/core/sched/output.py:183`
 
 核心字段：
 
@@ -657,9 +659,9 @@ num_spec_tokens_to_schedule: int = 0
 位置：
 
 ```text
-scheduled_spec_decode_tokens：output.py:197 到 output.py:200
-num_invalid_spec_tokens：output.py:229 到 output.py:230
-num_spec_tokens_to_schedule：output.py:243 到 output.py:245
+scheduled_spec_decode_tokens：output.py:199 到 output.py:202
+num_invalid_spec_tokens：output.py:231 到 output.py:232
+num_spec_tokens_to_schedule：output.py:248 到 output.py:250
 ```
 
 字段含义：
@@ -696,7 +698,7 @@ cached_reqs_data = self._make_cached_request_data(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1031` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1038`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1104` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1111`
 
 `_make_cached_request_data()` 中一个和 spec decode 相关的细节是 PP 非 async 路径：
 
@@ -709,7 +711,7 @@ token_ids = req.all_token_ids[
 ]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1242` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1254`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1324` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1342`
 
 这说明：
 
@@ -735,7 +737,7 @@ SchedulerOutput 构造完成后，会调用：
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1096` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1098`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1175` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1178`
 
 核心逻辑：
 
@@ -751,7 +753,7 @@ for req_id, num_scheduled_token in num_scheduled_tokens.items():
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1138` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1150`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1225` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1238`
 
 注释解释了关键点：
 
@@ -761,7 +763,7 @@ for req_id, num_scheduled_token in num_scheduled_tokens.items():
 3. 如果后续 spec tokens 被拒绝，再在 update_from_output() 中回滚。
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1128` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1137`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1215` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1224`
 
 这就是 spec decode 下的“乐观记账”：
 
@@ -782,7 +784,7 @@ def get_grammar_bitmask(
 ) -> GrammarOutput | None:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1439`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1527`
 
 调用 grammar manager 时会传入：
 
@@ -794,7 +796,7 @@ bitmask = self.structured_output_manager.grammar_bitmask(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1456` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1460`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1544` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1549`
 
 原因：
 
@@ -816,9 +818,9 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:504` 到 `code/vllm/vllm/v1/engine/core.py:506`
+位置：`code/vllm/vllm/v1/engine/core.py:513` 到 `code/vllm/vllm/v1/engine/core.py:515`
 
-Scheduler 入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1463`
+Scheduler 入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 对每个本轮调度的请求：
 
@@ -833,13 +835,15 @@ scheduled_spec_token_ids = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1542` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1549`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1632` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1639`
 
 如果本轮有 spec tokens：
 
 ```python
-if scheduled_spec_token_ids and (
-    generated_token_ids or self.num_sampled_tokens_per_step == 0
+if (
+    scheduled_spec_token_ids
+    and (generated_token_ids or self.num_sampled_tokens_per_step == 0)
+    and request.async_tokens_to_discard == 0
 ):
     num_draft_tokens = len(scheduled_spec_token_ids)
     num_sampled = self.num_sampled_tokens_per_step
@@ -847,7 +851,7 @@ if scheduled_spec_token_ids and (
     num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1550` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1556`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1640` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1650`
 
 ### 16.1 accepted / rejected 怎么算
 
@@ -881,7 +885,7 @@ if request.num_computed_tokens > 0:
     request.num_computed_tokens -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1557` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1563`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1651` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1657`
 
 原因：
 
@@ -900,7 +904,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1564` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1567`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1658` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1661`
 
 因为：
 
@@ -923,7 +927,7 @@ spec_decoding_stats = self.make_spec_decoding_stats(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1568` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1574`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1662` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1668`
 
 这里的 `num_invalid_spec_tokens` 用于 structured output 等场景下修正统计。
 
@@ -942,7 +946,7 @@ if new_token_ids:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1580` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1592`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1674` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1687`
 
 `_update_request_with_output()` 最终会把 token append 到 request 的正式输出状态。
 
@@ -963,7 +967,7 @@ if new_token_ids and self.structured_output_manager.should_advance(request):
         request.status = RequestStatus.FINISHED_ERROR
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1598` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1613`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1693` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1717`
 
 这表示：
 
@@ -992,7 +996,7 @@ else:
     routed_experts = routing_data[end - len(new_token_ids) : end]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1645` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1653`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1749` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1757`
 
 差异：
 
@@ -1016,7 +1020,7 @@ if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
         self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:510` 到 `code/vllm/vllm/v1/engine/core.py:517`
+位置：`code/vllm/vllm/v1/engine/core.py:519` 到 `code/vllm/vllm/v1/engine/core.py:526`
 
 Scheduler 入口：
 
@@ -1024,7 +1028,7 @@ Scheduler 入口：
 def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1895`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2005`
 
 核心逻辑：
 
@@ -1048,7 +1052,7 @@ for req_id, spec_token_ids in zip(
     request.spec_token_ids = spec_token_ids
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1895` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1915`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2005` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2025`
 
 这一步的语义：
 
@@ -1079,7 +1083,7 @@ if deferred_scheduler_output:
     future = self.model_executor.sample_tokens(grammar_output, non_block=True)
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:612` 到 `code/vllm/vllm/v1/engine/core.py:630`
+位置：`code/vllm/vllm/v1/engine/core.py:623` 到 `code/vllm/vllm/v1/engine/core.py:638`
 
 为什么要这样？
 
@@ -1097,7 +1101,7 @@ def update_draft_token_ids_in_output(
 ) -> None:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1917`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2027`
 
 核心逻辑：
 
@@ -1124,7 +1128,7 @@ for req_id, spec_token_ids in zip(...):
 scheduler_output.num_invalid_spec_tokens = num_invalid_spec_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1920` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1953`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2030` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2063`
 
 ### 20.1 为什么要 pad `-1`
 
@@ -1159,7 +1163,7 @@ if request.spec_token_ids:
 request.num_preemptions += 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1117` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1121`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1191` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1207`
 
 原因：
 
@@ -1175,7 +1179,7 @@ preempt 后请求需要重新计算 / 恢复；
 scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:542` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:548`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:590` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:596`
 
 ---
 
@@ -1195,7 +1199,7 @@ elif (
     self.encoder_cache_manager.free_encoder_input(request, input_id)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1886` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1893`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1972` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2003`
 
 这里的关键是：
 

@@ -2,19 +2,20 @@
 
 源码位置：
 
-- `code/vllm/vllm/v1/sample/metadata.py`
-- `code/vllm/vllm/v1/sample/sampler.py`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `code/vllm/vllm/v1/outputs.py`
-- `code/vllm/vllm/v1/engine/__init__.py`
-- `code/vllm/vllm/v1/engine/output_processor.py`
-- `code/vllm/vllm/v1/engine/logprobs.py`
-- `code/vllm/vllm/v1/engine/detokenizer.py`
-- `code/vllm/vllm/v1/engine/parallel_sampling.py`
-- `code/vllm/vllm/v1/engine/llm_engine.py`
-- `code/vllm/vllm/v1/engine/async_llm.py`
-- `code/vllm/vllm/outputs.py`
-- `code/vllm/vllm/logprobs.py`
+- `vllm/vllm/v1/worker/gpu/model_runner.py`
+- `vllm/vllm/v1/worker/gpu/async_utils.py`
+- `vllm/vllm/v1/worker/gpu/sample/output.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/outputs.py`
+- `vllm/vllm/v1/engine/__init__.py`
+- `vllm/vllm/v1/engine/output_processor.py`
+- `vllm/vllm/v1/engine/logprobs.py`
+- `vllm/vllm/v1/engine/detokenizer.py`
+- `vllm/vllm/v1/engine/parallel_sampling.py`
+- `vllm/vllm/v1/engine/llm_engine.py`
+- `vllm/vllm/v1/engine/async_llm.py`
+- `vllm/vllm/outputs.py`
+- `vllm/vllm/logprobs.py`
 
 本问题关注：worker / scheduler 生成的 token、logprobs、pooling output、finish reason，如何经过 `OutputProcessor`、`RequestState`、detokenizer 和 logprobs processor，最终变成 API 层可见的 `RequestOutput`、`CompletionOutput`、`PoolingRequestOutput`、`EmbeddingRequestOutput`。
 
@@ -81,6 +82,7 @@ finished
 metrics
 num_cached_tokens
 kv_transfer_params
+ec_transfer_params
 ```
 
 所以二者不是同一个层次：
@@ -101,9 +103,9 @@ SamplingMetadata
   → Sampler.forward()
       → SamplerOutput(sampled_token_ids, logprobs_tensors)
 
-GPUModelRunner
-  → _bookkeeping_sync()
-      → valid_sampled_token_ids
+GPU ModelRunner / 旧 GPUModelRunner
+  → 新路径：AsyncOutput.get_output() / 旧路径：_bookkeeping_sync()
+      → sampled_token_ids / valid_sampled_token_ids
       → LogprobsLists
       → prompt_logprobs_dict
   → ModelRunnerOutput
@@ -140,12 +142,17 @@ Frontend engine
 
 ### 4.1 SamplerOutput
 
-`SamplerOutput` 是 sampler 的直接输出：
+`SamplerOutput` 是 sampler 的直接输出。新 GPU sampler 路径的输出是：
 
 ```text
 sampled_token_ids: Tensor[num_reqs, max_num_generated_tokens]
 logprobs_tensors: LogprobsTensors | None
+num_nans: Tensor | None
+num_sampled: Tensor | None
+num_rejected: Tensor | None
 ```
+
+位置：`vllm/vllm/v1/worker/gpu/sample/output.py:10` 到 `vllm/vllm/v1/worker/gpu/sample/output.py:16`
 
 它仍是 worker / GPU 侧结构，偏 tensor。
 
@@ -164,7 +171,10 @@ kv_connector_output
 ec_connector_output
 routed_experts
 num_nans_in_logits
+cudagraph_stats
 ```
+
+位置：`vllm/vllm/v1/outputs.py:233` 到 `vllm/vllm/v1/outputs.py:281`
 
 它已经把 GPU tensor 输出尽量转成 CPU / list / numpy 形式，方便跨进程传输。
 
@@ -182,6 +192,7 @@ finish_reason
 stop_reason
 events
 kv_transfer_params
+ec_transfer_params
 prefill_stats
 routed_experts
 num_nans_in_logits
@@ -205,6 +216,8 @@ stop_reason
 lora_request
 ```
 
+位置：`vllm/vllm/outputs.py:21` 到 `vllm/vllm/outputs.py:63`
+
 如果 `n > 1`，一个 `RequestOutput.outputs` 中可以有多个 `CompletionOutput`。
 
 ### 4.5 RequestOutput
@@ -223,7 +236,10 @@ lora_request
 encoder_prompt / encoder_prompt_token_ids
 num_cached_tokens
 kv_transfer_params
+ec_transfer_params
 ```
+
+位置：`vllm/vllm/outputs.py:85` 到 `vllm/vllm/outputs.py:146`
 
 ### 4.6 PoolingRequestOutput / EmbeddingRequestOutput
 
@@ -238,13 +254,15 @@ PoolingRequestOutput
   → finished
 ```
 
+位置：`vllm/vllm/outputs.py:208` 到 `vllm/vllm/outputs.py:241`
+
 `EmbeddingRequestOutput`、`ClassificationRequestOutput`、`ScoringRequestOutput` 都是从 `PoolingRequestOutput` 转换出来的类型化视图。
 
 ---
 
 ## 5. SamplerOutput 是怎么来的
 
-`Sampler.forward()` 的输入是：
+旧 `gpu_model_runner.py` 路径中，`Sampler.forward()` 的输入是：
 
 ```text
 logits
@@ -279,19 +297,35 @@ Sampler 大致做：
 6. 返回 SamplerOutput。
 ```
 
+位置：`vllm/vllm/v1/sample/sampler.py:72` 到 `vllm/vllm/v1/sample/sampler.py:149`
+
+新 GPU ModelRunner 路径则直接调用 stateful GPU sampler：
+
+```text
+self.sampler(logits, input_batch)
+```
+
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1081` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1083`
+
 这里输出的 token 仍只是 token id，不包含文本。
 
 ---
 
 ## 6. GPUModelRunner 如何把 SamplerOutput 变成 ModelRunnerOutput
 
-`GPUModelRunner._sample()` 调用 sampler：
+新 GPU ModelRunner 路径中，`sample_tokens()` 会创建 `AsyncOutput`，由 `AsyncOutput.get_output()` 把 GPU 侧 `SamplerOutput` 异步拷贝并落到 `ModelRunnerOutput.sampled_token_ids` / `logprobs`。
+
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1406` 到 `vllm/vllm/v1/worker/gpu/model_runner.py:1446`，`vllm/vllm/v1/worker/gpu/async_utils.py:12` 到 `vllm/vllm/v1/worker/gpu/async_utils.py:70`
+
+旧 `gpu_model_runner.py` 路径中，`GPUModelRunner._sample()` 调用 sampler：
 
 ```text
 self.sampler(logits, sampling_metadata)
 ```
 
 如果有 speculative decoding，则会走 rejection sampler，把 draft token 和 target logits 结合处理。
+
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3623` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3652`
 
 随后 `_bookkeeping_sync()` 会把 `SamplerOutput` 转成更适合 scheduler 的结构：
 
@@ -306,6 +340,8 @@ prompt logprobs tensors
   → prompt_logprobs_dict[req_id]
 ```
 
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3654` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3793`
+
 最后 `sample_tokens()` 组装：
 
 ```text
@@ -317,6 +353,7 @@ ModelRunnerOutput(
   prompt_logprobs_dict=...,
   pooler_output=...,
   kv_connector_output=...,
+  ec_connector_output=...,
   routed_experts=...,
 )
 ```
@@ -340,10 +377,13 @@ pooling_output：pooling 模型输出 tensor
 finish_reason：请求是否结束以及结束原因
 stop_reason：具体 stop token id 或 stop string
 kv_transfer_params：KV transfer 返回给用户的参数
+ec_transfer_params：encoder-cache transfer 返回给用户的参数
 prefill_stats：prefill 统计，如 num_cached_tokens
 routed_experts：MoE routed experts 输出
 num_nans_in_logits：logits NaN 检测
 ```
+
+位置：`vllm/vllm/v1/engine/__init__.py:175` 到 `vllm/vllm/v1/engine/__init__.py:206`
 
 `OutputProcessor.process_outputs()` 只消费 `EngineCoreOutput`，不直接碰 sampler 或 model runner。
 
@@ -449,6 +489,8 @@ pooling_params 存在
   → output_kind = pooling_params.output_kind
 ```
 
+位置：`vllm/vllm/v1/engine/output_processor.py:210` 到 `vllm/vllm/v1/engine/output_processor.py:270`
+
 这决定了后续走 completion 分支还是 pooling 分支。
 
 ---
@@ -485,6 +527,8 @@ OutputProcessorOutput(
 )
 ```
 
+位置：`vllm/vllm/v1/engine/output_processor.py:584` 到 `vllm/vllm/v1/engine/output_processor.py:703`
+
 ---
 
 ## 12. detokenizer 如何生成 text
@@ -519,6 +563,8 @@ detokenizer 每轮做：
 5. 必要时截断 output_text；
 6. 在 get_next_output_text() 中根据 delta / final 输出文本。
 ```
+
+位置：`vllm/vllm/v1/engine/detokenizer.py:30` 到 `vllm/vllm/v1/engine/detokenizer.py:65`，`vllm/vllm/v1/engine/detokenizer.py:95` 到 `vllm/vllm/v1/engine/detokenizer.py:164`
 
 ---
 
@@ -613,6 +659,8 @@ num_logprobs = sampling_params.num_logprobs
 num_prompt_logprobs = sampling_params.prompt_logprobs
 ```
 
+位置：`vllm/vllm/v1/engine/logprobs.py:29` 到 `vllm/vllm/v1/engine/logprobs.py:67`，`vllm/vllm/sampling_params.py:720` 到 `vllm/vllm/sampling_params.py:727`
+
 如果用户没请求 logprobs，对应字段就是 None。
 
 ---
@@ -643,6 +691,8 @@ sampler 会把 sampled token 的 logprob 放在第一位。
 
 所以 cumulative logprob 用的是 `logprobs[0]`。
 
+位置：`vllm/vllm/v1/engine/logprobs.py:69` 到 `vllm/vllm/v1/engine/logprobs.py:119`
+
 ---
 
 ## 17. prompt logprobs 如何更新
@@ -662,6 +712,8 @@ _update_prompt_logprobs(prompt_logprobs_tensors)
 4. 修正 UTF-8 / byte fallback；
 5. append 到 self.prompt_logprobs。
 ```
+
+位置：`vllm/vllm/v1/engine/logprobs.py:121` 到 `vllm/vllm/v1/engine/logprobs.py:187`
 
 prompt logprobs 和 sample logprobs 是两条独立链路：
 
@@ -690,6 +742,8 @@ prompt logprobs 可能跨多个 prefill chunk 聚合；
 DELTA 语义下不能每次重复返回全部 prompt logprobs；
 因此在合适时机一次性吐出并清空。
 ```
+
+位置：`vllm/vllm/v1/engine/logprobs.py:189` 到 `vllm/vllm/v1/engine/logprobs.py:206`
 
 ---
 
@@ -721,6 +775,8 @@ final_only = output_kind == FINAL_ONLY
     交给 ParentRequest.get_outputs() 聚合
   最后构造 RequestOutput
 ```
+
+位置：`vllm/vllm/v1/engine/output_processor.py:272` 到 `vllm/vllm/v1/engine/output_processor.py:336`
 
 这说明：
 
@@ -770,6 +826,8 @@ finished 且 routed_experts_chunks 不为空：
 单条 completion 的文本、token、logprobs、结束信息。
 ```
 
+位置：`vllm/vllm/v1/engine/output_processor.py:383` 到 `vllm/vllm/v1/engine/output_processor.py:418`
+
 ---
 
 ## 21. RequestOutput 如何组装
@@ -790,6 +848,7 @@ RequestOutput(
   lora_request=lora_request,
   num_cached_tokens=num_cached_tokens,
   kv_transfer_params=kv_transfer_params,
+  ec_transfer_params=ec_transfer_params,
 )
 ```
 
@@ -808,6 +867,8 @@ prompt_token_ids = [0] * len(prompt_embeds)
 ```
 
 这是为了 API 输出结构仍然有 prompt_token_ids 字段。
+
+位置：`vllm/vllm/v1/engine/output_processor.py:338` 到 `vllm/vllm/v1/engine/output_processor.py:381`
 
 ---
 
@@ -835,6 +896,8 @@ logprobs_processor
 CompletionOutput
 finish text
 ```
+
+位置：`vllm/vllm/v1/engine/output_processor.py:313` 到 `vllm/vllm/v1/engine/output_processor.py:361`
 
 上层如果需要 embedding / classification / scoring，会再从 `PoolingRequestOutput` 转：
 
@@ -1017,6 +1080,8 @@ RequestOutput.add(next_output, aggregate=True)
 
 这样可以减少队列堆积，并保持 delta 输出语义。
 
+位置：`vllm/vllm/v1/engine/output_processor.py:45` 到 `vllm/vllm/v1/engine/output_processor.py:86`
+
 ---
 
 ## 28. LLMEngine.step 的同步输出路径
@@ -1038,6 +1103,8 @@ RequestState.queue is None
 ```
 
 所以 `process_outputs()` 生成的 `RequestOutput` 会直接 append 到返回列表。
+
+位置：`vllm/vllm/v1/engine/llm_engine.py:296` 到 `vllm/vllm/v1/engine/llm_engine.py:334`
 
 ---
 
@@ -1062,6 +1129,8 @@ VLLM_V1_OUTPUT_PROC_CHUNK_SIZE
 ```
 
 避免一次处理太多 outputs 阻塞 event loop。
+
+位置：`vllm/vllm/v1/engine/async_llm.py:280` 到 `vllm/vllm/v1/engine/async_llm.py:398`，`vllm/vllm/v1/engine/async_llm.py:637` 到 `vllm/vllm/v1/engine/async_llm.py:707`
 
 ---
 
@@ -1093,6 +1162,8 @@ finish_reason = ABORT
 ```
 
 这样前端 generator 可以收到 finished=True 的结束信号。
+
+位置：`vllm/vllm/v1/engine/output_processor.py:457` 到 `vllm/vllm/v1/engine/output_processor.py:518`
 
 ---
 
@@ -1136,29 +1207,35 @@ RequestOutput.num_cached_tokens
 PoolingRequestOutput.num_cached_tokens
 ```
 
+位置：`vllm/vllm/v1/engine/output_processor.py:784` 到 `vllm/vllm/v1/engine/output_processor.py:828`
+
 ---
 
-## 32. kv_transfer_params 如何进入用户输出
+## 32. kv_transfer_params / ec_transfer_params 如何进入用户输出
 
 `EngineCoreOutput` 可能携带：
 
 ```text
 kv_transfer_params
+ec_transfer_params
 ```
 
 `process_outputs()` 读取后传给：
 
 ```text
-RequestState.make_request_output(..., kv_transfer_params)
+RequestState.make_request_output(..., kv_transfer_params, ec_transfer_params)
 ```
 
 最终进入：
 
 ```text
 RequestOutput.kv_transfer_params
+RequestOutput.ec_transfer_params
 ```
 
-这用于 P/D、remote KV transfer 等场景，让 connector 产生的参数能跟随请求输出返回给调用方。
+位置：`vllm/vllm/v1/engine/output_processor.py:626` 到 `vllm/vllm/v1/engine/output_processor.py:667`，`vllm/vllm/v1/engine/output_processor.py:369` 到 `vllm/vllm/v1/engine/output_processor.py:381`
+
+这用于 P/D、remote KV transfer / encoder-cache transfer 等场景，让 connector 产生的参数能跟随请求输出返回给调用方。
 
 ---
 
@@ -1189,6 +1266,8 @@ CompletionOutput.routed_experts
 ```
 
 因此 routed experts 不是每个 streaming chunk 都完整返回，而是在 finish 时汇总。
+
+位置：`vllm/vllm/v1/engine/output_processor.py:632` 到 `vllm/vllm/v1/engine/output_processor.py:635`，`vllm/vllm/v1/engine/output_processor.py:404` 到 `vllm/vllm/v1/engine/output_processor.py:407`
 
 ---
 

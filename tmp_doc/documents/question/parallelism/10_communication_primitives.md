@@ -79,7 +79,7 @@ Executor.collective_rpc 和 torch collective 有什么区别？
 用于初始化、加载模型、执行一轮模型、profile、sleep、wake_up、shutdown 等控制命令。
 ```
 
-入口：`vllm/v1/executor/abstract.py:152`
+入口：`vllm/v1/executor/abstract.py:153`
 
 源码注释明确说：
 
@@ -98,7 +98,7 @@ collective_rpc 是控制面，不是模型 forward 中的 tensor collective。
 
 `GroupCoordinator` 是 vLLM 对 process group 的核心封装。
 
-位置：`vllm/distributed/parallel_state.py:351`
+位置：`vllm/distributed/parallel_state.py:358`
 
 它负责：
 
@@ -158,9 +158,9 @@ All2AllManager
 
 等实现。
 
-Base 定义位置：`vllm/distributed/device_communicators/base_device_communicator.py:118`
+Base 定义位置：`vllm/distributed/device_communicators/base_device_communicator.py:127`
 
-CUDA 实现位置：`vllm/distributed/device_communicators/cuda_communicator.py:26`
+CUDA 实现位置：`vllm/distributed/device_communicators/cuda_communicator.py:29`
 
 ### 3.5 专用通信语义层
 
@@ -239,7 +239,7 @@ device_communicator：
 
 ### 5.2 all_reduce
 
-入口：`vllm/distributed/parallel_state.py:622`
+入口：`vllm/distributed/parallel_state.py:641`
 
 逻辑：
 
@@ -267,8 +267,8 @@ custom op 不直接接收 GroupCoordinator 对象；
 入口：
 
 ```text
-GroupCoordinator.all_gather：vllm/distributed/parallel_state.py:651
-GroupCoordinator.reduce_scatter：vllm/distributed/parallel_state.py:682
+GroupCoordinator.all_gather：vllm/distributed/parallel_state.py:670
+GroupCoordinator.reduce_scatter：vllm/distributed/parallel_state.py:701
 ```
 
 它们和 all_reduce 类似：
@@ -280,7 +280,7 @@ GroupCoordinator.reduce_scatter：vllm/distributed/parallel_state.py:682
 
 `DeviceCommunicatorBase.all_gather()` 使用 concat-style all-gather，而不是 stack-style all-gather。
 
-位置：`vllm/distributed/device_communicators/base_device_communicator.py:184`
+位置：`vllm/distributed/device_communicators/base_device_communicator.py:194`
 
 原因注释写明：
 
@@ -293,9 +293,9 @@ stack-style all-gather has compatibility issues with torch.compile。
 入口：
 
 ```text
-broadcast：vllm/distributed/parallel_state.py:726
-broadcast_object：vllm/distributed/parallel_state.py:741
-broadcast_tensor_dict：vllm/distributed/parallel_state.py:845
+broadcast：vllm/distributed/parallel_state.py:745
+broadcast_object：vllm/distributed/parallel_state.py:760
+broadcast_tensor_dict：vllm/distributed/parallel_state.py:864
 ```
 
 `broadcast_tensor_dict()` 会把 dict 拆成：
@@ -318,20 +318,20 @@ tensor_list：
 
 ```text
 send_object / recv_object：
-  vllm/distributed/parallel_state.py:782
-  vllm/distributed/parallel_state.py:809
+  vllm/distributed/parallel_state.py:801
+  vllm/distributed/parallel_state.py:828
 
 send_tensor_dict / recv_tensor_dict：
-  vllm/distributed/parallel_state.py:941
-  vllm/distributed/parallel_state.py:1036
+  vllm/distributed/parallel_state.py:960
+  vllm/distributed/parallel_state.py:1055
 
 isend_tensor_dict / irecv_tensor_dict：
-  vllm/distributed/parallel_state.py:979
-  vllm/distributed/parallel_state.py:1074
+  vllm/distributed/parallel_state.py:998
+  vllm/distributed/parallel_state.py:1093
 
 raw tensor send / recv：
-  vllm/distributed/parallel_state.py:1169
-  vllm/distributed/parallel_state.py:1176
+  vllm/distributed/parallel_state.py:1188
+  vllm/distributed/parallel_state.py:1195
 ```
 
 `send_tensor_dict()` 有一个重要优化：
@@ -342,13 +342,13 @@ all_gather_group：
   receiver 再通过 all-gather 重建完整 tensor。
 ```
 
-源码注释明确说这个 group 通常是 tensor-parallel group，位置：`vllm/distributed/parallel_state.py:951` 到 `vllm/distributed/parallel_state.py:964`。
+源码注释明确说这个 group 通常是 tensor-parallel group，位置：`vllm/distributed/parallel_state.py:964` 到 `vllm/distributed/parallel_state.py:977`。
 
 ---
 
 ## 6. CUDA communicator 如何选择 all-reduce 后端
 
-CUDA 通信实现入口：`vllm/distributed/device_communicators/cuda_communicator.py:26`
+CUDA 通信实现入口：`vllm/distributed/device_communicators/cuda_communicator.py:29`
 
 ### 6.1 custom allreduce 只用于 TP group
 
@@ -365,7 +365,7 @@ else:
   use_flashinfer_allreduce = envs.VLLM_ALLREDUCE_USE_FLASHINFER
 ```
 
-位置：`vllm/distributed/device_communicators/cuda_communicator.py:45` 到 `vllm/distributed/device_communicators/cuda_communicator.py:56`
+位置：`vllm/distributed/device_communicators/cuda_communicator.py:48` 到 `vllm/distributed/device_communicators/cuda_communicator.py:56`
 
 含义：
 
@@ -378,7 +378,7 @@ custom allreduce / symmetric memory / flashinfer allreduce 主要服务 TP all-r
 
 `CudaCommunicator.all_reduce()` 的顺序是：
 
-位置：`vllm/distributed/device_communicators/cuda_communicator.py:254`
+位置：`vllm/distributed/device_communicators/cuda_communicator.py:273`
 
 ```text
 1. NCCL symmetric memory all-reduce
@@ -402,8 +402,8 @@ custom allreduce / symmetric memory / flashinfer allreduce 主要服务 TP all-r
 CUDA 的 reduce-scatter 走 PyNccl：
 
 ```text
-reduce_scatter：vllm/distributed/device_communicators/cuda_communicator.py:313
-reduce_scatterv：vllm/distributed/device_communicators/cuda_communicator.py:338
+reduce_scatter：vllm/distributed/device_communicators/cuda_communicator.py:369
+reduce_scatterv：vllm/distributed/device_communicators/cuda_communicator.py:396
 ```
 
 `reduce_scatterv` 支持每个 rank 不同大小的输出，MoE combine / DP-MoE 场景会用到这种不等长形式。
@@ -413,8 +413,8 @@ reduce_scatterv：vllm/distributed/device_communicators/cuda_communicator.py:338
 CUDA communicator 的 raw tensor send / recv：
 
 ```text
-send：vllm/distributed/device_communicators/cuda_communicator.py:373
-recv：vllm/distributed/device_communicators/cuda_communicator.py:385
+send：vllm/distributed/device_communicators/cuda_communicator.py:510
+recv：vllm/distributed/device_communicators/cuda_communicator.py:522
 ```
 
 优先使用 PyNccl communicator，如果不可用则回退 torch.distributed send/recv。
@@ -463,7 +463,7 @@ Pipeline parallel 的通信不是 all-reduce，而是 stage 间点对点传中�
 
 ### 8.1 非 first PP rank 接收上游 tensor
 
-位置：`vllm/v1/worker/gpu_worker.py:881`
+位置：`vllm/v1/worker/gpu_worker.py:1049`
 
 ```text
 if forward_pass and not get_pp_group().is_first_rank:
@@ -484,7 +484,7 @@ if forward_pass and not get_pp_group().is_first_rank:
 
 ### 8.2 非 last PP rank 发送下游 tensor
 
-位置：`vllm/v1/worker/gpu_worker.py:917`
+位置：`vllm/v1/worker/gpu_worker.py:1084`
 
 ```text
 self._pp_send_work = get_pp_group().isend_tensor_dict(
@@ -515,7 +515,7 @@ forward_pass
 
 GPU worker 会提前判断哪些 tensor 需要 all-gather，例如 residual 是否已经 scattered。
 
-位置：`vllm/v1/worker/gpu_worker.py:852` 到 `vllm/v1/worker/gpu_worker.py:879`。
+位置：`vllm/v1/worker/gpu_worker.py:1014` 到 `vllm/v1/worker/gpu_worker.py:1041`。
 
 这说明 PP send/recv 会和 TP / SP tensor 布局联动。
 
@@ -563,16 +563,16 @@ combine(hidden_states, ...)
 GroupCoordinator 也暴露了对应方法：
 
 ```text
-dispatch_router_logits：vllm/distributed/parallel_state.py:1201
-dispatch：vllm/distributed/parallel_state.py:1221
-combine：vllm/distributed/parallel_state.py:1243
+dispatch_router_logits：vllm/distributed/parallel_state.py:1220
+dispatch：vllm/distributed/parallel_state.py:1240
+combine：vllm/distributed/parallel_state.py:1262
 ```
 
 这些最终转给 `device_communicator.all2all_manager`。
 
 ### 9.3 all2all backend 选择
 
-CUDA communicator 初始化 all2all manager 的位置：`vllm/distributed/device_communicators/cuda_communicator.py:121`
+CUDA communicator 初始化 all2all manager 的位置：`vllm/distributed/device_communicators/cuda_communicator.py:141`
 
 支持的 backend 包括：
 
@@ -676,7 +676,7 @@ partial softmax LSE
 
 `cp_utils.py` 会检查：
 
-位置：`vllm/v1/worker/cp_utils.py:14`
+位置：`vllm/v1/worker/cp_utils.py:26`
 
 ```text
 如果 dcp_size > 1：
@@ -686,19 +686,17 @@ partial softmax LSE
   attention impl 必须 supports_pcp。
 ```
 
-DCP 检查位置：`vllm/v1/worker/cp_utils.py:30` 到 `vllm/v1/worker/cp_utils.py:37`。
+DCP 检查位置：`vllm/v1/worker/cp_utils.py:38` 到 `vllm/v1/worker/cp_utils.py:48`。
 
 ### 10.2 FlashAttention DCP 路径
 
-FlashAttention DCP 入口：`vllm/v1/attention/backends/flash_attn.py:962`
-
-关键通信：
+FlashAttention DCP 路径中的关键通信锚点：
 
 ```text
 query_across_dcp = get_dcp_group().all_gather(query, dim=1)
 ```
 
-位置：`vllm/v1/attention/backends/flash_attn.py:984`
+位置：`vllm/v1/attention/backends/flash_attn.py:1151`
 
 然后 FA 返回：
 
@@ -713,7 +711,7 @@ context_lse
 self.dcp_combine(context_attn_out, context_lse, get_dcp_group(), return_lse=True)
 ```
 
-位置：`vllm/v1/attention/backends/flash_attn.py:1019`。
+位置：`vllm/v1/attention/backends/flash_attn.py:1240`。
 
 最后把 context attention 和 query attention 用：
 
@@ -721,7 +719,7 @@ self.dcp_combine(context_attn_out, context_lse, get_dcp_group(), return_lse=True
 merge_attn_states(...)
 ```
 
-合并，位置：`vllm/v1/attention/backends/flash_attn.py:1053`。
+合并，位置：`vllm/v1/attention/backends/flash_attn.py:1271`。
 
 ### 10.3 ag_rs 路径：all-gather LSE + reduce-scatter output
 
@@ -854,7 +852,7 @@ GPU → CPU 同步点可能影响 async scheduling；
 
 ### 12.1 抽象定义
 
-`Executor.collective_rpc()` 定义在：`vllm/v1/executor/abstract.py:152`
+`Executor.collective_rpc()` 定义在：`vllm/v1/executor/abstract.py:153`
 
 它支持：
 
@@ -873,7 +871,7 @@ non_block=True：
 
 ### 12.2 Multiproc 实现
 
-Multiproc 实现在：`vllm/v1/executor/multiproc_executor.py:340`
+Multiproc 实现在：`vllm/v1/executor/multiproc_executor.py:343`
 
 核心逻辑：
 
@@ -885,9 +883,9 @@ Multiproc 实现在：`vllm/v1/executor/multiproc_executor.py:340`
 5. 如果 kv_output_aggregator 指定，对 KV transfer 输出做聚合。
 ```
 
-发送位置：`vllm/v1/executor/multiproc_executor.py:374`
+发送位置：`vllm/v1/executor/multiproc_executor.py:377`
 
-收结果位置：`vllm/v1/executor/multiproc_executor.py:380` 到 `vllm/v1/executor/multiproc_executor.py:396`。
+收结果位置：`vllm/v1/executor/multiproc_executor.py:379` 到 `vllm/v1/executor/multiproc_executor.py:385`。
 
 ### 12.3 和 torch collective 的区别
 
@@ -921,7 +919,7 @@ RowParallelLinear forward
 
 ## 13. barrier 和生命周期同步
 
-`GroupCoordinator.barrier()` 位置：`vllm/distributed/parallel_state.py:1160`
+`GroupCoordinator.barrier()` 位置：`vllm/distributed/parallel_state.py:1179`
 
 注意它使用的是：
 

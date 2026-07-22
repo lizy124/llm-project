@@ -57,7 +57,7 @@ ModelRunnerOutput 是“worker 给 Scheduler 的账单”，RequestOutput 才是
 
 ## 2. ModelRunnerOutput 的定义
 
-`ModelRunnerOutput` 定义在 `vllm/vllm/v1/outputs.py:233`。
+`ModelRunnerOutput` 定义在 `vllm/vllm/v1/outputs.py:234`。
 
 源码注释说得很直接：
 
@@ -118,7 +118,7 @@ req_ids: list[str]
 
 在 `GPUModelRunner._bookkeeping_sync()` 里会复制一份：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3633`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3685`
 
 ```text
 req_ids_output_copy = self.input_batch.req_ids.copy()
@@ -143,7 +143,7 @@ req_id_to_index: dict[str, int]
 
 Scheduler 消费时会用它把 `scheduler_output.num_scheduled_tokens` 中的请求映射回 ModelRunner 输出位置：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1543`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1632`
 
 ```text
 req_index = model_runner_output.req_id_to_index[req_id]
@@ -190,7 +190,7 @@ logprobs: LogprobsLists | None
 
 `Scheduler.update_from_output()` 会按请求切片：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1670`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1773`
 
 ```text
 new_logprobs = logprobs.slice_request(req_index, len(new_token_ids))
@@ -226,7 +226,7 @@ prompt logprobs 通常只在 prefill / chunked prefill 完成时返回；
 
 计算位置：`GPUModelRunner._get_prompt_logprobs_dict()`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:5461`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:5548`
 
 它会为需要 prompt logprobs 的请求维护一份 CPU tensor 缓冲：
 
@@ -248,7 +248,7 @@ pooler_output: list[torch.Tensor | None] | None
 
 生成类模型通常不填它；pooling 模型会在 `_pool()` 中构造。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3350`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3392`
 
 ### 3.7 kv_connector_output
 
@@ -274,7 +274,7 @@ expected_finished_count
 
 Scheduler 会用它更新 KV transfer 状态：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2418`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2559`
 
 ```text
 _update_from_kv_xfer_finished(kv_connector_output)
@@ -320,11 +320,11 @@ req_id -> 当前 logits 中 NaN 数量
 
 它由 `_get_nans_in_logits()` 计算，受环境变量 `VLLM_COMPUTE_NANS_IN_LOGITS` 控制。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:5565`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:5652`
 
 Scheduler 会写回 request：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1678`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1781`
 
 ```text
 request.num_nans_in_logits = num_nans_in_logits[req_id]
@@ -342,7 +342,7 @@ cudagraph_stats: CUDAGraphStat | None
 
 Scheduler 在 `make_stats()` 时会消费它。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1791`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1897`
 
 ### 3.11 routed_experts
 
@@ -363,7 +363,7 @@ slot_mapping: (num_scheduled_tokens,)
 
 Scheduler 先把它持久化到 slot buffer：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1508`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1595`
 
 ```text
 self.routed_experts_mgr.store_batch(re.routing_data, re.slot_mapping)
@@ -499,7 +499,7 @@ vllm/vllm/v1/worker/gpu/sample/output.py
 self.execute_model_state
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4389`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4446`
 
 保存内容包括：
 
@@ -521,7 +521,7 @@ slot_mappings
 return None
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4408`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4465`
 
 原因是：
 
@@ -534,7 +534,7 @@ grammar bitmask / sampling / prompt logprobs / final output assembly
 
 `sample_tokens()` 入口在：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4426`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4482`
 
 它先判断：
 
@@ -543,7 +543,7 @@ if self.execute_model_state is None:
     return ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4429`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4486`
 
 这通常发生在：
 
@@ -575,7 +575,7 @@ if self.execute_model_state is None:
 
 `_bookkeeping_sync()` 负责把采样后的 GPU 结果整理成 scheduler 可消费的形态。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3604`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3654`
 
 它返回：
 
@@ -607,11 +607,11 @@ prompt_logprobs_dict：本 step 完成的 prompt logprobs。
 discard_sampled_tokens_req_indices
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3624`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3675`
 
 同步路径会直接清空对应 token list：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3663`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3715`
 
 ```text
 valid_sampled_token_ids[int(i)].clear()
@@ -623,7 +623,7 @@ valid_sampled_token_ids[int(i)].clear()
 
 最终构造发生在：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4612`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4697`
 
 ```text
 ModelRunnerOutput(
@@ -644,7 +644,7 @@ ModelRunnerOutput(
 
 如果没有启用 async scheduling：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4628`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4712`
 
 ```text
 return output
@@ -652,7 +652,7 @@ return output
 
 如果启用了 routed experts，同步路径会在返回前把 routed experts 的 CPU buffer 包成 `RoutedExpertsLists`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4629`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4713`
 
 ### 7.5 async scheduling 返回 AsyncGPUModelRunnerOutput
 
@@ -662,7 +662,7 @@ return output
 AsyncGPUModelRunnerOutput(...)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4666`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4750`
 
 它持有：
 
@@ -707,12 +707,12 @@ get_output() -> ModelRunnerOutput
 
 | 类 | 位置 | 用途 |
 |---|---|---|
-| `AsyncGPUModelRunnerOutput` | `vllm/vllm/v1/worker/gpu_model_runner.py:242` | generation 输出异步拷贝 |
-| `AsyncGPUPoolingModelRunnerOutput` | `vllm/vllm/v1/worker/gpu_model_runner.py:367` | pooling 输出异步拷贝 |
+| `AsyncGPUModelRunnerOutput` | `vllm/vllm/v1/worker/gpu_model_runner.py:251` | generation 输出异步拷贝 |
+| `AsyncGPUPoolingModelRunnerOutput` | `vllm/vllm/v1/worker/gpu_model_runner.py:390` | pooling 输出异步拷贝 |
 
 `AsyncGPUModelRunnerOutput.get_output()` 会：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:285`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:300`
 
 ```text
 1. 等待 async_copy_ready_event；
@@ -740,7 +740,7 @@ result = result.get_output()
 
 `MultiprocExecutor` 的 worker 输出入队前也会做同样转换：
 
-位置：`vllm/vllm/v1/executor/multiproc_executor.py:936`
+位置：`vllm/vllm/v1/executor/multiproc_executor.py:944`
 
 ```text
 if isinstance(output, AsyncModelRunnerOutput):
@@ -759,7 +759,7 @@ AsyncModelRunnerOutput 持有 CUDA event / stream / device tensor，不能直接
 
 pooling 模型不走 sampled token 输出，而是走 `_pool()`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3350`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3392`
 
 它会构造：
 
@@ -771,7 +771,7 @@ ModelRunnerOutput(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3385`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3431`
 
 然后填充：
 
@@ -787,7 +787,7 @@ pooler_output = [None] * num_reqs
 
 如果在 CUDA 平台上需要异步 D2H，则返回 `AsyncGPUPoolingModelRunnerOutput`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3404`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3450`
 
 Scheduler 收到后会在 `update_from_output()` 中根据：
 
@@ -797,7 +797,7 @@ pooler_outputs[req_index]
 
 处理 pooling request。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1584`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1677`
 
 ---
 
@@ -849,7 +849,7 @@ else:
 
 `sample_tokens()` 在没有 `execute_model_state` 时就会走这条路径。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4429`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4486`
 
 ### 10.3 make_empty_encoder_model_runner_output
 
@@ -861,7 +861,7 @@ else:
 make_empty_encoder_model_runner_output(scheduler_output)
 ```
 
-它会构造带有请求映射、空 token、空 pooling placeholder 的 stub output，用于 encoder / EC connector 相关路径。
+它会构造带有请求映射、占位 sampled token、空 pooling placeholder 的 stub output，用于 encoder / EC connector 相关路径。
 
 ---
 
@@ -869,7 +869,7 @@ make_empty_encoder_model_runner_output(scheduler_output)
 
 ### 11.1 update_from_output 是核心消费入口
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1464`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1551`
 
 输入是：
 
@@ -890,13 +890,13 @@ kv_connector_output
 cudagraph_stats
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1469`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1556`
 
 ### 11.2 先处理 connector / routed experts 等 step 级信息
 
 如果 KV connector 返回 invalid blocks：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1491`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1578`
 
 ```text
 _handle_invalid_blocks(...)
@@ -904,7 +904,7 @@ _handle_invalid_blocks(...)
 
 如果有 routed experts：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1508`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1595`
 
 ```text
 routed_experts_mgr.store_batch(...)
@@ -920,7 +920,7 @@ Scheduler 会遍历：
 scheduler_output.num_scheduled_tokens.items()
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1527`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1614`
 
 对每个 req：
 
@@ -943,7 +943,7 @@ generated_token_ids = sampled_token_ids[req_index]
 
 构造 `EngineCoreOutput` 的位置：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1689`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1795`
 
 关键字段映射是：
 
@@ -971,7 +971,7 @@ Scheduler free request 结果
 
 Scheduler 会把多个 `EngineCoreOutput` 按 `request.client_index` 聚合：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1770`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1877`
 
 ```text
 client_index -> EngineCoreOutputs(outputs=[...])
@@ -979,7 +979,7 @@ client_index -> EngineCoreOutputs(outputs=[...])
 
 如果本 step 有 finished request ids 或 stats，也会挂到 `EngineCoreOutputs`。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1777`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1882`
 
 ---
 
@@ -1022,7 +1022,7 @@ num_nans_in_logits
 
 定义在：
 
-位置：`vllm/vllm/v1/engine/__init__.py:220`
+位置：`vllm/vllm/v1/engine/__init__.py:221`
 
 字段包括：
 
@@ -1044,7 +1044,7 @@ DP / 多 API server 场景下，不同 client 的 outputs 会被分开返回。
 
 `OutputProcessor.process_outputs()` 消费的是 `EngineCoreOutput`，不是 `ModelRunnerOutput`。
 
-位置：`vllm/vllm/v1/engine/output_processor.py:576`
+位置：`vllm/vllm/v1/engine/output_processor.py:584`
 
 核心步骤：
 
@@ -1114,7 +1114,7 @@ OutputProcessor.process_outputs()
 
 `GPUWorker.execute_model()` 中，如果 ModelRunner 返回的是 `IntermediateTensors`，说明当前不是最后 PP stage，它会把中间张量发送给下一个 PP rank。
 
-位置：`vllm/vllm/v1/worker/gpu_worker.py:895`
+位置：`vllm/vllm/v1/worker/gpu_worker.py:1071`
 
 这时对用户侧没有 `ModelRunnerOutput`。
 
@@ -1126,7 +1126,7 @@ OutputProcessor.process_outputs()
 ModelRunnerOutput.with_kv_conn_output_only(kv_connector_output)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4429`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4486`
 
 这让非 last PP rank 或无采样 rank 仍能把 KV connector 状态带回 Scheduler / aggregator，而不伪造 token 输出。
 
@@ -1136,7 +1136,7 @@ async scheduling + PP 场景下，last PP rank 采样后可能需要把 sampled 
 
 相关逻辑在：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4467`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4524`
 
 ```text
 _pp_broadcast_prev_sampled_token_ids(...)
@@ -1154,7 +1154,7 @@ async scheduling 会让下一步输入准备与当前步输出拷贝重叠。
 
 所以 `_bookkeeping_sync()` 明确 copy：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3633`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3685`
 
 ```text
 req_ids_output_copy
@@ -1167,7 +1167,7 @@ req_id_to_index_output_copy
 
 async 路径中：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3678`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3729`
 
 ```text
 valid_sampled_token_ids = []
@@ -1183,7 +1183,7 @@ input_batch.prev_sampled_token_ids = sampled_token_ids
 
 异步路径下 routed experts 的源 buffer 会在下一步被复用，所以构造 async output 时会 clone：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4643`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4739`
 
 ```text
 routing_data=buf[:total].clone()
@@ -1200,7 +1200,7 @@ slot_mapping=...clone()
 
 `sample_tokens()` 最后取：
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4608`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4692`
 
 ```text
 kv_connector_output = self.kv_connector_output
@@ -1209,13 +1209,13 @@ self.kv_connector_output = None
 
 然后写入 `ModelRunnerOutput.kv_connector_output`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4619`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4703`
 
 ### 17.2 scheduler 侧更新 connector 状态
 
 Scheduler 在 `update_from_output()` 末尾处理：
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1732`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:1837`
 
 ```text
 if kv_connector_output:
@@ -1230,7 +1230,7 @@ finished_sending：发送完成后可释放 blocks；
 invalid_block_ids：前面已触发相关请求重算或报错。
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2418`
+位置：`vllm/vllm/v1/core/sched/scheduler.py:2559`
 
 ---
 

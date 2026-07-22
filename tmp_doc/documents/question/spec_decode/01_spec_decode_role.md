@@ -45,7 +45,7 @@ scheduler/spec_decode_token_states.md
   → spec_decode/01_spec_decode_role.md
 ```
 
-本篇重点讲 speculative decoding 的总定位和跨层主链路，不把每一种 proposer 的内部算法全部展开。后续专题可以继续拆 EAGLE、Medusa、ngram、draft model、DFlash、suffix decoding 等具体方法。
+本篇重点讲 speculative decoding 的总定位和跨层主链路，不把每一种 proposer 的内部算法全部展开。后续专题可以继续拆 EAGLE、Medusa、ngram、draft model、DFlash、DSpark、suffix decoding 等具体方法。
 
 ---
 
@@ -165,7 +165,7 @@ EngineCore.step()
 
 ## 3. SpeculativeConfig：配置入口
 
-配置定义在：`code/vllm/vllm/config/speculative.py:75`
+配置定义在：`code/vllm/vllm/config/speculative.py:80`
 
 ```python
 class SpeculativeConfig:
@@ -204,7 +204,7 @@ draft_parallel_config：post-init 后生成的 draft 并行配置。
 
 在 `GPUModelRunner.__init__()` 中会根据 `self.speculative_config.method` 或 helper 方法创建 drafter。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:545` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:620`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:575` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:650`
 
 支持的分支包括：
 
@@ -233,9 +233,17 @@ elif self.speculative_config.uses_draft_model():
     ...
 elif self.speculative_config.use_ngram_gpu():
     ...
+elif self.speculative_config.use_gemma4_mtp() / use_step3p5_mtp():
+    ...
+elif self.speculative_config.use_dflash():
+    ...
+elif self.speculative_config.method == "suffix":
+    ...
 elif self.speculative_config.use_eagle():
     ...
 elif self.speculative_config.method == "medusa":
+    ...
+elif self.speculative_config.method == "extract_hidden_states":
     ...
 ```
 
@@ -249,7 +257,7 @@ elif self.speculative_config.method == "medusa":
 num_speculative_tokens_per_batch_size
 ```
 
-位置：`code/vllm/vllm/config/speculative.py:161` 到 `code/vllm/vllm/config/speculative.py:167`
+位置：`code/vllm/vllm/config/speculative.py:172` 到 `code/vllm/vllm/config/speculative.py:178`
 
 它表示：
 
@@ -259,7 +267,7 @@ num_speculative_tokens_per_batch_size
 
 Scheduler 初始化时会基于这个字段构造 `dynamic_sd_lookup`。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:229` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:238`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:232` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:243`
 
 ---
 
@@ -298,7 +306,7 @@ engine_core_outputs = self.scheduler.update_from_output(
 )
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:490` 到 `code/vllm/vllm/v1/engine/core.py:506`
+位置：`code/vllm/vllm/v1/engine/core.py:499` 到 `code/vllm/vllm/v1/engine/core.py:514`
 
 spec decode 没有改变 EngineCore 的基本闭环：
 
@@ -324,7 +332,7 @@ if self.check_for_draft_tokens and not self.async_scheduling and model_executed:
         self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:510` 到 `code/vllm/vllm/v1/engine/core.py:517`
+位置：`code/vllm/vllm/v1/engine/core.py:519` 到 `code/vllm/vllm/v1/engine/core.py:526`
 
 这一步非常关键：
 
@@ -347,7 +355,7 @@ self.num_spec_tokens = vllm_config.num_speculative_tokens
 self.num_lookahead_tokens = 0
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:227` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:230`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:232` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:236`
 
 如果开启某些 spec 方法，会设置 lookahead KV 空间：
 
@@ -358,9 +366,11 @@ if speculative_config.uses_draft_model():
     self.num_lookahead_tokens = self.num_spec_tokens
 if speculative_config.use_dflash():
     self.num_lookahead_tokens = self.num_spec_tokens + 1
+if speculative_config.use_dspark():
+    self.num_lookahead_tokens = self.num_spec_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:239` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:248`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:244` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:258`
 
 ### 5.1 为什么需要 num_lookahead_tokens
 
@@ -383,7 +393,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:523` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:528`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:570` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:576`
 
 所以：
 
@@ -399,7 +409,7 @@ Scheduler 的注释给了一个重要心智模型：
 num_tokens_with_spec = len(prompt_token_ids) + len(output_token_ids) + len(spec_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:389` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:397`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:436` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:443`
 
 这意味着 Scheduler 不单独维护“decode phase / prefill phase / spec phase”。
 
@@ -421,7 +431,7 @@ spec_token_ids：drafter 猜的、等待 target model 验证的 token。
 
 ## 6. SchedulerOutput：spec tokens 的出站载体
 
-`SchedulerOutput` 定义在：`code/vllm/vllm/v1/core/sched/output.py:180`
+`SchedulerOutput` 定义在：`code/vllm/vllm/v1/core/sched/output.py:183`
 
 和 spec decode 直接相关的字段有：
 
@@ -434,9 +444,9 @@ num_spec_tokens_to_schedule: int = 0
 位置：
 
 ```text
-scheduled_spec_decode_tokens：output.py:197 到 output.py:200
-num_invalid_spec_tokens：output.py:229 到 output.py:230
-num_spec_tokens_to_schedule：output.py:243 到 output.py:245
+scheduled_spec_decode_tokens：output.py:199 到 output.py:202
+num_invalid_spec_tokens：output.py:231 到 output.py:232
+num_spec_tokens_to_schedule：output.py:248 到 output.py:250
 ```
 
 字段含义：
@@ -467,7 +477,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:581` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:597`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:630` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:646`
 
 这说明：
 
@@ -487,7 +497,7 @@ scheduled_spec_decode_tokens 是本轮真正被调度出去验证的 draft token
 self.scheduler.update_draft_token_ids(draft_token_ids)
 ```
 
-Scheduler 侧入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1895`
+Scheduler 侧入口：`code/vllm/vllm/v1/core/sched/scheduler.py:2005`
 
 核心逻辑：
 
@@ -512,7 +522,7 @@ def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
         request.spec_token_ids = spec_token_ids
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1895` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1915`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2005` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2025`
 
 这里有几个重点：
 
@@ -540,7 +550,7 @@ def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
 self.speculative_config = vllm_config.speculative_config
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:426` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:436`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:460` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:463`
 
 如果开启 spec decode，并且当前是 last PP rank，就创建 drafter：
 
@@ -553,7 +563,7 @@ if self.speculative_config and get_pp_group().is_last_rank:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:545` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:620`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:575` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:650`
 
 ### 8.1 为什么只在 last PP rank 创建
 
@@ -585,7 +595,7 @@ self._draft_probs: torch.Tensor | None = None
 self._draft_prob_req_ids: list[str] | None = None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:834` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:837`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:870` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:872`
 
 这些状态的含义：
 
@@ -607,7 +617,7 @@ SchedulerOutput 到达 ModelRunner 后，`execute_model()` 会先调用：
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4085`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4139`
 
 在 `_update_states()` 中会读取：
 
@@ -615,7 +625,7 @@ deferred_state_corrections_fn = self._update_states(scheduler_output)
 scheduled_spec_tokens = scheduler_output.scheduled_spec_decode_tokens
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1261` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1265`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1303` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1305`
 
 然后对 running / resumed / new request 调用：
 
@@ -634,7 +644,7 @@ self.input_batch.update_req_spec_token_ids(req_state, scheduled_spec_tokens)
 
 ## 10. InputBatch.update_req_spec_token_ids()：spec token 的最终落点
 
-入口：`code/vllm/vllm/v1/worker/gpu_input_batch.py:483`
+入口：`code/vllm/vllm/v1/worker/gpu_input_batch.py:486`
 
 核心逻辑：
 
@@ -659,7 +669,7 @@ def update_req_spec_token_ids(
     cur_spec_token_ids.extend(spec_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:483` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:508`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:486` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:511`
 
 字段含义：
 
@@ -692,7 +702,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4128` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4131`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4181` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4184`
 
 内部会判断本轮是否使用 spec decode：
 
@@ -700,7 +710,7 @@ logits_indices, spec_decode_metadata = self._prepare_inputs(
 use_spec_decode = len(scheduler_output.scheduled_spec_decode_tokens) > 0
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4241`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2202`、`code/vllm/vllm/v1/worker/gpu_model_runner.py:4294`
 
 当本轮有 scheduled spec tokens 时，会构造 `SpecDecodeMetadata`。
 
@@ -766,7 +776,7 @@ attn_metadata, spec_decode_common_attn_metadata = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4255` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4269`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4308` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4321`
 
 当 `use_spec_decode=True` 时，attention metadata 需要知道：
 
@@ -828,7 +838,7 @@ self.execute_model_state = ExecuteModelState(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4386` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4398`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4446` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4457`
 
 然后返回 `None`：
 
@@ -836,7 +846,7 @@ self.execute_model_state = ExecuteModelState(
 return None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4405`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4465`
 
 这和普通 generation 一样，采样在 `sample_tokens()` 中完成。
 
@@ -862,7 +872,7 @@ return None
 self.execute_model_state = None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4436` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4450`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4496` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4510`
 
 如果有 grammar bitmask，会先应用：
 
@@ -873,7 +883,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4456`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 然后采样：
 
@@ -881,7 +891,7 @@ if grammar_output is not None:
 sampler_output = self._sample(logits, spec_decode_metadata)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4458` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4459`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4518` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4519`
 
 ### 14.1 _sample 如何切到 RejectionSampler
 
@@ -897,7 +907,7 @@ sampler_output = self.rejection_sampler(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3588` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3598`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3633` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3652`
 
 如果没有 spec metadata，则走普通 sampler。
 
@@ -1004,7 +1014,7 @@ self._update_states_after_model_execute(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4461` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4463`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4521` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4523`
 
 这一步负责：
 
@@ -1016,7 +1026,7 @@ self._update_states_after_model_execute(
 
 Scheduler 侧也会在 `update_from_output()` 中处理 spec decode 的接受 / 拒绝结果。
 
-相关逻辑可见：`code/vllm/vllm/v1/core/sched/scheduler.py:1547` 起。
+相关逻辑可见：`code/vllm/vllm/v1/core/sched/scheduler.py:1551` 起。
 
 它会根据：
 
@@ -1067,9 +1077,9 @@ def propose_draft_token_ids(sampled_token_ids):
         )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4481` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4495`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4541` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4555`
 
-真正入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4852`
+真正入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4940`
 
 ```python
 def propose_draft_token_ids(
@@ -1087,7 +1097,7 @@ def propose_draft_token_ids(
 num_spec_tokens_to_schedule = scheduler_output.num_spec_tokens_to_schedule
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4864` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4868`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4952` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4955`
 
 这说明 dynamic speculative decoding 的 K 是：
 
@@ -1104,7 +1114,7 @@ ngram：基于已有 token 序列查找候选；
 draft model：运行小模型生成 draft tokens；
 EAGLE / EAGLE3：基于 hidden states 预测后续 token；
 Medusa：使用 medusa heads；
-DFlash / Gemma4 / Step3.5 MTP：使用对应模型结构或 proposer；
+DFlash / DSpark / Gemma4 / Step3.5 MTP：使用对应模型结构或 proposer；
 suffix：基于 suffix tree / prompt tree；
 extract_hidden_states：抽取 hidden states。
 ```
@@ -1119,7 +1129,7 @@ if hasattr(self.drafter, "take_last_draft_probs"):
         self._draft_prob_req_ids = self.input_batch.req_ids.copy()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5123` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5127`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5211` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5215`
 
 这些概率会在下一轮 `_sample()` 中由 `_get_spec_decode_draft_probs()` 取出，传给 `RejectionSampler`。
 
@@ -1142,7 +1152,7 @@ def take_draft_token_ids(self):
     return self.model_runner.take_draft_token_ids()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:898` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:899`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:1092` 到 `code/vllm/vllm/v1/worker/gpu_worker.py:1093`
 
 ModelRunner 侧：
 
@@ -1154,7 +1164,7 @@ def take_draft_token_ids(self) -> DraftTokenIds | None:
     return DraftTokenIds(req_ids, draft_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4731` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4735`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4819` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4823`
 
 这一步完成了：
 
@@ -1256,7 +1266,7 @@ Scheduler 调用 KVCacheManager 分配 slots 时会传入：
 num_lookahead_tokens=self.num_lookahead_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:523` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:528`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:570` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:576`
 
 这用于为可能验证的 draft tokens 预留 KV 空间。
 
@@ -1293,7 +1303,7 @@ if self.structured_output_manager.should_advance(request):
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1911` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1915`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2021` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2025`
 
 这表示：
 
@@ -1312,7 +1322,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4452` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4456`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4512` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4516`
 
 这表示：
 
@@ -1330,7 +1340,7 @@ if grammar_output is not None:
 if self.speculative_config and get_pp_group().is_last_rank:
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:545`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:575`
 
 原因是：
 
@@ -1367,7 +1377,7 @@ EngineCore.post_step()
 # need to update draft token ids here.
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:510` 到 `code/vllm/vllm/v1/engine/core.py:514`
+位置：`code/vllm/vllm/v1/engine/core.py:519` 到 `code/vllm/vllm/v1/engine/core.py:523`
 
 这表示 async scheduling 下 draft token 更新路径会更靠近 worker 侧，避免 EngineCore 在错误时机提前取 draft tokens。
 
@@ -1379,7 +1389,7 @@ if self.use_async_scheduling and self._draft_token_req_ids is not None:
     self.input_batch.update_async_spec_token_ids(draft_token_ids_cpu)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3588` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3590`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3639` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3643`
 
 ---
 

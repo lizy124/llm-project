@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\kv_cache_manager.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\request.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\block_table.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/kv_cache_manager.py`
+- `code/vllm/vllm/v1/request.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/gpu/block_table.py`
 
 本问题关注：speculative decoding 中，draft tokens 被 target model 验证前后，`Request.num_computed_tokens`、`Request.output_token_ids`、KV cache block 分配、slot mapping、prefix cache、external KV connector、Mamba / hybrid state 如何保持一致；为什么 vLLM 会先“乐观推进”计算进度，再在 rejected tokens 出现时回滚；以及为什么 KV cache 只缓存 finalized tokens，而不是缓存所有被猜过的 draft tokens。
 
@@ -126,7 +126,7 @@ InputBatch.num_computed_tokens / positions / slot_mapping
 
 ## 3. Request 侧三个长度概念
 
-`Request` 中的关键字段在 `code/vllm/vllm/v1/request.py:140` 到 `code/vllm/vllm/v1/request.py:153`：
+`Request` 中的关键字段在 `code/vllm/vllm/v1/request.py:150` 到 `code/vllm/vllm/v1/request.py:168`：
 
 ```python
 self.num_output_placeholders = 0
@@ -147,7 +147,7 @@ def num_tokens_with_spec(self) -> int:
     return len(self._all_token_ids) + len(self.spec_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/request.py:247` 到 `code/vllm/vllm/v1/request.py:252`
+位置：`code/vllm/vllm/v1/request.py:261` 到 `code/vllm/vllm/v1/request.py:267`
 
 含义：
 
@@ -180,7 +180,7 @@ num_tokens_with_spec =
   len(prompt_token_ids) + len(output_token_ids) + len(spec_token_ids).
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:387` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:398`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:433` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:444`
 
 这意味着 Scheduler 不单独建一个“spec decode 阶段”。
 
@@ -194,7 +194,7 @@ num_new_tokens = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:462` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:466`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:510` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:514`
 
 普通 decode 下：
 
@@ -225,7 +225,7 @@ num_new_tokens = min(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:471` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:478`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:519` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:526`
 
 注释写得很直接：
 
@@ -265,9 +265,11 @@ if speculative_config.uses_draft_model():
     self.num_lookahead_tokens = self.num_spec_tokens
 if speculative_config.use_dflash():
     self.num_lookahead_tokens = self.num_spec_tokens + 1
+if speculative_config.use_dspark():
+    self.num_lookahead_tokens = self.num_spec_tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:227` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:248`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:232` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:258`
 
 调度时传给 KVCacheManager：
 
@@ -279,7 +281,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:521` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:528`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:570` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:576`
 
 含义：
 
@@ -294,7 +296,7 @@ num_lookahead_tokens：为了 spec proposer / draft verification 额外预留的
 
 ## 7. KVCacheManager.allocate_slots 的 block layout
 
-`allocate_slots()` 入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:244`
+`allocate_slots()` 入口：`code/vllm/vllm/v1/core/kv_cache_manager.py:269`
 
 参数中：
 
@@ -309,7 +311,7 @@ The number of speculative tokens to allocate.
 This is used by spec decode proposers with kv-cache such as eagle.
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:267` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:269`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:292` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:294`
 
 函数里的 block layout 注释非常关键：
 
@@ -319,7 +321,7 @@ This is used by spec decode proposers with kv-cache such as eagle.
                                   | < to be allocated > |
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:290` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:322`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:315` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:347`
 
 其中：
 
@@ -337,7 +339,7 @@ lookahead：spec decode 额外预留 token
 new = num_new_tokens, including unverified draft tokens
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:320` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:321`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:345` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:346`
 
 这句话是本篇核心之一。
 
@@ -354,7 +356,7 @@ num_tokens_need_slot = min(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:389` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:392`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:415` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:418`
 
 然后基于 `num_tokens_need_slot` 计算要分配多少 blocks：
 
@@ -367,7 +369,7 @@ num_blocks_to_allocate = self.coordinator.get_num_blocks_to_allocate(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:404` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:412`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:435` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:443`
 
 最后真正分配：
 
@@ -380,7 +382,7 @@ new_blocks = self.coordinator.allocate_new_blocks(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:435` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:440`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:467` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:472`
 
 这里的区别：
 
@@ -402,7 +404,7 @@ tokens, we only cache the verified tokens (by capping the number at
 request.num_tokens).
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:324` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:326`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:349` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:351`
 
 真正 cache 时：
 
@@ -414,7 +416,7 @@ num_tokens_to_cache = min(
 self.coordinator.cache_blocks(request, num_tokens_to_cache)
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:447` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:456`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:484` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:488`
 
 这表示：
 
@@ -449,7 +451,7 @@ Scheduler 构造 `SchedulerOutput` 后调用：
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1096` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1098`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1175` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1178`
 
 核心逻辑：
 
@@ -463,7 +465,7 @@ for req_id, num_scheduled_token in num_scheduled_tokens.items():
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1138` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1147`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1225` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1235`
 
 注释说明：
 
@@ -472,7 +474,7 @@ If some tokens (e.g. spec tokens) are rejected later,
 the number of computed tokens will be adjusted in update_from_output.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1128` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1137`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1215` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1224`
 
 这叫“乐观推进”：
 
@@ -509,7 +511,7 @@ scheduled_spec_token_ids = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1542` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1549`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1632` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1639`
 
 如果本轮有 spec tokens：
 
@@ -520,7 +522,7 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1550` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1556`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1640` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1650`
 
 然后回滚：
 
@@ -529,7 +531,7 @@ if request.num_computed_tokens > 0:
     request.num_computed_tokens -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1557` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1563`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1651` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1657`
 
 如果 async scheduling 下有 placeholders：
 
@@ -538,7 +540,7 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1564` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1567`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1658` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1661`
 
 这就把乐观推进的计算进度修正为真实 accepted 进度。
 
@@ -598,7 +600,7 @@ if new_token_ids:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1580` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1592`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1674` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1687`
 
 `_update_request_with_output()` 中：
 
@@ -608,7 +610,7 @@ for num_new, output_token_id in enumerate(new_token_ids, 1):
     stopped = check_stop(request, self.max_model_len)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1848` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1864`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1954` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1970`
 
 这说明：
 
@@ -634,7 +636,7 @@ class CachedRequestState:
     prev_num_draft_len: int = 0
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:33` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:60`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:35` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:61`
 
 它的 `num_tokens` 是：
 
@@ -644,7 +646,7 @@ def num_tokens(self) -> int:
     return self.num_prompt_tokens + len(self.output_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:74` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:76`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:75` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:77`
 
 Worker 侧同样区分：
 
@@ -659,7 +661,7 @@ prev_num_draft_len：async spec decode 修正需要。
 
 ## 15. InputBatch 如何保存 spec tokens
 
-`InputBatch.update_req_spec_token_ids()` 入口：`code/vllm/vllm/v1/worker/gpu_input_batch.py:483`
+`InputBatch.update_req_spec_token_ids()` 入口：`code/vllm/vllm/v1/worker/gpu_input_batch.py:486`
 
 核心逻辑：
 
@@ -678,7 +680,7 @@ self.is_token_ids[req_index, start_index:end_token_index] = True
 cur_spec_token_ids.extend(spec_token_ids)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:483` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:508`
+位置：`code/vllm/vllm/v1/worker/gpu_input_batch.py:486` 到 `code/vllm/vllm/v1/worker/gpu_input_batch.py:511`
 
 这里的 `num_tokens_no_spec` 是关键边界：
 
@@ -709,7 +711,7 @@ positions_np = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1920` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1924`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1961` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1964`
 
 GPU positions：
 
@@ -720,7 +722,7 @@ self.positions[:total_num_scheduled_tokens] = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2109` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2112`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2149` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2153`
 
 这说明：
 
@@ -744,7 +746,7 @@ torch.add(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2010` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2019`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2051` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2060`
 
 注释说明：
 
@@ -777,7 +779,7 @@ self.input_batch.block_table.compute_slot_mapping(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2118` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2122`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2167` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2171`
 
 随后 `execute_model()` 取 slot mappings：
 
@@ -785,7 +787,7 @@ self.input_batch.block_table.compute_slot_mapping(
 slot_mappings_by_group, slot_mappings = self._get_slot_mappings(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4241` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4253`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4297` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4321`
 
 含义：
 
@@ -827,7 +829,7 @@ else:
     self.num_computed_tokens[:num_reqs].copy_(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2073` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2099`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2127` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2146`
 
 目的：
 
@@ -853,7 +855,7 @@ if req_state.prev_num_draft_len and self.use_async_scheduling:
     deferred_spec_decode_corrections.append(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1292` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1317`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1333` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1357`
 
 这表示：
 
@@ -878,7 +880,7 @@ num_reqs = output_token_ids.size(0)
 self.num_accepted_tokens.gpu[:num_reqs] = (output_token_ids != -1).sum(dim=1)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1497` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1515`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1538` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1557`
 
 docstring 说明：
 
@@ -890,7 +892,7 @@ each sequence, and a shifting is done during the next iteration
 based on the number of accepted tokens.
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1497` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1507`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1538` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1549`
 
 含义：
 
@@ -915,7 +917,7 @@ if self.cache_config.mamba_cache_mode == "align":
     mamba_utils.preprocess_mamba(...)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4198` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4216`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4251` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4270`
 
 注释说明：
 
@@ -938,7 +940,7 @@ mamba_utils.postprocess_mamba_align_gpu(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1517` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1533`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1563` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1577`
 
 这条链路说明：
 
@@ -964,7 +966,7 @@ if request.spec_token_ids:
     request.spec_token_ids = []
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1105` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1121`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1191` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1207`
 
 如果被抢占请求已经在本轮 scheduled_running_reqs 中，还要移除本轮 spec 输出：
 
@@ -972,7 +974,7 @@ if request.spec_token_ids:
 scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:542` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:548`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:590` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:596`
 
 原因：
 
@@ -993,7 +995,7 @@ if multiple_inflight_batches and kv_transfer_config.is_kv_consumer:
     self.defer_block_free = True
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:145` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:151`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:145` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:153`
 
 每个非空 step 会推进 fence：
 
@@ -1002,7 +1004,7 @@ if self.defer_block_free and total_num_scheduled_tokens > 0:
     self.sched_step_seq += 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1091` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1094`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1177` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1180`
 
 schedule 后记录 request 的 in-flight step：
 
@@ -1011,7 +1013,7 @@ if self.defer_block_free:
     request.last_sched_seq = self.sched_step_seq
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1142` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1144`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1230` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1232`
 
 update 时 drain：
 
@@ -1021,7 +1023,7 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self._drain_deferred_frees()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1477` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1481`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1565` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1569`
 
 释放逻辑：
 
@@ -1034,7 +1036,7 @@ if blocks:
     self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2077` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2090`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2197` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2210`
 
 这和 spec decode 的关系：
 
@@ -1061,7 +1063,7 @@ elif (
     self.encoder_cache_manager.free_encoder_input(request, input_id)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1886` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1893`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1972` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2003`
 
 含义：
 
@@ -1087,7 +1089,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1490` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1498`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1578` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1586`
 
 `_update_requests_with_invalid_blocks()` 会把请求的 `num_computed_tokens` 截断到最长有效前缀：
 
@@ -1095,7 +1097,7 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
 request.num_computed_tokens = idx * self.block_size
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2521` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2524`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2664` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2666`
 
 它还会统计需要 recompute 的 tokens，并收集要 evict 的 blocks。
 
@@ -1128,7 +1130,7 @@ else:
         request.num_computed_tokens = request.num_tokens - 1
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2350` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2381`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:2505` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:2524`
 
 这里体现同一个原则：
 
@@ -1155,7 +1157,7 @@ else:
     routed_experts = routing_data[end - len(new_token_ids) : end]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1645` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1653`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1749` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1757`
 
 这和 KV/进度语义一致：
 
@@ -1299,7 +1301,7 @@ if scheduler_output.new_block_ids_to_zero:
     self._zero_block_ids(scheduler_output.new_block_ids_to_zero)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1153` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1156`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1188` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1191`
 
 这和 spec decode 的关系：
 
@@ -1320,7 +1322,7 @@ prefix cache 查找使用真实请求 token 序列，而不是 pending spec toke
 max_cache_hit_length = request.num_tokens - 1
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:221` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:228`
+位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:226` 到 `code/vllm/vllm/v1/core/kv_cache_manager.py:235`
 
 这表示：
 

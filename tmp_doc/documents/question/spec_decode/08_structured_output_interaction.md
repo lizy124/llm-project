@@ -70,7 +70,8 @@ GPUModelRunner.sample_tokens(grammar_output)
 
 Scheduler.update_from_output()
   → Request.append_output_token_ids(...)
-  → grammar.accept_tokens(new_token_ids)
+  → trim_reasoning_for_advance(...)
+  → grammar.accept_tokens(grammar_content_tokens)
 ```
 
 ---
@@ -94,7 +95,7 @@ if self.structured_output_request is not None:
     self.status = RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 ```
 
-位置：`request.py:107` 到 `request.py:113`
+位置：`request.py:106` 到 `request.py:114`
 
 这表示：
 
@@ -111,7 +112,7 @@ def use_structured_output(self) -> bool:
     return self.structured_output_request is not None
 ```
 
-位置：`request.py:242` 到 `request.py:244`
+位置：`request.py:257` 到 `request.py:259`
 
 ---
 
@@ -126,7 +127,7 @@ if req.use_structured_output:
 return req, request.current_wave
 ```
 
-位置：`engine/core.py:853` 到 `engine/core.py:875`
+位置：`engine/core.py:864` 到 `engine/core.py:886`
 
 注释说明：
 
@@ -136,7 +137,7 @@ grammar compilation 可以异步；
 Scheduler 调度前会检查 grammar compilation 状态。
 ```
 
-位置：`engine/core.py:867` 到 `engine/core.py:874`
+位置：`engine/core.py:878` 到 `engine/core.py:885`
 
 ---
 
@@ -189,7 +190,7 @@ Future[StructuredOutputGrammar]
 
 `StructuredOutputRequest.grammar` 属性会检查 Future 是否完成。
 
-定义在：`structured_output/request.py:42`
+定义在：`structured_output/request.py:48`
 
 ```python
 if isinstance(self._grammar, Future):
@@ -201,7 +202,7 @@ if isinstance(self._grammar, Future):
 return True
 ```
 
-位置：`structured_output/request.py:42` 到 `structured_output/request.py:53`
+位置：`structured_output/request.py:48` 到 `structured_output/request.py:69`
 
 Scheduler 尝试把 blocked waiting request 提升回可调度状态时：
 
@@ -214,7 +215,7 @@ if request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR:
     return True
 ```
 
-位置：`scheduler.py:2401` 到 `scheduler.py:2406`
+位置：`scheduler.py:2543` 到 `scheduler.py:2548`
 
 也就是说：
 
@@ -231,7 +232,7 @@ Spec decode 的 draft tokens 是提前猜出来的。
 
 如果请求有 grammar 约束，vLLM 会在 draft tokens 写回 Scheduler 侧 request 时先校验它们。
 
-入口：`scheduler.py:1895`
+入口：`scheduler.py:2005`
 
 ```python
 def update_draft_token_ids(self, draft_token_ids: DraftTokenIds) -> None:
@@ -246,7 +247,7 @@ if self.structured_output_manager.should_advance(request):
 request.spec_token_ids = spec_token_ids
 ```
 
-位置：`scheduler.py:1911` 到 `scheduler.py:1915`
+位置：`scheduler.py:2021` 到 `scheduler.py:2025`
 
 含义：
 
@@ -277,7 +278,7 @@ if request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:1905` 到 `scheduler.py:1909`
+位置：`scheduler.py:2015` 到 `scheduler.py:2019`
 
 原因是：
 
@@ -293,7 +294,7 @@ spec decode draft token 是 decode 阶段的候选输出；
 
 ## 9. should_advance() 决定什么时候推进 grammar
 
-`StructuredOutputManager.should_advance()` 定义在：`structured_output/__init__.py:325`
+`StructuredOutputManager.should_advance()` 定义在：`structured_output/__init__.py:371`
 
 普通 structured output：
 
@@ -306,7 +307,7 @@ if reasoner is None:
     return True
 ```
 
-位置：`structured_output/__init__.py:325` 到 `structured_output/__init__.py:338`
+位置：`structured_output/__init__.py:371` 到 `structured_output/__init__.py:384`
 
 如果涉及 reasoning parser，则要看是否允许在 reasoning 阶段约束：
 
@@ -315,7 +316,7 @@ if self.enable_in_reasoning:
     return True
 ```
 
-位置：`structured_output/__init__.py:340` 到 `structured_output/__init__.py:342`
+位置：`structured_output/__init__.py:386` 到 `structured_output/__init__.py:388`
 
 如果 reasoning 尚未结束，一般不推进 grammar；但 structural tag 有 spec decode 特例：
 
@@ -328,17 +329,19 @@ if (
     return True
 ```
 
-位置：`structured_output/__init__.py:359` 到 `structured_output/__init__.py:371`
+位置：`structured_output/__init__.py:394` 到 `structured_output/__init__.py:426`
 
 注释说明：
 
 ```text
 Structural tags model phased output，
 speculative decoding must run grammar.validate_tokens
-on draft tokens produced immediately after that transition.
+on draft tokens produced immediately after that transition；
+同时会记录 reasoning_end_token_index，供后续
+trim_reasoning_for_advance() 丢弃 reasoning marker 之前的 token。
 ```
 
-位置：`structured_output/__init__.py:359` 到 `structured_output/__init__.py:365`
+位置：`structured_output/__init__.py:405` 到 `structured_output/__init__.py:424`
 
 ---
 
@@ -351,7 +354,7 @@ has_structured_output_requests: bool = False
 pending_structured_output_tokens: bool = False
 ```
 
-位置：`output.py:221` 到 `output.py:227`
+位置：`output.py:223` 到 `output.py:229`
 
 含义：
 
@@ -369,7 +372,7 @@ pending_structured_output_tokens：
 num_invalid_spec_tokens: dict[str, int] | None = None
 ```
 
-位置：`output.py:229` 到 `output.py:230`
+位置：`output.py:231` 到 `output.py:232`
 
 用于记录 structured output 裁掉的无效 draft tokens 数，后面调整 spec decode acceptance 统计。
 
@@ -388,7 +391,7 @@ scheduler_output.has_structured_output_requests |= (
 )
 ```
 
-位置：`scheduler.py:1145` 到 `scheduler.py:1150`
+位置：`scheduler.py:1233` 到 `scheduler.py:1238`
 
 含义：
 
@@ -403,7 +406,7 @@ scheduler_output.has_structured_output_requests |= (
 
 ## 12. Scheduler 如何生成 GrammarOutput
 
-入口：`scheduler.py:1440`
+入口：`scheduler.py:1527`
 
 ```python
 def get_grammar_bitmask(
@@ -418,7 +421,7 @@ if not scheduler_output.has_structured_output_requests:
     return None
 ```
 
-位置：`scheduler.py:1440` 到 `scheduler.py:1445`
+位置：`scheduler.py:1527` 到 `scheduler.py:1533`
 
 然后收集 scheduled requests 中需要 structured output 且不在 prefill chunk 的请求：
 
@@ -431,7 +434,7 @@ structured_output_request_ids = [
 ]
 ```
 
-位置：`scheduler.py:1447` 到 `scheduler.py:1452`
+位置：`scheduler.py:1535` 到 `scheduler.py:1540`
 
 再调用 manager：
 
@@ -444,13 +447,13 @@ bitmask = self.structured_output_manager.grammar_bitmask(
 return GrammarOutput(structured_output_request_ids, bitmask)
 ```
 
-位置：`scheduler.py:1456` 到 `scheduler.py:1461`
+位置：`scheduler.py:1544` 到 `scheduler.py:1549`
 
 ---
 
 ## 13. GrammarOutput 是什么
 
-定义在：`output.py:262`
+定义在：`output.py:267`
 
 ```python
 @dataclass
@@ -461,7 +464,7 @@ class GrammarOutput:
     grammar_bitmask: npt.NDArray[np.int32]
 ```
 
-位置：`output.py:262` 到 `output.py:267`
+位置：`output.py:267` 到 `output.py:272`
 
 它是 Scheduler 传给 Worker / ModelRunner 的 grammar 约束结果。
 
@@ -555,32 +558,43 @@ bonus 位置：如果所有 draft 都接受后的下一个 grammar 状态
 
 ```python
 req_tokens = scheduled_spec_decode_tokens.get(req_id, ())
-if self.vllm_config.model_config.is_diffusion and req_tokens:
-    token_iter = req_tokens
-else:
-    token_iter = itertools.chain(req_tokens, (-1,))
-for token in token_iter:
+for i, token in enumerate(req_tokens):
     self._fill_bitmasks(((grammar, cumulative_index, apply_bitmask),))
+    advance_grammar = apply_bitmask
     if token == -1:
         apply_bitmask = False
-    if apply_bitmask and not grammar.is_terminated():
+        advance_grammar = False
+    elif detect_reasoning_end and not apply_bitmask:
+        ...
+        if reasoner.is_reasoning_end_streaming(simulated, [token]):
+            apply_bitmask = True
+            advance_grammar = False
+            post_reasoning_end_in_window = True
+    if advance_grammar and not grammar.is_terminated():
         accepted = grammar.accept_tokens(req_id, [token])
-        assert accepted, (token, req_id, scheduled_spec_decode_tokens)
-        state_advancements += 1
+        if accepted:
+            state_advancements += 1
+        elif not post_reasoning_end_in_window:
+            raise AssertionError(...)
+    cumulative_index += 1
+if not (self.vllm_config.model_config.is_diffusion and req_tokens):
+    bonus_apply = self.should_fill_bitmask(request) or apply_bitmask
+    self._fill_bitmasks(((grammar, cumulative_index, bonus_apply),))
     cumulative_index += 1
 if state_advancements > 0:
     grammar.rollback(state_advancements)
 ```
 
-位置：`structured_output/__init__.py:275` 到 `structured_output/__init__.py:294`
+位置：`structured_output/__init__.py:275` 到 `structured_output/__init__.py:340`
 
 它的含义是：
 
 ```text
 1. 先为当前位置填 bitmask；
-2. 如果当前位置对应一个 scheduled draft token，就临时 accept 这个 token；
-3. 进入下一个 speculative position；
-4. 最后 rollback，恢复 grammar 的真实状态。
+2. 如果当前位置对应一个 scheduled draft token，且当前应推进 grammar，就临时 accept 这个 token；
+3. 如果 reasoning 在 spec window 中结束，后续位置开始填 grammar mask，但 marker 本身不推进 grammar；
+4. 非 diffusion 情况下额外填 bonus / normal sampling 位置；
+5. 最后 rollback，恢复 grammar 的真实状态。
 ```
 
 这很关键：
@@ -594,39 +608,28 @@ if state_advancements > 0:
 
 ---
 
-## 17. token_iter 为什么追加 -1
+## 17. bonus row 为什么单独追加
 
-非 diffusion 情况下：
-
-```python
-token_iter = itertools.chain(req_tokens, (-1,))
-```
-
-位置：`structured_output/__init__.py:281` 到 `structured_output/__init__.py:282`
-
-`-1` 表示：
-
-```text
-bonus token / normal sampling position
-```
-
-当 token 是 `-1`：
+新版本不再通过 `itertools.chain(req_tokens, (-1,))` 把 bonus row 混进 token 迭代，而是在 draft token 循环后单独处理：
 
 ```python
-if token == -1:
-    apply_bitmask = False
+if not (self.vllm_config.model_config.is_diffusion and req_tokens):
+    bonus_apply = self.should_fill_bitmask(request) or apply_bitmask
+    self._fill_bitmasks(((grammar, cumulative_index, bonus_apply),))
+    cumulative_index += 1
 ```
 
-位置：`structured_output/__init__.py:285` 到 `structured_output/__init__.py:287`
+位置：`structured_output/__init__.py:323` 到 `structured_output/__init__.py:338`
 
 含义：
 
 ```text
-为 bonus 位置填 bitmask，
-但不要把 -1 当成真实 token 去推进 grammar。
+- draft rows：按 scheduled spec tokens 逐个填 mask，并按需要临时推进 grammar；
+- bonus / normal row：非 diffusion 情况下额外填一行，但不把任何占位 token 当成真实 token 推进 grammar；
+- 如果 reasoning 在 spec window 中结束，bonus_apply 也会继承 apply_bitmask=True，从结束后的状态开始约束 bonus row。
 ```
 
-所以每个 structured request 的 bitmask rows 数是：
+所以非 diffusion structured request 的 bitmask rows 数仍是：
 
 ```text
 len(scheduled_spec_decode_tokens[req_id]) + 1
@@ -659,7 +662,7 @@ if reasoner is not None:
 return True
 ```
 
-位置：`structured_output/__init__.py:305` 到 `structured_output/__init__.py:323`
+位置：`structured_output/__init__.py:351` 到 `structured_output/__init__.py:369`
 
 如果不应该应用 bitmask，会填 full mask：
 
@@ -683,7 +686,7 @@ if model_output is None:
     model_output = self.model_executor.sample_tokens(grammar_output)
 ```
 
-位置：`engine/core.py:486` 到 `engine/core.py:500`
+位置：`engine/core.py:488` 到 `engine/core.py:508`
 
 也就是说：
 
@@ -706,7 +709,7 @@ if grammar_output is not None:
     )
 ```
 
-位置：`gpu_model_runner.py:4452` 到 `gpu_model_runner.py:4456`
+位置：`gpu_model_runner.py:4514` 到 `gpu_model_runner.py:4518`
 
 注意：
 
@@ -748,7 +751,7 @@ same as the order of the requests in the gpu runner's batch.
 We need to sort the bitmask to match the order of the requests used here.
 ```
 
-位置：`utils.py:104` 到 `utils.py:109`
+位置：`utils.py:103` 到 `utils.py:107`
 
 ---
 
@@ -810,7 +813,7 @@ sorted_bitmask = np.full(
 )
 ```
 
-位置：`utils.py:123` 到 `utils.py:130`
+位置：`utils.py:122` 到 `utils.py:131`
 
 然后按 `structured_output_request_ids` 重排：
 
@@ -826,7 +829,7 @@ for req_id in grammar_output.structured_output_request_ids:
     cumulative_index += 1 + num_spec_tokens
 ```
 
-位置：`utils.py:131` 到 `utils.py:139`
+位置：`utils.py:132` 到 `utils.py:140`
 
 含义：
 
@@ -843,23 +846,25 @@ for req_id in grammar_output.structured_output_request_ids:
 先把 numpy bitmask 转为 device tensor：
 
 ```python
-grammar_bitmask = torch.from_numpy(sorted_bitmask).to(
-    logits.device, non_blocking=True
-)
+sorted_bitmask_tensor = torch.full(..., pin_memory=PIN_MEMORY)
+sorted_bitmask = sorted_bitmask_tensor.numpy()
+...
+grammar_bitmask = sorted_bitmask_tensor.to(logits.device, non_blocking=True)
 ```
 
-位置：`utils.py:141` 到 `utils.py:144`
+位置：`utils.py:125` 到 `utils.py:143`
 
 如果不是所有 logits rows 都需要 mask，就传 indices：
 
 ```python
 skip_out_indices = len(out_indices) == logits.shape[0]
 ...
-index_tensor = torch.tensor(out_indices, dtype=torch.int32, device="cpu", pin_memory=pin_memory)
-index_tensor = index_tensor.to(logits.device, non_blocking=True)
+index_tensor = async_tensor_h2d(
+    out_indices, dtype=torch.int32, device=logits.device
+)
 ```
 
-位置：`utils.py:146` 到 `utils.py:162`
+位置：`utils.py:145` 到 `utils.py:160`
 
 GPU 情况下：
 
@@ -867,7 +872,7 @@ GPU 情况下：
 xgr.apply_token_bitmask_inplace(logits, grammar_bitmask, indices=index_tensor)
 ```
 
-位置：`utils.py:151` 到 `utils.py:164`
+位置：`utils.py:150` 到 `utils.py:160`
 
 这一步会原地修改 logits：
 
@@ -1003,7 +1008,7 @@ else:
     deferred_scheduler_output = scheduler_output
 ```
 
-位置：`engine/core.py:555` 到 `engine/core.py:571`
+位置：`engine/core.py:568` 到 `engine/core.py:580`
 
 含义：
 
@@ -1032,7 +1037,7 @@ if deferred_scheduler_output:
     future = self.model_executor.sample_tokens(grammar_output, non_block=True)
 ```
 
-位置：`engine/core.py:612` 到 `engine/core.py:630`
+位置：`engine/core.py:621` 到 `engine/core.py:638`
 
 注释说明：
 
@@ -1041,7 +1046,7 @@ When draft tokens are used with structured output,
 validate them before computing the grammar bitmask for the deferred request.
 ```
 
-位置：`engine/core.py:612` 到 `engine/core.py:620`
+位置：`engine/core.py:621` 到 `engine/core.py:629`
 
 也就是说：
 
@@ -1054,7 +1059,7 @@ async 场景下，不能直接用占位 draft tokens 生成 grammar bitmask；
 
 ## 30. update_draft_token_ids_in_output() 做什么
 
-入口：`scheduler.py:1917`
+入口：`scheduler.py:2027`
 
 它不是写 `Request.spec_token_ids`，而是直接修正已经生成的：
 
@@ -1085,7 +1090,7 @@ sched_spec_tokens[req_id] = spec_token_ids
 scheduler_output.num_invalid_spec_tokens = num_invalid_spec_tokens
 ```
 
-位置：`scheduler.py:1917` 到 `scheduler.py:1953`
+位置：`scheduler.py:2027` 到 `scheduler.py:2063`
 
 它做了三件事：
 
@@ -1118,7 +1123,7 @@ if num_invalid_tokens:
     num_invalid_spec_tokens[req_id] = num_invalid_tokens
 ```
 
-位置：`scheduler.py:1946` 到 `scheduler.py:1949`
+位置：`scheduler.py:2056` 到 `scheduler.py:2059`
 
 含义：
 
@@ -1140,7 +1145,7 @@ spec_decoding_stats = self.make_spec_decoding_stats(
 )
 ```
 
-位置：`scheduler.py:1568` 到 `scheduler.py:1574`
+位置：`scheduler.py:1662` 到 `scheduler.py:1668`
 
 ---
 
@@ -1159,7 +1164,7 @@ if new_token_ids:
     )
 ```
 
-位置：`scheduler.py:1588` 到 `scheduler.py:1592`
+位置：`scheduler.py:1683` 到 `scheduler.py:1687`
 
 随后：
 
@@ -1167,9 +1172,15 @@ if new_token_ids:
 if new_token_ids and self.structured_output_manager.should_advance(request):
     struct_output_request = request.structured_output_request
     assert struct_output_request is not None
-    assert struct_output_request.grammar is not None
-    if not struct_output_request.grammar.accept_tokens(
-        req_id, new_token_ids
+    grammar = struct_output_request.grammar
+    assert grammar is not None
+    advance_token_ids = (
+        self.structured_output_manager.trim_reasoning_for_advance(
+            request, new_token_ids
+        )
+    )
+    if advance_token_ids and not grammar.accept_tokens(
+        req_id, advance_token_ids
     ):
         logger.error(...)
         request.status = RequestStatus.FINISHED_ERROR
@@ -1177,25 +1188,25 @@ if new_token_ids and self.structured_output_manager.should_advance(request):
         stopped = True
 ```
 
-位置：`scheduler.py:1598` 到 `scheduler.py:1614`
+位置：`scheduler.py:1693` 到 `scheduler.py:1717`
 
 这一步才是：
 
 ```text
-accepted / recovered / bonus tokens 被正式提交后，推进 grammar FSM。
+accepted / recovered / bonus tokens 被正式提交后，先丢弃仍属于 reasoning 内容的前缀，再用剩余 grammar content 推进 grammar FSM。
 ```
 
 ---
 
 ## 33. grammar.accept_tokens() 拒绝输出时会怎样
 
-如果 grammar 拒绝已经采样出来的 `new_token_ids`：
+如果 trim 后的 grammar 内容 token 仍被 grammar 拒绝：
 
 ```python
 logger.error(
     "Unexpected: grammar rejected tokens %s for request %s. "
     "Terminating request.",
-    new_token_ids,
+    advance_token_ids,
     req_id,
 )
 request.status = RequestStatus.FINISHED_ERROR
@@ -1203,7 +1214,7 @@ request.resumable = False
 stopped = True
 ```
 
-位置：`scheduler.py:1605` 到 `scheduler.py:1614`
+位置：`scheduler.py:1706` 到 `scheduler.py:1717`
 
 这属于异常情况。
 
@@ -1233,9 +1244,9 @@ Scheduler 回收时：
 new_token_ids = generated_token_ids
 ```
 
-位置：`scheduler.py:1580` 到 `scheduler.py:1592`
+位置：`scheduler.py:1676` 到 `scheduler.py:1687`
 
-然后 grammar 用整个 `new_token_ids` 推进：
+然后 grammar 用 `new_token_ids` 中去掉 reasoning 前缀后的 grammar content 推进：
 
 ```text
 accepted draft tokens：
@@ -1270,8 +1281,8 @@ apply_grammar_bitmask(logits)
 
 位置：
 
-- `gpu_model_runner.py:4452` 到 `gpu_model_runner.py:4456`
-- `gpu_model_runner.py:3592` 到 `gpu_model_runner.py:3598`
+- `gpu_model_runner.py:4514` 到 `gpu_model_runner.py:4519`
+- `gpu_model_runner.py:3623` 到 `gpu_model_runner.py:3652`
 
 因此 `RejectionSampler` 看到的是已经被 grammar 约束的 logits。
 
@@ -1356,7 +1367,7 @@ Scheduler 最终：
 
 ```text
 request.append_output_token_ids(...)
-grammar.accept_tokens(new_token_ids)
+grammar.accept_tokens(trim_reasoning_for_advance(new_token_ids))
 ```
 
 grammar 真实状态推进三步。
@@ -1390,7 +1401,7 @@ if state_advancements > 0:
     grammar.rollback(state_advancements)
 ```
 
-位置：`structured_output/__init__.py:293` 到 `structured_output/__init__.py:294`
+位置：`structured_output/__init__.py:339` 到 `structured_output/__init__.py:340`
 
 ---
 
@@ -1408,7 +1419,7 @@ out_indices.append(bitmask_index)
 skip_out_indices = len(out_indices) == logits.shape[0]
 ```
 
-位置：`utils.py:123` 到 `utils.py:149`
+位置：`utils.py:122` 到 `utils.py:148`
 
 如果 `out_indices` 覆盖全部 logits rows，就不传 indices；否则只 mask 指定 rows：
 
@@ -1416,7 +1427,7 @@ skip_out_indices = len(out_indices) == logits.shape[0]
 xgr.apply_token_bitmask_inplace(logits, grammar_bitmask, indices=index_tensor)
 ```
 
-位置：`utils.py:151` 到 `utils.py:164`
+位置：`utils.py:150` 到 `utils.py:174`
 
 这避免非 structured output 请求被错误约束。
 
@@ -1430,7 +1441,7 @@ xgr.apply_token_bitmask_inplace(logits, grammar_bitmask, indices=index_tensor)
 scheduler_output.num_invalid_spec_tokens = num_invalid_spec_tokens
 ```
 
-位置：`scheduler.py:1951` 到 `scheduler.py:1953`
+位置：`scheduler.py:2061` 到 `scheduler.py:2063`
 
 `Scheduler.update_from_output()` 统计 spec decode stats 时传入：
 
@@ -1438,7 +1449,7 @@ scheduler_output.num_invalid_spec_tokens = num_invalid_spec_tokens
 num_invalid_spec_tokens=scheduler_output.num_invalid_spec_tokens
 ```
 
-位置：`scheduler.py:1568` 到 `scheduler.py:1574`
+位置：`scheduler.py:1662` 到 `scheduler.py:1668`
 
 这样 acceptance rate 统计可以区分：
 
@@ -1468,7 +1479,7 @@ spec decode：
 每个 structured request 有 len(draft_tokens) + 1 个 logits rows；
 grammar_bitmask 需要模拟 draft 接受路径生成多行；
 RejectionSampler 可能输出多个 token；
-Scheduler.accept_tokens(new_token_ids) 一次推进多个 token。
+Scheduler 对 trim 后的 grammar content 一次推进多个 token。
 ```
 
 这就是 spec decode 与 structured output 交互的核心复杂度。
@@ -1494,7 +1505,7 @@ Scheduler.accept_tokens(new_token_ids) 一次推进多个 token。
 在 `Scheduler.update_from_output()` 中，对最终 `new_token_ids` 调用：
 
 ```text
-grammar.accept_tokens(req_id, new_token_ids)
+grammar.accept_tokens(req_id, trim_reasoning_for_advance(new_token_ids))
 ```
 
 ### 41.4 rejected draft 会推进 grammar 吗？
@@ -1507,7 +1518,7 @@ Rejected draft 不在 `new_token_ids` 中。
 
 会。
 
-`grammar_bitmask()` 为 `req_tokens + (-1,)` 的 bonus position 生成 bitmask，`apply_grammar_bitmask()` 会应用到 bonus logits row。
+`grammar_bitmask()` 在 draft rows 之后单独为 bonus position 生成 bitmask，`apply_grammar_bitmask()` 会应用到 bonus logits row。
 
 ### 41.6 为什么 async 下要 update_draft_token_ids_in_output()？
 
@@ -1536,7 +1547,7 @@ sampling：
   RejectionSampler 在 masked logits 上接受 / 拒绝 draft，并采 recovered / bonus。
 
 state commit：
-  Scheduler 只用最终 new_token_ids 推进 grammar.accept_tokens()。
+  Scheduler 只用最终 new_token_ids 中的 grammar content 推进 grammar.accept_tokens()。
 
 async repair：
   deferred sampling 前先用真实 draft tokens 修正 SchedulerOutput，并用 -1 padding 无效 draft。
