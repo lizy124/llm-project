@@ -1227,6 +1227,73 @@ ModelRunner 不需要知道外部 KVPool 的具体协议，只需要在正确的
 
 ---
 
+### 22.1 外部 KV 数据加载的物理路径：直写 GPU 还是经过 host buffer？
+
+Scheduler 侧的 `allocate_slots()` 为 `ext_comp` 区间从 `BlockPool` 分配了空 block，Worker connector 需要把外部 KV 数据写入这些 block 对应的 GPU 显存。不同 connector 的物理路径不同：
+
+#### NIXL 两种模式
+
+`use_host_buffer` 标志决定走哪条路径。代码在 [nixl/base_worker.py:367-372](file:///d:/lzy/project/kv_pool/code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py#L367-L372)：
+
+```python
+self.use_host_buffer = False
+# ...
+self.use_host_buffer = self.kv_buffer_device == "cpu"
+```
+
+**模式一：`use_host_buffer = False`（默认）— GPU 直连**
+
+直接注册 GPU KV cache tensor 为 RDMA buffer，走 NVLink/IB 直连 GPU→GPU。代码在 [nixl/base_worker.py:1036](file:///d:/lzy/project/kv_pool/code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py#L1036)：
+
+```python
+xfer_buffers = kv_caches  # 直接使用 GPU tensor
+```
+
+**模式二：`use_host_buffer = True` — 经过 host buffer**
+
+先申请 CPU DRAM 上的 host buffer，数据到达后通过 `sync_recved_kv_to_device()` 做 `h2d` copy。代码在 [nixl/base_worker.py:1792-1813](file:///d:/lzy/project/kv_pool/code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py#L1792-L1813)：
+
+```python
+def sync_recved_kv_to_device(self, req_id: str, meta: ReqMeta):
+    """copy recved kv from host buffer to device."""
+    self.copy_blocks(
+        self.host_xfer_buffers,   # 源：host buffer (CPU DRAM)
+        self.device_kv_caches,    # 目标：device (GPU HBM)
+        group_block_ids,
+        group_block_ids,
+        "h2d",                    # host-to-device copy
+    )
+```
+
+#### MooncakeStoreConnector — Store DRAM → GPU 直写
+
+Store 池的存储介质是 CPU DRAM（见 Mooncake 论文："将 GPU 集群的 CPU、DRAM、SSD 和 RDMA 资源分组组成分布式 KV Cache 存储池"），但 load 时通过 RDMA 直接写入 GPU 显存地址，不经过中间 host buffer。
+
+load 入口在 [store/worker.py:887-890](file:///d:/lzy/project/kv_pool/code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/worker.py#L887-L890)：
+
+```python
+res = self.store.batch_get_into_multi_buffers(
+    batch_keys, batch_addrs, batch_sizes
+)
+```
+
+`batch_addrs` 来自 [store/data.py:196-218](file:///d:/lzy/project/kv_pool/code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/data.py#L196-L218) 的 `prepare_value()`，计算的是 GPU 显存地址（`base_addr + block_id * block_len`）。没有额外的 `h2d` copy。
+
+#### CPU Offloading — 显式 GPU ↔ CPU copy
+
+在 [kv_offload/cpu/gpu_worker.py:37](file:///d:/lzy/project/kv_pool/code/vllm/vllm/v1/kv_offload/cpu/gpu_worker.py#L37) 和 [kv_offload/cpu/gpu_worker.py:180](file:///d:/lzy/project/kv_pool/code/vllm/vllm/v1/kv_offload/cpu/gpu_worker.py#L180)，通过 `gpu_to_cpu` 参数区分方向，显式做 GPU ↔ CPU 之间的 copy。
+
+#### 对比总结
+
+| Connector | 路径 | 经过 host buffer？ |
+|---|---|---|
+| **NIXL (默认)** | GPU HBM ↔ GPU HBM (NVLink/IB) | 否 |
+| **NIXL (host模式)** | GPU HBM → host buffer → 远端 | 是，有 h2d copy |
+| **Mooncake Store** | Store CPU DRAM → RDMA → GPU HBM 直写 | 否（RDMA 直写 GPU 地址） |
+| **CPU Offloading** | GPU HBM ↔ CPU DRAM (显式 `gpu_to_cpu`/`cpu_to_gpu`) | 是 |
+
+---
+
 ## 23. load 路径完整时序
 
 以外部 KV 命中并需要 Worker load 为例，完整时序是：

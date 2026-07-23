@@ -105,7 +105,7 @@ Request
 ```text
 KVPool hit
   → Scheduler 为 hit tokens 分配本地 KV blocks
-  → Worker 从 KVPool 把 KV 写入这些 blocks
+  → Worker connector 向 KVPool 请求 KV 数据，写入本地 blocks
   → sync load：本轮直接进入 running，按普通路径 cache / forward
   → async load：Scheduler 收到 finished_recving 后承认这些 blocks 可复用
   → 请求结束后 connector 可决定是否保存 / 发送这些 blocks
