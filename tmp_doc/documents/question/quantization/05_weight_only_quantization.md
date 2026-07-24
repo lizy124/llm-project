@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `vllm/vllm/config/vllm.py`
-- `vllm/vllm/model_executor/model_loader/weight_utils.py`
-- `vllm/vllm/model_executor/model_loader/utils.py`
-- `vllm/vllm/model_executor/layers/quantization/`
-- `vllm/vllm/model_executor/layers/linear.py`
-- `vllm/vllm/model_executor/parameter.py`
-- `vllm/vllm/model_executor/kernels/linear/`
-- `vllm/vllm/model_executor/layers/fused_moe/`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/model_executor/model_loader/weight_utils.py`
+- `code/vllm/vllm/model_executor/model_loader/utils.py`
+- `code/vllm/vllm/model_executor/layers/quantization/`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/parameter.py`
+- `code/vllm/vllm/model_executor/kernels/linear/`
+- `code/vllm/vllm/model_executor/layers/fused_moe/`
 
 本问题关注：GPTQ、AWQ、Marlin、INT4、INT8、FP8、bitsandbytes、compressed-tensors、MoE WNA16 等权重量化路径如何接入 vLLM；量化配置如何被解析；量化后的参数如何创建、加载、TP 切分和 repack；forward 时如何从 `LinearBase.forward()` 或 `RoutedExperts.forward_*()` 进入对应 kernel。
 
@@ -71,7 +71,7 @@ quant_config exists
   → AutoGPTQLinearMethod / AutoAWQLinearMethod / Fp8LinearMethod / ...
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:269`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:269`
 
 forward 时：
 
@@ -79,7 +79,7 @@ forward 时：
 output = self.quant_method.apply(self, input_, bias)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:555`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:555`
 
 也就是说，Linear 层本身不关心 GPTQ、AWQ、FP8 的细节；它只持有一个 `quant_method`。
 
@@ -100,7 +100,7 @@ RoutedExperts
   → quant_method.create_weights(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:114`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:114`
 
 执行时：
 
@@ -112,7 +112,7 @@ forward_monolithic(...)
   → quant_method.apply_monolithic(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1053` 和 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1090`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1053` 和 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1090`
 
 ---
 
@@ -124,7 +124,7 @@ forward_monolithic(...)
 def _get_quantization_config(model_config, load_config)
 ```
 
-位置：`vllm/vllm/config/vllm.py:609`
+位置：`code/vllm/vllm/config/vllm.py:609`
 
 它会：
 
@@ -136,7 +136,7 @@ def _get_quantization_config(model_config, load_config)
 5. 返回 quant_config。
 ```
 
-对应源码：`vllm/vllm/config/vllm.py:615` 到 `vllm/vllm/config/vllm.py:641`
+对应源码：`code/vllm/vllm/config/vllm.py:615` 到 `code/vllm/vllm/config/vllm.py:641`
 
 这说明量化在模型真正创建前就已经被解析，并且会提前做硬件和 activation dtype 校验。
 
@@ -150,7 +150,7 @@ def _get_quantization_config(model_config, load_config)
 def get_quant_config(model_config, load_config) -> QuantizationConfig
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:240`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:240`
 
 核心流程：
 
@@ -162,7 +162,7 @@ model_config.quantization
   → quant_cls.from_config(hf_quant_config)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:245` 到 `vllm/vllm/model_executor/model_loader/weight_utils.py:291`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:245` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:291`
 
 ### 4.1 常见配置来源
 
@@ -187,13 +187,13 @@ total_num_kv_heads
 
 写入 quant config，用于 KV cache scale 的 TP-aware 加载。
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:257` 到 `vllm/vllm/model_executor/model_loader/weight_utils.py:273`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:257` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:273`
 
 ---
 
 ## 5. quantization 方法注册表
 
-量化方法名在：`vllm/vllm/model_executor/layers/quantization/__init__.py:12`
+量化方法名在：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:12`
 
 典型名字包括：
 
@@ -221,7 +221,7 @@ mxfp8
 def get_quantization_config(quantization: str) -> type[QuantizationConfig]
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/__init__.py:108`
+位置：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:108`
 
 它把方法名映射到具体类，例如：
 
@@ -245,7 +245,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]
   → MoeWNA16Config
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/__init__.py:140` 到 `vllm/vllm/model_executor/layers/quantization/__init__.py:170`
+位置：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:140` 到 `code/vllm/vllm/model_executor/layers/quantization/__init__.py:170`
 
 ---
 
@@ -253,7 +253,7 @@ def get_quantization_config(quantization: str) -> type[QuantizationConfig]
 
 ### 6.1 QuantizationConfig 负责什么
 
-抽象定义：`vllm/vllm/model_executor/layers/quantization/base_config.py:77`
+抽象定义：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:77`
 
 核心接口：
 
@@ -274,13 +274,13 @@ apply_vllm_mapper(...)
 def get_quant_method(self, layer, prefix) -> QuantizeMethodBase | None
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/base_config.py:157`
+位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:157`
 
 它决定某个具体 layer 应该使用哪种执行方法。
 
 ### 6.2 QuantizeMethod 负责什么
 
-抽象定义：`vllm/vllm/model_executor/layers/quantization/base_config.py:19`
+抽象定义：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:19`
 
 核心接口：
 
@@ -313,7 +313,7 @@ apply：
 initialize_model(vllm_config)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:40`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:40`
 
 在创建模型前：
 
@@ -322,7 +322,7 @@ if vllm_config.quant_config is not None:
     configure_quant_config(vllm_config.quant_config, model_class)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:54`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:54`
 
 `configure_quant_config()` 会把模型类里的：
 
@@ -333,7 +333,7 @@ packed_modules_mapping
 
 传给 quant config。
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:274` 到 `vllm/vllm/model_executor/model_loader/utils.py:295`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:274` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:295`
 
 这一步很重要，因为很多 checkpoint 的量化配置是按 HF 模块名写的，而 vLLM 模型会把 QKV、gate/up 等模块 fuse 起来。
 
@@ -343,7 +343,7 @@ packed_modules_mapping
 
 `LinearBase` 是所有 linear 层的基类。
 
-位置：`vllm/vllm/model_executor/layers/linear.py:228`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:228`
 
 初始化时：
 
@@ -356,7 +356,7 @@ else:
     raise ValueError("All linear layers should support quant method.")
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:269` 到 `vllm/vllm/model_executor/layers/linear.py:274`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:269` 到 `code/vllm/vllm/model_executor/layers/linear.py:274`
 
 然后不同 Linear 子类调用：
 
@@ -385,7 +385,7 @@ RowParallelLinear.forward()
   → 如果 reduce_results，做 tensor_model_parallel_all_reduce
 ```
 
-对应位置：`vllm/vllm/model_executor/layers/linear.py:548` 和 `vllm/vllm/model_executor/layers/linear.py:1628`
+对应位置：`code/vllm/vllm/model_executor/layers/linear.py:548` 和 `code/vllm/vllm/model_executor/layers/linear.py:1628`
 
 这意味着 TP 的通信仍由 Linear 子类控制，而低 bit GEMM 由量化 method 控制。
 
@@ -416,7 +416,7 @@ BlockQuantScaleParameter
 RowvLLMParameter
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:18`
+位置：`code/vllm/vllm/model_executor/parameter.py:18`
 
 关键能力：
 
@@ -440,7 +440,7 @@ pack_factor = 32 // 4 = 8
 
 当 TP 切输出或输入时，不能直接按原始浮点矩阵的维度切，必须考虑 packed 后维度缩小。
 
-对应逻辑：`vllm/vllm/model_executor/parameter.py:353` 到 `vllm/vllm/model_executor/parameter.py:394`
+对应逻辑：`code/vllm/vllm/model_executor/parameter.py:353` 到 `code/vllm/vllm/model_executor/parameter.py:394`
 
 ### 9.2 Linear 层加载时的特殊调整
 
@@ -453,7 +453,7 @@ adjust_bitsandbytes_4bit_shard()
 adjust_scalar_to_fused_array()
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:70` 到 `vllm/vllm/model_executor/layers/linear.py:135`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:70` 到 `code/vllm/vllm/model_executor/layers/linear.py:135`
 
 这些函数解决的是：
 
@@ -478,7 +478,7 @@ for _, module in model.named_modules():
         quant_method.process_weights_after_loading(module)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:100` 到 `vllm/vllm/model_executor/model_loader/utils.py:113`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:113`
 
 这一步通常做：
 
@@ -498,7 +498,7 @@ for _, module in model.named_modules():
 
 ## 11. GPTQ 路径
 
-源码：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
 
 ### 11.1 配置
 
@@ -508,7 +508,7 @@ for _, module in model.named_modules():
 class AutoGPTQConfig(QuantizationConfig)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97`
 
 从 config 读取：
 
@@ -522,7 +522,7 @@ dynamic
 modules_in_block_to_quantize
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:195` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:216`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:195` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:216`
 
 支持的核心组合：
 
@@ -531,7 +531,7 @@ INT4 symmetric → scalar_types.uint4b8
 INT8 symmetric → scalar_types.uint8b128
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:100`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:100`
 
 ### 11.2 Linear method
 
@@ -541,7 +541,7 @@ Linear 方法：
 class AutoGPTQLinearMethod(LinearMethodBase)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:304`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:304`
 
 创建的参数：
 
@@ -552,7 +552,7 @@ scales：ChannelQuantScaleParameter 或 GroupQuantScaleParameter；
 qzeros：PackedColumnParameter 或 PackedvLLMParameter。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:378` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:443`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:378` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:443`
 
 ### 11.3 kernel 选择
 
@@ -568,11 +568,11 @@ MPLinearLayerConfig(...)
 choose_mp_linear_kernel(mp_linear_kernel_config)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:339` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:352`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:339` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:352`
 
 这会在 Marlin、Machete、Cutlass、Triton、Exllama、CPU 等 mixed precision kernel 中选择可用实现。
 
-kernel 列表在：`vllm/vllm/model_executor/kernels/linear/__init__.py:353`
+kernel 列表在：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:353`
 
 ### 11.4 post-load 和 forward
 
@@ -582,7 +582,7 @@ kernel 列表在：`vllm/vllm/model_executor/kernels/linear/__init__.py:353`
 self.kernel.process_weights_after_loading(layer)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:453`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:453`
 
 forward：
 
@@ -590,7 +590,7 @@ forward：
 return self.kernel.apply_weights(layer, x, bias)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:456` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:462`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:456` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:462`
 
 也就是说 GPTQ 的热路径不是 Python 解包权重，而是把已经准备好的 packed 权重交给选中的 kernel。
 
@@ -611,7 +611,7 @@ MoE kernel 是否需要 g_idx_sort_indices
 
 ## 12. AWQ 路径
 
-源码：`vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
 
 ### 12.1 配置
 
@@ -621,7 +621,7 @@ MoE kernel 是否需要 g_idx_sort_indices
 class AutoAWQConfig(QuantizationConfig)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:170`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:170`
 
 从 config 读取：
 
@@ -633,7 +633,7 @@ lm_head
 modules_to_not_convert
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:237` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:256`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:237` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:256`
 
 当前 AutoAWQ 主路径支持：
 
@@ -641,7 +641,7 @@ modules_to_not_convert
 4-bit AWQ weight-only
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:177`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:177`
 
 ### 12.2 方法选择
 
@@ -661,7 +661,7 @@ CUDA + Marlin 支持 + 非 batch invariant
   → AutoAWQLinearMethod，走 AWQ Triton/custom op 路径
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:284` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:332`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:284` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:332`
 
 ### 12.3 普通 AWQ Linear
 
@@ -673,7 +673,7 @@ qzeros：PackedvLLMParameter
 scales：GroupQuantScaleParameter
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:821` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:900`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:821` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:900`
 
 forward 时：
 
@@ -686,7 +686,7 @@ forward 时：
   ops.awq_gemm(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:921` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:939`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:921` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:939`
 
 ### 12.4 AWQ Marlin
 
@@ -699,7 +699,7 @@ _convert_awq_to_standard_format(layer, "qweight", "qzeros", size_bits)
 self.kernel.process_weights_after_loading(layer)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:525` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:533`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:525` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:533`
 
 转换原因：
 
@@ -711,7 +711,7 @@ Marlin / MPLinearKernel：
   期望更标准的 GPTQ-like packed 格式，通常沿 input dim packed。
 ```
 
-转换函数位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:92`
+转换函数位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:92`
 
 ---
 
@@ -741,7 +741,7 @@ init_nvfp4_linear_kernel(...)
 
 被选中。
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:531`、`vllm/vllm/model_executor/kernels/linear/__init__.py:640`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:531`、`code/vllm/vllm/model_executor/kernels/linear/__init__.py:640`
 
 ### 13.1 Marlin 的关键要求
 
@@ -763,7 +763,7 @@ Marlin 关心：
 
 ## 14. FP8 路径
 
-源码：`vllm/vllm/model_executor/layers/quantization/fp8.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/fp8.py`
 
 ### 14.1 配置
 
@@ -773,7 +773,7 @@ Marlin 关心：
 class Fp8Config(QuantizationConfig)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:99`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:99`
 
 关键字段：
 
@@ -785,7 +785,7 @@ weight_block_size：是否 block-wise FP8；
 store_dtype：部分 MoE / MXFP4 场景使用。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:102` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:137`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:102` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:137`
 
 ### 14.2 FP8 不一定是纯 weight-only
 
@@ -815,7 +815,7 @@ W8A8：
   → 直接加载 FP8 weight / scale
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:179` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:200`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:179` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:200`
 
 ### 14.4 FP8 Linear 参数
 
@@ -828,7 +828,7 @@ weight_scale_inv：block-wise scale 场景；
 input_scale：static activation scale 场景。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:322` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:386`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:322` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:386`
 
 然后调用：
 
@@ -836,9 +836,9 @@ input_scale：static activation scale 场景。
 init_fp8_linear_kernel(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:387`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:387`
 
-kernel 选择入口：`vllm/vllm/model_executor/kernels/linear/__init__.py:531`
+kernel 选择入口：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:531`
 
 可能选择：
 
@@ -864,7 +864,7 @@ ROCm / AITER / XPU 相关 kernel
 5. 最后调用 fp8_linear.process_weights_after_loading(layer)。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:398` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:444`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:398` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:444`
 
 forward：
 
@@ -872,13 +872,13 @@ forward：
 return self.fp8_linear.apply_weights(layer, x, bias)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:446` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:489`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:446` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:489`
 
 ---
 
 ## 15. bitsandbytes 路径
 
-源码：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py`
 
 ### 15.1 配置
 
@@ -888,7 +888,7 @@ return self.fp8_linear.apply_weights(layer, x, bias)
 class BitsAndBytesConfig(QuantizationConfig)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:49`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:49`
 
 关键字段：
 
@@ -903,7 +903,7 @@ llm_int8_skip_modules
 llm_int8_threshold
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:55` 到 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:79`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:55` 到 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:79`
 
 ### 15.2 Linear 参数
 
@@ -919,7 +919,7 @@ Int8Params，dtype=torch.int8
 BitsAndBytesWeightParameter，dtype=torch.uint8
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:225` 到 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:269`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:225` 到 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:269`
 
 ### 15.3 forward
 
@@ -931,7 +931,7 @@ BitsAndBytesWeightParameter，dtype=torch.uint8
   bitsandbytes.matmul_4bit(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:291` 和 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:361`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:291` 和 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:361`
 
 BNB 的特点是：
 
@@ -942,13 +942,13 @@ BNB 的特点是：
 4. MoE 4bit 目前会在 apply 前 dequant 成普通 w13 / w2，再调用 fused_experts。
 ```
 
-MoE 4bit dequant 位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:594`
+MoE 4bit dequant 位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:594`
 
 ---
 
 ## 16. compressed-tensors 路径
 
-源码：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py`
 
 ### 16.1 配置模型
 
@@ -958,7 +958,7 @@ MoE 4bit dequant 位置：`vllm/vllm/model_executor/layers/quantization/bitsandb
 class CompressedTensorsConfig(QuantizationConfig)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:80`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:80`
 
 compressed-tensors 不是单一格式，而是从 `config_groups` 中解析 target 和 scheme：
 
@@ -972,7 +972,7 @@ config_groups
   → target_scheme_map
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:297` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:367`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:297` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:367`
 
 ### 16.2 scheme 选择
 
@@ -990,7 +990,7 @@ CompressedTensorsW8A8Mxfp8；
 CompressedTensorsWNA8O8Int。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:692` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:813`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:692` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:813`
 
 ### 16.3 Linear 执行
 
@@ -1007,7 +1007,7 @@ apply(...)
   → layer.scheme.apply_weights(layer, x, bias)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:910` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:958`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:910` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:958`
 
 所以 compressed-tensors 的复杂性在 scheme 子类，而不是顶层 Linear method。
 
@@ -1024,7 +1024,7 @@ FusedMoE(...)
   → FusedMoEMethodBase 子类
 ```
 
-入口：`vllm/vllm/model_executor/layers/fused_moe/layer.py:103`
+入口：`code/vllm/vllm/model_executor/layers/fused_moe/layer.py:103`
 
 `RoutedExperts` 创建后会调用：
 
@@ -1032,7 +1032,7 @@ FusedMoE(...)
 self.quant_method.create_weights(layer=self, **moe_quant_params)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:168`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:168`
 
 ### 17.1 MoE 的典型权重名
 
@@ -1053,7 +1053,7 @@ w2：down_proj
 
 `RoutedExperts.weight_loader()` 会根据 shard_id 和 expert_id 把 checkpoint 权重加载到本 rank 的本地 expert 参数中。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:571`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:571`
 
 ### 17.2 AutoGPTQMoE
 
@@ -1063,7 +1063,7 @@ GPTQ MoE 方法：
 class AutoGPTQMoEMethod(FusedMoEMethodBase)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:465`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:465`
 
 它创建：
 
@@ -1076,7 +1076,7 @@ w13_g_idx_sort_indices / w2_g_idx_sort_indices
 workspace / moe_kernel
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:492` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:650`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:492` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:650`
 
 post-load 时会调用：
 
@@ -1085,7 +1085,7 @@ convert_to_wna16_moe_kernel_format(...)
 make_wna16_moe_kernel(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:651` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:750`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:651` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:750`
 
 ### 17.3 AutoAWQMoE
 
@@ -1095,7 +1095,7 @@ AWQ MoE 方法：
 class AutoAWQMoEMethod(FusedMoEMethodBase)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:544`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:544`
 
 它只支持 4bit，并创建：
 
@@ -1106,17 +1106,17 @@ w13_qzeros / w2_qzeros
 workspace
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:562` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:661`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:562` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:661`
 
 post-load 同样转换成 WNA16 MoE kernel 格式。
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:663` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:741`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:663` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:741`
 
 ### 17.4 MoeWNA16 fallback
 
 `MoeWNA16Config` 是 MoE W4A16 / W8A16 的通用路径。
 
-位置：`vllm/vllm/model_executor/layers/quantization/moe_wna16.py:34`
+位置：`code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:34`
 
 它支持：
 
@@ -1125,13 +1125,13 @@ gptq：4bit / 8bit，要求 desc_act 为 False；
 awq：4bit；
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/moe_wna16.py:134` 到 `vllm/vllm/model_executor/layers/quantization/moe_wna16.py:156`
+位置：`code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:134` 到 `code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:156`
 
 当 GPTQ/AWQ MoE 不满足 Marlin kernel 的 shape 要求时，会 fallback 到 MoeWNA16。
 
-GPTQ fallback 位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:243`
+GPTQ fallback 位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:243`
 
-AWQ fallback 位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:342`
+AWQ fallback 位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:342`
 
 ---
 
@@ -1164,7 +1164,7 @@ GroupQuantScaleParameter
 BlockQuantScaleParameter
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:242`、`vllm/vllm/model_executor/parameter.py:251`、`vllm/vllm/model_executor/parameter.py:260`、`vllm/vllm/model_executor/parameter.py:397`
+位置：`code/vllm/vllm/model_executor/parameter.py:242`、`code/vllm/vllm/model_executor/parameter.py:251`、`code/vllm/vllm/model_executor/parameter.py:260`、`code/vllm/vllm/model_executor/parameter.py:397`
 
 ### 18.2 zero point
 
@@ -1185,7 +1185,7 @@ MoE WNA16 has_zp=True
 (8, True)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:100`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:100`
 
 而 AWQ 配置显式保存：
 
@@ -1193,7 +1193,7 @@ MoE WNA16 has_zp=True
 zero_point
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:192`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:192`
 
 ### 18.3 group_size 与 TP
 
@@ -1212,11 +1212,11 @@ input_size_per_partition % group_size == 0
 output_size_per_partition % pack_factor == 0
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:843` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:843` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
 
 MoE WNA16 会在必要时缩小 group_size，并记录 `group_size_div_factor`，后续 repeat scale / qzeros。
 
-位置：`vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216` 到 `vllm/vllm/model_executor/layers/quantization/moe_wna16.py:224`
+位置：`code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216` 到 `code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:224`
 
 ---
 
@@ -1244,7 +1244,7 @@ Fp8OnlineMoEMethod
   → 加载后 ops.scaled_fp8_quant(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:189` 和 `vllm/vllm/model_executor/layers/quantization/fp8.py:857`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:189` 和 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:857`
 
 这类路径的特点是：
 
@@ -1267,7 +1267,7 @@ GPTQ、AWQ Marlin 等 WNA16 路径通常走：
 choose_mp_linear_kernel(MPLinearLayerConfig)
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:640`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:640`
 
 候选 kernel 包括：
 
@@ -1278,7 +1278,7 @@ XPU：XPUW4A8Int、XPUwNa16
 CPU：Dynamic4bit、ZentorchWNA16、CPUWNA16
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:353` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:379`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:353` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:379`
 
 ### 20.2 FP8 scaled-mm kernel
 
@@ -1288,7 +1288,7 @@ FP8 路径通常走：
 init_fp8_linear_kernel(...)
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:531`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:531`
 
 候选 kernel 包括：
 
@@ -1310,7 +1310,7 @@ AITER / ROCm / XPU / Triton / DeepGemm block kernel
 
 kernel 选择会被 `_filter_kernels_by_backend()` 限制。
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:183` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:272`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:183` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:272`
 
 ---
 
@@ -1333,11 +1333,11 @@ kernel 选择会被 `_filter_kernels_by_backend()` 限制。
 not envs.VLLM_BATCH_INVARIANT
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:309`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:309`
 
 FP8 在 batch invariant 模式下也有直接 FP8 / BF16 fallback 的特殊分支。
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:452` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:489`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:452` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:489`
 
 ---
 
@@ -1401,7 +1401,7 @@ quantization 模块
 
 在当前路径里，`gptq`、`auto_gptq`、`gptq_marlin` 都映射到 `AutoGPTQConfig`。
 
-位置：`vllm/vllm/model_executor/layers/quantization/__init__.py:151`
+位置：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:151`
 
 真正使用哪个 kernel，由 `choose_mp_linear_kernel()` 根据平台、shape、quant config、backend 设置选择。
 

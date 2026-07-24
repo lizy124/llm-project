@@ -2,17 +2,17 @@
 
 源码位置：
 
-- `vllm/vllm/engine/arg_utils.py`
-- `vllm/vllm/config/model.py`
-- `vllm/vllm/config/quantization.py`
-- `vllm/vllm/config/vllm.py`
-- `vllm/vllm/config/cache.py`
-- `vllm/vllm/config/load.py`
-- `vllm/vllm/model_executor/model_loader/weight_utils.py`
-- `vllm/vllm/model_executor/model_loader/utils.py`
-- `vllm/vllm/model_executor/layers/quantization/__init__.py`
-- `vllm/vllm/model_executor/layers/quantization/base_config.py`
-- `vllm/vllm/platforms/interface.py`
+- `code/vllm/vllm/engine/arg_utils.py`
+- `code/vllm/vllm/config/model.py`
+- `code/vllm/vllm/config/quantization.py`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/config/cache.py`
+- `code/vllm/vllm/config/load.py`
+- `code/vllm/vllm/model_executor/model_loader/weight_utils.py`
+- `code/vllm/vllm/model_executor/model_loader/utils.py`
+- `code/vllm/vllm/model_executor/layers/quantization/__init__.py`
+- `code/vllm/vllm/model_executor/layers/quantization/base_config.py`
+- `code/vllm/vllm/platforms/interface.py`
 
 本问题只关注：用户传入的 `--quantization`、`--quantization-config`、checkpoint 自带 `quantization_config` / `compression_config`、`load_format`、`kv_cache_dtype` 如何在配置阶段被解析和校验，最终变成 `VllmConfig.quant_config`。至于 `quant_config` 如何作用到 Linear / MoE / Attention，在后续专题展开。
 
@@ -102,11 +102,11 @@ kv_cache_dtype_skip_layers
 
 位置：
 
-- `vllm/vllm/engine/arg_utils.py:440`
-- `vllm/vllm/engine/arg_utils.py:540`
-- `vllm/vllm/engine/arg_utils.py:541`
-- `vllm/vllm/engine/arg_utils.py:680`
-- `vllm/vllm/engine/arg_utils.py:681`
+- `code/vllm/vllm/engine/arg_utils.py:440`
+- `code/vllm/vllm/engine/arg_utils.py:540`
+- `code/vllm/vllm/engine/arg_utils.py:541`
+- `code/vllm/vllm/engine/arg_utils.py:680`
+- `code/vllm/vllm/engine/arg_utils.py:681`
 
 ### 3.1 先解析在线量化配置
 
@@ -118,7 +118,7 @@ self.quantization_config = resolve_quantization_config(
 )
 ```
 
-位置：`vllm/vllm/engine/arg_utils.py:748`
+位置：`code/vllm/vllm/engine/arg_utils.py:748`
 
 这一步只处理：
 
@@ -139,7 +139,7 @@ quantization_config
 allow_deprecated_quantization
 ```
 
-位置：`vllm/vllm/engine/arg_utils.py:1617`
+位置：`code/vllm/vllm/engine/arg_utils.py:1617`
 
 创建 `CacheConfig` 前，会先解析：
 
@@ -147,7 +147,7 @@ allow_deprecated_quantization
 resolve_kv_cache_dtype_string(self.kv_cache_dtype, model_config)
 ```
 
-位置：`vllm/vllm/engine/arg_utils.py:1832`
+位置：`code/vllm/vllm/engine/arg_utils.py:1832`
 
 这一步把用户侧 `--kv-cache-dtype auto` 解析成更明确的 cache dtype。
 
@@ -155,7 +155,7 @@ resolve_kv_cache_dtype_string(self.kv_cache_dtype, model_config)
 
 ## 4. `resolve_quantization_config()` 做什么
 
-入口在：`vllm/vllm/config/quantization.py:147`
+入口在：`code/vllm/vllm/config/quantization.py:147`
 
 它处理的是用户侧在线量化配置。
 
@@ -174,7 +174,7 @@ QuantizationConfigArgs：
   ignore
 ```
 
-位置：`vllm/vllm/config/quantization.py:63`
+位置：`code/vllm/vllm/config/quantization.py:63`
 
 `linear` 应用于 LinearBase，`moe` 应用于 FusedMoE / RoutedExperts，`ignore` 用来跳过指定 layer。
 
@@ -191,7 +191,7 @@ int8_per_channel_weight_only
 online
 ```
 
-位置：`vllm/vllm/config/quantization.py:112`
+位置：`code/vllm/vllm/config/quantization.py:112`
 
 例如：
 
@@ -248,11 +248,11 @@ quantization_config: dict[str, Any] | QuantizationConfigArgs | None = None
 allow_deprecated_quantization: bool = False
 ```
 
-位置：`vllm/vllm/config/model.py:197`
+位置：`code/vllm/vllm/config/model.py:197`
 
 `quantization` 会先统一成小写。
 
-位置：`vllm/vllm/config/model.py:749`
+位置：`code/vllm/vllm/config/model.py:749`
 
 ### 5.1 checkpoint 自带量化配置
 
@@ -262,7 +262,7 @@ allow_deprecated_quantization: bool = False
 quant_cfg = self.model_arch_config.quantization_config
 ```
 
-位置：`vllm/vllm/config/model.py:975`
+位置：`code/vllm/vllm/config/model.py:975`
 
 如果 checkpoint 有：
 
@@ -282,7 +282,7 @@ self.quantization = quant_method
 
 如果用户传入的 `--quantization` 和 checkpoint 的 `quant_method` 不一致，会报错。
 
-位置：`vllm/vllm/config/model.py:1038`
+位置：`code/vllm/vllm/config/model.py:1038`
 
 ### 5.2 override_quantization_method
 
@@ -296,7 +296,7 @@ method.override_quantization_method(
 )
 ```
 
-位置：`vllm/vllm/config/model.py:1014`
+位置：`code/vllm/vllm/config/model.py:1014`
 
 典型原因：
 
@@ -319,9 +319,9 @@ ModelOpt / MXFP4 / DeepSeek V4 FP8 需要特殊识别；
 
 位置：
 
-- `vllm/vllm/config/model.py:1050`
-- `vllm/vllm/config/model.py:1056`
-- `vllm/vllm/config/model.py:1058`
+- `code/vllm/vllm/config/model.py:1050`
+- `code/vllm/vllm/config/model.py:1056`
+- `code/vllm/vllm/config/model.py:1058`
 
 这一步完成后，`ModelConfig.quantization` 才是 vLLM 认可的方法名。
 
@@ -329,7 +329,7 @@ ModelOpt / MXFP4 / DeepSeek V4 FP8 需要特殊识别；
 
 ## 6. QuantizationMethods 注册表
 
-方法名列表在：`vllm/vllm/model_executor/layers/quantization/__init__.py:12`
+方法名列表在：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:12`
 
 常见方法包括：
 
@@ -351,7 +351,7 @@ online / fp8_per_tensor / fp8_per_block / fp8_per_channel / mxfp8
 get_quantization_config(quantization)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/__init__.py:108`
+位置：`code/vllm/vllm/model_executor/layers/quantization/__init__.py:108`
 
 例如：
 
@@ -374,7 +374,7 @@ get_quantization_config(quantization)
 quant_config: QuantizationConfig | None = None
 ```
 
-位置：`vllm/vllm/config/vllm.py:334`
+位置：`code/vllm/vllm/config/vllm.py:334`
 
 初始化时会调用：
 
@@ -382,11 +382,11 @@ quant_config: QuantizationConfig | None = None
 VllmConfig._get_quantization_config(model_config, load_config)
 ```
 
-位置：`vllm/vllm/config/vllm.py:910`
+位置：`code/vllm/vllm/config/vllm.py:910`
 
 ### 7.1 _get_quantization_config 流程
 
-入口：`vllm/vllm/config/vllm.py:609`
+入口：`code/vllm/vllm/config/vllm.py:609`
 
 它做：
 
@@ -408,7 +408,7 @@ VllmConfig._get_quantization_config(model_config, load_config)
 7. 返回 quant_config。
 ```
 
-位置：`vllm/vllm/config/vllm.py:615` 到 `vllm/vllm/config/vllm.py:641`
+位置：`code/vllm/vllm/config/vllm.py:615` 到 `code/vllm/vllm/config/vllm.py:641`
 
 这一步之后，`VllmConfig.quant_config` 才真正可供模型初始化使用。
 
@@ -416,7 +416,7 @@ VllmConfig._get_quantization_config(model_config, load_config)
 
 ## 8. get_quant_config 如何读取配置
 
-`get_quant_config()` 定义在：`vllm/vllm/model_executor/model_loader/weight_utils.py:240`
+`get_quant_config()` 定义在：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:240`
 
 它先用方法名找到配置类：
 
@@ -436,7 +436,7 @@ model_config.hf_config.text_config.quantization_config
 model_config.hf_config.compression_config
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:247`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:247`
 
 如果存在且完整：
 
@@ -444,7 +444,7 @@ model_config.hf_config.compression_config
 return quant_cls.from_config(hf_quant_config)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:275`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:275`
 
 compressed-tensors 会额外补：
 
@@ -455,7 +455,7 @@ total_num_kv_heads
 
 用于 TP-aware attention scale 加载。
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:257`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:257`
 
 ### 8.2 hf_overrides
 
@@ -466,7 +466,7 @@ hf_overrides["quantization_config_file"]
 hf_overrides["quantization_config_dict_json"]
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:293`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:293`
 
 ### 8.3 在线量化
 
@@ -476,7 +476,7 @@ hf_overrides["quantization_config_dict_json"]
 OnlineQuantizationConfig(args=model_config.quantization_config)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:322`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:322`
 
 注释说明：
 
@@ -492,7 +492,7 @@ Online quantization doesn't read from checkpoint configs - it quantizes fp16/bf1
 return quant_cls.from_config({})
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:333`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:333`
 
 ### 8.5 量化配置文件
 
@@ -502,7 +502,7 @@ return quant_cls.from_config({})
 quant_cls.get_config_filenames()
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/weight_utils.py:360`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:360`
 
 例如 GPTQ 通常查找：
 
@@ -514,7 +514,7 @@ quantize_config.json
 
 ## 9. QuantizationConfig 抽象负责什么
 
-抽象类在：`vllm/vllm/model_executor/layers/quantization/base_config.py:77`
+抽象类在：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:77`
 
 它负责描述某个量化方法的配置和能力：
 
@@ -553,7 +553,7 @@ maybe_update_config(...)
 
 ## 10. load_format 和 quantization 的边界
 
-`LoadConfig.load_format` 在：`vllm/vllm/config/load.py:28`
+`LoadConfig.load_format` 在：`code/vllm/vllm/config/load.py:28`
 
 它控制“用什么 loader / 文件格式读权重”，例如：
 
@@ -604,7 +604,7 @@ load_format=bitsandbytes + quantization=bitsandbytes
 CacheConfig.cache_dtype
 ```
 
-位置：`vllm/vllm/config/cache.py:75`
+位置：`code/vllm/vllm/config/cache.py:75`
 
 它控制的是 KV cache 存储格式，不等同于 `ModelConfig.quantization`。
 
@@ -623,7 +623,7 @@ calculate_kv_scales
 kv_cache_dtype_skip_layers
 ```
 
-位置：`vllm/vllm/config/cache.py:110`
+位置：`code/vllm/vllm/config/cache.py:110`
 
 KV cache 量化的完整机制见：`07_kv_cache_quantization.md`。
 

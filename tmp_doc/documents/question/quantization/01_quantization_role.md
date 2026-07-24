@@ -2,15 +2,15 @@
 
 源码位置：
 
-- `vllm/vllm/config/quantization.py`
-- `vllm/vllm/config/model.py`
-- `vllm/vllm/config/vllm.py`
-- `vllm/vllm/config/cache.py`
-- `vllm/vllm/model_executor/layers/quantization/base_config.py`
-- `vllm/vllm/model_executor/layers/linear.py`
-- `vllm/vllm/model_executor/layers/fused_moe/`
-- `vllm/vllm/model_executor/layers/attention/attention.py`
-- `vllm/vllm/v1/attention/`
+- `code/vllm/vllm/config/quantization.py`
+- `code/vllm/vllm/config/model.py`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/config/cache.py`
+- `code/vllm/vllm/model_executor/layers/quantization/base_config.py`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/v1/attention/`
 
 本问题只关注：量化在 vLLM 中的职责边界。具体配置解析、权重加载、Linear、KV cache、attention backend、MoE、LoRA、并行和调试分别在后续专题展开。
 

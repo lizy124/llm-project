@@ -2,13 +2,13 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\linear.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\vocab_parallel_embedding.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\base_config.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\fp8.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_awq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_gptq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\utils.py`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py`
+- `code/vllm/vllm/model_executor/layers/quantization/base_config.py`
+- `code/vllm/vllm/model_executor/layers/quantization/fp8.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+- `code/vllm/vllm/model_executor/model_loader/utils.py`
 
 本问题关注：vLLM 里的 `ColumnParallelLinear`、`RowParallelLinear`、`QKVParallelLinear`、`MergedColumnParallelLinear`、`ReplicatedLinear` 等 Linear 层，如何在不改变模型 forward 语义的前提下，根据 `QuantizationConfig` 创建量化参数，并在 forward 中调用量化 kernel。
 

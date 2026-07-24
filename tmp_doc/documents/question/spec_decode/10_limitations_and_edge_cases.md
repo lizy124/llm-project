@@ -2,21 +2,21 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\speculative.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\vllm.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\compilation.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\sampling_params.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\scheduler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\core\sched\output.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_input_batch.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\spec_decode\__init__.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu\spec_decode\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\rejection_sampler.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\sample\logits_processor\__init__.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\structured_output\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\outputs.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\cp_utils.py`
+- `code/vllm/vllm/config/speculative.py`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/config/compilation.py`
+- `code/vllm/vllm/sampling_params.py`
+- `code/vllm/vllm/v1/core/sched/scheduler.py`
+- `code/vllm/vllm/v1/core/sched/output.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
+- `code/vllm/vllm/v1/worker/gpu/spec_decode/__init__.py`
+- `code/vllm/vllm/v1/worker/gpu/spec_decode/utils.py`
+- `code/vllm/vllm/v1/sample/rejection_sampler.py`
+- `code/vllm/vllm/v1/sample/logits_processor/__init__.py`
+- `code/vllm/vllm/v1/structured_output/utils.py`
+- `code/vllm/vllm/v1/outputs.py`
+- `code/vllm/vllm/v1/worker/cp_utils.py`
 
 本问题关注：spec decode 与配置校验、采样参数、logits processor、structured output、KV cache、chunked prefill、prefix cache、async scheduling、Pipeline Parallel、CUDA graph、V2 ModelRunner 等能力之间的限制和边界场景。
 

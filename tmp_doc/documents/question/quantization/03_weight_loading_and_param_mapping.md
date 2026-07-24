@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\__init__.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\base_loader.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\default_loader.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\sharded_state_loader.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\bitsandbytes_loader.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\weight_utils.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\utils.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\llama.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\linear.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_gptq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_awq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\fp8.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\parameter.py`
+- `code/vllm/vllm/model_executor/model_loader/__init__.py`
+- `code/vllm/vllm/model_executor/model_loader/base_loader.py`
+- `code/vllm/vllm/model_executor/model_loader/default_loader.py`
+- `code/vllm/vllm/model_executor/model_loader/sharded_state_loader.py`
+- `code/vllm/vllm/model_executor/model_loader/bitsandbytes_loader.py`
+- `code/vllm/vllm/model_executor/model_loader/weight_utils.py`
+- `code/vllm/vllm/model_executor/models/utils.py`
+- `code/vllm/vllm/model_executor/models/llama.py`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+- `code/vllm/vllm/model_executor/layers/quantization/fp8.py`
+- `code/vllm/vllm/model_executor/parameter.py`
 
 本问题关注：量化 checkpoint 中的 `weight`、`qweight`、`scales`、`qzeros`、`zero_point`、`g_idx`、FP8 scale、group / block metadata 等，如何经过 checkpoint iterator、模型命名映射、tensor parallel 切分、fused layer 拆分和量化方法专属 `weight_loader`，最终进入 vLLM layer 和 kernel 可消费的参数布局。
 

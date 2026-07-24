@@ -2,18 +2,18 @@
 
 源码位置：
 
-- `vllm/vllm/model_executor/layers/linear.py`
-- `vllm/vllm/model_executor/layers/quantization/fp8.py`
-- `vllm/vllm/model_executor/layers/quantization/input_quant_fp8.py`
-- `vllm/vllm/model_executor/layers/quantization/online/fp8.py`
-- `vllm/vllm/model_executor/layers/quantization/utils/quant_utils.py`
-- `vllm/vllm/model_executor/kernels/linear/scaled_mm/ScaledMMLinearKernel.py`
-- `vllm/vllm/model_executor/kernels/linear/scaled_mm/cutlass.py`
-- `vllm/vllm/model_executor/layers/fusion/quant_activation.py`
-- `vllm/vllm/compilation/passes/fusion/act_quant_fusion.py`
-- `vllm/vllm/compilation/passes/fusion/rms_quant_fusion.py`
-- `vllm/vllm/compilation/passes/fusion/attn_quant_fusion.py`
-- `vllm/vllm/_custom_ops.py`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/layers/quantization/fp8.py`
+- `code/vllm/vllm/model_executor/layers/quantization/input_quant_fp8.py`
+- `code/vllm/vllm/model_executor/layers/quantization/online/fp8.py`
+- `code/vllm/vllm/model_executor/layers/quantization/utils/quant_utils.py`
+- `code/vllm/vllm/model_executor/kernels/linear/scaled_mm/ScaledMMLinearKernel.py`
+- `code/vllm/vllm/model_executor/kernels/linear/scaled_mm/cutlass.py`
+- `code/vllm/vllm/model_executor/layers/fusion/quant_activation.py`
+- `code/vllm/vllm/compilation/passes/fusion/act_quant_fusion.py`
+- `code/vllm/vllm/compilation/passes/fusion/rms_quant_fusion.py`
+- `code/vllm/vllm/compilation/passes/fusion/attn_quant_fusion.py`
+- `code/vllm/vllm/_custom_ops.py`
 - `vllm/csrc/libtorch_stable/quantization/`
 
 本问题关注：activation quantization、dynamic quantization、per-token scaling、per-token-group / block scaling 这些运行时量化机制如何参与 forward；它们和 weight-only quantization 的区别；scale 在哪里计算；量化后的 activation 如何进入 scaled GEMM；以及 torch.compile / CUDA graph / fusion 对这条链路有什么影响。

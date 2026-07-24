@@ -93,7 +93,8 @@
 - [x] 7. attention：已按新 commit 轻量复审并修正 attention_overview.md、01_attention_role.md、02_backend_selection.md、03_attention_metadata_builder.md、04_prefill_decode_metadata.md、05_slot_mapping_and_block_table.md、06_attention_forward_flow.md、07_kv_cache_layout_and_backend.md、08_cascade_attention.md、09_attention_and_kv_connector_hooks.md、10_cuda_graph_compile_interaction.md，以及 attention_methods 子目录 11_attention_variants_overview.md 到 18_hma_and_kv_cache_layout.md。
 - [ ] 8. parallelism：处理中；当前批次已按新 commit 轻量复审并修正 README.md、parallelism_overview.md、01_parallel_config_and_topology.md、02_distributed_groups.md、03_tensor_parallel.md、04_pipeline_parallel.md、05_data_parallel.md、06_expert_parallel.md、07_context_parallel.md、10_communication_primitives.md、12_end_to_end_examples.md，并继续收尾其余条目。
 - [ ] 9. sampling_and_output：处理中；本次已按新 commit 轻量复审并修正 01_sampling_output_role.md、02_sampling_params_and_metadata.md、03_logits_and_logprobs.md、04_sampler_flow.md、05_spec_decode_sampling.md、06_structured_output_and_grammar.md、07_model_runner_output.md、08_scheduler_update_output.md、09_output_processor_request_output.md、10_streaming_and_client_outputs.md、11_pooling_and_embedding_outputs.md、sampling_and_output_overview.md。
-- [ ] 10. spec_decode：处理中；本次已按新 commit 轻量复审并修正 01_spec_decode_role.md、02_draft_tokens_and_request_state.md、03_scheduler_spec_decode_flow.md、04_spec_decode_metadata.md、06_rejection_sampler_flow.md、07_kv_cache_and_num_computed_tokens.md、08_structured_output_interaction.md。
+- [x] 10. spec_decode：已按新 commit 轻量复审并修正 01_spec_decode_role.md、02_draft_tokens_and_request_state.md、03_scheduler_spec_decode_flow.md、04_spec_decode_metadata.md、06_rejection_sampler_flow.md、07_kv_cache_and_num_computed_tokens.md、08_structured_output_interaction.md、10_limitations_and_edge_cases.md；已轻量复审 spec_decode_overview.md，未发现文档内明显冲突。
+- [ ] 11. quantization：处理中；已轻量复审 README.md，目录索引与实际文件一致，未发现需要修改内容；已修正 01_quantization_role.md 顶部源码路径格式；已统一 02_quantization_config.md、05_weight_only_quantization.md、06_activation_and_dynamic_quantization.md 中源码路径前缀；已修正 03_weight_loading_and_param_mapping.md、04_quantized_linear_layers.md 顶部源码路径格式。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -134,15 +135,15 @@
 - llm-project\tmp_doc\documents\question\spec_decode\07_kv_cache_and_num_computed_tokens.md，否，是
 - llm-project\tmp_doc\documents\question\spec_decode\08_structured_output_interaction.md，否，是
 - llm-project\tmp_doc\documents\question\spec_decode\09_output_recovery_and_scheduler_update.md，否，是
-- llm-project\tmp_doc\documents\question\spec_decode\10_limitations_and_edge_cases.md，是，否
-- llm-project\tmp_doc\documents\question\spec_decode\spec_decode_overview.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\README.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\01_quantization_role.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\02_quantization_config.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\03_weight_loading_and_param_mapping.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\04_quantized_linear_layers.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\05_weight_only_quantization.md，否，否
-- llm-project\tmp_doc\documents\question\quantization\06_activation_and_dynamic_quantization.md，否，否
+- llm-project\tmp_doc\documents\question\spec_decode\10_limitations_and_edge_cases.md，否，是
+- llm-project\tmp_doc\documents\question\spec_decode\spec_decode_overview.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\README.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\01_quantization_role.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\02_quantization_config.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\03_weight_loading_and_param_mapping.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\04_quantized_linear_layers.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\05_weight_only_quantization.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\06_activation_and_dynamic_quantization.md，否，是
 - llm-project\tmp_doc\documents\question\quantization\07_kv_cache_quantization.md，否，否
 - llm-project\tmp_doc\documents\question\quantization\08_attention_backend_interaction.md，否，否
 - llm-project\tmp_doc\documents\question\quantization\09_moe_quantization.md，否，否
