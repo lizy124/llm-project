@@ -196,6 +196,15 @@ GPU 上真实的 key/value tensor 内容。
 BlockPool 管“哪些 block id 被谁占用、能否复用、能否驱逐”；Worker 管“这些 block id 对应的 GPU KV cache 槽位里写了什么”。
 ```
 
+也可以把 `KVCacheManager` 和 `BlockPool` 的分工记成：
+
+```text
+KVCacheManager 管“请求到 KV blocks 的账本和布局”；
+BlockPool 管“单个 KV block 的状态、空闲队列和 prefix cache 索引”。
+```
+
+所以 `KVCacheManager` 是面向 Scheduler 的“请求级管理器”，`BlockPool` 是它下面真正管理 block 元数据资源的“对象池”。
+
 ### 2.3 KVCacheCoordinator / SingleTypeKVCacheManager
 
 `KVCacheCoordinator` 是 `KVCacheManager` 下面的布局协调层。
