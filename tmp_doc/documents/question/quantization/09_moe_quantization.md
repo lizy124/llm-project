@@ -2,16 +2,16 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\routed_experts.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\fused_moe_method_base.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\fused_moe_modular_method.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\config.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\runner\moe_runner.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\fused_moe\router\gate_linear.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\fp8.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_awq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_gptq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\moe_wna16.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/fused_moe_method_base.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/fused_moe_modular_method.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/config.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/runner/moe_runner.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/router/gate_linear.py`
+- `code/vllm/vllm/model_executor/layers/quantization/fp8.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+- `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+- `code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py`
 
 本问题关注：Mixture-of-Experts 模型中 routed experts 的 `w1 / w2 / w3` 权重如何被组织成 fused MoE 参数，量化方法如何创建 per-expert 的低 bit 权重、scale、zero point、g_idx，以及 fused MoE kernel 如何消费这些量化参数。
 

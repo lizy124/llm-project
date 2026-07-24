@@ -2,14 +2,14 @@
 
 源码位置：
 
-- `vllm/vllm/config/cache.py`
-- `vllm/vllm/engine/arg_utils.py`
-- `vllm/vllm/utils/torch_utils.py`
-- `vllm/vllm/model_executor/layers/attention/attention.py`
-- `vllm/vllm/model_executor/layers/quantization/kv_cache.py`
-- `vllm/vllm/v1/kv_cache_interface.py`
-- `vllm/vllm/v1/worker/gpu_model_runner.py`
-- `vllm/vllm/distributed/kv_transfer/kv_connector/utils.py`
+- `code/vllm/vllm/config/cache.py`
+- `code/vllm/vllm/engine/arg_utils.py`
+- `code/vllm/vllm/utils/torch_utils.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/quantization/kv_cache.py`
+- `code/vllm/vllm/v1/kv_cache_interface.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py`
 
 本问题只关注：KV cache quantization 本身如何表示、分配、保存 scale、计算 page size，以及它和 block table / slot mapping / prefix cache / external KV transfer 的关系。attention backend 如何选择、各 backend 支持哪些量化格式，在 `08_attention_backend_interaction.md` 中展开。
 
@@ -88,9 +88,9 @@ kv_cache_dtype_skip_layers
 
 位置：
 
-- `vllm/vllm/engine/arg_utils.py:440`
-- `vllm/vllm/engine/arg_utils.py:680`
-- `vllm/vllm/engine/arg_utils.py:681`
+- `code/vllm/vllm/engine/arg_utils.py:440`
+- `code/vllm/vllm/engine/arg_utils.py:680`
+- `code/vllm/vllm/engine/arg_utils.py:681`
 
 构造 `CacheConfig` 前会调用：
 
@@ -98,7 +98,7 @@ kv_cache_dtype_skip_layers
 resolve_kv_cache_dtype_string(self.kv_cache_dtype, model_config)
 ```
 
-位置：`vllm/vllm/engine/arg_utils.py:1832`
+位置：`code/vllm/vllm/engine/arg_utils.py:1832`
 
 最终进入：
 
@@ -123,7 +123,7 @@ turboquant_k3v4_nc
 turboquant_3bit_nc
 ```
 
-位置：`vllm/vllm/config/cache.py:19`
+位置：`code/vllm/vllm/config/cache.py:19`
 
 含义分层：
 
@@ -148,7 +148,7 @@ turboquant_*：
 
 当 `kv_cache_dtype == "auto"` 时，`resolve_kv_cache_dtype_string()` 会检查模型量化配置中的 KV cache quant metadata。
 
-位置：`vllm/vllm/utils/torch_utils.py:373`
+位置：`code/vllm/vllm/utils/torch_utils.py:373`
 
 因此：
 
@@ -175,7 +175,7 @@ else:
     calculate_kv_scales = False
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:238`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:238`
 
 之后保存为：
 
@@ -185,7 +185,7 @@ self.kv_cache_torch_dtype
 self.calculate_kv_scales
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:291`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:291`
 
 这里要区分：
 
@@ -215,7 +215,7 @@ fp8
 
 并关闭动态计算 scale。
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:246`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:246`
 
 含义是：
 
@@ -233,7 +233,7 @@ checkpoint 声明 KV cache quant scheme
 
 `CacheConfig.kv_cache_dtype_skip_layers` 可以让部分层跳过 KV cache 量化。
 
-位置：`vllm/vllm/config/cache.py:115`
+位置：`code/vllm/vllm/config/cache.py:115`
 
 支持：
 
@@ -249,7 +249,7 @@ kv_cache_dtype = "auto"
 calculate_kv_scales = False
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:266`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:266`
 
 结果是：
 
@@ -260,13 +260,13 @@ calculate_kv_scales = False
 
 TurboQuant 还可能自动把边界层加入 skip。
 
-位置：`vllm/vllm/engine/arg_utils.py:1862`
+位置：`code/vllm/vllm/engine/arg_utils.py:1862`
 
 ---
 
 ## 7. KVQuantMode 是什么
 
-定义在：`vllm/vllm/v1/kv_cache_interface.py:33`
+定义在：`code/vllm/vllm/v1/kv_cache_interface.py:33`
 
 ```python
 class KVQuantMode(IntEnum):
@@ -283,7 +283,7 @@ class KVQuantMode(IntEnum):
 get_kv_quant_mode(kv_cache_dtype)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:60`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:60`
 
 规则：
 
@@ -308,7 +308,7 @@ KVQuantMode 不是用户配置；
 
 `Attention.get_kv_cache_spec()` 会把 layer 上的 KV cache 信息变成 spec。
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:581`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:581`
 
 关键字段：
 
@@ -347,7 +347,7 @@ FullAttentionSpec(..., dtype=self.kv_cache_torch_dtype, kv_quant_mode=quant_mode
 2 * block_size * num_kv_heads * head_size * sizeof(dtype)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:183`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:183`
 
 这里的 `2` 表示：
 
@@ -369,7 +369,7 @@ kv_quant_mode.is_per_token_head
 2 * block_size * num_kv_heads * sizeof(float32)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:169`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:169`
 
 原因是每个 token / head 需要 K scale 和 V scale。
 
@@ -381,7 +381,7 @@ NVFP4 使用：
 nvfp4_kv_cache_full_dim(head_size)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:185`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:185`
 
 含义：
 
@@ -397,7 +397,7 @@ TurboQuant 走 `TQFullAttentionSpec`，page size 使用：
 block_size * num_kv_heads * tq_slot_size
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:340`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:340`
 
 它不是普通 K/V 分离布局。
 
@@ -411,7 +411,7 @@ Worker 初始化 KV cache 时，先按 bytes 分配 raw buffer：
 torch.zeros(kv_cache_tensor.size, dtype=torch.int8, device=self.device)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7033`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7033`
 
 随后根据 spec 和 backend reshape：
 
@@ -423,7 +423,7 @@ KVCacheSpec.page_size_bytes
   → _reshape_attention_kv_cache(...)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:7072`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7072`
 
 关键点：
 
@@ -440,7 +440,7 @@ KV cache allocation 是 byte-level；
 
 KV scale 由 `BaseKVCacheMethod` 处理。
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:42`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:42`
 
 它会在 Attention layer 上创建临时可加载参数：
 
@@ -451,7 +451,7 @@ v_scale
 prob_scale
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:57`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:57`
 
 加载后会写入运行时 buffer：
 
@@ -462,7 +462,7 @@ _v_scale / _v_scale_float
 _prob_scale / _prob_scale_float
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:74`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:74`
 
 ### 11.1 checkpoint 有 scale
 
@@ -491,7 +491,7 @@ fp8_per_token_head
 
 scale 在写 cache kernel 中动态计算，checkpoint scale 会被忽略，layer 的 `_k_scale/_v_scale` 置为 1.0。
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:82`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:82`
 
 ---
 
@@ -499,7 +499,7 @@ scale 在写 cache kernel 中动态计算，checkpoint scale 会被忽略，laye
 
 `calculate_kv_scales` 已 deprecated，但仍存在。
 
-位置：`vllm/vllm/config/cache.py:110`
+位置：`code/vllm/vllm/config/cache.py:110`
 
 如果开启，Attention.forward 会调用：
 
@@ -507,7 +507,7 @@ scale 在写 cache kernel 中动态计算，checkpoint scale 会被忽略，laye
 torch.ops.vllm.maybe_calc_kv_scales(query, key, value, layer_name)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:471`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:471`
 
 实际计算：
 
@@ -518,7 +518,7 @@ _v_scale = abs(value).max() / v_range
 calculate_kv_scales = False
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:546`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:546`
 
 注意：
 
@@ -617,7 +617,7 @@ KV connector 可以要求特定 cache layout：
 connector_cls.get_required_kvcache_layout(vllm_config)
 ```
 
-位置：`vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:34`
+位置：`code/vllm/vllm/distributed/kv_transfer/kv_connector/utils.py:34`
 
 因此 external KV transfer 的关键不是重新量化，而是：
 
@@ -635,7 +635,7 @@ connector_cls.get_required_kvcache_layout(vllm_config)
 self.init_fp8_kv_scales()
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:935`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:935`
 
 如果是量化 KV cache，会：
 
@@ -644,7 +644,7 @@ self.init_fp8_kv_scales()
 2. 把 Attention / MLAAttention 的 K/V scale 重置为 1.0。
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:938`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:938`
 
 原因是 wake_up 后显存和 scale 状态需要恢复到安全初始值，避免 0 scale 或脏 cache 造成输出异常。
 

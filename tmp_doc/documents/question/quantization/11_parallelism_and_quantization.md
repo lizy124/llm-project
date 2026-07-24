@@ -2,16 +2,16 @@
 
 源码位置：
 
-- `vllm/vllm/model_executor/layers/linear.py`
-- `vllm/vllm/model_executor/parameter.py`
-- `vllm/vllm/model_executor/layers/quantization/`
-- `vllm/vllm/model_executor/layers/fused_moe/`
-- `vllm/vllm/model_executor/model_loader/utils.py`
-- `vllm/vllm/model_executor/model_loader/weight_utils.py`
-- `vllm/vllm/model_executor/models/utils.py`
-- `vllm/vllm/config/model.py`
-- `vllm/vllm/distributed/parallel_state.py`
-- `vllm/vllm/distributed/utils.py`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/parameter.py`
+- `code/vllm/vllm/model_executor/layers/quantization/`
+- `code/vllm/vllm/model_executor/layers/fused_moe/`
+- `code/vllm/vllm/model_executor/model_loader/utils.py`
+- `code/vllm/vllm/model_executor/model_loader/weight_utils.py`
+- `code/vllm/vllm/model_executor/models/utils.py`
+- `code/vllm/vllm/config/model.py`
+- `code/vllm/vllm/distributed/parallel_state.py`
+- `code/vllm/vllm/distributed/utils.py`
 
 本问题关注：tensor parallel、pipeline parallel、expert parallel、data parallel / decode-context / prefill-context 并行下，量化权重、scale、zero point、g_idx、input scale、block scale、packed layout 和 fused MoE expert 权重如何切分、加载和转换；为什么并行量化的难点不只是切 `qweight`，而是让 checkpoint 格式、vLLM 参数布局、TP/EP/PP 分片和 kernel runtime layout 全部对齐。
 
@@ -102,7 +102,7 @@ def initialize_model_parallel(
 )
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1694`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1694`
 
 注释里的布局顺序是：
 
@@ -110,7 +110,7 @@ def initialize_model_parallel(
 ExternalDP x DP x PP x PCP x TP
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1760`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1760`
 
 其中：
 
@@ -132,7 +132,7 @@ get_ep_group()
 get_pcp_group()
 ```
 
-位置：`vllm/vllm/distributed/parallel_state.py:1349` 到 `vllm/vllm/distributed/parallel_state.py:1405`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1349` 到 `code/vllm/vllm/distributed/parallel_state.py:1405`
 
 ---
 
@@ -155,11 +155,11 @@ pp_rank = (
 start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 ```
 
-位置：`vllm/vllm/config/model.py:1282` 到 `vllm/vllm/config/model.py:1295`
+位置：`code/vllm/vllm/config/model.py:1282` 到 `code/vllm/vllm/config/model.py:1295`
 
 `get_pp_indices()` 会尽量均匀分配 hidden layers。
 
-位置：`vllm/vllm/distributed/utils.py:109`
+位置：`code/vllm/vllm/distributed/utils.py:109`
 
 ### 4.2 make_layers 如何处理缺失层
 
@@ -169,7 +169,7 @@ start, end = get_pp_indices(total_num_hidden_layers, pp_rank, pp_size)
 make_layers(num_hidden_layers, layer_fn, prefix)
 ```
 
-位置：`vllm/vllm/model_executor/models/utils.py:640`
+位置：`code/vllm/vllm/model_executor/models/utils.py:640`
 
 它会：
 
@@ -180,7 +180,7 @@ make_layers(num_hidden_layers, layer_fn, prefix)
 4. end_layer 之后放 PPMissingLayer。
 ```
 
-核心代码位置：`vllm/vllm/model_executor/models/utils.py:660` 到 `vllm/vllm/model_executor/models/utils.py:670`
+核心代码位置：`code/vllm/vllm/model_executor/models/utils.py:660` 到 `code/vllm/vllm/model_executor/models/utils.py:670`
 
 这意味着：
 
@@ -198,7 +198,7 @@ missing layer 不会加载量化权重。
 is_pp_missing_parameter(name, model)
 ```
 
-位置：`vllm/vllm/model_executor/models/utils.py:697`
+位置：`code/vllm/vllm/model_executor/models/utils.py:697`
 
 它根据 `PPMissingLayer` / `StageMissingLayer` 判断某个参数是否属于当前 PP rank 缺失的层。
 
@@ -231,7 +231,7 @@ MergedColumnParallelLinear：
 
 这些层都继承 `LinearBase`。
 
-位置：`vllm/vllm/model_executor/layers/linear.py:228`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:228`
 
 `LinearBase` 初始化时选择量化 method：
 
@@ -244,7 +244,7 @@ else:
     raise ValueError("All linear layers should support quant method.")
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:269` 到 `vllm/vllm/model_executor/layers/linear.py:274`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:269` 到 `code/vllm/vllm/model_executor/layers/linear.py:274`
 
 然后每个并行层把自己的本地 shape 传给：
 
@@ -263,7 +263,7 @@ TP 切分先体现在 create_weights 的参数里；
 
 ## 6. ColumnParallelLinear 如何切量化权重
 
-源码：`vllm/vllm/model_executor/layers/linear.py:394`
+源码：`code/vllm/vllm/model_executor/layers/linear.py:394`
 
 Column Parallel 的语义是：
 
@@ -281,7 +281,7 @@ output_size_per_partition = output_size / tp_size
 output_partition_sizes = [output_size_per_partition]
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:434` 到 `vllm/vllm/model_executor/layers/linear.py:443`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:434` 到 `code/vllm/vllm/model_executor/layers/linear.py:443`
 
 创建量化权重时传入：
 
@@ -295,7 +295,7 @@ self.quant_method.create_weights(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:461` 到 `vllm/vllm/model_executor/layers/linear.py:473`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:461` 到 `code/vllm/vllm/model_executor/layers/linear.py:473`
 
 ### 6.1 ColumnParallel weight_loader
 
@@ -307,7 +307,7 @@ start_idx = tp_rank * shard_size
 loaded_weight = loaded_weight.narrow(output_dim, start_idx, shard_size)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:517` 到 `vllm/vllm/model_executor/layers/linear.py:538`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:517` 到 `code/vllm/vllm/model_executor/layers/linear.py:538`
 
 v2 loader 则委托给参数对象：
 
@@ -315,7 +315,7 @@ v2 loader 则委托给参数对象：
 param.load_column_parallel_weight(loaded_weight=loaded_weight)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:540` 到 `vllm/vllm/model_executor/layers/linear.py:546`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:540` 到 `code/vllm/vllm/model_executor/layers/linear.py:546`
 
 ### 6.2 ColumnParallel forward
 
@@ -327,7 +327,7 @@ output_parallel = self.quant_method.apply(self, input_, bias)
 
 如果 `gather_output=True`，再 all-gather。
 
-位置：`vllm/vllm/model_executor/layers/linear.py:548` 到 `vllm/vllm/model_executor/layers/linear.py:566`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:548` 到 `code/vllm/vllm/model_executor/layers/linear.py:566`
 
 所以量化 kernel 只处理本 rank 的输出 shard；跨 rank 合并仍由 ColumnParallelLinear 管。
 
@@ -335,7 +335,7 @@ output_parallel = self.quant_method.apply(self, input_, bias)
 
 ## 7. RowParallelLinear 如何切量化权重
 
-源码：`vllm/vllm/model_executor/layers/linear.py:1493`
+源码：`code/vllm/vllm/model_executor/layers/linear.py:1493`
 
 Row Parallel 的语义是：
 
@@ -353,7 +353,7 @@ output_size_per_partition = output_size
 output_partition_sizes = [output_size]
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1543` 到 `vllm/vllm/model_executor/layers/linear.py:1548`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1543` 到 `code/vllm/vllm/model_executor/layers/linear.py:1548`
 
 创建量化权重：
 
@@ -367,7 +367,7 @@ self.quant_method.create_weights(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1565` 到 `vllm/vllm/model_executor/layers/linear.py:1577`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1565` 到 `code/vllm/vllm/model_executor/layers/linear.py:1577`
 
 ### 7.1 RowParallel weight_loader
 
@@ -379,7 +379,7 @@ start_idx = tp_rank * shard_size
 loaded_weight = loaded_weight.narrow(input_dim, start_idx, shard_size)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1597` 到 `vllm/vllm/model_executor/layers/linear.py:1617`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1597` 到 `code/vllm/vllm/model_executor/layers/linear.py:1617`
 
 v2 loader 调用：
 
@@ -387,7 +387,7 @@ v2 loader 调用：
 param.load_row_parallel_weight(loaded_weight=loaded_weight)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1619` 到 `vllm/vllm/model_executor/layers/linear.py:1626`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1619` 到 `code/vllm/vllm/model_executor/layers/linear.py:1626`
 
 ### 7.2 RowParallel forward
 
@@ -404,13 +404,13 @@ quant_method.apply(...)
   tensor_model_parallel_all_reduce(output_parallel)。
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1628` 到 `vllm/vllm/model_executor/layers/linear.py:1654`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1628` 到 `code/vllm/vllm/model_executor/layers/linear.py:1654`
 
 ---
 
 ## 8. MergedColumnParallelLinear 如何处理 fused 权重
 
-源码：`vllm/vllm/model_executor/layers/linear.py:577`
+源码：`code/vllm/vllm/model_executor/layers/linear.py:577`
 
 它用于多个 column-parallel 线性层 fused 到一个矩阵的场景，例如：
 
@@ -425,7 +425,7 @@ self.output_sizes：每个逻辑矩阵的全局输出维度；
 self.output_partition_sizes：每个逻辑矩阵在当前 TP rank 的输出维度。
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:617` 到 `vllm/vllm/model_executor/layers/linear.py:633`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:617` 到 `code/vllm/vllm/model_executor/layers/linear.py:633`
 
 ### 8.1 shard_id
 
@@ -437,7 +437,7 @@ int：单个逻辑 shard；
 tuple[int, ...]：连续多个逻辑 shard。
 ```
 
-校验逻辑位置：`vllm/vllm/model_executor/layers/linear.py:635`
+校验逻辑位置：`code/vllm/vllm/model_executor/layers/linear.py:635`
 
 ### 8.2 量化特殊处理
 
@@ -460,15 +460,15 @@ PerTensorScaleParameter：
   scalar scale 加载到 fused array 的指定逻辑槽位。
 ```
 
-对应位置：`vllm/vllm/model_executor/layers/linear.py:708` 到 `vllm/vllm/model_executor/layers/linear.py:805`
+对应位置：`code/vllm/vllm/model_executor/layers/linear.py:708` 到 `code/vllm/vllm/model_executor/layers/linear.py:805`
 
-v2 loader 版本位置：`vllm/vllm/model_executor/layers/linear.py:847`
+v2 loader 版本位置：`code/vllm/vllm/model_executor/layers/linear.py:847`
 
 ---
 
 ## 9. QKVParallelLinear 如何处理 Q/K/V fused 权重
 
-源码：`vllm/vllm/model_executor/layers/linear.py:914`
+源码：`code/vllm/vllm/model_executor/layers/linear.py:914`
 
 QKVParallelLinear 把 attention 的 Q、K、V projection fused 成一个 column-parallel 矩阵。
 
@@ -480,7 +480,7 @@ KV head 如果总数小于 TP size，则复制，保证每个 rank 至少有一�
 output_sizes = [q_proj, k_proj, v_proj] 的全局 fused 尺寸。
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:966` 到 `vllm/vllm/model_executor/layers/linear.py:984`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:966` 到 `code/vllm/vllm/model_executor/layers/linear.py:984`
 
 ### 9.1 loaded_shard_id
 
@@ -493,7 +493,7 @@ v
 None
 ```
 
-校验位置：`vllm/vllm/model_executor/layers/linear.py:999`
+校验位置：`code/vllm/vllm/model_executor/layers/linear.py:999`
 
 ### 9.2 KV head replication
 
@@ -509,7 +509,7 @@ shard_rank = tp_rank
 shard_rank = tp_rank // num_kv_head_replicas
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1278` 到 `vllm/vllm/model_executor/layers/linear.py:1286`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1278` 到 `code/vllm/vllm/model_executor/layers/linear.py:1286`
 
 这解释了为什么 QKV 量化权重不能简单按输出维平均切：KV head 可能是复制而不是均分。
 
@@ -525,7 +525,7 @@ bitsandbytes 4bit packed shard；
 per-tensor scale 的 q/k/v 槽位加载。
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1167` 到 `vllm/vllm/model_executor/layers/linear.py:1303`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1167` 到 `code/vllm/vllm/model_executor/layers/linear.py:1303`
 
 ---
 
@@ -533,7 +533,7 @@ per-tensor scale 的 q/k/v 槽位加载。
 
 量化 method 创建参数时，通常不会直接用普通 `torch.nn.Parameter`，而是用 vLLM 自定义 Parameter。
 
-源码：`vllm/vllm/model_executor/parameter.py`
+源码：`code/vllm/vllm/model_executor/parameter.py`
 
 核心类：
 
@@ -549,7 +549,7 @@ PerTensorScaleParameter
 BlockQuantScaleParameter
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:18`
+位置：`code/vllm/vllm/model_executor/parameter.py:18`
 
 ### 10.1 BasevLLMParameter
 
@@ -561,7 +561,7 @@ tp_rank
 tp_size
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:32` 到 `vllm/vllm/model_executor/parameter.py:67`
+位置：`code/vllm/vllm/model_executor/parameter.py:32` 到 `code/vllm/vllm/model_executor/parameter.py:67`
 
 也就是说 Parameter 本身知道当前 TP rank。
 
@@ -575,7 +575,7 @@ loaded_weight = loaded_weight.narrow(output_dim, tp_rank * shard_size, shard_siz
 copy_ 到本地参数
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:148` 到 `vllm/vllm/model_executor/parameter.py:154`
+位置：`code/vllm/vllm/model_executor/parameter.py:148` 到 `code/vllm/vllm/model_executor/parameter.py:154`
 
 ### 10.3 Row 参数切分
 
@@ -587,7 +587,7 @@ loaded_weight = loaded_weight.narrow(input_dim, tp_rank * shard_size, shard_size
 copy_ 到本地参数
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:220` 到 `vllm/vllm/model_executor/parameter.py:230`
+位置：`code/vllm/vllm/model_executor/parameter.py:220` 到 `code/vllm/vllm/model_executor/parameter.py:230`
 
 ### 10.4 Packed 参数切分
 
@@ -599,7 +599,7 @@ packed_dim
 marlin_tile_size
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:313` 和 `vllm/vllm/model_executor/parameter.py:353`
+位置：`code/vllm/vllm/model_executor/parameter.py:313` 和 `code/vllm/vllm/model_executor/parameter.py:353`
 
 packed shard 调整：
 
@@ -611,7 +611,7 @@ if marlin_tile_size is not None:
     shard_offset *= marlin_tile_size
 ```
 
-位置：`vllm/vllm/model_executor/parameter.py:606` 到 `vllm/vllm/model_executor/parameter.py:618`
+位置：`code/vllm/vllm/model_executor/parameter.py:606` 到 `code/vllm/vllm/model_executor/parameter.py:618`
 
 这就是 INT4 / INT8 packed 权重不能按原始浮点维度直接切的原因。
 
@@ -626,13 +626,13 @@ MergedColumn：N 个逻辑矩阵 scale 槽位。
 
 `PerTensorScaleParameter._load_into_shard_id()` 会按 shard_id 写入对应槽位。
 
-位置：`vllm/vllm/model_executor/parameter.py:291` 到 `vllm/vllm/model_executor/parameter.py:310`
+位置：`code/vllm/vllm/model_executor/parameter.py:291` 到 `code/vllm/vllm/model_executor/parameter.py:310`
 
 ### 10.6 BlockQuantScaleParameter
 
 Block scale 不是普通 row/column scale，而是二维 block scale。
 
-对应类型：`vllm/vllm/model_executor/parameter.py:397`
+对应类型：`code/vllm/vllm/model_executor/parameter.py:397`
 
 Linear loader 里遇到它时会调用：
 
@@ -640,7 +640,7 @@ Linear loader 里遇到它时会调用：
 adjust_block_scale_shard(weight_block_size, shard_size, shard_offset)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:82`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:82`
 
 逻辑是按 block_n 把输出 shard 映射到 scale shard。
 
@@ -648,7 +648,7 @@ adjust_block_scale_shard(weight_block_size, shard_size, shard_offset)
 
 ## 11. GPTQ 与 TP / packed / scale 的关系
 
-源码：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
 
 ### 11.1 GPTQ Linear 创建哪些参数
 
@@ -666,7 +666,7 @@ scales：ChannelQuantScaleParameter 或 GroupQuantScaleParameter
 qzeros：PackedColumnParameter 或 PackedvLLMParameter
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:324` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:443`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:324` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:443`
 
 ### 11.2 RowParallel 对 scale 的影响
 
@@ -676,7 +676,7 @@ GPTQ 会判断：
 is_row_parallel = input_size != input_size_per_partition
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:335`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:335`
 
 然后通过：
 
@@ -694,7 +694,7 @@ scales_and_zp_input_dim = 0
   → scale 按 input group 维度切分。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:364` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:376`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:364` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:376`
 
 这说明 GPTQ 的 scale 切法不只取决于矩阵是 Row 还是 Column，还取决于 `desc_act` 和 `group_size`。
 
@@ -713,17 +713,17 @@ MPLinearLayerConfig(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:339` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:350`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:339` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:350`
 
 然后 `choose_mp_linear_kernel()` 根据这个本地 partition 选择 Marlin / Machete / Cutlass / Triton / CPU 等 kernel。
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:352`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:352`
 
 ---
 
 ## 12. AWQ 与 TP / packed order 的关系
 
-源码：`vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
 
 ### 12.1 AWQ Linear 参数
 
@@ -741,7 +741,7 @@ scales：GroupQuantScaleParameter
   shape = [num_groups, output_size_per_partition]
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:821` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:900`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:821` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:900`
 
 ### 12.2 AWQ 的对齐检查
 
@@ -752,7 +752,7 @@ input_size_per_partition % group_size == 0
 output_size_per_partition % pack_factor == 0
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:843` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:843` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
 
 这意味着 TP size 过大时，单 rank 上的 input/output partition 可能不满足 group / pack 对齐。
 
@@ -765,7 +765,7 @@ standard order：0,1,2,3,4,5,6,7
 AWQ order：0,4,1,5,2,6,3,7
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:72` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:76`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:72` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:76`
 
 Marlin 路径在加载后调用：
 
@@ -774,7 +774,7 @@ _convert_awq_to_standard_format(layer, "qweight", "qzeros", size_bits)
 self.kernel.process_weights_after_loading(layer)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:525` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:533`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:525` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:533`
 
 这一步会把：
 
@@ -791,7 +791,7 @@ AWQ packed along output dim
 
 ## 13. FP8 与 per-tensor / block scale 的关系
 
-源码：`vllm/vllm/model_executor/layers/quantization/fp8.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/fp8.py`
 
 ### 13.1 FP8 Linear 参数
 
@@ -804,7 +804,7 @@ weight_scale_inv：block quant scale
 input_scale：static activation scale
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:322` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:386`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:322` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:386`
 
 ### 13.2 per-tensor FP8 scale
 
@@ -820,7 +820,7 @@ create_fp8_scale_parameter(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:358` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:366`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:358` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:366`
 
 这让 fused QKV / MLP 的多个逻辑矩阵 scale 能正确映射到本地 shard。
 
@@ -838,7 +838,7 @@ create_fp8_scale_parameter(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:370` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:379`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:370` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:379`
 
 并且会调用：
 
@@ -846,7 +846,7 @@ create_fp8_scale_parameter(
 validate_fp8_block_shape(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:340` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:350`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:340` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:350`
 
 这说明 block-wise FP8 对 TP 后的局部 shape 有额外 block 对齐要求。
 
@@ -862,13 +862,13 @@ static input scale：整理 input_scale；
 block quant：保留 block scale layout。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:398` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:444`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:398` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:444`
 
 ---
 
 ## 14. bitsandbytes 与并行切分
 
-源码：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py`
 
 ### 14.1 Linear 参数
 
@@ -887,7 +887,7 @@ shape = [total_size / quant_ratio, 1]
 dtype = uint8
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:225` 到 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:269`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:225` 到 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:269`
 
 ### 14.2 BNB 4bit 的特殊 shard
 
@@ -899,7 +899,7 @@ vLLM 用：
 adjust_bitsandbytes_4bit_shard(param, shard_offsets, loaded_shard_id)
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:94`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:94`
 
 它根据原始 logical offset 和 packed 后总长度，重新计算：
 
@@ -908,7 +908,7 @@ quantized_offset
 quantized_size
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:104` 到 `vllm/vllm/model_executor/layers/linear.py:107`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:104` 到 `code/vllm/vllm/model_executor/layers/linear.py:107`
 
 ### 14.3 BNB forward
 
@@ -924,7 +924,7 @@ bitsandbytes.matmul
 bitsandbytes.matmul_4bit
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:291` 和 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:361`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:291` 和 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:361`
 
 所以 BNB 的量化切分更多依赖 BNB quant_state / offset，而不是 vLLM 的通用 packed int32 layout。
 
@@ -932,13 +932,13 @@ bitsandbytes.matmul_4bit
 
 ## 15. compressed-tensors 与并行切分
 
-源码：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py`
+源码：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py`
 
 ### 15.1 scheme 决定参数布局
 
 `CompressedTensorsConfig` 会根据 `config_groups` 选择 scheme。
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:80`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:80`
 
 Linear method 本身很薄：
 
@@ -953,7 +953,7 @@ apply(...)
   → layer.scheme.apply_weights(layer, x, bias)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:910` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:958`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:910` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:958`
 
 这意味着 compressed-tensors 的并行切分规则主要由具体 scheme 决定。
 
@@ -973,13 +973,13 @@ Embedding WNA16；
 MoE compressed-tensors method。
 ```
 
-scheme 选择位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:692` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:813`
+scheme 选择位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:692` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:813`
 
 ### 15.3 KV cache scale 的 TP-aware 加载
 
 compressed-tensors 还支持 KV cache scale。
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:961`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:961`
 
 当 strategy 是 `ATTN_HEAD` 时：
 
@@ -989,7 +989,7 @@ k/v_scale：如果 KV heads 均分给 TP rank，就 narrow；
 如果 KV heads 少于 TP size，就按 replica 关系选择 shard_rank。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:1053` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:1099`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:1053` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:1099`
 
 这和 QKVParallelLinear 里的 KV head replication 是同一个问题：KV head 数可能小于 TP size。
 
@@ -1006,7 +1006,7 @@ FusedMoE
   → MoERunner
 ```
 
-入口：`vllm/vllm/model_executor/layers/fused_moe/layer.py:103`
+入口：`code/vllm/vllm/model_executor/layers/fused_moe/layer.py:103`
 
 ### 16.1 FusedMoEParallelConfig
 
@@ -1022,7 +1022,7 @@ parallel_config
 
 转换成 `FusedMoEParallelConfig`。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:43`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/layer.py:43`
 
 FusedMoE 初始化时调用：
 
@@ -1030,13 +1030,13 @@ FusedMoE 初始化时调用：
 moe_parallel_config = make_parallel_config(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:216`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/layer.py:216`
 
 ### 16.2 ExpertMapManager 决定本地 expert
 
 `ExpertMapManager` 负责 EP 下 expert 的 global → local 映射。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:152`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:152`
 
 核心函数：
 
@@ -1044,7 +1044,7 @@ moe_parallel_config = make_parallel_config(...)
 determine_expert_map(ep_size, ep_rank, global_num_experts, ...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:22`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:22`
 
 它返回：
 
@@ -1054,7 +1054,7 @@ expert_map：global expert id → local expert id，不在本 rank 的是 -1；
 expert_mask：部分 AITER kernel 使用。
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:45` 到 `vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:58`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:45` 到 `code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:58`
 
 如果 `ep_size == 1`：
 
@@ -1062,13 +1062,13 @@ expert_mask：部分 AITER kernel 使用。
 所有 expert 都在本 rank，expert_map=None。
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:62` 到 `vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:64`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:62` 到 `code/vllm/vllm/model_executor/layers/fused_moe/expert_map_manager.py:64`
 
 ---
 
 ## 17. RoutedExperts 如何创建量化 expert 参数
 
-源码：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:44`
+源码：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:44`
 
 初始化时：
 
@@ -1080,7 +1080,7 @@ self.quant_method = self._get_quant_method(
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:114`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:114`
 
 然后量化方法可以调整 hidden / intermediate size：
 
@@ -1090,7 +1090,7 @@ self.hidden_size, self.intermediate_size_per_partition = (
 )
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:122` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:133`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:122` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:133`
 
 这一步对 MXFP4、block quant、某些 kernel tile 对齐很重要。
 
@@ -1109,7 +1109,7 @@ global_num_experts
 intermediate_size_full（部分 WNA16 / act-order 需要）
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:150` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:168`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:150` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:168`
 
 这说明 MoE 量化参数的第一维通常是：
 
@@ -1128,7 +1128,7 @@ if enable_eplb and not quant_method.supports_eplb:
     raise NotImplementedError
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:135` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:148`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:135` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:148`
 
 这说明不是所有量化 MoE kernel 都支持 expert load balancing。
 
@@ -1138,7 +1138,7 @@ if enable_eplb and not quant_method.supports_eplb:
 
 `RoutedExperts.weight_loader()` 是 MoE expert 权重加载的核心。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:571`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:571`
 
 它接收：
 
@@ -1168,7 +1168,7 @@ w13：w1 + w3 fused 后的本地参数
 expert_id = self._map_global_expert_id_to_local_expert_id(global_expert_id)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:592` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:603`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:592` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:603`
 
 如果这个 expert 不属于当前 rank：
 
@@ -1194,7 +1194,7 @@ w2：1
 down_proj 的 intermediate 输入维度
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:628` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:672`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:628` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:672`
 
 如果参数是 transposed，则 shard_dim 会翻转。
 
@@ -1210,7 +1210,7 @@ weight：按模型权重或 group scale 规则加载；
 bitsandbytes 4bit：特殊 flat packed 加载。
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:633` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:851`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:633` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:851`
 
 ---
 
@@ -1222,7 +1222,7 @@ bitsandbytes 4bit：特殊 flat packed 加载。
 def load_weights(self, weights)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:853`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:853`
 
 它依赖 `expert_mapping`：
 
@@ -1236,7 +1236,7 @@ def load_weights(self, weights)
 make_expert_params_mapping(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:905`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:905`
 
 ### 19.1 fused 3D expert 权重
 
@@ -1248,13 +1248,13 @@ w1/w3 可能需要 chunk(2, dim=1) 拆 gate/up；
 然后逐 expert 调 weight_loader。
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:869` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:895`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:869` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:895`
 
 ### 19.2 redundant experts / EPLB
 
 `make_expert_params_mapping()` 会处理 physical expert id 到 logical expert id 的映射。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:937` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:974`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:937` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:974`
 
 这保证 EPLB / redundant expert 场景下 checkpoint 里的 logical expert 权重能加载到当前物理 expert 位置。
 
@@ -1274,7 +1274,7 @@ w13_g_idx / w2_g_idx
 w13_g_idx_sort_indices / w2_g_idx_sort_indices
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:492` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:650`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:492` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:650`
 
 加载后调用：
 
@@ -1283,7 +1283,7 @@ convert_to_wna16_moe_kernel_format(...)
 make_wna16_moe_kernel(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:651` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:750`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:651` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:750`
 
 ### 20.2 AWQ MoE
 
@@ -1296,19 +1296,19 @@ w13_qzeros / w2_qzeros
 workspace
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:562` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:661`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:562` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:661`
 
 post-load 也会转换到 WNA16 MoE kernel 格式。
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:663` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:741`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:663` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:741`
 
 ### 20.3 MoeWNA16 fallback
 
 当 GPTQ / AWQ MoE 不满足 Marlin support 时，会 fallback 到 `MoeWNA16Config`。
 
-GPTQ fallback：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:243`
+GPTQ fallback：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:243`
 
-AWQ fallback：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:342`
+AWQ fallback：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:342`
 
 `MoeWNA16Method` 会根据 group_size 调整：
 
@@ -1317,7 +1317,7 @@ AWQ fallback：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:342`
 就不断把 group_size 除以 2，直到满足要求。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216` 到 `vllm/vllm/model_executor/layers/quantization/moe_wna16.py:224`
+位置：`code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216` 到 `code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:224`
 
 ---
 
@@ -1329,7 +1329,7 @@ MoE 的 modular kernel 使用：
 FusedMoEQuantConfig
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:214`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/config.py:214`
 
 它包含四个描述：
 
@@ -1340,7 +1340,7 @@ w1：w13 / gate_up 的 weight quant；
 w2：down_proj 的 weight quant。
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:248` 到 `vllm/vllm/model_executor/layers/fused_moe/config.py:252`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/config.py:248` 到 `code/vllm/vllm/model_executor/layers/fused_moe/config.py:252`
 
 每个 `FusedMoEQuantDesc` 可描述：
 
@@ -1353,7 +1353,7 @@ zero point
 bias
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/config.py:174` 到 `vllm/vllm/model_executor/layers/fused_moe/config.py:208`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/config.py:174` 到 `code/vllm/vllm/model_executor/layers/fused_moe/config.py:208`
 
 这解释了为什么 MoE 量化的 scale / zero point 不只是普通 Linear 的 `scales`：MoE kernel 需要分别知道两个 GEMM 的 activation / weight 量化信息。
 
@@ -1374,7 +1374,7 @@ Data Parallel 通常不切单层权重。
 
 并行组布局里 DP 在 PP/TP 外侧。
 
-位置：`vllm/vllm/distributed/parallel_state.py:1760` 到 `vllm/vllm/distributed/parallel_state.py:1775`
+位置：`code/vllm/vllm/distributed/parallel_state.py:1760` 到 `code/vllm/vllm/distributed/parallel_state.py:1775`
 
 因此文档中讨论“量化权重如何切分”时，真正影响权重 shard 的通常是：
 
@@ -1393,7 +1393,7 @@ PCP / DCP 主要影响上下文或 token 执行分组，不是 weight shard 的�
 
 在 `FusedMoE` 中，`make_parallel_config()` 会把 `pcp_size` 放入 `FusedMoEParallelConfig`。
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:43` 到 `vllm/vllm/model_executor/layers/fused_moe/layer.py:69`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/layer.py:43` 到 `code/vllm/vllm/model_executor/layers/fused_moe/layer.py:69`
 
 但对单个 Linear 的量化参数创建来说，关键仍是：
 
@@ -1425,7 +1425,7 @@ VocabParallelEmbedding
 
 做特殊处理。
 
-位置：`vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:178` 到 `vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:203`
+位置：`code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:178` 到 `code/vllm/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py:203`
 
 其中：
 
@@ -1450,9 +1450,9 @@ per-group quant 要求局部输入维度能按 group size 分组：
 input_size_per_partition % group_size == 0
 ```
 
-AWQ 显式检查：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:843`
+AWQ 显式检查：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:843`
 
-MoE WNA16 会动态缩小 group_size：`vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216`
+MoE WNA16 会动态缩小 group_size：`code/vllm/vllm/model_executor/layers/quantization/moe_wna16.py:216`
 
 ### 25.2 pack_factor
 
@@ -1463,19 +1463,19 @@ INT4 in int32：pack_factor = 8
 INT8 in int32：pack_factor = 4
 ```
 
-GPTQ：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:151`
+GPTQ：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:151`
 
-AWQ：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:192`
+AWQ：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:192`
 
-Packed 参数调整：`vllm/vllm/model_executor/parameter.py:606`
+Packed 参数调整：`code/vllm/vllm/model_executor/parameter.py:606`
 
 ### 25.3 block size
 
 FP8 block quant、MXFP4/NVFP4 等 block scheme 要求 block_n / block_k 对齐。
 
-FP8 block shape 校验：`vllm/vllm/model_executor/layers/quantization/fp8.py:340`
+FP8 block shape 校验：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:340`
 
-MoE FP8 block quant 也会检查 intermediate size 与 block size：`vllm/vllm/model_executor/layers/quantization/fp8.py:550` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:575`
+MoE FP8 block quant 也会检查 intermediate size 与 block size：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:550` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:575`
 
 ---
 
@@ -1490,7 +1490,7 @@ for _, module in model.named_modules():
         quant_method.process_weights_after_loading(module)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:100` 到 `vllm/vllm/model_executor/model_loader/utils.py:113`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:113`
 
 它通常做：
 
@@ -1522,7 +1522,7 @@ quant_method.apply()
   → optional all-gather
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:548` 到 `vllm/vllm/model_executor/layers/linear.py:566`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:548` 到 `code/vllm/vllm/model_executor/layers/linear.py:566`
 
 ### 27.2 RowParallelLinear
 
@@ -1533,7 +1533,7 @@ input split
   → optional all-reduce
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1628` 到 `vllm/vllm/model_executor/layers/linear.py:1654`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1628` 到 `code/vllm/vllm/model_executor/layers/linear.py:1654`
 
 ### 27.3 RoutedExperts
 
@@ -1544,7 +1544,7 @@ router 选 topk expert
   → fused MoE kernel 使用本地 w13/w2/qweight/scales
 ```
 
-位置：`vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1053` 到 `vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1120`
+位置：`code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1053` 到 `code/vllm/vllm/model_executor/layers/fused_moe/routed_experts.py:1120`
 
 ---
 
@@ -1600,7 +1600,7 @@ GPTQ desc_act：某些 RowParallel 场景会复制 scale 到所有 rank。
 
 这时每个 rank 至少要有一个 KV head，因此 K/V head 会复制。
 
-位置：`vllm/vllm/config/model.py:1265` 到 `vllm/vllm/config/model.py:1270`
+位置：`code/vllm/vllm/config/model.py:1265` 到 `code/vllm/vllm/config/model.py:1270`
 
 QKV loader 中 K/V 使用：
 
@@ -1608,7 +1608,7 @@ QKV loader 中 K/V 使用：
 shard_rank = tp_rank // num_kv_head_replicas
 ```
 
-位置：`vllm/vllm/model_executor/layers/linear.py:1281` 到 `vllm/vllm/model_executor/layers/linear.py:1286`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:1281` 到 `code/vllm/vllm/model_executor/layers/linear.py:1286`
 
 ### 28.5 EP 是不是等价于 TP？
 

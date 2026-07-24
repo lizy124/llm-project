@@ -2,24 +2,24 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\config\vllm.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\config\cache.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\platforms\interface.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\platforms\cuda.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\base_config.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\fp8.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_awq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\auto_gptq.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\bitsandbytes.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\online\base.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\quantization\kv_cache.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\kernels\linear\__init__.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\kv_cache_interface.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\attention\backend.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\attention\backends\triton_attn.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\metrics\loggers.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\metrics\stats.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\metrics\perf.py`
+- `code/code/vllm/vllm/config/vllm.py`
+- `code/code/vllm/vllm/config/cache.py`
+- `code/code/vllm/vllm/platforms/interface.py`
+- `code/code/vllm/vllm/platforms/cuda.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/base_config.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/fp8.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/auto_awq.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/online/base.py`
+- `code/code/vllm/vllm/model_executor/layers/quantization/kv_cache.py`
+- `code/code/vllm/vllm/model_executor/kernels/linear/__init__.py`
+- `code/code/vllm/vllm/v1/kv_cache_interface.py`
+- `code/code/vllm/vllm/v1/attention/backend.py`
+- `code/code/vllm/vllm/v1/attention/backends/triton_attn.py`
+- `code/code/vllm/vllm/v1/metrics/loggers.py`
+- `code/code/vllm/vllm/v1/metrics/stats.py`
+- `code/code/vllm/vllm/v1/metrics/perf.py`
 
 本问题关注：不同量化方式对显存、吞吐、延迟、精度和数值稳定性的影响；为什么量化不是“一定更快”；如何从 vLLM 源码里的 capability 校验、kernel 选择、fallback、KV cache page size、metrics 观测指标来建立取舍模型。
 
@@ -101,7 +101,7 @@ def get_min_capability(cls) -> int
 def get_quant_method(self, layer, prefix)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/base_config.py:77` 到 `vllm/vllm/model_executor/layers/quantization/base_config.py:170`
+位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:77` 到 `code/vllm/vllm/model_executor/layers/quantization/base_config.py:170`
 
 这说明一个量化方法最少要回答三个问题：
 
@@ -123,7 +123,7 @@ def get_quant_method(self, layer, prefix)
 5. 调用 maybe_update_config()。
 ```
 
-位置：`vllm/vllm/config/vllm.py:608` 到 `vllm/vllm/config/vllm.py:642`
+位置：`code/vllm/vllm/config/vllm.py:608` 到 `code/vllm/vllm/config/vllm.py:642`
 
 如果不满足，会直接报错，而不是运行时慢慢 fallback。
 
@@ -137,7 +137,7 @@ def verify_quantization(cls, quant: str) -> None:
         raise ValueError(...)
 ```
 
-位置：`vllm/vllm/platforms/interface.py:824` 到 `vllm/vllm/platforms/interface.py:831`
+位置：`code/vllm/vllm/platforms/interface.py:824` 到 `code/vllm/vllm/platforms/interface.py:831`
 
 所以：
 
@@ -157,7 +157,7 @@ GPTQ / AWQ / WNA16 等低 bit weight + A16 路径通常走：
 choose_mp_linear_kernel(MPLinearLayerConfig)
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:640` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:710`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:640` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:710`
 
 这个函数会按顺序检查：
 
@@ -179,7 +179,7 @@ FP8 路径调用：
 init_fp8_linear_kernel(...)
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:531` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:601`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:531` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:601`
 
 它会根据 activation scale 是否 per-group 选择：
 
@@ -199,7 +199,7 @@ Torch FP8 fallback
 DeepGemm / Cutlass / Triton block-scaled kernel
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:286` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:323`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:286` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:323`
 
 ### 4.3 --linear-backend 是强约束
 
@@ -209,7 +209,7 @@ DeepGemm / Cutlass / Triton block-scaled kernel
 cutlass / flashinfer_cutlass / marlin / triton / deep_gemm / torch / aiter / machete / ...
 ```
 
-位置：`vllm/vllm/model_executor/kernels/linear/__init__.py:183` 到 `vllm/vllm/model_executor/kernels/linear/__init__.py:272`
+位置：`code/vllm/vllm/model_executor/kernels/linear/__init__.py:183` 到 `code/vllm/vllm/model_executor/kernels/linear/__init__.py:272`
 
 如果用户强制了某个 backend，但该 backend 没有可用 kernel，会报错。
 
@@ -251,7 +251,7 @@ _QUANT_WEIGHT_BYTE_SIZE = {
 }
 ```
 
-位置：`vllm/vllm/v1/metrics/perf.py:44` 到 `vllm/vllm/v1/metrics/perf.py:75`
+位置：`code/vllm/vllm/v1/metrics/perf.py:44` 到 `code/vllm/vllm/v1/metrics/perf.py:75`
 
 注意这里是估算：
 
@@ -269,7 +269,7 @@ KV cache 显存按 page 计算。
 2 * block_size * num_kv_heads * head_size * sizeof(dtype)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:183` 到 `vllm/vllm/v1/kv_cache_interface.py:201`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:183` 到 `code/vllm/vllm/v1/kv_cache_interface.py:201`
 
 `FullAttentionSpec` 会用：
 
@@ -277,7 +277,7 @@ KV cache 显存按 page 计算。
 block_size * num_kv_heads * (head_size + head_size_v) * sizeof(dtype)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:308` 到 `vllm/vllm/v1/kv_cache_interface.py:328`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:308` 到 `code/vllm/vllm/v1/kv_cache_interface.py:328`
 
 因此 KV cache dtype 从 BF16/FP16 变成 FP8，理论上每页可以接近减半。
 
@@ -289,7 +289,7 @@ per-token-head 量化会额外预算 scale：
 real_page_size += 2 * block_size * num_kv_heads * sizeof(float32)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:169` 到 `vllm/vllm/v1/kv_cache_interface.py:177`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:169` 到 `code/vllm/vllm/v1/kv_cache_interface.py:177`
 
 NVFP4 page 里包含：
 
@@ -297,7 +297,7 @@ NVFP4 page 里包含：
 packed fp4 data + fp8 block scales
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:185` 到 `vllm/vllm/v1/kv_cache_interface.py:194`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:185` 到 `code/vllm/vllm/v1/kv_cache_interface.py:194`
 
 TurboQuant 使用自定义 slot size：
 
@@ -305,7 +305,7 @@ TurboQuant 使用自定义 slot size：
 return block_size * num_kv_heads * tq_slot_size
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:340` 到 `vllm/vllm/v1/kv_cache_interface.py:355`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:340` 到 `code/vllm/vllm/v1/kv_cache_interface.py:355`
 
 所以 KV cache 量化的显存收益不是只看 dtype bit 数，还要看：
 
@@ -329,7 +329,7 @@ kv_cache_size_tokens
 kv_cache_max_concurrency
 ```
 
-位置：`vllm/vllm/config/cache.py:67` 到 `vllm/vllm/config/cache.py:185`
+位置：`code/vllm/vllm/config/cache.py:67` 到 `code/vllm/vllm/config/cache.py:185`
 
 这说明：
 
@@ -382,7 +382,7 @@ AWQ 配置当前主路径支持 4bit：
 TYPE_MAP = {4: scalar_types.uint4}
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:170` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:209`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:170` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:209`
 
 ### 7.1 AWQ 优先选 Marlin，但有条件
 
@@ -396,7 +396,7 @@ CUDA + Marlin 支持 + 非 batch invariant
   → AutoAWQLinearMethod
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:284` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:332`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:284` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:332`
 
 如果某层 shape 不支持 Marlin，会 warning 并 fallback：
 
@@ -404,7 +404,7 @@ CUDA + Marlin 支持 + 非 batch invariant
 Falling back to unoptimized AWQ kernels.
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:317` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:327`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:317` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:327`
 
 ### 7.2 普通 AWQ 对 token 数有启发式分支
 
@@ -419,7 +419,7 @@ else:
     out = ops.awq_gemm(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:915` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:939`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:915` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:939`
 
 这说明：
 
@@ -444,7 +444,7 @@ output_size_per_partition % pack_factor == 0
 
 不满足会提示可能是 TP 太大。
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_awq.py:837` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:837` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:856`
 
 ---
 
@@ -457,7 +457,7 @@ GPTQ 支持的核心类型：
 (8, True) → uint8b128
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:163`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:163`
 
 这里 `True` 表示 symmetric。
 
@@ -474,7 +474,7 @@ dynamic
 modules_in_block_to_quantize
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:106` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:216`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:106` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:216`
 
 取舍是：
 
@@ -503,7 +503,7 @@ dynamic = {
 }
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:123` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:146`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:123` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:146`
 
 这是一种典型精度取舍手段：
 
@@ -526,7 +526,7 @@ weight_block_size
 store_dtype
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:99` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:177`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:99` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:177`
 
 ### 9.1 FP8 activation scheme
 
@@ -546,7 +546,7 @@ block-wise weight scale
 3. 只支持 dynamic activation scheme。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:119` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:136`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:119` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:136`
 
 取舍是：
 
@@ -574,7 +574,7 @@ else:
     activation_quant_key = kFp8DynamicTensorSym
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:313` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:321`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:313` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:321`
 
 这说明：
 
@@ -591,7 +591,7 @@ else:
 Fp8PerTensorOnlineLinearMethod
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:179` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:200`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:179` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:200`
 
 这类路径的取舍是：
 
@@ -615,7 +615,7 @@ batch invariant mode：
   per-tensor/channel 会 dequant 到 BF16 再 linear。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/fp8.py:446` 到 `vllm/vllm/model_executor/layers/quantization/fp8.py:489`
+位置：`code/vllm/vllm/model_executor/layers/quantization/fp8.py:446` 到 `code/vllm/vllm/model_executor/layers/quantization/fp8.py:489`
 
 这会影响性能：
 
@@ -641,7 +641,7 @@ llm_int8_skip_modules
 llm_int8_threshold
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:49` 到 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:158`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:49` 到 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:158`
 
 它支持 activation dtype：
 
@@ -649,7 +649,7 @@ llm_int8_threshold
 float32 / float16 / bfloat16
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:99` 到 `vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:105`
+位置：`code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:99` 到 `code/vllm/vllm/model_executor/layers/quantization/bitsandbytes.py:105`
 
 取舍是：
 
@@ -674,7 +674,7 @@ quantize fp16/bf16 weights during model loading,
 without requiring a pre-quantized checkpoint。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/online/base.py:74` 到 `vllm/vllm/model_executor/layers/quantization/online/base.py:116`
+位置：`code/vllm/vllm/model_executor/layers/quantization/online/base.py:74` 到 `code/vllm/vllm/model_executor/layers/quantization/online/base.py:116`
 
 它的 dispatch 表支持：
 
@@ -686,7 +686,7 @@ MoE：
   fp8 per tensor / fp8 per block / fp8 per channel / mxfp8 / int8 per channel
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/online/base.py:55` 到 `vllm/vllm/model_executor/layers/quantization/online/base.py:71`
+位置：`code/vllm/vllm/model_executor/layers/quantization/online/base.py:55` 到 `code/vllm/vllm/model_executor/layers/quantization/online/base.py:71`
 
 取舍是：
 
@@ -707,7 +707,7 @@ MoE：
 activation override ... is not yet supported
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/online/base.py:118` 到 `vllm/vllm/model_executor/layers/quantization/online/base.py:143`
+位置：`code/vllm/vllm/model_executor/layers/quantization/online/base.py:118` 到 `code/vllm/vllm/model_executor/layers/quantization/online/base.py:143`
 
 ---
 
@@ -721,7 +721,7 @@ activation override ... is not yet supported
 auto / float16 / bfloat16 / fp8 / fp8_e4m3 / fp8_e5m2 / int8_per_token_head / fp8_per_token_head / nvfp4 / turboquant_*
 ```
 
-位置：`vllm/vllm/config/cache.py:75` 到 `vllm/vllm/config/cache.py:117`
+位置：`code/vllm/vllm/config/cache.py:75` 到 `code/vllm/vllm/config/cache.py:117`
 
 适合场景：
 
@@ -744,7 +744,7 @@ auto / float16 / bfloat16 / fp8 / fp8_e4m3 / fp8_e5m2 / int8_per_token_head / fp
 如果 q/prob scale 缺失：也会 warning。
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:74` 到 `vllm/vllm/model_executor/layers/quantization/kv_cache.py:197`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:74` 到 `code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:197`
 
 这解释了 FP8 KV cache 的精度风险：
 
@@ -763,7 +763,7 @@ Triton attention 对 per-token-head 路径会：
 3. attention 读取时传 k_scale_cache / v_scale_cache。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:590` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:767`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:590` 到 `code/vllm/vllm/v1/attention/backends/triton_attn.py:767`
 
 取舍是：
 
@@ -788,7 +788,7 @@ if is_quantized_kv_cache(self.kv_cache_dtype):
     )
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:678` 到 `vllm/vllm/v1/attention/backends/triton_attn.py:722`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:678` 到 `code/vllm/vllm/v1/attention/backends/triton_attn.py:722`
 
 所以 encoder / encoder-only / 某些多模态或 encoder-decoder 场景不能简单套用 decoder KV cache 量化经验。
 
@@ -812,7 +812,7 @@ attention type
 non-causal / batch invariant / KV connector
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:307` 到 `vllm/vllm/v1/attention/backend.py:375`
+位置：`code/vllm/vllm/v1/attention/backend.py:307` 到 `code/vllm/vllm/v1/attention/backend.py:375`
 
 CUDA platform 选择 attention backend 时，会把每个 backend 的 invalid reasons 记录下来：
 
@@ -820,7 +820,7 @@ CUDA platform 选择 attention backend 时，会把每个 backend 的 invalid re
 Some attention backends are not valid ... Reasons: {...}
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:337` 到 `vllm/vllm/platforms/cuda.py:419`
+位置：`code/vllm/vllm/platforms/cuda.py:337` 到 `code/vllm/vllm/platforms/cuda.py:419`
 
 所以同样的 `--kv-cache-dtype fp8`，可能因为：
 
@@ -859,7 +859,7 @@ AutoAWQMoEMarlin 不支持某层
   → Falling back to Moe WNA16 kernels
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/auto_gptq.py:240` 到 `vllm/vllm/model_executor/layers/quantization/auto_gptq.py:254`、`vllm/vllm/model_executor/layers/quantization/auto_awq.py:334` 到 `vllm/vllm/model_executor/layers/quantization/auto_awq.py:355`
+位置：`code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:240` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:254`、`code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:334` 到 `code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:355`
 
 MoE 的性能更依赖实际 batch 中 token 到 expert 的分布：
 
@@ -970,7 +970,7 @@ first_token_latency
 num_cached_tokens
 ```
 
-位置：`vllm/vllm/v1/metrics/stats.py:202` 到 `vllm/vllm/v1/metrics/stats.py:240`
+位置：`code/vllm/vllm/v1/metrics/stats.py:202` 到 `code/vllm/vllm/v1/metrics/stats.py:240`
 
 这些字段可以对应：
 
@@ -995,7 +995,7 @@ Prefix cache hit rate: ...%
 External prefix cache hit rate: ...%
 ```
 
-位置：`vllm/vllm/v1/metrics/loggers.py:219` 到 `vllm/vllm/v1/metrics/loggers.py:283`
+位置：`code/vllm/vllm/v1/metrics/loggers.py:219` 到 `code/vllm/vllm/v1/metrics/loggers.py:283`
 
 这些指标和量化的关系是：
 
@@ -1313,56 +1313,56 @@ lm_head 未量化。
 如果量化方法直接不支持：
 
 ```text
-vllm/vllm/config/vllm.py:608
-vllm/vllm/platforms/interface.py:824
+code/vllm/vllm/config/vllm.py:608
+code/vllm/vllm/platforms/interface.py:824
 ```
 
 如果想知道为什么某个 kernel 没选中：
 
 ```text
-vllm/vllm/model_executor/kernels/linear/__init__.py:183
-vllm/vllm/model_executor/kernels/linear/__init__.py:531
-vllm/vllm/model_executor/kernels/linear/__init__.py:640
+code/vllm/vllm/model_executor/kernels/linear/__init__.py:183
+code/vllm/vllm/model_executor/kernels/linear/__init__.py:531
+code/vllm/vllm/model_executor/kernels/linear/__init__.py:640
 ```
 
 如果想看 AWQ 为什么 fallback：
 
 ```text
-vllm/vllm/model_executor/layers/quantization/auto_awq.py:284
-vllm/vllm/model_executor/layers/quantization/auto_awq.py:915
+code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:284
+code/vllm/vllm/model_executor/layers/quantization/auto_awq.py:915
 ```
 
 如果想看 GPTQ 的 bit / group / dynamic：
 
 ```text
-vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97
+code/vllm/vllm/model_executor/layers/quantization/auto_gptq.py:97
 ```
 
 如果想看 FP8 dynamic / static / block-wise：
 
 ```text
-vllm/vllm/model_executor/layers/quantization/fp8.py:99
-vllm/vllm/model_executor/layers/quantization/fp8.py:267
+code/vllm/vllm/model_executor/layers/quantization/fp8.py:99
+code/vllm/vllm/model_executor/layers/quantization/fp8.py:267
 ```
 
 如果想看 KV cache page size：
 
 ```text
-vllm/vllm/v1/kv_cache_interface.py:159
+code/vllm/vllm/v1/kv_cache_interface.py:159
 ```
 
 如果想看 KV cache scale 风险：
 
 ```text
-vllm/vllm/model_executor/layers/quantization/kv_cache.py:74
+code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:74
 ```
 
 如果想看运行指标：
 
 ```text
-vllm/vllm/v1/metrics/loggers.py:219
-vllm/vllm/v1/metrics/stats.py:202
-vllm/vllm/v1/metrics/perf.py:44
+code/vllm/vllm/v1/metrics/loggers.py:219
+code/vllm/vllm/v1/metrics/stats.py:202
+code/vllm/vllm/v1/metrics/perf.py:44
 ```
 
 ---

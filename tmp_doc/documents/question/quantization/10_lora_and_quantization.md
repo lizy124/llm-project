@@ -2,27 +2,27 @@
 
 源码位置：
 
-- `vllm/vllm/config/lora.py`
-- `vllm/vllm/engine/arg_utils.py`
-- `vllm/vllm/config/vllm.py`
-- `vllm/vllm/lora/model_manager.py`
-- `vllm/vllm/lora/worker_manager.py`
-- `vllm/vllm/lora/lora_model.py`
-- `vllm/vllm/lora/lora_weights.py`
-- `vllm/vllm/lora/layers/base.py`
-- `vllm/vllm/lora/layers/base_linear.py`
-- `vllm/vllm/lora/layers/column_parallel_linear.py`
-- `vllm/vllm/lora/layers/row_parallel_linear.py`
-- `vllm/vllm/lora/layers/fused_moe.py`
-- `vllm/vllm/lora/punica_wrapper/`
-- `vllm/vllm/lora/ops/triton_ops/`
-- `vllm/vllm/model_executor/layers/linear.py`
-- `vllm/vllm/model_executor/layers/quantization/`
-- `vllm/vllm/model_executor/layers/fused_moe/experts/lora_context.py`
-- `vllm/vllm/model_executor/layers/fused_moe/experts/lora_experts_mixin.py`
-- `vllm/vllm/model_executor/layers/fused_moe/experts/triton_moe.py`
-- `vllm/vllm/v1/worker/lora_model_runner_mixin.py`
-- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `code/vllm/vllm/config/lora.py`
+- `code/vllm/vllm/engine/arg_utils.py`
+- `code/vllm/vllm/config/vllm.py`
+- `code/vllm/vllm/lora/model_manager.py`
+- `code/vllm/vllm/lora/worker_manager.py`
+- `code/vllm/vllm/lora/lora_model.py`
+- `code/vllm/vllm/lora/lora_weights.py`
+- `code/vllm/vllm/lora/layers/base.py`
+- `code/vllm/vllm/lora/layers/base_linear.py`
+- `code/vllm/vllm/lora/layers/column_parallel_linear.py`
+- `code/vllm/vllm/lora/layers/row_parallel_linear.py`
+- `code/vllm/vllm/lora/layers/fused_moe.py`
+- `code/vllm/vllm/lora/punica_wrapper/`
+- `code/vllm/vllm/lora/ops/triton_ops/`
+- `code/vllm/vllm/model_executor/layers/linear.py`
+- `code/vllm/vllm/model_executor/layers/quantization/`
+- `code/vllm/vllm/model_executor/layers/fused_moe/experts/lora_context.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/experts/lora_experts_mixin.py`
+- `code/vllm/vllm/model_executor/layers/fused_moe/experts/triton_moe.py`
+- `code/vllm/vllm/v1/worker/lora_model_runner_mixin.py`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
 
 本问题关注：当 base model 使用 AWQ / GPTQ / FP8 / compressed-tensors / online quant 等量化方式时，LoRA adapter 如何加载、如何挂到量化 layer 上、forward 时如何把 LoRA delta 与量化 base output 合并；以及 Linear、MoE、TP、EP、CUDA graph、LoRA dtype、adapter hot-swap 等组合有哪些限制。
 

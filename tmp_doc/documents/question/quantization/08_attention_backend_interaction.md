@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `vllm/vllm/v1/attention/selector.py`
-- `vllm/vllm/v1/attention/backend.py`
-- `vllm/vllm/v1/attention/backends/registry.py`
-- `vllm/vllm/v1/attention/backends/flash_attn.py`
-- `vllm/vllm/v1/attention/backends/flashinfer.py`
-- `vllm/vllm/v1/attention/backends/triton_attn.py`
-- `vllm/vllm/v1/attention/backends/turboquant_attn.py`
-- `vllm/vllm/v1/attention/backends/utils.py`
-- `vllm/vllm/v1/kv_cache_interface.py`
-- `vllm/vllm/model_executor/layers/attention/attention.py`
-- `vllm/vllm/model_executor/layers/quantization/kv_cache.py`
-- `vllm/vllm/platforms/cuda.py`
-- `vllm/vllm/platforms/interface.py`
+- `code/vllm/vllm/v1/attention/selector.py`
+- `code/vllm/vllm/v1/attention/backend.py`
+- `code/vllm/vllm/v1/attention/backends/registry.py`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py`
+- `code/vllm/vllm/v1/attention/backends/triton_attn.py`
+- `code/vllm/vllm/v1/attention/backends/turboquant_attn.py`
+- `code/vllm/vllm/v1/attention/backends/utils.py`
+- `code/vllm/vllm/v1/kv_cache_interface.py`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py`
+- `code/vllm/vllm/model_executor/layers/quantization/kv_cache.py`
+- `code/vllm/vllm/platforms/cuda.py`
+- `code/vllm/vllm/platforms/interface.py`
 
 本问题关注：KV cache dtype、KV scale、per-token-head scale、NVFP4 / TurboQuant 这类特殊 KV cache layout、MLA / sparse MLA、head size、block size、backend 能力声明如何共同决定 attention backend 选择；以及选中 backend 后，量化 KV cache 如何在 forward 中写入、读取和传递 scale。
 
@@ -86,11 +86,11 @@ Attention.__init__()
 
 对应源码：
 
-- `vllm/vllm/model_executor/layers/attention/attention.py:240`
-- `vllm/vllm/model_executor/layers/attention/attention.py:318`
-- `vllm/vllm/v1/attention/selector.py:54`
-- `vllm/vllm/platforms/cuda.py:372`
-- `vllm/vllm/v1/attention/backend.py:308`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:240`
+- `code/vllm/vllm/model_executor/layers/attention/attention.py:318`
+- `code/vllm/vllm/v1/attention/selector.py:54`
+- `code/vllm/vllm/platforms/cuda.py:372`
+- `code/vllm/vllm/v1/attention/backend.py:308`
 
 量化相关字段主要进入这里：
 
@@ -116,7 +116,7 @@ attn_type
 cache_config.cache_dtype
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:240`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:240`
 
 如果没有 cache_config，则默认为：
 
@@ -124,7 +124,7 @@ cache_config.cache_dtype
 auto
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:243`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:243`
 
 ### 3.2 checkpoint 的 kv_cache_scheme 可以把 auto 改成 fp8
 
@@ -140,7 +140,7 @@ kv_cache_scheme
 fp8
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:252`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:252`
 
 这说明：
 
@@ -159,7 +159,7 @@ cache_config.kv_cache_dtype_skip_layers
 
 Attention 会按 layer index 或 sliding_window 类型跳过量化 KV cache。
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:267`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:267`
 
 跳过后：
 
@@ -167,7 +167,7 @@ Attention 会按 layer index 或 sliding_window 类型跳过量化 KV cache。
 kv_cache_dtype = "auto"
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:282`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:282`
 
 这意味着：
 
@@ -181,7 +181,7 @@ kv_cache_dtype = "auto"
 
 ## 4. get_attn_backend() 的输入是什么
 
-`get_attn_backend()` 定义在：`vllm/vllm/v1/attention/selector.py:54`
+`get_attn_backend()` 定义在：`code/vllm/vllm/v1/attention/selector.py:54`
 
 它接收：
 
@@ -204,7 +204,7 @@ num_heads
 AttentionSelectorConfig
 ```
 
-位置：`vllm/vllm/v1/attention/selector.py:21`
+位置：`code/vllm/vllm/v1/attention/selector.py:21`
 
 这个 config 里和量化最相关的是：
 
@@ -242,7 +242,7 @@ selector 不直接看 quantization="awq" / "gptq"；
 AttentionBackend
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:55`
+位置：`code/vllm/vllm/v1/attention/backend.py:55`
 
 它提供一组能力声明：
 
@@ -281,7 +281,7 @@ get_required_kv_cache_layout()
 
 `AttentionBackend.validate_configuration()` 是 backend selection 的统一过滤器。
 
-位置：`vllm/vllm/v1/attention/backend.py:308`
+位置：`code/vllm/vllm/v1/attention/backend.py:308`
 
 它会检查：
 
@@ -322,7 +322,7 @@ CUDA 平台入口是：
 CudaPlatformBase.get_attn_backend_cls(...)
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:372`
+位置：`code/vllm/vllm/platforms/cuda.py:372`
 
 流程是：
 
@@ -335,7 +335,7 @@ CudaPlatformBase.get_attn_backend_cls(...)
 6. 选择合法 backend 中优先级最高的那个。
 ```
 
-对应源码：`vllm/vllm/platforms/cuda.py:381` 到 `vllm/vllm/platforms/cuda.py:463`
+对应源码：`code/vllm/vllm/platforms/cuda.py:381` 到 `code/vllm/vllm/platforms/cuda.py:463`
 
 ### 7.1 非 MLA 普通 attention 的优先级
 
@@ -361,7 +361,7 @@ FLEX_ATTENTION
 TURBOQUANT
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:137`
+位置：`code/vllm/vllm/platforms/cuda.py:137`
 
 ### 7.2 MLA 的优先级
 
@@ -377,7 +377,7 @@ TRITON_MLA
 FLASHINFER_MLA_SPARSE / FLASHMLA_SPARSE
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:92`
+位置：`code/vllm/vllm/platforms/cuda.py:92`
 
 ### 7.3 量化 KV cache 会改变 MLA sparse 优先级
 
@@ -394,7 +394,7 @@ FLASHINFER_MLA_SPARSE
 FLASHMLA_SPARSE
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:97`
+位置：`code/vllm/vllm/platforms/cuda.py:97`
 
 这说明 KV cache 量化不只是“某个 backend 支不支持”，还会影响候选优先级。
 
@@ -402,7 +402,7 @@ FLASHMLA_SPARSE
 
 ## 8. KV cache quant mode 如何表示
 
-KV cache 量化模式定义在：`vllm/vllm/v1/kv_cache_interface.py:33`
+KV cache 量化模式定义在：`code/vllm/vllm/v1/kv_cache_interface.py:33`
 
 核心枚举：
 
@@ -416,7 +416,7 @@ KVQuantMode.NVFP4
 
 `get_kv_quant_mode()` 把字符串映射成枚举。
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:60`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:60`
 
 规则是：
 
@@ -441,7 +441,7 @@ page size 计算
 
 ## 9. KV cache spec 与 page size 如何受量化影响
 
-`AttentionSpec` 定义在：`vllm/vllm/v1/kv_cache_interface.py:159`
+`AttentionSpec` 定义在：`code/vllm/vllm/v1/kv_cache_interface.py:159`
 
 它包含：
 
@@ -462,7 +462,7 @@ indexes_kv_by_block_stride
 2 * block_size * num_kv_heads * head_size * dtype_size
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:195`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:195`
 
 这里的 `2` 表示 K 和 V。
 
@@ -480,7 +480,7 @@ kv_quant_mode.is_per_token_head
 2 * block_size * num_kv_heads * sizeof(float32)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:173`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:173`
 
 原因是：
 
@@ -503,7 +503,7 @@ kv_quant_mode.is_nvfp4
 nvfp4_kv_cache_full_dim(head_size)
 ```
 
-位置：`vllm/vllm/v1/kv_cache_interface.py:185`
+位置：`code/vllm/vllm/v1/kv_cache_interface.py:185`
 
 也就是说 NVFP4 不是简单把 head_size 除以 2，而是有：
 
@@ -517,7 +517,7 @@ packed fp4 data + fp8 block scales
 
 ## 10. KV cache layout：NHD / HND 如何影响 backend
 
-KV cache layout 工具在：`vllm/vllm/v1/attention/backends/utils.py`
+KV cache layout 工具在：`code/vllm/vllm/v1/attention/backends/utils.py`
 
 支持的布局是：
 
@@ -526,7 +526,7 @@ NHD
 HND
 ```
 
-位置：`vllm/vllm/v1/attention/backends/utils.py:42`
+位置：`code/vllm/vllm/v1/attention/backends/utils.py:42`
 
 `get_kv_cache_layout()` 的优先级是：
 
@@ -536,7 +536,7 @@ HND
 3. KV connector 要求的 layout。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/utils.py:82`
+位置：`code/vllm/vllm/v1/attention/backends/utils.py:82`
 
 某些 backend 会强制要求 layout：
 
@@ -544,7 +544,7 @@ HND
 backend.get_required_kv_cache_layout()
 ```
 
-selector 中处理：`vllm/vllm/v1/attention/selector.py:133`
+selector 中处理：`code/vllm/vllm/v1/attention/selector.py:133`
 
 例如：
 
@@ -556,10 +556,10 @@ CPU backend 要求 HND。
 
 对应源码：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:448`
-- `vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:104`
-- `vllm/vllm/v1/attention/backends/mla/tokenspeed_mla.py:128`
-- `vllm/vllm/v1/attention/backends/cpu_attn.py:96`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:448`
+- `code/vllm/vllm/v1/attention/backends/mla/flashinfer_mla.py:104`
+- `code/vllm/vllm/v1/attention/backends/mla/tokenspeed_mla.py:128`
+- `code/vllm/vllm/v1/attention/backends/cpu_attn.py:96`
 
 这说明量化格式如果只能被某个 backend 支持，也会间接要求某种 KV cache layout。
 
@@ -567,7 +567,7 @@ CPU backend 要求 HND。
 
 ## 11. FlashAttention backend 与量化 KV cache
 
-源码：`vllm/vllm/v1/attention/backends/flash_attn.py`
+源码：`code/vllm/vllm/v1/attention/backends/flash_attn.py`
 
 ### 11.1 基础支持
 
@@ -579,7 +579,7 @@ float16
 bfloat16
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:70`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:70`
 
 ### 11.2 FP8 KV cache 支持有限
 
@@ -594,7 +594,7 @@ fp8 / fp8_e4m3：
   auto / float16 / bfloat16。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:183`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:183`
 
 这意味着：
 
@@ -613,7 +613,7 @@ supports_per_head_quant_scales()
 
 要求 FlashAttention version >= 3。
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:127`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:127`
 
 ### 11.4 KV cache update 不在 forward 内部
 
@@ -623,7 +623,7 @@ FlashAttentionBackend 声明：
 forward_includes_kv_cache_update = False
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:96`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:96`
 
 所以 Attention layer 会在 forward 前 / 中显式处理 KV cache 写入。
 
@@ -633,7 +633,7 @@ FlashAttention forward 中会调用：
 reshape_and_cache_flash(..., kv_cache_dtype, layer._k_scale, layer._v_scale)
 ```
 
-相关位置：`vllm/vllm/v1/attention/backends/flash_attn.py:951`
+相关位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:951`
 
 也就是说 FP8 KV cache 的写入需要带上：
 
@@ -648,7 +648,7 @@ slot_mapping
 
 ## 12. TritonAttention backend 与量化 KV cache
 
-源码：`vllm/vllm/v1/attention/backends/triton_attn.py`
+源码：`code/vllm/vllm/v1/attention/backends/triton_attn.py`
 
 ### 12.1 支持的 KV cache dtype
 
@@ -665,7 +665,7 @@ int8_per_token_head
 fp8_per_token_head
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:254`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:254`
 
 这说明 Triton 是普通 attention 中覆盖 KV cache 量化类型比较广的 backend。
 
@@ -677,7 +677,7 @@ Triton 会判断：
 kv_cache_uses_per_token_head_scales(cache_dtype_str)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:303`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:303`
 
 在 impl 中维护：
 
@@ -687,7 +687,7 @@ _v_scale_cache
 _is_per_token_head_quant
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:377`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:377`
 
 如果是 per-token-head quant，会调用：
 
@@ -695,7 +695,7 @@ _is_per_token_head_quant
 triton_reshape_and_cache_flash_per_token_head_quant(...)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:743`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:743`
 
 这条路径与普通 FP8 per-tensor scale 不同：
 
@@ -715,7 +715,7 @@ per-token-head scale：
 triton_reshape_and_cache_flash(..., kv_cache_dtype, layer._k_scale, layer._v_scale)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/triton_attn.py:758`
+位置：`code/vllm/vllm/v1/attention/backends/triton_attn.py:758`
 
 因此 Triton 的职责包括：
 
@@ -729,7 +729,7 @@ triton_reshape_and_cache_flash(..., kv_cache_dtype, layer._k_scale, layer._v_sca
 
 ## 13. FlashInfer backend 与量化 KV cache
 
-源码：`vllm/vllm/v1/attention/backends/flashinfer.py`
+源码：`code/vllm/vllm/v1/attention/backends/flashinfer.py`
 
 ### 13.1 支持范围
 
@@ -744,8 +744,8 @@ nvfp4
 
 相关位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:327`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:410`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:327`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:410`
 
 ### 13.2 FP8 KV cache 与 TRTLLM 路径
 
@@ -758,9 +758,9 @@ trtllm_batch_decode_with_kv_cache
 
 位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:18`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1740`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1878`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:18`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1740`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1878`
 
 FP8 prefill 中，如果需要把 FP8 KV cache 转给 TRTLLM path，会使用：
 
@@ -768,7 +768,7 @@ FP8 prefill 中，如果需要把 FP8 KV cache 转给 TRTLLM path，会使用：
 trtllm_prefill_attn_kvfp8_dequant(..., k_scale, v_scale)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flashinfer.py:161`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:161`
 
 内部会执行：
 
@@ -777,7 +777,7 @@ fp8_k * k_scale
 fp8_v * v_scale
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flashinfer.py:135`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:135`
 
 ### 13.3 NVFP4 KV cache
 
@@ -793,7 +793,7 @@ kv_cache_dtype == "nvfp4"
 is_kvcache_nvfp4 = True
 ```
 
-位置：`vllm/vllm/v1/attention/backends/flashinfer.py:645`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:645`
 
 NVFP4 要求：
 
@@ -805,9 +805,9 @@ FP4 data + FP8 block scales
 
 相关位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:647`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1580`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1698`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:647`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1580`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1698`
 
 NVFP4 和普通 FP8 最大区别是：
 
@@ -833,10 +833,10 @@ layer._v_scale
 
 相关位置：
 
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1473`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1651`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1802`
-- `vllm/vllm/v1/attention/backends/flashinfer.py:1927`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1473`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1651`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1802`
+- `code/vllm/vllm/v1/attention/backends/flashinfer.py:1927`
 
 这说明 backend 并不是只看 cache dtype，它还必须拿到 Attention layer 上已经准备好的 scale。
 
@@ -844,7 +844,7 @@ layer._v_scale
 
 ## 14. TurboQuant backend 与专用 KV cache layout
 
-源码：`vllm/vllm/v1/attention/backends/turboquant_attn.py`
+源码：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py`
 
 TurboQuant 是最明显的“量化格式决定 backend”的例子。
 
@@ -859,7 +859,7 @@ turboquant_k3v4_nc
 turboquant_3bit_nc
 ```
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:100`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:100`
 
 并且：
 
@@ -869,7 +869,7 @@ supports_kv_cache_dtype(cls, kv_cache_dtype)
 
 只接受 `turboquant_` 开头的 dtype。
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:164`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:164`
 
 ### 14.2 专用 cache shape
 
@@ -879,7 +879,7 @@ TurboQuant 的 KV cache shape 是：
 (num_blocks, block_size, num_kv_heads, slot_size_aligned)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:132`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:132`
 
 它没有普通 backend 的 leading `2` 维度。
 
@@ -895,7 +895,7 @@ TurboQuant 则是把 K 和 V 打包在同一个 slot 里：
 [key_packed | value_packed | padding]
 ```
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:139`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:139`
 
 ### 14.3 执行模型
 
@@ -909,7 +909,7 @@ Decode：
   从 compressed cache 计算 attention scores，解包 FP16 values，softmax 后加权求和。
 ```
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:5`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:5`
 
 因此 TurboQuant 不是普通 backend 上加一个 dtype，而是：
 
@@ -927,7 +927,7 @@ Attention layer 的 forward 入口在：
 Attention.forward(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:774`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:774`
 
 ### 15.1 scale 初始化
 
@@ -940,7 +940,7 @@ _v_scale
 _prob_scale
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:98`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:98`
 
 如果 quant_method 需要从 checkpoint 加载 KV scale，会通过：
 
@@ -957,7 +957,7 @@ v_scale
 prob_scale
 ```
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:57`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:57`
 
 加载后再在：
 
@@ -967,7 +967,7 @@ BaseKVCacheMethod.process_weights_after_loading()
 
 中写回 `_q_scale / _k_scale / _v_scale / _prob_scale`。
 
-位置：`vllm/vllm/model_executor/layers/quantization/kv_cache.py:74`
+位置：`code/vllm/vllm/model_executor/layers/quantization/kv_cache.py:74`
 
 ### 15.2 runtime 计算 scale
 
@@ -985,7 +985,7 @@ _k_scale = abs(key).max() / k_range
 _v_scale = abs(value).max() / v_range
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:546`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:546`
 
 ### 15.3 backend forward 消费 scale
 
@@ -995,7 +995,7 @@ _v_scale = abs(value).max() / v_range
 forward(layer, query, key, value, kv_cache, attn_metadata, output, ...)
 ```
 
-抽象定义：`vllm/vllm/v1/attention/backend.py:838`
+抽象定义：`code/vllm/vllm/v1/attention/backend.py:838`
 
 这里直接把 `layer` 传给 backend，因此 backend 可以访问：
 
@@ -1020,7 +1020,7 @@ layer._v_scale_float
 forward_includes_kv_cache_update
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:66`
+位置：`code/vllm/vllm/v1/attention/backend.py:66`
 
 它表示：
 
@@ -1124,8 +1124,8 @@ suffix_kv_lens
 
 位置：
 
-- `vllm/vllm/v1/attention/backends/flash_attn.py:254`
-- `vllm/vllm/v1/attention/backends/triton_attn.py:84`
+- `code/vllm/vllm/v1/attention/backends/flash_attn.py:254`
+- `code/vllm/vllm/v1/attention/backends/triton_attn.py:84`
 
 量化本身不改变 cascade 的语义，但它会影响：
 
@@ -1153,8 +1153,8 @@ SparseMLAAttentionImpl
 
 位置：
 
-- `vllm/vllm/v1/attention/backend.py:895`
-- `vllm/vllm/v1/attention/backend.py:986`
+- `code/vllm/vllm/v1/attention/backend.py:895`
+- `code/vllm/vllm/v1/attention/backend.py:986`
 
 MLA 的 KV cache update 使用：
 
@@ -1162,7 +1162,7 @@ MLA 的 KV cache update 使用：
 ops.concat_and_cache_mla(..., kv_cache_dtype=kv_cache_dtype, scale=k_scale)
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:976`
+位置：`code/vllm/vllm/v1/attention/backend.py:976`
 
 这里注意：
 
@@ -1183,11 +1183,11 @@ kv_c_normed + k_pe
 
 CUDA 的 `_get_backend_priorities()` 在 `use_mla=True` 时会进入 MLA backend 列表。
 
-位置：`vllm/vllm/platforms/cuda.py:92`
+位置：`code/vllm/vllm/platforms/cuda.py:92`
 
 如果是 Blackwell sparse MLA 且 KV cache 量化，会优先 FlashInfer sparse MLA。
 
-位置：`vllm/vllm/platforms/cuda.py:97`
+位置：`code/vllm/vllm/platforms/cuda.py:97`
 
 这说明：
 
@@ -1210,7 +1210,7 @@ vllm_config.attention_config.backend
 
 传给 platform。
 
-位置：`vllm/vllm/v1/attention/selector.py:106`
+位置：`code/vllm/vllm/v1/attention/selector.py:106`
 
 CUDA 平台逻辑是：
 
@@ -1221,7 +1221,7 @@ CUDA 平台逻辑是：
   不会自动 fallback。
 ```
 
-位置：`vllm/vllm/platforms/cuda.py:381`
+位置：`code/vllm/vllm/platforms/cuda.py:381`
 
 因此如果用户强制：
 
@@ -1236,7 +1236,7 @@ CUDA 平台逻辑是：
 
 ## 21. backend registry 的作用
 
-attention backend 枚举在：`vllm/vllm/v1/attention/backends/registry.py:34`
+attention backend 枚举在：`code/vllm/vllm/v1/attention/backends/registry.py:34`
 
 它列出了：
 
@@ -1267,7 +1267,7 @@ TRITON_ATTN → vllm.v1.attention.backends.triton_attn.TritonAttentionBackend
 TURBOQUANT → vllm.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend
 ```
 
-位置：`vllm/vllm/v1/attention/backends/registry.py:44`
+位置：`code/vllm/vllm/v1/attention/backends/registry.py:44`
 
 它还支持：
 
@@ -1275,7 +1275,7 @@ TURBOQUANT → vllm.v1.attention.backends.turboquant_attn.TurboQuantAttentionBac
 register_backend(...)
 ```
 
-位置：`vllm/vllm/v1/attention/backends/registry.py:220`
+位置：`code/vllm/vllm/v1/attention/backends/registry.py:220`
 
 这意味着第三方 backend 也可以加入同一套 selection / validation 机制，只要实现 `AttentionBackend` 抽象。
 
@@ -1291,7 +1291,7 @@ backend 不只决定 forward kernel，还决定 KV cache shape。
 get_kv_cache_shape(num_blocks, block_size, num_kv_heads, head_size, cache_dtype_str)
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:88`
+位置：`code/vllm/vllm/v1/attention/backend.py:88`
 
 不同 backend 的 KV cache shape 可能不同：
 
@@ -1320,7 +1320,7 @@ NVFP4：
 use_kv_connector
 ```
 
-位置：`vllm/vllm/v1/attention/selector.py:34`
+位置：`code/vllm/vllm/v1/attention/selector.py:34`
 
 它来自：
 
@@ -1328,7 +1328,7 @@ use_kv_connector
 vllm_config.kv_transfer_config.is_kv_transfer_instance
 ```
 
-位置：`vllm/vllm/v1/attention/selector.py:85`
+位置：`code/vllm/vllm/v1/attention/selector.py:85`
 
 backend 会通过：
 
@@ -1338,7 +1338,7 @@ supports_kv_connector()
 
 声明是否支持 KV connector。
 
-位置：`vllm/vllm/v1/attention/backend.py:276`
+位置：`code/vllm/vllm/v1/attention/backend.py:276`
 
 这和量化的关系是：
 
@@ -1362,7 +1362,7 @@ kv_cache_dtype = fp8_e5m2
 
 FlashAttention 的 `supports_kv_cache_dtype()` 不接受它。
 
-位置：`vllm/vllm/v1/attention/backends/flash_attn.py:183`
+位置：`code/vllm/vllm/v1/attention/backends/flash_attn.py:183`
 
 因此 selector 会尝试 FlashInfer / Triton。
 
@@ -1386,7 +1386,7 @@ supports_per_head_quant_scales() == False
 per-head quant scales not supported
 ```
 
-位置：`vllm/vllm/v1/attention/backend.py:350`
+位置：`code/vllm/vllm/v1/attention/backend.py:350`
 
 ### 24.3 TurboQuant dtype 只匹配 TurboQuant backend
 
@@ -1398,7 +1398,7 @@ kv_cache_dtype = turboquant_k3v4_nc
 
 普通 FlashAttention / Triton / FlashInfer 不支持，TurboQuant backend 支持。
 
-位置：`vllm/vllm/v1/attention/backends/turboquant_attn.py:164`
+位置：`code/vllm/vllm/v1/attention/backends/turboquant_attn.py:164`
 
 ### 24.4 NVFP4 需要 FlashInfer / TRTLLM 特殊路径
 
@@ -1410,7 +1410,7 @@ kv_cache_dtype = nvfp4
 
 FlashInfer 会进入 `is_kvcache_nvfp4` 路径，并要求相关 TRTLLM / Blackwell 能力。
 
-位置：`vllm/vllm/v1/attention/backends/flashinfer.py:645`
+位置：`code/vllm/vllm/v1/attention/backends/flashinfer.py:645`
 
 ### 24.5 用户指定 block size 可能排除更高优先级 backend
 
@@ -1422,7 +1422,7 @@ supports_block_size(block_size)
 
 CUDA 平台会在高优先级 backend 因 block_size 不支持被排除时 warning。
 
-位置：`vllm/vllm/platforms/cuda.py:438`
+位置：`code/vllm/vllm/platforms/cuda.py:438`
 
 量化 KV cache 常常对 block size / page size 更敏感，因此这个限制更容易触发。
 
