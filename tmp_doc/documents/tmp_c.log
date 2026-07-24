@@ -94,7 +94,8 @@
 - [ ] 8. parallelism：处理中；当前批次已按新 commit 轻量复审并修正 README.md、parallelism_overview.md、01_parallel_config_and_topology.md、02_distributed_groups.md、03_tensor_parallel.md、04_pipeline_parallel.md、05_data_parallel.md、06_expert_parallel.md、07_context_parallel.md、10_communication_primitives.md、12_end_to_end_examples.md，并继续收尾其余条目。
 - [ ] 9. sampling_and_output：处理中；本次已按新 commit 轻量复审并修正 01_sampling_output_role.md、02_sampling_params_and_metadata.md、03_logits_and_logprobs.md、04_sampler_flow.md、05_spec_decode_sampling.md、06_structured_output_and_grammar.md、07_model_runner_output.md、08_scheduler_update_output.md、09_output_processor_request_output.md、10_streaming_and_client_outputs.md、11_pooling_and_embedding_outputs.md、sampling_and_output_overview.md。
 - [x] 10. spec_decode：已按新 commit 轻量复审并修正 01_spec_decode_role.md、02_draft_tokens_and_request_state.md、03_scheduler_spec_decode_flow.md、04_spec_decode_metadata.md、06_rejection_sampler_flow.md、07_kv_cache_and_num_computed_tokens.md、08_structured_output_interaction.md、10_limitations_and_edge_cases.md；已轻量复审 spec_decode_overview.md，未发现文档内明显冲突。
-- [ ] 11. quantization：处理中；已轻量复审 README.md，目录索引与实际文件一致，未发现需要修改内容；已修正 01_quantization_role.md 顶部源码路径格式；已统一 02_quantization_config.md、05_weight_only_quantization.md、06_activation_and_dynamic_quantization.md、07_kv_cache_quantization.md、08_attention_backend_interaction.md、10_lora_and_quantization.md、11_parallelism_and_quantization.md 中源码路径前缀；已修正 03_weight_loading_and_param_mapping.md、04_quantized_linear_layers.md、09_moe_quantization.md、12_accuracy_performance_tradeoffs.md 顶部源码路径格式。
+- [ ] 11. quantization：处理中；已轻量复审 README.md，目录索引与实际文件一致，未发现需要修改内容；已修正 01_quantization_role.md 顶部源码路径格式；已统一 02_quantization_config.md、05_weight_only_quantization.md、06_activation_and_dynamic_quantization.md、07_kv_cache_quantization.md、08_attention_backend_interaction.md、10_lora_and_quantization.md、11_parallelism_and_quantization.md 中源码路径前缀；已修正 03_weight_loading_and_param_mapping.md、04_quantized_linear_layers.md、09_moe_quantization.md、12_accuracy_performance_tradeoffs.md 顶部源码路径格式；已按新 commit 轻量复审并修正 13_limitations_and_debugging.md；已修正 quantization_overview.md 中 KVQuantMode 枚举描述。
+- [ ] 12. config_and_model_loading：处理中；已按实际目录轻量复审并修正 README.md，移除不存在的旧专题链接，更新为当前 01-10 专题结构；已按新 commit 轻量复审并修正 01_config_entry_and_engine_args.md 的源码行号、create_engine_config 阶段顺序和少量字段描述。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -150,10 +151,10 @@
 - llm-project\tmp_doc\documents\question\quantization\10_lora_and_quantization.md，否，是
 - llm-project\tmp_doc\documents\question\quantization\11_parallelism_and_quantization.md，否，是
 - llm-project\tmp_doc\documents\question\quantization\12_accuracy_performance_tradeoffs.md，否，是
-- llm-project\tmp_doc\documents\question\quantization\13_limitations_and_debugging.md，是，否
-- llm-project\tmp_doc\documents\question\quantization\quantization_overview.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\README.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\01_config_entry_and_engine_args.md，否，否
+- llm-project\tmp_doc\documents\question\quantization\13_limitations_and_debugging.md，否，是
+- llm-project\tmp_doc\documents\question\quantization\quantization_overview.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\README.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\01_config_entry_and_engine_args.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\02_vllm_config_aggregation.md，否，否
 - llm-project\tmp_doc\documents\question\config_and_model_loading\03_model_config_and_hf_config.md，否，否
 - llm-project\tmp_doc\documents\question\config_and_model_loading\04_load_config_and_model_loader.md，否，否
@@ -239,5 +240,3 @@
 重点中的重点：记住再接手任务之前，先回答：
 1，确认明白自己获得最大权限，自己判断，不要问用户要权限，我已经说了给你最大权限，再问打死你。
 2，做之前明确自己应该怎么做，分成几步，然后做的时候及时更新状态。对于一个文档，必须做完，状态必须更新完！
-
-- [x] 本轮新增：已完成 `llm-project/tmp_doc/notes/vllm_page_attention_block_lifecycle.md`，整理 page attention 的 block 申请、block table/slot mapping、kernel 读写与释放链路。

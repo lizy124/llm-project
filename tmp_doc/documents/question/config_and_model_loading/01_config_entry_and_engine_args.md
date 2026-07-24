@@ -205,7 +205,7 @@ OpenAI server 构造 engine client 的入口是：
 async def build_async_engine_client(args, usage_context=UsageContext.OPENAI_API_SERVER, ...)
 ```
 
-位置：`code/vllm/vllm/entrypoints/openai/api_server.py:76` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:82`
+位置：`code/vllm/vllm/entrypoints/openai/api_server.py:117` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:122`
 
 这里从 argparse namespace 创建 `AsyncEngineArgs`：
 
@@ -213,7 +213,7 @@ async def build_async_engine_client(args, usage_context=UsageContext.OPENAI_API_
 engine_args = AsyncEngineArgs.from_cli_args(args)
 ```
 
-位置：`code/vllm/vllm/entrypoints/openai/api_server.py:94`
+位置：`code/vllm/vllm/entrypoints/openai/api_server.py:134`
 
 然后进入：
 
@@ -238,7 +238,7 @@ async_llm = AsyncLLM.from_vllm_config(
 )
 ```
 
-位置：`code/vllm/vllm/entrypoints/openai/api_server.py:122` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:144`
+位置：`code/vllm/vllm/entrypoints/openai/api_server.py:163` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:184`
 
 因此 server 链路是：
 
@@ -254,7 +254,7 @@ vllm serve ...
 
 ## 3. EngineArgs 是什么
 
-`EngineArgs` 定义在：`code/vllm/vllm/engine/arg_utils.py:411`
+`EngineArgs` 定义在：`code/vllm/vllm/engine/arg_utils.py:417`
 
 ```python
 @dataclass
@@ -286,7 +286,7 @@ EngineArgs.kernel_config                 ← VllmConfig.kernel_config
 EngineArgs.reasoning_config              ← VllmConfig.reasoning_config
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:415` 到 `code/vllm/vllm/engine/arg_utils.py:720`
+位置：`code/vllm/vllm/engine/arg_utils.py:420` 到 `code/vllm/vllm/engine/arg_utils.py:719`
 
 这说明 `EngineArgs` 不是最终配置对象，而是面向用户入口的“扁平参数层”。
 
@@ -333,7 +333,7 @@ self.quantization_config = resolve_quantization_config(
 load_general_plugins()
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:722` 到 `code/vllm/vllm/engine/arg_utils.py:752`
+位置：`code/vllm/vllm/engine/arg_utils.py:721` 到 `code/vllm/vllm/engine/arg_utils.py:770`
 
 HF offline 场景下，如果 `HF_HUB_OFFLINE=True`，它会把 model/tokenizer id 替换成本地路径：
 
@@ -342,7 +342,7 @@ self.model = get_model_path(self.model, self.revision)
 self.tokenizer = get_model_path(self.tokenizer, self.tokenizer_revision)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:754` 到 `code/vllm/vllm/engine/arg_utils.py:777`
+位置：`code/vllm/vllm/engine/arg_utils.py:772` 到 `code/vllm/vllm/engine/arg_utils.py:789`
 
 ---
 
@@ -350,7 +350,7 @@ self.tokenizer = get_model_path(self.tokenizer, self.tokenizer_revision)
 
 CLI 参数注册入口：`EngineArgs.add_cli_args()`
 
-位置：`code/vllm/vllm/engine/arg_utils.py:779`
+位置：`code/vllm/vllm/engine/arg_utils.py:795`
 
 它不是完全手写每个参数的类型和 help，而是先从 Config 类生成 argparse kwargs：
 
@@ -359,7 +359,7 @@ model_kwargs = get_kwargs(ModelConfig)
 load_kwargs = get_kwargs(LoadConfig)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:783` 和 `code/vllm/vllm/engine/arg_utils.py:876`
+位置：`code/vllm/vllm/engine/arg_utils.py:799` 和 `code/vllm/vllm/engine/arg_utils.py:894`
 
 然后按配置域添加参数组：
 
@@ -400,7 +400,7 @@ engine_args = cls(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1559` 到 `code/vllm/vllm/engine/arg_utils.py:1567`
+位置：`code/vllm/vllm/engine/arg_utils.py:1610` 到 `code/vllm/vllm/engine/arg_utils.py:1617`
 
 也就是说，argparse namespace 中只有和 `EngineArgs` dataclass 字段同名的值，才会进入 `EngineArgs`。
 
@@ -423,7 +423,7 @@ class AsyncEngineArgs(EngineArgs):
     enable_log_requests: bool = False
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2599` 到 `code/vllm/vllm/engine/arg_utils.py:2603`
+位置：`code/vllm/vllm/engine/arg_utils.py:2704` 到 `code/vllm/vllm/engine/arg_utils.py:2707`
 
 它的 `add_cli_args()` 默认先注册 `EngineArgs` 参数，再额外注册异步 server 相关参数：
 
@@ -433,7 +433,7 @@ if not async_args_only:
 parser.add_argument("--enable-log-requests", ...)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2605` 到 `code/vllm/vllm/engine/arg_utils.py:2625`
+位置：`code/vllm/vllm/engine/arg_utils.py:2710` 到 `code/vllm/vllm/engine/arg_utils.py:2729`
 
 所以：
 
@@ -446,7 +446,7 @@ AsyncEngineArgs：EngineArgs + async serving 额外参数。
 
 ## 5. create_engine_config() 是核心转换点
 
-`EngineArgs.create_engine_config()` 定义在：`code/vllm/vllm/engine/arg_utils.py:1724`
+`EngineArgs.create_engine_config()` 定义在：`code/vllm/vllm/engine/arg_utils.py:1833`
 
 它的职责是把 `EngineArgs` 的扁平字段转换为内部结构化配置：
 
@@ -458,7 +458,7 @@ def create_engine_config(
 ) -> VllmConfig:
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1724` 到 `code/vllm/vllm/engine/arg_utils.py:1728`
+位置：`code/vllm/vllm/engine/arg_utils.py:1833` 到 `code/vllm/vllm/engine/arg_utils.py:1837`
 
 主流程可以压缩成：
 
@@ -476,9 +476,10 @@ def create_engine_config(
 11. 创建 SpeculativeConfig / DiffusionConfig；
 12. 根据 usage_context 推导 scheduler 默认 batch 上限；
 13. 创建 SchedulerConfig；
-14. 创建 LoRAConfig / LoadConfig / AttentionConfig / MambaConfig / KernelConfig；
-15. 创建 ObservabilityConfig / CompilationConfig / OffloadConfig；
-16. 组装并返回 VllmConfig。
+14. 创建 LoRAConfig；
+15. 应用 AttentionConfig / MambaConfig / KernelConfig 顶层覆盖；
+16. 创建 LoadConfig / ObservabilityConfig / CompilationConfig / OffloadConfig；
+17. 组装并返回 VllmConfig。
 ```
 
 ### 5.1 平台、设备和环境校验
@@ -491,7 +492,7 @@ device_config = DeviceConfig(device=cast(Device, current_platform.device_type))
 envs.validate_environ(self.fail_on_environ_validation)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1734` 到 `code/vllm/vllm/engine/arg_utils.py:1738`
+位置：`code/vllm/vllm/engine/arg_utils.py:1843` 到 `code/vllm/vllm/engine/arg_utils.py:1847`
 
 这意味着后面的默认值推导不是纯静态的，会依赖当前平台：
 
@@ -517,6 +518,8 @@ return ModelConfig(
     tokenizer=self.tokenizer,
     tokenizer_mode=self.tokenizer_mode,
     trust_remote_code=self.trust_remote_code,
+    allowed_local_media_path=self.allowed_local_media_path,
+    allowed_media_domains=self.allowed_media_domains,
     dtype=self.dtype,
     seed=self.seed,
     revision=self.revision,
@@ -531,7 +534,7 @@ return ModelConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1569` 到 `code/vllm/vllm/engine/arg_utils.py:1641`
+位置：`code/vllm/vllm/engine/arg_utils.py:1619` 到 `code/vllm/vllm/engine/arg_utils.py:1693`
 
 在调用它之前，`create_engine_config()` 还会检查当前 `model` 是否是 speculator，并可能改写 model/tokenizer/speculative_config：
 
@@ -539,7 +542,7 @@ return ModelConfig(
 (self.model, self.tokenizer, self.speculative_config) = maybe_override_with_speculators(...)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1740` 到 `code/vllm/vllm/engine/arg_utils.py:1755`
+位置：`code/vllm/vllm/engine/arg_utils.py:1849` 到 `code/vllm/vllm/engine/arg_utils.py:1865`
 
 创建后会把规范化后的值写回 `EngineArgs`：
 
@@ -549,7 +552,7 @@ self.model_weights = model_config.model_weights
 self.tokenizer = model_config.tokenizer
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1757` 到 `code/vllm/vllm/engine/arg_utils.py:1760`
+位置：`code/vllm/vllm/engine/arg_utils.py:1866` 到 `code/vllm/vllm/engine/arg_utils.py:1869`
 
 ### 5.3 推导 chunked prefill 和 prefix caching
 
@@ -559,7 +562,7 @@ self.tokenizer = model_config.tokenizer
 self._set_default_chunked_prefill_and_prefix_caching_args(model_config)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1762` 到 `code/vllm/vllm/engine/arg_utils.py:1763`
+位置：`code/vllm/vllm/engine/arg_utils.py:1871` 到 `code/vllm/vllm/engine/arg_utils.py:1873`
 
 默认值来自模型能力：
 
@@ -568,19 +571,19 @@ default_chunked_prefill = model_config.is_chunked_prefill_supported
 default_prefix_caching = model_config.is_prefix_caching_supported
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2397` 到 `code/vllm/vllm/engine/arg_utils.py:2404`
+位置：`code/vllm/vllm/engine/arg_utils.py:2497` 到 `code/vllm/vllm/engine/arg_utils.py:2505`
 
 含义是：
 
 ```text
 如果用户没显式设置 enable_chunked_prefill，就按模型是否支持来启用；
-如果用户没显式设置 enable_prefix_caching，就按模型是否支持来启用；
+如果用户没显式设置 enable_prefix_caching，就按模型是否支持来启用；hybrid model 当前保持默认关闭；
 如果用户强行设置了模型不推荐的组合，会给 warning 或禁用。
 ```
 
 RISC-V CPU 场景会强制关闭这两项：
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2449` 到 `code/vllm/vllm/engine/arg_utils.py:2465`
+位置：`code/vllm/vllm/engine/arg_utils.py:2553` 到 `code/vllm/vllm/engine/arg_utils.py:2569`
 
 ### 5.4 创建 CacheConfig
 
@@ -593,7 +596,7 @@ resolved_cache_dtype = resolve_kv_cache_dtype_string(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1772` 到 `code/vllm/vllm/engine/arg_utils.py:1775`
+位置：`code/vllm/vllm/engine/arg_utils.py:1881` 到 `code/vllm/vllm/engine/arg_utils.py:1884`
 
 然后创建 `CacheConfig`：
 
@@ -611,6 +614,7 @@ cache_config = CacheConfig(
     calculate_kv_scales=self.calculate_kv_scales,
     kv_cache_dtype_skip_layers=self.kv_cache_dtype_skip_layers,
     kv_sharing_fast_prefill=self.kv_sharing_fast_prefill,
+    prefix_match_unit=self.prefix_match_unit,
     mamba_cache_dtype=self.mamba_cache_dtype,
     mamba_ssm_cache_dtype=self.mamba_ssm_cache_dtype,
     mamba_block_size=self.mamba_block_size,
@@ -620,7 +624,7 @@ cache_config = CacheConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1781` 到 `code/vllm/vllm/engine/arg_utils.py:1800`
+位置：`code/vllm/vllm/engine/arg_utils.py:1890` 到 `code/vllm/vllm/engine/arg_utils.py:1910`
 
 这里有两个关键点：
 
@@ -633,7 +637,7 @@ cache_config = CacheConfig(
 
 `create_engine_config()` 会先处理 Ray runtime env、placement group、DP rank、DP local size、DP address、RPC port 等推导，再创建 `ParallelConfig`。
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1813` 到 `code/vllm/vllm/engine/arg_utils.py:1983`
+位置：`code/vllm/vllm/engine/arg_utils.py:1923` 到 `code/vllm/vllm/engine/arg_utils.py:2093`
 
 创建 `ParallelConfig` 时会收拢：
 
@@ -657,7 +661,7 @@ parallel_config = ParallelConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1984` 到 `code/vllm/vllm/engine/arg_utils.py:2032`
+位置：`code/vllm/vllm/engine/arg_utils.py:2094` 到 `code/vllm/vllm/engine/arg_utils.py:2143`
 
 这一步决定了后续 Executor 选择和分布式拓扑。
 
@@ -683,7 +687,7 @@ self._set_default_max_num_seqs_and_batched_tokens_args(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2040` 到 `code/vllm/vllm/engine/arg_utils.py:2044`
+位置：`code/vllm/vllm/engine/arg_utils.py:2151` 到 `code/vllm/vllm/engine/arg_utils.py:2155`
 
 然后创建 `SchedulerConfig`：
 
@@ -691,6 +695,7 @@ self._set_default_max_num_seqs_and_batched_tokens_args(
 scheduler_config = SchedulerConfig(
     runner_type=model_config.runner_type,
     max_num_batched_tokens=self.max_num_batched_tokens,
+    max_num_scheduled_tokens=self.max_num_scheduled_tokens,
     max_num_seqs=self.max_num_seqs,
     max_model_len=model_config.max_model_len,
     enable_chunked_prefill=self.enable_chunked_prefill,
@@ -711,7 +716,7 @@ scheduler_config = SchedulerConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2056` 到 `code/vllm/vllm/engine/arg_utils.py:2076`
+位置：`code/vllm/vllm/engine/arg_utils.py:2167` 到 `code/vllm/vllm/engine/arg_utils.py:2188`
 
 注意 `SchedulerConfig` 不是只包含用户传的 scheduler 参数，它还依赖：
 
@@ -744,11 +749,11 @@ OpenAI server 传的是：
 UsageContext.OPENAI_API_SERVER
 ```
 
-位置：`code/vllm/vllm/entrypoints/openai/api_server.py:76` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:82`
+位置：`code/vllm/vllm/entrypoints/openai/api_server.py:117` 到 `code/vllm/vllm/entrypoints/openai/api_server.py:122`
 
 `EngineArgs.get_batch_defaults()` 会根据 usage context、设备类型、显存、world size 给出不同默认值。
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2313` 到 `code/vllm/vllm/engine/arg_utils.py:2395`
+位置：`code/vllm/vllm/engine/arg_utils.py:2414` 到 `code/vllm/vllm/engine/arg_utils.py:2495`
 
 典型规则：
 
@@ -766,7 +771,7 @@ CPU：
   OPENAI_API_SERVER max_num_batched_tokens = 2048 * world_size, max_num_seqs = 128 * world_size
 ```
 
-如果用户没有显式传 `max_num_batched_tokens` 或 `max_num_seqs`，才会使用这些默认值：
+如果用户没有显式传 `max_num_batched_tokens` 或 `max_num_seqs`，才会使用这些默认值；batched DP MoE 会先使用 `SchedulerConfig.DEFAULT_MAX_NUM_BATCHED_TOKENS_FOR_BATCHED_DP`：
 
 ```python
 if self.max_num_batched_tokens is None:
@@ -776,7 +781,7 @@ if self.max_num_seqs is None:
     self.max_num_seqs = default_max_num_seqs.get(...)
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2522` 到 `code/vllm/vllm/engine/arg_utils.py:2537`
+位置：`code/vllm/vllm/engine/arg_utils.py:2626` 到 `code/vllm/vllm/engine/arg_utils.py:2641`
 
 后续还会继续修正：
 
@@ -788,7 +793,7 @@ performance_mode == "throughput" 时，如果用户没显式设置，就把默�
 默认 max_num_seqs 不能超过 max_num_batched_tokens。
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2539` 到 `code/vllm/vllm/engine/arg_utils.py:2596`
+位置：`code/vllm/vllm/engine/arg_utils.py:2643` 到 `code/vllm/vllm/engine/arg_utils.py:2700`
 
 因此，同样不传 `--max-num-batched-tokens`：
 
@@ -809,7 +814,7 @@ throughput mode 会进一步改变默认值。
 
 `create_load_config()` 处理模型加载相关参数。
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1652` 到 `code/vllm/vllm/engine/arg_utils.py:1677`
+位置：`code/vllm/vllm/engine/arg_utils.py:1704` 到 `code/vllm/vllm/engine/arg_utils.py:1729`
 
 关键逻辑：
 
@@ -823,7 +828,7 @@ load_format == "tensorizer" 时，会把 model_loader_extra_config 整理成 ten
 
 投机解码配置由 `create_speculative_config()` 创建。
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1679` 到 `code/vllm/vllm/engine/arg_utils.py:1714`
+位置：`code/vllm/vllm/engine/arg_utils.py:1731` 到 `code/vllm/vllm/engine/arg_utils.py:1766`
 
 它支持两种来源：
 
@@ -840,7 +845,7 @@ raise ValueError(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1694` 到 `code/vllm/vllm/engine/arg_utils.py:1700`
+位置：`code/vllm/vllm/engine/arg_utils.py:1748` 到 `code/vllm/vllm/engine/arg_utils.py:1751`
 
 并且它会把目标模型和目标并行配置塞进 speculative config：
 
@@ -853,7 +858,7 @@ self.speculative_config.update(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1705` 到 `code/vllm/vllm/engine/arg_utils.py:1714`
+位置：`code/vllm/vllm/engine/arg_utils.py:1760` 到 `code/vllm/vllm/engine/arg_utils.py:1766`
 
 ### 7.3 LoRAConfig
 
@@ -863,11 +868,11 @@ self.speculative_config.update(
 lora_config = LoRAConfig(...) if self.enable_lora else None
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2084` 到 `code/vllm/vllm/engine/arg_utils.py:2101`
+位置：`code/vllm/vllm/engine/arg_utils.py:2196` 到 `code/vllm/vllm/engine/arg_utils.py:2213`
 
 如果给非多模态模型传了 `default_mm_loras`，会报错：
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2078` 到 `code/vllm/vllm/engine/arg_utils.py:2082`
+位置：`code/vllm/vllm/engine/arg_utils.py:2190` 到 `code/vllm/vllm/engine/arg_utils.py:2194`
 
 ### 7.4 AttentionConfig / MambaConfig / KernelConfig
 
@@ -880,7 +885,7 @@ Attention：
 否则把 attention_backend 写入 attention_config.backend。
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2121` 到 `code/vllm/vllm/engine/arg_utils.py:2132`
+位置：`code/vllm/vllm/engine/arg_utils.py:2233` 到 `code/vllm/vllm/engine/arg_utils.py:2245`
 
 Mamba：
 
@@ -889,7 +894,7 @@ mamba_backend 字符串会转换为 MambaBackendEnum；
 enable_mamba_cache_stochastic_rounding / mamba_cache_philox_rounds 会写入 MambaConfig。
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2147` 到 `code/vllm/vllm/engine/arg_utils.py:2162`
+位置：`code/vllm/vllm/engine/arg_utils.py:2259` 到 `code/vllm/vllm/engine/arg_utils.py:2273`
 
 Kernel：
 
@@ -900,28 +905,19 @@ linear_backend != "auto" 时写入 kernel_config.linear_backend；
 ir_op_priority 顶层配置会合并到 kernel_config.ir_op_priority。
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2163` 到 `code/vllm/vllm/engine/arg_utils.py:2193`
+位置：`code/vllm/vllm/engine/arg_utils.py:2275` 到 `code/vllm/vllm/engine/arg_utils.py:2305`
 
 ### 7.5 ObservabilityConfig / CompilationConfig / OffloadConfig
 
 ObservabilityConfig：
 
 ```python
-observability_config = ObservabilityConfig(
-    show_hidden_metrics_for_version=self.show_hidden_metrics_for_version,
-    otlp_traces_endpoint=self.otlp_traces_endpoint,
-    collect_detailed_traces=self.collect_detailed_traces,
-    kv_cache_metrics=self.kv_cache_metrics,
-    cudagraph_metrics=self.cudagraph_metrics,
-    enable_layerwise_nvtx_tracing=self.enable_layerwise_nvtx_tracing,
-    enable_mfu_metrics=self.enable_mfu_metrics,
-    enable_mm_processor_stats=self.enable_mm_processor_stats,
-    enable_logging_iteration_details=self.enable_logging_iteration_details,
-    jit_monitor_verbose=self.jit_monitor_verbose,
-)
+observability_config = self.create_observability_config()
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2205` 到 `code/vllm/vllm/engine/arg_utils.py:2217`
+`create_observability_config()` 负责把 metrics、trace、NVTX、MFU、MM processor stats、JIT monitor 等观测参数组装成 `ObservabilityConfig`。
+
+位置：`code/vllm/vllm/engine/arg_utils.py:1817` 到 `code/vllm/vllm/engine/arg_utils.py:1831`，调用位置在 `code/vllm/vllm/engine/arg_utils.py:2317`
 
 CompilationConfig：
 
@@ -931,7 +927,7 @@ max_cudagraph_capture_size 与 compilation_config.max_cudagraph_capture_size 互
 顶层参数会覆盖进 compilation_config。
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2219` 到 `code/vllm/vllm/engine/arg_utils.py:2237`
+位置：`code/vllm/vllm/engine/arg_utils.py:2319` 到 `code/vllm/vllm/engine/arg_utils.py:2337`
 
 OffloadConfig：
 
@@ -943,13 +939,13 @@ offload_config = OffloadConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2238` 到 `code/vllm/vllm/engine/arg_utils.py:2250`
+位置：`code/vllm/vllm/engine/arg_utils.py:2338` 到 `code/vllm/vllm/engine/arg_utils.py:2350`
 
 ---
 
 ## 8. VllmConfig 是最终内部配置对象
 
-`VllmConfig` 定义在：`code/vllm/vllm/config/vllm.py:296`
+`VllmConfig` 定义在：`code/vllm/vllm/config/vllm.py:288`
 
 ```python
 @config(config=ConfigDict(arbitrary_types_allowed=True))
@@ -959,7 +955,7 @@ class VllmConfig:
     """
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:296` 到 `code/vllm/vllm/config/vllm.py:300`
+位置：`code/vllm/vllm/config/vllm.py:288` 到 `code/vllm/vllm/config/vllm.py:292`
 
 它包含的主要子配置是：
 
@@ -987,13 +983,14 @@ kv_events_config
 ec_transfer_config
 reasoning_config
 additional_config
+instance_id
 optimization_level
 performance_mode
 weight_transfer_config
 shutdown_timeout
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:304` 到 `code/vllm/vllm/config/vllm.py:387`
+位置：`code/vllm/vllm/config/vllm.py:295` 到 `code/vllm/vllm/config/vllm.py:382`
 
 `create_engine_config()` 最后组装：
 
@@ -1028,7 +1025,7 @@ config = VllmConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2255` 到 `code/vllm/vllm/engine/arg_utils.py:2282`
+位置：`code/vllm/vllm/engine/arg_utils.py:2355` 到 `code/vllm/vllm/engine/arg_utils.py:2382`
 
 然后返回：
 
@@ -1036,7 +1033,7 @@ config = VllmConfig(
 return config
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2284`
+位置：`code/vllm/vllm/engine/arg_utils.py:2384`
 
 ---
 
@@ -1051,7 +1048,7 @@ vllm_config = engine_args.create_engine_config(usage_context)
 executor_class = Executor.get_class(vllm_config)
 ```
 
-位置：`code/vllm/vllm/v1/engine/llm_engine.py:160` 到 `code/vllm/vllm/v1/engine/llm_engine.py:172`
+位置：`code/vllm/vllm/v1/engine/llm_engine.py:161` 到 `code/vllm/vllm/v1/engine/llm_engine.py:172`
 
 随后创建 `LLMEngine`：
 
@@ -1066,7 +1063,7 @@ return cls(
 )
 ```
 
-位置：`code/vllm/vllm/v1/engine/llm_engine.py:178` 到 `code/vllm/vllm/v1/engine/llm_engine.py:186`
+位置：`code/vllm/vllm/v1/engine/llm_engine.py:179` 到 `code/vllm/vllm/v1/engine/llm_engine.py:186`
 
 ### 9.2 LLMEngine.__init__ 消费哪些配置
 
@@ -1078,7 +1075,7 @@ self.model_config = vllm_config.model_config
 self.observability_config = vllm_config.observability_config
 ```
 
-位置：`code/vllm/vllm/v1/engine/llm_engine.py:51` 到 `code/vllm/vllm/v1/engine/llm_engine.py:64`
+位置：`code/vllm/vllm/v1/engine/llm_engine.py:51` 到 `code/vllm/vllm/v1/engine/llm_engine.py:65`
 
 然后使用配置创建：
 
@@ -1110,7 +1107,7 @@ return cls(
 )
 ```
 
-位置：`code/vllm/vllm/v1/engine/async_llm.py:202` 到 `code/vllm/vllm/v1/engine/async_llm.py:229`
+位置：`code/vllm/vllm/v1/engine/async_llm.py:203` 到 `code/vllm/vllm/v1/engine/async_llm.py:229`
 
 ### 9.4 AsyncLLM.__init__ 消费哪些配置
 
@@ -1122,7 +1119,7 @@ self.model_config = vllm_config.model_config
 self.observability_config = vllm_config.observability_config
 ```
 
-位置：`code/vllm/vllm/v1/engine/async_llm.py:73` 到 `code/vllm/vllm/v1/engine/async_llm.py:113`
+位置：`code/vllm/vllm/v1/engine/async_llm.py:73` 到 `code/vllm/vllm/v1/engine/async_llm.py:112`
 
 然后创建：
 
@@ -1222,7 +1219,7 @@ vllm_config = engine_args.create_engine_config(
 )
 ```
 
-位置：`code/vllm/vllm/entrypoints/cli/serve.py:173` 到 `code/vllm/vllm/entrypoints/cli/serve.py:183`
+位置：`code/vllm/vllm/entrypoints/cli/serve.py:173` 到 `code/vllm/vllm/entrypoints/cli/serve.py:182`
 
 随后 headless worker 会使用这个 `VllmConfig` 创建 executor。
 

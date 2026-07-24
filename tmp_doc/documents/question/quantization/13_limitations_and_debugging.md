@@ -106,18 +106,26 @@ QuantizationMethods = Literal[
     "awq",
     "auto_awq",
     "fp8",
+    "fbgemm_fp8",
+    "fp_quant",
     "modelopt",
+    "modelopt_fp4",
+    "modelopt_mxfp8",
+    "modelopt_mixed",
     "auto_gptq",
     "gptq",
     "gptq_marlin",
     "awq_marlin",
+    "humming",
     "compressed-tensors",
     "bitsandbytes",
     "experts_int8",
     "quark",
+    "moe_wna16",
     "torchao",
     "inc",
     "mxfp4",
+    "gpt_oss_mxfp4",
     "deepseek_v4_fp8",
     "online",
     "fp8_per_tensor",
@@ -128,7 +136,7 @@ QuantizationMethods = Literal[
 ]
 ```
 
-位置：`quantization/__init__.py:12` 到 `quantization/__init__.py:46`
+位置：`quantization/__init__.py:12` 到 `quantization/__init__.py:47`
 
 如果用户传入未知方法，会在：
 
@@ -152,7 +160,7 @@ Invalid quantization method: xxx
 ModelConfig._verify_quantization()
 ```
 
-位置：`config/model.py:970`
+位置：`config/model.py:1016`
 
 它做几件事：
 
@@ -161,9 +169,10 @@ ModelConfig._verify_quantization()
 2. 从 quantization_config["quant_method"] 推断 checkpoint 方法；
 3. 允许某些后端 override，例如 GPTQ → auto_gptq；
 4. 如果用户显式传了 --quantization，则必须和 checkpoint 推断结果一致；
-5. 检查该方法是否在 QUANTIZATION_METHODS 中；
-6. 调 current_platform.verify_quantization() 做平台白名单校验；
-7. 检查 deprecated quantization 是否允许。
+5. 按 overrides + 其余 QUANTIZATION_METHODS 的顺序检查 checkpoint override；
+6. 检查最终方法是否在 QUANTIZATION_METHODS 中；
+7. 调 current_platform.verify_quantization() 做平台白名单校验；
+8. 检查 deprecated quantization 是否允许。
 ```
 
 不一致时会报：
@@ -172,7 +181,7 @@ ModelConfig._verify_quantization()
 Quantization method specified in the model config (...) does not match the quantization method specified in the `quantization` argument (...).
 ```
 
-位置：`config/model.py:1042` 到 `config/model.py:1048`
+位置：`config/model.py:1089` 到 `config/model.py:1095`
 
 未知方法会报：
 
@@ -180,7 +189,7 @@ Quantization method specified in the model config (...) does not match the quant
 Unknown quantization method: xxx. Must be one of [...]
 ```
 
-位置：`config/model.py:1050` 到 `config/model.py:1055`
+位置：`config/model.py:1097` 到 `config/model.py:1102`
 
 ### 3.3 deprecated quantization
 
@@ -198,7 +207,7 @@ DEPRECATED_QUANTIZATION_METHODS
 The quantization method %s is deprecated and will be removed in future versions of vLLM. To bypass, set `--allow-deprecated-quantization`.
 ```
 
-位置：`config/model.py:1058` 到 `config/model.py:1071`
+位置：`config/model.py:1105` 到 `config/model.py:1118`
 
 ---
 
@@ -210,7 +219,7 @@ The quantization method %s is deprecated and will be removed in future versions 
 current_platform.verify_quantization(self.quantization)
 ```
 
-位置：`config/model.py:1056`
+位置：`config/model.py:1103`
 
 默认实现：
 
@@ -221,7 +230,7 @@ if cls.supported_quantization and quant not in cls.supported_quantization:
     )
 ```
 
-位置：`platforms/interface.py:824` 到 `platforms/interface.py:831`
+位置：`platforms/interface.py:956` 到 `platforms/interface.py:963`
 
 这说明：
 
@@ -233,13 +242,14 @@ if cls.supported_quantization and quant not in cls.supported_quantization:
 
 ```text
 awq / auto_awq / awq_marlin
-gptq / gptq_marlin / auto_gptq
+gptq / auto_gptq
 fp8 / deepseek_v4_fp8
-compressed-tensors / quark / mxfp4 / mxfp8
-torchao / bitsandbytes / modelopt / online 等
+compressed-tensors / quark / mxfp4 / mxfp8 / gpt_oss_mxfp4
+torchao / bitsandbytes / modelopt / modelopt_fp4 / modelopt_mxfp8 / modelopt_mixed
+fp8_per_tensor / fp8_per_block / fp8_per_channel / online 等
 ```
 
-位置：`platforms/rocm.py:441` 到 `platforms/rocm.py:466`
+位置：`platforms/rocm.py:459` 到 `platforms/rocm.py:483`
 
 因此调试平台问题时要先看：
 
@@ -261,7 +271,7 @@ current_platform.is_cuda() / is_rocm() / is_xpu() / is_cpu()
 VllmConfig._get_quantization_config(model_config, load_config)
 ```
 
-位置：`config/vllm.py:609`
+位置：`config/vllm.py:651`
 
 它会：
 
@@ -273,7 +283,7 @@ VllmConfig._get_quantization_config(model_config, load_config)
 5. 调 quant_config.maybe_update_config()。
 ```
 
-位置：`config/vllm.py:615` 到 `config/vllm.py:641`
+位置：`config/vllm.py:657` 到 `config/vllm.py:683`
 
 GPU capability 不满足时：
 
@@ -281,7 +291,7 @@ GPU capability 不满足时：
 The quantization method xxx is not supported for the current GPU. Minimum capability: y. Current capability: z.
 ```
 
-位置：`config/vllm.py:621` 到 `config/vllm.py:629`
+位置：`config/vllm.py:663` 到 `config/vllm.py:671`
 
 dtype 不满足时：
 
@@ -289,7 +299,7 @@ dtype 不满足时：
 torch.xxx is not supported for quantization method xxx. Supported dtypes: [...]
 ```
 
-位置：`config/vllm.py:630` 到 `config/vllm.py:636`
+位置：`config/vllm.py:672` 到 `config/vllm.py:678`
 
 ### 5.2 常见后端的 capability / dtype
 
@@ -300,7 +310,7 @@ supported act dtype：bf16 / fp16
 min capability：75
 ```
 
-位置：`fp8.py:143` 到 `fp8.py:149`
+位置：`fp8.py:140` 到 `fp8.py:145`
 
 注意：
 
@@ -317,7 +327,7 @@ supported act dtype：fp16 / bf16
 min capability：75
 ```
 
-位置：`auto_awq.py:224` 到 `auto_awq.py:230`
+位置：`auto_awq.py:226` 到 `auto_awq.py:231`
 
 #### AutoGPTQ
 
@@ -401,7 +411,7 @@ from_config_file is specified in hf_override config, but quant_cls.from_config_f
 
 ## 7. checkpoint 权重缺失如何被发现
 
-权重加载后，默认 loader 会检查哪些参数没初始化。
+权重加载后，default loader 会在启用 weights tracking 时检查哪些参数没初始化；当前默认只对非量化模型自动启用，量化模型通常要看具体 loader / 参数加载路径。
 
 入口：
 
@@ -417,7 +427,7 @@ DefaultModelLoader.track_weights_loading()
 1. 收集 model.named_parameters() 中所有应该加载的参数；
 2. 对 online quant / process_weights_after_loading 创建的参数做豁免；
 3. 对 KV cache scale 等后处理参数做豁免；
-4. 如果还有未加载参数，则报错。
+4. 如果启用了 tracking 且还有未加载参数，则报错。
 ```
 
 报错：
@@ -469,7 +479,7 @@ kv_cache_dtype_skip_layers：
 Using xxx data type to store kv cache. It reduces the GPU memory footprint and boosts the performance. Meanwhile, it may cause accuracy drop without a proper scaling factor
 ```
 
-位置：`cache.py:268` 到 `cache.py:286`
+位置：`cache.py:274` 到 `cache.py:292`
 
 如果使用 per-token-head scales，会提示：
 
@@ -477,7 +487,7 @@ Using xxx data type to store kv cache. It reduces the GPU memory footprint and b
 Dynamic per-token-head scales will be computed at runtime.
 ```
 
-位置：`cache.py:271` 到 `cache.py:276`
+位置：`cache.py:277` 到 `cache.py:283`
 
 ### 8.2 calculate_kv_scales 已废弃
 
@@ -487,7 +497,7 @@ Dynamic per-token-head scales will be computed at runtime.
 The `--calculate-kv-scales` option is deprecated and will be removed in v0.19. The scales will be loaded from the model checkpoint if available, otherwise they default to 1.0.
 ```
 
-位置：`cache.py:256` 到 `cache.py:266`
+位置：`cache.py:262` 到 `cache.py:272`
 
 这意味着调试 FP8 KV cache 精度时要关注：
 
@@ -506,7 +516,7 @@ The `--calculate-kv-scales` option is deprecated and will be removed in v0.19. T
 maybe_remap_kv_scale_name(name, params_dict)
 ```
 
-位置：`weight_utils.py:1341`
+位置：`weight_utils.py:1349`
 
 它支持把不同 checkpoint 格式映射到 vLLM 期望的：
 
@@ -516,6 +526,7 @@ maybe_remap_kv_scale_name(name, params_dict)
 .attn.q_scale
 .attn.k_zero_point
 .attn.v_zero_point
+.attn.q_zero_point
 ```
 
 如果 checkpoint 仍使用旧的 `.kv_scale`：
@@ -524,7 +535,7 @@ maybe_remap_kv_scale_name(name, params_dict)
 DEPRECATED. Found kv_scale in the checkpoint. This format is deprecated in favor of separate k_scale and v_scale tensors...
 ```
 
-位置：`weight_utils.py:1363` 到 `weight_utils.py:1370`
+位置：`weight_utils.py:1371` 到 `weight_utils.py:1378`
 
 如果 remap 后模型里找不到对应参数：
 
@@ -532,7 +543,7 @@ DEPRECATED. Found kv_scale in the checkpoint. This format is deprecated in favor
 Found kv_scale in the checkpoint ..., but not found the expected name in the model ... kv_scale is not loaded.
 ```
 
-位置：`weight_utils.py:1373` 到 `weight_utils.py:1379`
+位置：`weight_utils.py:1381` 到 `weight_utils.py:1388`
 
 ### 8.4 wake_up 后 FP8 KV scale 重置
 
@@ -542,7 +553,7 @@ Found kv_scale in the checkpoint ..., but not found the expected name in the mod
 self.init_fp8_kv_scales()
 ```
 
-位置：`gpu_model_runner.py:935` 到 `gpu_model_runner.py:936`
+位置：`gpu_model_runner.py:969` 到 `gpu_model_runner.py:970`
 
 它会：
 
@@ -553,7 +564,7 @@ self.init_fp8_kv_scales()
 4. 把 _v_scale / v_scale 重置为 1.0。
 ```
 
-位置：`gpu_model_runner.py:939` 到 `gpu_model_runner.py:980`
+位置：`gpu_model_runner.py:973` 到 `gpu_model_runner.py:1014`
 
 注释里说明原因：
 
@@ -561,7 +572,7 @@ self.init_fp8_kv_scales()
 如果 wake_up 后 scale 还是 0.0，KV cache 值会被等效清零，导致 gibberish output。
 ```
 
-位置：`gpu_model_runner.py:941` 到 `gpu_model_runner.py:945`
+位置：`gpu_model_runner.py:974` 到 `gpu_model_runner.py:980`
 
 ### 8.5 NVFP4 KV cache 与 MLA 不兼容
 
@@ -571,7 +582,7 @@ self.init_fp8_kv_scales()
 validate_nvfp4_kv_cache_with_mla()
 ```
 
-位置：`config/vllm.py:2160`
+位置：`config/vllm.py:2251`
 
 如果 `cache_dtype == "nvfp4"` 且模型使用 MLA：
 
@@ -579,7 +590,7 @@ validate_nvfp4_kv_cache_with_mla()
 nvfp4 KV cache is not supported with MLA (Multi-head Latent Attention) backends. Please use a different --kv-cache-dtype (e.g., 'fp8' or 'auto') for MLA models such as DeepSeek.
 ```
 
-位置：`config/vllm.py:2164` 到 `config/vllm.py:2169`
+位置：`config/vllm.py:2254` 到 `config/vllm.py:2259`
 
 ---
 
@@ -591,7 +602,7 @@ FP8 配置类：
 Fp8Config
 ```
 
-位置：`fp8.py:99`
+位置：`fp8.py:95`
 
 ### 9.1 activation_scheme 只支持 static / dynamic
 
@@ -599,7 +610,7 @@ Fp8Config
 ACTIVATION_SCHEMES = ["static", "dynamic"]
 ```
 
-位置：`fp8.py:94`
+位置：`fp8.py:90`
 
 如果传了其他值：
 
@@ -607,7 +618,7 @@ ACTIVATION_SCHEMES = ["static", "dynamic"]
 Unsupported activation scheme xxx
 ```
 
-位置：`fp8.py:114` 到 `fp8.py:115`
+位置：`fp8.py:110` 到 `fp8.py:111`
 
 ### 9.2 block-wise FP8 的限制
 
@@ -633,7 +644,7 @@ The quantization block size of weight must have 2 dimensions...
 The block-wise quantization only supports dynamic activation scheme for now...
 ```
 
-位置：`fp8.py:119` 到 `fp8.py:135`
+位置：`fp8.py:116` 到 `fp8.py:130`
 
 ### 9.3 ignored_layers / modules_to_not_convert
 
@@ -644,7 +655,7 @@ ignored_layers
 modules_to_not_convert
 ```
 
-位置：`fp8.py:163` 到 `fp8.py:170`
+位置：`fp8.py:158` 到 `fp8.py:170`
 
 在 `get_quant_method()` 中，如果 layer 被 skip：
 
@@ -653,7 +664,7 @@ LinearBase → UnquantizedLinearMethod
 RoutedExperts → UnquantizedFusedMoEMethod
 ```
 
-位置：`fp8.py:182` 到 `fp8.py:207`
+位置：`fp8.py:175` 到 `fp8.py:205`
 
 因此调试“为什么某层没量化”时，要看：
 
@@ -671,7 +682,7 @@ layer prefix 是否命中 is_layer_skipped()
 LinearBase → Fp8PerTensorOnlineLinearMethod
 ```
 
-位置：`fp8.py:189` 到 `fp8.py:196`
+位置：`fp8.py:185` 到 `fp8.py:192`
 
 如果 checkpoint 是 fp8 serialized：
 
@@ -679,7 +690,7 @@ LinearBase → Fp8PerTensorOnlineLinearMethod
 LinearBase → Fp8LinearMethod
 ```
 
-位置：`fp8.py:197` 到 `fp8.py:200`
+位置：`fp8.py:193` 到 `fp8.py:196`
 
 这会影响：
 
@@ -717,7 +728,7 @@ if self.weight_bits not in self.TYPE_MAP:
 Unsupported num_bits = x. Supported: ... For 8-bit AWQ, use Marlin backend by setting backend='awq:marlin' or backend='marlin'.
 ```
 
-位置：`auto_awq.py:200` 到 `auto_awq.py:207`
+位置：`auto_awq.py:201` 到 `auto_awq.py:207`
 
 ### 10.2 AWQ Marlin fallback
 
@@ -729,7 +740,7 @@ current_platform.is_cuda()
 check_marlin_supported(quant_type, group_size, zero_point)
 ```
 
-位置：`auto_awq.py:307` 到 `auto_awq.py:315`
+位置：`auto_awq.py:308` 到 `auto_awq.py:317`
 
 如果当前 layer shape 不支持 AutoAWQMarlin：
 
@@ -737,7 +748,7 @@ check_marlin_supported(quant_type, group_size, zero_point)
 Layer '%s' is not supported by AutoAWQMarlin. Falling back to unoptimized AWQ kernels.
 ```
 
-位置：`auto_awq.py:319` 到 `auto_awq.py:327`
+位置：`auto_awq.py:319` 到 `auto_awq.py:328`
 
 ### 10.3 AWQ MoE fallback
 
@@ -747,7 +758,7 @@ Layer '%s' is not supported by AutoAWQMarlin. Falling back to unoptimized AWQ ke
 Layer 'xxx' is not supported by AutoAWQMoEMarlin. Falling back to Moe WNA16 kernels.
 ```
 
-位置：`auto_awq.py:342` 到 `auto_awq.py:353`
+位置：`auto_awq.py:342` 到 `auto_awq.py:355`
 
 这类不是致命错误，而是性能 fallback。
 
@@ -792,7 +803,7 @@ Layer 'xxx' is not supported by GPTQMoeMarlin. Falling back to Moe WNA16 kernels
 
 ### 11.3 GPTQ override 顺序
 
-`ModelConfig._verify_quantization()` 中，GPTQ 相关 override 按顺序检查：
+`ModelConfig._verify_quantization()` 中，override 列表仍先检查 GPTQ 相关项：
 
 ```text
 auto_gptq
@@ -800,7 +811,9 @@ gptq
 gptq_marlin
 ```
 
-位置：`config/model.py:983` 到 `config/model.py:987`
+后面还会继续检查 AWQ、INC、MoE、ModelOpt、MXFP4、DeepSeek FP8、humming 等 override。
+
+位置：`config/model.py:1029` 到 `config/model.py:1049`
 
 原因是：
 
@@ -847,7 +860,7 @@ Unsupported bnb_4bit_quant_storage: xxx
 CUDA graph is not supported on BitsAndBytes 8bit yet, fallback to the eager mode.
 ```
 
-位置：`config/model.py:1090` 到 `config/model.py:1110`
+位置：`config/model.py:1131` 到 `config/model.py:1157`
 
 这类问题表现为：
 
@@ -1230,7 +1243,7 @@ platforms/rocm.py
 CUDA graph is not supported on BitsAndBytes 8bit yet, fallback to the eager mode.
 ```
 
-位置：`config/model.py:1090` 到 `config/model.py:1110`
+位置：`config/model.py:1131` 到 `config/model.py:1157`
 
 ### 18.2 Encoder-decoder on ROCm fallback eager
 
@@ -1240,7 +1253,7 @@ CUDA graph is not supported on BitsAndBytes 8bit yet, fallback to the eager mode
 CUDA graph is not supported for encoder-decoder models on ROCm yet, fallback to eager mode.
 ```
 
-位置：`config/model.py:1073` 起
+位置：`config/model.py:1120` 起
 
 这不是量化专属，但量化调试时常和性能 fallback 混在一起。
 
@@ -1513,7 +1526,7 @@ hf_config.compression_config
 关键源码：
 
 ```text
-config/model.py:970
+config/model.py:1016
 model_loader/weight_utils.py:240
 ```
 
@@ -1542,8 +1555,8 @@ quant_config.get_supported_act_dtypes()
 关键源码：
 
 ```text
-platforms/interface.py:824
-config/vllm.py:609
+platforms/interface.py:956
+config/vllm.py:651
 ```
 
 ### 22.3 第三步：确认 quant config 是否正确解析

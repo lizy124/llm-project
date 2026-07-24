@@ -150,7 +150,7 @@ cache_dtype / kv_cache_dtype：
   KV cache 存储格式，属于 cache 配置线，不等同于权重量化方法。
 
 KVQuantMode：
-  从 kv_cache_dtype 派生出的 kernel 侧枚举，用于区分 NONE / FP8 / per-token-head / NVFP4。
+  从 kv_cache_dtype 派生出的 kernel 侧枚举，用于区分 NONE / FP8_PER_TENSOR / INT8_PER_TOKEN_HEAD / FP8_PER_TOKEN_HEAD / INT4_PER_TOKEN_HEAD / NVFP4。
 
 attention backend：
   Attention 的运行时实现，负责 KV cache shape、metadata build、prefill/decode kernel。
