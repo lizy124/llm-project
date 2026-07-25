@@ -95,7 +95,7 @@
 - [ ] 9. sampling_and_output：处理中；本次已按新 commit 轻量复审并修正 01_sampling_output_role.md、02_sampling_params_and_metadata.md、03_logits_and_logprobs.md、04_sampler_flow.md、05_spec_decode_sampling.md、06_structured_output_and_grammar.md、07_model_runner_output.md、08_scheduler_update_output.md、09_output_processor_request_output.md、10_streaming_and_client_outputs.md、11_pooling_and_embedding_outputs.md、sampling_and_output_overview.md。
 - [x] 10. spec_decode：已按新 commit 轻量复审并修正 01_spec_decode_role.md、02_draft_tokens_and_request_state.md、03_scheduler_spec_decode_flow.md、04_spec_decode_metadata.md、06_rejection_sampler_flow.md、07_kv_cache_and_num_computed_tokens.md、08_structured_output_interaction.md、10_limitations_and_edge_cases.md；已轻量复审 spec_decode_overview.md，未发现文档内明显冲突。
 - [ ] 11. quantization：处理中；已轻量复审 README.md，目录索引与实际文件一致，未发现需要修改内容；已修正 01_quantization_role.md 顶部源码路径格式；已统一 02_quantization_config.md、05_weight_only_quantization.md、06_activation_and_dynamic_quantization.md、07_kv_cache_quantization.md、08_attention_backend_interaction.md、10_lora_and_quantization.md、11_parallelism_and_quantization.md 中源码路径前缀；已修正 03_weight_loading_and_param_mapping.md、04_quantized_linear_layers.md、09_moe_quantization.md、12_accuracy_performance_tradeoffs.md 顶部源码路径格式；已按新 commit 轻量复审并修正 13_limitations_and_debugging.md；已修正 quantization_overview.md 中 KVQuantMode 枚举描述。
-- [ ] 12. config_and_model_loading：处理中；已按实际目录轻量复审并修正 README.md，移除不存在的旧专题链接，更新为当前 01-10 专题结构；已按新 commit 轻量复审并修正 01_config_entry_and_engine_args.md 的源码行号、create_engine_config 阶段顺序和少量字段描述；已按新 commit 轻量复审并修正 02_vllm_config_aggregation.md 的源码位置、关键行号、create_engine_config 构造顺序和 VllmConfig 后处理描述。
+- [ ] 12. config_and_model_loading：处理中；已按实际目录轻量复审并修正 README.md，移除不存在的旧专题链接，更新为当前 01-10 专题结构；已按新 commit 轻量复审并修正 01_config_entry_and_engine_args.md 的源码行号、create_engine_config 阶段顺序和少量字段描述；已按新 commit 轻量复审并修正 02_vllm_config_aggregation.md 的源码位置、关键行号、create_engine_config 构造顺序和 VllmConfig 后处理描述；已按新 commit 轻量复审并修正 03_model_config_and_hf_config.md 的关键源码行号和 tokenizer_mode 分支描述；已按新 commit 轻量复审并修正 04_load_config_and_model_loader.md 的源码行号、DefaultModelLoader 多线程加载限制、fallback 到 .pt 条件和加载后处理描述；已按新 commit 轻量复审并修正 05_model_registry_and_arch_resolution.md 的 registry/model loader 源码行号、Transformers fallback 条件和失效 architecture 示例；已按新 commit 轻量复审并修正 06_weight_loading_and_quantization.md 的加载触发、loader、LLaMA fused 权重映射、AutoWeightsLoader、后处理和量化相关源码锚点；已按新 commit 轻量复审并修正 07_worker_load_model_flow.md 的 executor/worker/model runner/model loader 源码行号和少量启动链路描述。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -156,11 +156,11 @@
 - llm-project\tmp_doc\documents\question\config_and_model_loading\README.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\01_config_entry_and_engine_args.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\02_vllm_config_aggregation.md，否，是
-- llm-project\tmp_doc\documents\question\config_and_model_loading\03_model_config_and_hf_config.md，是，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\04_load_config_and_model_loader.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\05_model_registry_and_arch_resolution.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\06_weight_loading_and_quantization.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\07_worker_load_model_flow.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\03_model_config_and_hf_config.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\04_load_config_and_model_loader.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\05_model_registry_and_arch_resolution.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\06_weight_loading_and_quantization.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\07_worker_load_model_flow.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md，否，否
 - llm-project\tmp_doc\documents\question\config_and_model_loading\09_advanced_config_hooks.md，否，否
 - llm-project\tmp_doc\documents\question\config_and_model_loading\10_config_to_runtime_lifecycle.md，否，否

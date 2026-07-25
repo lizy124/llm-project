@@ -93,7 +93,7 @@ vLLM model class + 实际命中的 architecture 名称
 
 ## 3. registry 的入口在哪里
 
-核心对象在：`code/vllm/vllm/model_executor/models/registry.py:979`
+核心对象在：`code/vllm/vllm/model_executor/models/registry.py:1006`
 
 ```python
 @dataclass
@@ -102,7 +102,7 @@ class _ModelRegistry:
     models: dict[str, _BaseRegisteredModel] = field(default_factory=dict)
 ```
 
-全局实例在：`code/vllm/vllm/model_executor/models/registry.py:1378`
+全局实例在：`code/vllm/vllm/model_executor/models/registry.py:1405`
 
 ```python
 ModelRegistry = _ModelRegistry(
@@ -118,7 +118,7 @@ ModelRegistry = _ModelRegistry(
 
 也就是说，vLLM 启动时会构造一个全局 `ModelRegistry`，其中的 key 是 HF config 里的 architecture 名字，value 是一个可延迟导入的模型类引用。
 
-例如：`code/vllm/vllm/model_executor/models/registry.py:153`
+例如：`code/vllm/vllm/model_executor/models/registry.py:143`
 
 ```python
 "LlamaForCausalLM": ("llama", "LlamaForCausalLM")
@@ -134,13 +134,13 @@ vLLM class:      LlamaForCausalLM
 
 注意：key 和 class name 不一定相同。
 
-例如：`code/vllm/vllm/model_executor/models/registry.py:75`
+例如：`code/vllm/vllm/model_executor/models/registry.py:87`
 
 ```python
-"AquilaModel": ("llama", "LlamaForCausalLM")
+"CwmForCausalLM": ("llama", "LlamaForCausalLM")
 ```
 
-这表示 Aquila 的 HF architecture 会复用 vLLM 的 Llama 实现。
+这表示 Cwm 的 HF architecture 会复用 vLLM 的 Llama 实现。
 
 ---
 
@@ -163,9 +163,9 @@ _TRANSFORMERS_SUPPORTED_MODELS
 _TRANSFORMERS_BACKEND_MODELS
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:71` 到 `code/vllm/vllm/model_executor/models/registry.py:696`
+位置：`code/vllm/vllm/model_executor/models/registry.py:71` 到 `code/vllm/vllm/model_executor/models/registry.py:686`
 
-合并位置：`code/vllm/vllm/model_executor/models/registry.py:698`
+合并位置：`code/vllm/vllm/model_executor/models/registry.py:688`
 
 ```python
 _VLLM_MODELS = {
@@ -201,7 +201,7 @@ self.hf_text_config = get_hf_text_config(self.hf_config)
 self.model_arch_config = self.get_model_arch_config()
 ```
 
-位置：`code/vllm/vllm/config/model.py:534` 到 `code/vllm/vllm/config/model.py:548`
+位置：`code/vllm/vllm/config/model.py:555` 到 `code/vllm/vllm/config/model.py:569`
 
 随后：
 
@@ -210,7 +210,7 @@ architectures = self.architectures
 registry = self.registry
 ```
 
-位置：`code/vllm/vllm/config/model.py:557` 到 `code/vllm/vllm/config/model.py:558`
+位置：`code/vllm/vllm/config/model.py:578` 到 `code/vllm/vllm/config/model.py:579`
 
 `ModelConfig.architectures` 属性返回：
 
@@ -218,7 +218,7 @@ registry = self.registry
 return self.model_arch_config.architectures
 ```
 
-位置：`code/vllm/vllm/config/model.py:811` 到 `code/vllm/vllm/config/model.py:812`
+位置：`code/vllm/vllm/config/model.py:856` 到 `code/vllm/vllm/config/model.py:858`
 
 所以更准确地说，vLLM 不是直接到处读 `hf_config.architectures`，而是先通过 `ModelArchitectureConfig` 做一层归一化，再从 `ModelConfig.architectures` 访问。
 
@@ -281,7 +281,7 @@ is_generative_model = registry.is_text_generation_model(architectures, self)
 is_pooling_model = registry.is_pooling_model(architectures, self)
 ```
 
-位置：`code/vllm/vllm/config/model.py:557` 到 `code/vllm/vllm/config/model.py:560`
+位置：`code/vllm/vllm/config/model.py:578` 到 `code/vllm/vllm/config/model.py:581`
 
 然后决定：
 
@@ -305,7 +305,7 @@ self._architecture = arch
 logger.info("Resolved architecture: %s", arch)
 ```
 
-位置：`code/vllm/vllm/config/model.py:593` 到 `code/vllm/vllm/config/model.py:598`
+位置：`code/vllm/vllm/config/model.py:614` 到 `code/vllm/vllm/config/model.py:619`
 
 这一步不是创建模型实例，而是：
 
@@ -329,7 +329,7 @@ logger.info("Resolved architecture: %s", arch)
 
 ## 7. _ModelInfo：registry 检查出来的能力包
 
-`_ModelInfo` 定义在：`code/vllm/vllm/model_executor/models/registry.py:746`
+`_ModelInfo` 定义在：`code/vllm/vllm/model_executor/models/registry.py:755`
 
 核心字段：
 
@@ -357,9 +357,9 @@ class _ModelInfo:
     supports_transcription_only: bool
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:746` 到 `code/vllm/vllm/model_executor/models/registry.py:766`
+位置：`code/vllm/vllm/model_executor/models/registry.py:755` 到 `code/vllm/vllm/model_executor/models/registry.py:775`
 
-生成逻辑在：`code/vllm/vllm/model_executor/models/registry.py:768`
+生成逻辑在：`code/vllm/vllm/model_executor/models/registry.py:777`
 
 ```python
 @staticmethod
@@ -470,7 +470,7 @@ def is_pooling_model(model):
 
 ### 8.4 多模态接口
 
-多模态接口在：`code/vllm/vllm/model_executor/models/interfaces.py:94`
+多模态接口在：`code/vllm/vllm/model_executor/models/interfaces.py:100`
 
 ```python
 @runtime_checkable
@@ -486,7 +486,7 @@ class SupportsMultiModal(Protocol):
     def get_language_model(self) -> VllmModel: ...
 ```
 
-判断函数：`code/vllm/vllm/model_executor/models/interfaces.py:459`
+判断函数：`code/vllm/vllm/model_executor/models/interfaces.py:466`
 
 ```python
 def supports_multimodal(model):
@@ -505,7 +505,7 @@ def supports_multimodal(model):
 
 registry 的 value 通常不是已经导入的 class，而是 `_LazyRegisteredModel`。
 
-定义位置：`code/vllm/vllm/model_executor/models/registry.py:832`
+定义位置：`code/vllm/vllm/model_executor/models/registry.py:841`
 
 ```python
 @dataclass(frozen=True)
@@ -514,7 +514,7 @@ class _LazyRegisteredModel(_BaseRegisteredModel):
     class_name: str
 ```
 
-真正加载类时：`code/vllm/vllm/model_executor/models/registry.py:947`
+真正加载类时：`code/vllm/vllm/model_executor/models/registry.py:974`
 
 ```python
 def load_model_cls(self) -> type[nn.Module]:
@@ -524,7 +524,7 @@ def load_model_cls(self) -> type[nn.Module]:
 
 为什么要 lazy？
 
-注释在 `register_model()` 里说得很直接：`code/vllm/vllm/model_executor/models/registry.py:992` 到 `code/vllm/vllm/model_executor/models/registry.py:1001`
+注释在 `register_model()` 里说得很直接：`code/vllm/vllm/model_executor/models/registry.py:1022` 到 `code/vllm/vllm/model_executor/models/registry.py:1028`
 
 ```text
 避免导入模型时初始化 CUDA，进而触发 fork subprocess 中的 CUDA re-initialize 问题。
@@ -541,7 +541,7 @@ mi = _run_in_subprocess(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:933` 到 `code/vllm/vllm/model_executor/models/registry.py:936`
+位置：`code/vllm/vllm/model_executor/models/registry.py:960` 到 `code/vllm/vllm/model_executor/models/registry.py:963`
 
 这表示：
 
@@ -555,7 +555,7 @@ ModelConfig 阶段需要知道模型能力，
 
 ## 10. inspect_model_cls 的解析顺序
 
-入口：`code/vllm/vllm/model_executor/models/registry.py:1174`
+入口：`code/vllm/vllm/model_executor/models/registry.py:1201`
 
 ```python
 def inspect_model_cls(
@@ -574,13 +574,13 @@ def inspect_model_cls(
 2. 空 architectures 直接报错；
 3. 如果 model_impl == "transformers"，强制走 Transformers backend 解析；
 4. 如果 model_impl == "terratorch"，强制解析 Terratorch；
-5. 如果 model_impl == "auto" 且所有 arch 都不在 vLLM registry，先尝试 Transformers fallback；
+5. 如果 model_impl == "auto"、所有 arch 都不在 vLLM registry，且 convert_type 为 none，先尝试 Transformers fallback；
 6. 遍历 architectures，逐个 normalize 后 inspect；
 7. 如果还失败，model_impl == "auto" 再尝试一次 Transformers fallback；
 8. 全部失败则 _raise_for_unsupported()。
 ```
 
-对应代码：`code/vllm/vllm/model_executor/models/registry.py:1179` 到 `code/vllm/vllm/model_executor/models/registry.py:1224`
+对应代码：`code/vllm/vllm/model_executor/models/registry.py:1206` 到 `code/vllm/vllm/model_executor/models/registry.py:1251`
 
 这个顺序说明：
 
@@ -594,7 +594,7 @@ vLLM 优先用自己的模型实现；
 
 ## 11. resolve_model_cls 的解析顺序
 
-真正加载模型类时，入口是：`code/vllm/vllm/model_executor/models/registry.py:1226`
+真正加载模型类时，入口是：`code/vllm/vllm/model_executor/models/registry.py:1253`
 
 ```python
 def resolve_model_cls(
@@ -621,13 +621,13 @@ _try_load_model_cls()
 ```text
 1. model_impl == "transformers"：先 _try_resolve_transformers()，再 load backend class；
 2. model_impl == "terratorch"：加载 Terratorch；
-3. model_impl == "auto" 且 registry 没有命中：尝试 Transformers fallback；
+3. model_impl == "auto"、registry 没有命中且 convert_type 为 none：尝试 Transformers fallback；
 4. 遍历 architectures：_normalize_arch() 后尝试加载 vLLM 模型类；
 5. 再尝试一次 Transformers fallback；
 6. 失败则 _raise_for_unsupported()。
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1231` 到 `code/vllm/vllm/model_executor/models/registry.py:1278`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1258` 到 `code/vllm/vllm/model_executor/models/registry.py:1305`
 
 因此：
 
@@ -640,7 +640,7 @@ resolve_model_cls() 用于加载阶段拿真正 Python class。
 
 ## 12. _normalize_arch：为什么 architecture 会被改写
 
-入口：`code/vllm/vllm/model_executor/models/registry.py:1148`
+入口：`code/vllm/vllm/model_executor/models/registry.py:1175`
 
 ```python
 def _normalize_arch(
@@ -662,9 +662,9 @@ match = try_match_architecture_defaults(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1157` 到 `code/vllm/vllm/model_executor/models/registry.py:1162`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1184` 到 `code/vllm/vllm/model_executor/models/registry.py:1189`
 
-后缀规则在：`code/vllm/vllm/config/model.py:1887`
+后缀规则在：`code/vllm/vllm/config/model.py:1940`
 
 ```python
 _SUFFIX_TO_DEFAULTS = [
@@ -681,7 +681,7 @@ _SUFFIX_TO_DEFAULTS = [
 ]
 ```
 
-位置：`code/vllm/vllm/config/model.py:1887` 到 `code/vllm/vllm/config/model.py:1907`
+位置：`code/vllm/vllm/config/model.py:1940` 到 `code/vllm/vllm/config/model.py:1957`
 
 如果匹配成功，registry 会尝试把当前 suffix 替换成其它 suffix，寻找一个已经注册的 base architecture：
 
@@ -692,7 +692,7 @@ for repl_suffix, _ in iter_architecture_defaults():
         return base_arch
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1167` 到 `code/vllm/vllm/model_executor/models/registry.py:1170`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1194` 到 `code/vllm/vllm/model_executor/models/registry.py:1197`
 
 这个逻辑主要服务于：
 
@@ -721,7 +721,7 @@ transformers  强制使用 Transformers backend；
 terratorch    强制使用 TerraTorch。
 ```
 
-registry fallback 的核心函数是：`code/vllm/vllm/model_executor/models/registry.py:1078`
+registry fallback 的核心函数是：`code/vllm/vllm/model_executor/models/registry.py:1105`
 
 ```python
 def _try_resolve_transformers(
@@ -744,7 +744,7 @@ def _try_resolve_transformers(
 
 返回的不是原始 HF architecture，而是 vLLM 的 wrapper 类名。
 
-`_get_transformers_backend_cls()` 在：`code/vllm/vllm/config/model.py:773`
+`_get_transformers_backend_cls()` 在：`code/vllm/vllm/config/model.py:793`
 
 它根据模型形态生成：
 
@@ -768,7 +768,7 @@ cls += "MoE" if self.is_moe else ""
 cls += "ForCausalLM"
 ```
 
-位置：`code/vllm/vllm/config/model.py:776` 到 `code/vllm/vllm/config/model.py:797`
+位置：`code/vllm/vllm/config/model.py:796` 到 `code/vllm/vllm/config/model.py:818`
 
 如果 fallback 发生在 `get_model_architecture()` 中，vLLM 会提示：
 
@@ -781,13 +781,13 @@ logger.warning_once(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:193` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:201`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:203` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:211`
 
 ---
 
 ## 14. get_model_architecture：加载阶段的模型类解析入口
 
-模型加载阶段的入口在：`code/vllm/vllm/model_executor/model_loader/utils.py:218`
+模型加载阶段的入口在：`code/vllm/vllm/model_executor/model_loader/utils.py:228`
 
 ```python
 def get_model_architecture(model_config: ModelConfig) -> tuple[type[nn.Module], str]:
@@ -808,9 +808,9 @@ key = hash(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:219` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:227`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:229` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:238`
 
-真正解析在 `_get_model_architecture()`：`code/vllm/vllm/model_executor/model_loader/utils.py:183`
+真正解析在 `_get_model_architecture()`：`code/vllm/vllm/model_executor/model_loader/utils.py:193`
 
 ```python
 architectures = getattr(model_config.hf_config, "architectures", None) or []
@@ -821,7 +821,7 @@ model_cls, arch = model_config.registry.resolve_model_cls(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:183` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:191`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:193` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:201`
 
 注意这里取的是：
 
@@ -844,7 +844,7 @@ ModelConfig.__post_init__ 阶段用 model_arch_config.architectures 做能力推
 
 `get_model_architecture()` 拿到 `model_cls` 后，还会根据 `model_config.convert_type` 做包装。
 
-代码：`code/vllm/vllm/model_executor/model_loader/utils.py:203` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:213`
+代码：`code/vllm/vllm/model_executor/model_loader/utils.py:213` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:223`
 
 ```python
 convert_type = model_config.convert_type
@@ -880,7 +880,7 @@ class ModelForPooling(orig_cls, VllmModelForPooling):
 
 ## 16. initialize_model：模型类如何变成实例
 
-模型实例化入口：`code/vllm/vllm/model_executor/model_loader/utils.py:40`
+模型实例化入口：`code/vllm/vllm/model_executor/model_loader/utils.py:41`
 
 ```python
 @instrument(span_name="Initialize model")
@@ -902,7 +902,7 @@ if model_class is None:
     model_class, _ = get_model_architecture(model_config)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:49` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:52`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:50` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:53`
 
 如果有 quant config，会先配置 quant：
 
@@ -911,7 +911,7 @@ if vllm_config.quant_config is not None:
     configure_quant_config(vllm_config.quant_config, model_class)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:54` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:55`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:55` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:56`
 
 新式模型类要求 `__init__` 支持：
 
@@ -920,7 +920,7 @@ vllm_config
 prefix
 ```
 
-代码：`code/vllm/vllm/model_executor/model_loader/utils.py:57` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:64`
+代码：`code/vllm/vllm/model_executor/model_loader/utils.py:58` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:65`
 
 ```python
 signatures = inspect.signature(model_class.__init__)
@@ -943,7 +943,7 @@ lora_config
 scheduler_config
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:66` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:97`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:67` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:98`
 
 所以完整加载可以记成：
 
@@ -1005,7 +1005,7 @@ registry 找类和能力，ModelConfig 用能力决定配置，model_loader 用�
 
 如果所有解析路径都失败，会进入 `_raise_for_unsupported()`。
 
-入口：`code/vllm/vllm/model_executor/models/registry.py:1033`
+入口：`code/vllm/vllm/model_executor/models/registry.py:1060`
 
 它会先区分三类情况。
 
@@ -1019,7 +1019,7 @@ if any(arch in all_supported_archs for arch in architectures):
     )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1036` 到 `code/vllm/vllm/model_executor/models/registry.py:1040`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1063` 到 `code/vllm/vllm/model_executor/models/registry.py:1067`
 
 含义：
 
@@ -1029,7 +1029,7 @@ if any(arch in all_supported_archs for arch in architectures):
 
 ### 18.2 以前支持但现在移除
 
-表：`code/vllm/vllm/model_executor/models/registry.py:717`
+表：`code/vllm/vllm/model_executor/models/registry.py:707`
 
 ```python
 _PREVIOUSLY_SUPPORTED_MODELS = {
@@ -1043,7 +1043,7 @@ _PREVIOUSLY_SUPPORTED_MODELS = {
 
 ### 18.3 已迁移到 out-of-tree plugin
 
-表：`code/vllm/vllm/model_executor/models/registry.py:738`
+表：`code/vllm/vllm/model_executor/models/registry.py:747`
 
 ```python
 _OOT_SUPPORTED_MODELS = {
@@ -1056,7 +1056,7 @@ _OOT_SUPPORTED_MODELS = {
 
 ### 18.4 完全不支持
 
-最后报错：`code/vllm/vllm/model_executor/models/registry.py:1061`
+最后报错：`code/vllm/vllm/model_executor/models/registry.py:1088`
 
 ```python
 raise ValueError(
@@ -1071,7 +1071,7 @@ raise ValueError(
 
 `ModelRegistry.register_model()` 支持注册 out-of-tree 模型。
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:987`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1014`
 
 ```python
 def register_model(
@@ -1100,7 +1100,7 @@ model = _LazyRegisteredModel(*split_str)
 model = _RegisteredModel.from_model_cls(model_cls)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1015` 到 `code/vllm/vllm/model_executor/models/registry.py:1023`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1042` 到 `code/vllm/vllm/model_executor/models/registry.py:1050`
 
 推荐 out-of-tree 模型用字符串形式，因为它保持 lazy import，能减少 CUDA 初始化副作用。
 
@@ -1210,7 +1210,7 @@ if runner != "auto":
 runner_type = self._get_default_runner_type(architectures)
 ```
 
-位置：`code/vllm/vllm/config/model.py:894` 到 `code/vllm/vllm/config/model.py:916`
+位置：`code/vllm/vllm/config/model.py:940` 到 `code/vllm/vllm/config/model.py:962`
 
 `ModelConfig._get_convert_type()` 决定 convert：
 
@@ -1220,7 +1220,7 @@ if convert != "auto":
 convert_type = self._get_default_convert_type(architectures, runner_type)
 ```
 
-位置：`code/vllm/vllm/config/model.py:949` 到 `code/vllm/vllm/config/model.py:968`
+位置：`code/vllm/vllm/config/model.py:995` 到 `code/vllm/vllm/config/model.py:1014`
 
 如果最后得到：
 
@@ -1235,7 +1235,7 @@ convert_type = embed
 model_cls = as_embedding_model(model_cls)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:206` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:208`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:216` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:218`
 
 这时最终实例化的不是原始 class，而是 adapter 生成的 class。
 
@@ -1254,15 +1254,16 @@ model_cls = as_embedding_model(model_cls)
 
 ```text
 model_impl = "auto"
+convert_type = "none"
 ```
 
-registry 会尝试：
+registry 会在优先 fallback 分支中尝试：
 
 ```python
 arch = self._try_resolve_transformers(architectures[0], model_config)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1195` 到 `code/vllm/vllm/model_executor/models/registry.py:1205`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1222` 到 `code/vllm/vllm/model_executor/models/registry.py:1232`
 
 如果 Transformers 模块可用并且 `is_backend_compatible()` 返回 True，则返回 wrapper architecture，例如：
 
@@ -1301,10 +1302,10 @@ tuple[type[nn.Module], str]
 
 ```text
 HF config 里的 architecture：
-  例如 "AquilaModel"
+  例如 "CwmForCausalLM"
 
 registry 归一化后用于查表的 architecture：
-  可能还是 "AquilaModel"，也可能变成某个 base arch
+  可能还是 "CwmForCausalLM"，也可能变成某个 base arch
 
 实际加载的 Python class name：
   例如 "LlamaForCausalLM"
@@ -1316,14 +1317,14 @@ registry 归一化后用于查表的 architecture：
 architecture=model.__name__
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:771`
+位置：`code/vllm/vllm/model_executor/models/registry.py:780`
 
 而 registry 返回的 `arch` 可能是原始 architecture。
 
 例如：
 
 ```text
-HF architecture: AquilaModel
+HF architecture: CwmForCausalLM
 实际 class:      LlamaForCausalLM
 ```
 
@@ -1352,7 +1353,7 @@ if registry.is_text_generation_model(architectures, self):
     return "generate"
 ```
 
-位置：`code/vllm/vllm/config/model.py:880` 到 `code/vllm/vllm/config/model.py:885`
+位置：`code/vllm/vllm/config/model.py:926` 到 `code/vllm/vllm/config/model.py:931`
 
 ### 25.2 pooler_config
 
@@ -1363,7 +1364,7 @@ default_seq_pooling_type = self._model_info.default_seq_pooling_type
 default_tok_pooling_type = self._model_info.default_tok_pooling_type
 ```
 
-位置：`code/vllm/vllm/config/model.py:620` 到 `code/vllm/vllm/config/model.py:637`
+位置：`code/vllm/vllm/config/model.py:639` 到 `code/vllm/vllm/config/model.py:656`
 
 ### 25.3 multimodal_config
 
@@ -1375,7 +1376,7 @@ if self._model_info.supports_multimodal:
     self.multimodal_config = MultiModalConfig(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:663` 到 `code/vllm/vllm/config/model.py:702`
+位置：`code/vllm/vllm/config/model.py:682` 到 `code/vllm/vllm/config/model.py:721`
 
 ### 25.4 pipeline parallel 校验
 
@@ -1388,7 +1389,7 @@ if pipeline_parallel_size > 1 and not self.registry.is_pp_supported_model(
     raise NotImplementedError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1173` 到 `code/vllm/vllm/config/model.py:1180`
+位置：`code/vllm/vllm/config/model.py:1222` 到 `code/vllm/vllm/config/model.py:1229`
 
 ### 25.5 attention 类型
 
@@ -1405,7 +1406,7 @@ else:
     return "decoder"
 ```
 
-位置：`code/vllm/vllm/config/model.py:1726` 到 `code/vllm/vllm/config/model.py:1743`
+位置：`code/vllm/vllm/config/model.py:1780` 到 `code/vllm/vllm/config/model.py:1796`
 
 这些都会影响后面的 KV cache、attention backend、prefix caching、chunked prefill 和 ModelRunner 执行路径。
 
@@ -1481,7 +1482,7 @@ vLLM 会遍历 architectures，并可能：
 # Performed in another process to avoid initializing CUDA
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:933`
+位置：`code/vllm/vllm/model_executor/models/registry.py:960`
 
 ---
 

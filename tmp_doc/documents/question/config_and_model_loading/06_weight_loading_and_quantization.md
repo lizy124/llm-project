@@ -100,7 +100,7 @@ LoadConfig 决定怎么读 checkpoint，QuantizationConfig 决定 checkpoint ten
 
 V1 GPU 路径的触发点在 `GPUModelRunner.load_model()`。
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5142`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 
 核心代码是：
 
@@ -114,7 +114,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5161` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5166`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5249` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5254`
 
 因此执行层的加载链路是：
 
@@ -137,7 +137,7 @@ CUDAGraphWrapper / UBatchWrapper 包装；
 offloader post_init。
 ```
 
-对应位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5167` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5318`
+对应位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5255` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5344`
 
 也就是说，权重加载不是孤立阶段，而是模型进入可执行状态前的核心初始化阶段。
 
@@ -237,7 +237,7 @@ with set_default_torch_dtype(model_config.dtype):
 return model.eval()
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/base_loader.py:42` 到 `code/vllm/vllm/model_executor/model_loader/base_loader.py:82`
+位置：`code/vllm/vllm/model_executor/model_loader/base_loader.py:42` 到 `code/vllm/vllm/model_executor/model_loader/base_loader.py:82`；其中 `log_model_inspection(model)` 在 `base_loader.py:61`，加载后显存 debug 记录在 `base_loader.py:66` 到 `base_loader.py:73`。
 
 这个模板说明了几个关键边界：
 
@@ -331,7 +331,7 @@ def _prepare_weights(...):
     """
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:97` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:107`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:128` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:138`
 
 它主要做：
 
@@ -371,7 +371,7 @@ load_format == "npcache"：
   allow_patterns = ["*.bin"]
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:118` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:153`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:149` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:184`
 
 如果 `fall_back_to_pt=True`，还会追加：
 
@@ -379,7 +379,7 @@ load_format == "npcache"：
 *.pt
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:155` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:156`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:186` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:189`
 
 ### 6.3 远程下载和本地查找
 
@@ -389,7 +389,7 @@ load_format == "npcache"：
 hf_folder = download_weights_from_hf(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:161` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:169`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:194` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:202`
 
 本地模型则直接使用目录：
 
@@ -397,7 +397,7 @@ hf_folder = download_weights_from_hf(...)
 hf_folder = model_name_or_path
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:170` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:171`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:203` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:207`
 
 之后按 pattern 查找：
 
@@ -405,7 +405,7 @@ hf_folder = model_name_or_path
 hf_weights_files += glob.glob(os.path.join(hf_folder, pattern))
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:176` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:182`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:209` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:215`
 
 ### 6.4 safetensors index 过滤
 
@@ -417,11 +417,11 @@ hf_weights_files = filter_duplicate_safetensors_files(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:184` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:200`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:217` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:233`
 
 `filter_duplicate_safetensors_files()` 会读取 `model.safetensors.index.json` 里的 `weight_map`，只保留 index 中出现的文件。
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:582` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:600`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:582` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:608`
 
 ### 6.5 非 safetensors 文件过滤
 
@@ -435,7 +435,7 @@ scheduler.pt
 scaler.pt
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:603` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:619`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:611` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:627`
 
 ---
 
@@ -478,7 +478,7 @@ def download_weights_from_hf(model_name_or_path, cache_dir, allow_patterns, revi
 
 `DefaultModelLoader._get_weights_iterator()` 是 iterator 选择点。
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:211`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:244`
 
 它先调用 `_prepare_weights()` 得到：
 
@@ -488,7 +488,7 @@ hf_weights_files
 use_safetensors
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:215` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:222`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:248` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:255`
 
 然后根据格式选择 iterator：
 
@@ -502,7 +502,7 @@ pt/bin 普通路径           → pt_weights_iterator()
 pt/bin 多线程             → multi_thread_pt_weights_iterator()
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:223` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:281`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:256` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:314`
 
 最后它会给每个权重名加 source prefix：
 
@@ -510,11 +510,11 @@ pt/bin 多线程             → multi_thread_pt_weights_iterator()
 return ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:283` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:286`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:316` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:319`
 
 ### 8.1 safetensors_weights_iterator
 
-`safetensors_weights_iterator()` 定义在：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:820`
+`safetensors_weights_iterator()` 定义在：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:828`
 
 它的输入是 safetensors shard 文件列表，输出是：
 
@@ -533,7 +533,7 @@ with safe_open(st_file, framework="pt") as f:
         yield name, param
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:948` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:954`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:957` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:962`
 
 它还支持：
 
@@ -547,15 +547,15 @@ local_expert_ids：EP 场景下读盘前跳过非本 rank expert 权重。
 对应位置：
 
 ```text
-eager：code/vllm/vllm/model_executor/model_loader/weight_utils.py:912 到 917
-torchao：code/vllm/vllm/model_executor/model_loader/weight_utils.py:918 到 947
-prefetch 判定：code/vllm/vllm/model_executor/model_loader/weight_utils.py:841 到 903
-EP skip：code/vllm/vllm/model_executor/model_loader/weight_utils.py:829 到 834
+eager：code/vllm/vllm/model_executor/model_loader/weight_utils.py:920 到 925
+torchao：code/vllm/vllm/model_executor/model_loader/weight_utils.py:926 到 955
+prefetch 判定：code/vllm/vllm/model_executor/model_loader/weight_utils.py:849 到 912
+EP skip：code/vllm/vllm/model_executor/model_loader/weight_utils.py:839 到 842，以及读取前的 should_skip_weight 调用
 ```
 
 ### 8.2 pt_weights_iterator
 
-`pt_weights_iterator()` 定义在：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1133`
+`pt_weights_iterator()` 定义在：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1141`
 
 它逐个 `torch.load()` checkpoint shard：
 
@@ -565,17 +565,17 @@ yield from state.items()
 del state
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1133` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1149`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1141` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1157`
 
 ### 8.3 fastsafetensors / instanttensor
 
 `fastsafetensors_weights_iterator()` 使用 `fastsafetensors.parallel_loader.ParallelLoader`，支持流水加载和 GDS fallback。
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1024` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1090`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1032` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1099`
 
 `instanttensor_weights_iterator()` 使用 `instanttensor.safe_open()`，要求 NVIDIA GPU。
 
-位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1093` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1130`
+位置：`code/vllm/vllm/model_executor/model_loader/weight_utils.py:1101` 到 `code/vllm/vllm/model_executor/model_loader/weight_utils.py:1138`
 
 ---
 
@@ -594,7 +594,7 @@ primary_weights = DefaultModelLoader.Source(
 yield from self._get_weights_iterator(primary_weights)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:288` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:300`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:321` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:333`
 
 如果模型声明了 `secondary_weights`，还会继续加载第二来源：
 
@@ -604,15 +604,16 @@ for source in secondary_weights:
     yield from self._get_weights_iterator(source)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:302` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:307`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:335` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:340`
 
-真正加载权重的位置是：
+真正加载权重前会先初始化 EP weight filter，然后调用：
 
 ```python
+self._init_ep_weight_filter(model_config)
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:381` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:395`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:414` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:428`
 
 加载后会记录耗时，并在特定场景检查哪些参数没加载：
 
@@ -621,7 +622,7 @@ loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 量化模型因为有 online scale、postprocess 参数、checkpoint 辅助 tensor 等特殊项，默认不严格检查所有 parameter 都来自 checkpoint。
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:396` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:437`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:429` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:470`
 
 ---
 
@@ -634,25 +635,27 @@ vLLM 模型一般有两种加载方式：
 2. 使用 AutoWeightsLoader 通用递归加载器。
 ```
 
-### 10.1 LLaMA 手写 inner model load_weights
+### 10.1 LLaMA 通过 WeightsMapper 处理 fused 参数映射
 
-`LlamaModel.load_weights()` 展示了典型 fused 参数映射。
+`LlamaModel` 展示了典型 fused 参数映射。当前实现不再手写 `stacked_params_mapping` 加载循环，而是在类级别声明 `hf_to_vllm_mapper`，再交给 `AutoWeightsLoader`。
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:433`
+位置：`code/vllm/vllm/model_executor/models/llama.py:345`
 
 它定义：
 
 ```python
-stacked_params_mapping = [
-    (".qkv_proj", ".q_proj", "q"),
-    (".qkv_proj", ".k_proj", "k"),
-    (".qkv_proj", ".v_proj", "v"),
-    (".gate_up_proj", ".gate_proj", 0),
-    (".gate_up_proj", ".up_proj", 1),
-]
+hf_to_vllm_mapper = WeightsMapper(
+    orig_to_new_stacked={
+        ".q_proj": (".qkv_proj", "q"),
+        ".k_proj": (".qkv_proj", "k"),
+        ".v_proj": (".qkv_proj", "v"),
+        ".gate_proj": (".gate_up_proj", 0),
+        ".up_proj": (".gate_up_proj", 1),
+    }
+)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:433` 到 `code/vllm/vllm/model_executor/models/llama.py:441`
+位置：`code/vllm/vllm/model_executor/models/llama.py:345` 到 `code/vllm/vllm/model_executor/models/llama.py:353`
 
 含义是：
 
@@ -667,33 +670,23 @@ checkpoint 里的 gate_proj / up_proj
 加载流程是：
 
 ```python
-params_dict = dict(self.named_parameters())
-for name, loaded_weight in weights:
-    ...
-    for param_name, weight_name, shard_id in stacked_params_mapping:
-        if weight_name not in name:
-            continue
-        name = name.replace(weight_name, param_name)
-        param = params_dict[name]
-        weight_loader = param.weight_loader
-        weight_loader(param, loaded_weight, shard_id)
-        break
-    else:
-        param = params_dict[name]
-        weight_loader = getattr(param, "weight_loader", default_weight_loader)
-        weight_loader(param, loaded_weight)
+def load_weights(self, weights):
+    loader = AutoWeightsLoader(self)
+    return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:442` 到 `code/vllm/vllm/model_executor/models/llama.py:482`
+位置：`code/vllm/vllm/model_executor/models/llama.py:441` 到 `code/vllm/vllm/model_executor/models/llama.py:443`
+
+`WeightsMapper.apply()` 会把映射后的 `shard_id` 挂到 tensor 上，后续由 `AutoWeightsLoader` 递归进入目标参数或目标子模块。
 
 几个细节：
 
 ```text
 rotary_emb.inv_freq / cos_cached / sin_cached 会跳过；
-scale / zero_point 可能通过 maybe_remap_kv_scale_name() 改名；
-GPTQ 多出来的 bias 如果模型参数里没有，会跳过；
-PP 当前 rank 缺失的参数会跳过；
-fused 参数会把 shard_id 传给 param.weight_loader。
+KV cache scale 名称可通过 quant_config.get_cache_scale_mapper() 统一映射；
+GPTQ 多出来的 bias 如果模型参数里没有，会按 unexpected suffix 忽略；
+PP 当前 rank 缺失的 StageMissingLayer / PPMissingLayer 会跳过；
+fused 参数的 shard_id 由 WeightsMapper 写到 tensor.shard_id，再传给目标模块或参数的 weight_loader。
 ```
 
 ### 10.2 LlamaForCausalLM 使用 AutoWeightsLoader
@@ -708,13 +701,13 @@ loader = AutoWeightsLoader(
 return loader.load_weights(weights)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:569` 到 `code/vllm/vllm/model_executor/models/llama.py:574`
+位置：`code/vllm/vllm/model_executor/models/llama.py:535` 到 `code/vllm/vllm/model_executor/models/llama.py:540`
 
 如果词嵌入和 lm_head tie weight，就跳过 checkpoint 中的 `lm_head.*`。
 
 ### 10.3 AutoWeightsLoader 做什么
 
-`AutoWeightsLoader` 定义在：`code/vllm/vllm/model_executor/models/utils.py:124`
+`AutoWeightsLoader` 定义在：`code/vllm/vllm/model_executor/models/utils.py:172`
 
 它的目标是：
 
@@ -723,7 +716,7 @@ return loader.load_weights(weights)
 遇到子 module 自己实现 load_weights() 就委托给它；
 遇到 parameter 就调用 param.weight_loader 或 default_weight_loader；
 支持 skip_prefixes / skip_substrs；
-支持 WeightsMapper 做名称改写；
+支持 WeightsMapper 做名称改写，并通过 orig_to_new_stacked 携带 fused 参数 shard_id；
 支持 quant_config.get_cache_scale_mapper() 自动处理 KV cache scale 名称。
 ```
 
@@ -734,7 +727,7 @@ weight_loader = getattr(param, "weight_loader", default_weight_loader)
 weight_loader(param, weight_data)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/utils.py:206` 到 `code/vllm/vllm/model_executor/models/utils.py:236`
+位置：`code/vllm/vllm/model_executor/models/utils.py:254` 到 `code/vllm/vllm/model_executor/models/utils.py:284`
 
 递归加载模块的关键代码是：
 
@@ -746,7 +739,7 @@ elif child_prefix in child_params:
     yield from self._load_param(prefix, child_params[child_prefix], child_weights)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/utils.py:268` 到 `code/vllm/vllm/model_executor/models/utils.py:346`
+位置：`code/vllm/vllm/model_executor/models/utils.py:316` 到 `code/vllm/vllm/model_executor/models/utils.py:394`
 
 最终入口是：
 
@@ -757,27 +750,28 @@ weights = ((name, weight) for name, weight in weights if not self._can_skip(name
 autoloaded_weights = set(self._load_module("", self.module, weights))
 ```
 
-位置：`code/vllm/vllm/model_executor/models/utils.py:348` 到 `code/vllm/vllm/model_executor/models/utils.py:377`
+位置：`code/vllm/vllm/model_executor/models/utils.py:396` 到 `code/vllm/vllm/model_executor/models/utils.py:424`
 
 ### 10.4 WeightsMapper
 
 `WeightsMapper` 用来把 checkpoint 名称改成 vLLM 模型名称，或忽略某些权重。
 
-位置：`code/vllm/vllm/model_executor/models/utils.py:41`
+位置：`code/vllm/vllm/model_executor/models/utils.py:45`
 
 支持的映射方式包括：
 
 ```text
-orig_to_new_renamings
+orig_to_new_renaming
 orig_to_new_regex
 orig_to_new_substr
+orig_to_new_stacked
 orig_to_new_prefix
 orig_to_new_suffix
 ```
 
 如果某个映射目标是 `None`，对应权重会被忽略。
 
-位置：`code/vllm/vllm/model_executor/models/utils.py:66` 到 `code/vllm/vllm/model_executor/models/utils.py:121`
+位置：`code/vllm/vllm/model_executor/models/utils.py:75` 到 `code/vllm/vllm/model_executor/models/utils.py:146`
 
 ---
 
@@ -798,7 +792,7 @@ else:
     raise ValueError("All linear layers should support quant method.")
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:242` 到 `code/vllm/vllm/model_executor/layers/linear.py:274`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:245` 到 `code/vllm/vllm/model_executor/layers/linear.py:277`
 
 这一步决定了：
 
@@ -824,7 +818,7 @@ weight = ModelWeightParameter(
 layer.register_parameter("weight", weight)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:179` 到 `code/vllm/vllm/model_executor/layers/linear.py:210`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:182` 到 `code/vllm/vllm/model_executor/layers/linear.py:212`
 
 量化方法也实现同样接口，但创建的参数可能是：
 
@@ -859,7 +853,7 @@ self.quant_method.create_weights(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:461` 到 `code/vllm/vllm/model_executor/layers/linear.py:473`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:464` 到 `code/vllm/vllm/model_executor/layers/linear.py:476`
 
 普通 `weight_loader()` 会按 TP rank 切 output 维：
 
@@ -871,7 +865,7 @@ if output_dim is not None and not is_sharded_weight:
 param_data.copy_(loaded_weight)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:517` 到 `code/vllm/vllm/model_executor/layers/linear.py:538`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:520` 到 `code/vllm/vllm/model_executor/layers/linear.py:541`
 
 `weight_loader_v2()` 则交给 `BasevLLMParameter`：
 
@@ -879,13 +873,13 @@ param_data.copy_(loaded_weight)
 param.load_column_parallel_weight(loaded_weight=loaded_weight)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:540` 到 `code/vllm/vllm/model_executor/layers/linear.py:546`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:543` 到 `code/vllm/vllm/model_executor/layers/linear.py:549`
 
 ### 11.4 MergedColumnParallelLinear 如何加载 fused 参数
 
 `MergedColumnParallelLinear` 用于多个矩阵沿 output 维拼接，例如 GateUp。
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:577`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:580`
 
 它的 `weight_loader()` 接收 `loaded_shard_id`：
 
@@ -893,7 +887,7 @@ param.load_column_parallel_weight(loaded_weight=loaded_weight)
 def weight_loader(self, param, loaded_weight, loaded_shard_id=None):
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:662` 到 `code/vllm/vllm/model_executor/layers/linear.py:667`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:665` 到 `code/vllm/vllm/model_executor/layers/linear.py:670`
 
 如果 checkpoint 已经 fused，`loaded_shard_id is None`；如果 checkpoint 是拆开的 `gate_proj` / `up_proj`，模型的 `load_weights()` 会传 `0` / `1`。
 
@@ -909,13 +903,13 @@ bitsandbytes 4bit shard 修正；
 per-tensor scale 标量加载到 fused array。
 ```
 
-关键位置：`code/vllm/vllm/model_executor/layers/linear.py:670` 到 `code/vllm/vllm/model_executor/layers/linear.py:805`
+关键位置：`code/vllm/vllm/model_executor/layers/linear.py:671` 到 `code/vllm/vllm/model_executor/layers/linear.py:808`；v2 路径在 `linear.py:850` 到 `linear.py:914`。
 
 ### 11.5 QKVParallelLinear 如何加载 Q/K/V
 
 `QKVParallelLinear` 继承 `ColumnParallelLinear`，专门处理 attention 里的 Q/K/V 拼接。
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:914`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:942`
 
 模型 checkpoint 通常是：
 
@@ -942,9 +936,9 @@ qkv_proj.weight
 相关位置：
 
 ```text
-QKVParallelLinear 定义：code/vllm/vllm/model_executor/layers/linear.py:914
-QKV weight_loader_v2：code/vllm/vllm/model_executor/layers/linear.py:1078
-QKV weight_loader：code/vllm/vllm/model_executor/layers/linear.py:1125
+QKVParallelLinear 定义：code/vllm/vllm/model_executor/layers/linear.py:942
+QKV weight_loader_v2：code/vllm/vllm/model_executor/layers/linear.py:1098
+QKV weight_loader：code/vllm/vllm/model_executor/layers/linear.py:1145
 ```
 
 ---
@@ -968,7 +962,7 @@ self.quantization_config = resolve_quantization_config(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:743` 到 `code/vllm/vllm/engine/arg_utils.py:747`
+位置：`code/vllm/vllm/engine/arg_utils.py:758` 到 `code/vllm/vllm/engine/arg_utils.py:762`
 
 `resolve_quantization_config()` 定义在：`code/vllm/vllm/config/quantization.py:147`
 
@@ -999,7 +993,7 @@ if self.quant_config is None and self.model_config is not None:
     )
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:920` 到 `code/vllm/vllm/config/vllm.py:923`
+位置：`code/vllm/vllm/config/vllm.py:973` 到 `code/vllm/vllm/config/vllm.py:976`
 
 实际创建函数是：
 
@@ -1007,7 +1001,7 @@ if self.quant_config is None and self.model_config is not None:
 quant_config = get_quant_config(model_config, load_config)
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:618` 到 `code/vllm/vllm/config/vllm.py:651`
+位置：`code/vllm/vllm/config/vllm.py:651` 到 `code/vllm/vllm/config/vllm.py:684`
 
 这里还会校验：
 
@@ -1017,7 +1011,7 @@ model_config.dtype 在 quant_config.get_supported_act_dtypes() 里；
 quant_config.maybe_update_config(model, hf_config) 可按模型补充配置。
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:629` 到 `code/vllm/vllm/config/vllm.py:650`
+位置：`code/vllm/vllm/config/vllm.py:661` 到 `code/vllm/vllm/config/vllm.py:682`
 
 ### 12.2 get_quant_config 如何读取量化配置
 
@@ -1170,7 +1164,7 @@ if isinstance(quant_method, QuantizeMethodBase):
         quant_method.process_weights_after_loading(module)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:116`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:101` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:117`
 
 然后再处理 Attention / MLA / MM encoder 的 post-load 权重：
 
@@ -1179,11 +1173,15 @@ if isinstance(module, (Attention, MLAAttention, MMEncoderAttention)):
     module.process_weights_after_loading(model_config.dtype)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:118` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:126`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:118` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:127`
+
+随后还会处理依赖 post-load 的 `HpcModule`：
+
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:129` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:136`
 
 如果是 torchao，还会设置 reload 属性：
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:128` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:131`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:138` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:141`
 
 ### 14.1 online quant 的特殊处理
 
@@ -1253,7 +1251,7 @@ if self.quant_config is not None:
         return self.quant_config.has_blocked_weights()
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:1126` 到 `code/vllm/vllm/config/vllm.py:1132`
+位置：`code/vllm/vllm/config/vllm.py:1198` 到 `code/vllm/vllm/config/vllm.py:1204`
 
 如果有 blocked weights，会打开 `quant_fp8` custom op：
 
@@ -1264,7 +1262,7 @@ if has_blocked_weights():
         custom_ops.append("+quant_fp8")
 ```
 
-位置：`code/vllm/vllm/config/vllm.py:1563` 到 `code/vllm/vllm/config/vllm.py:1567`
+位置：`code/vllm/vllm/config/vllm.py:1206` 到 `code/vllm/vllm/config/vllm.py:1213`
 
 这说明量化信息会继续影响编译/算子选择，不只是加载时用一次。
 
@@ -1284,7 +1282,7 @@ if has_blocked_weights():
 self.load_format = "bitsandbytes"
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1652` 到 `code/vllm/vllm/engine/arg_utils.py:1655`
+位置：`code/vllm/vllm/engine/arg_utils.py:1704` 到 `code/vllm/vllm/engine/arg_utils.py:1707`
 
 在 `create_engine_config()` 中也有同类保护：
 
@@ -1293,7 +1291,7 @@ if model_config.quantization == "bitsandbytes":
     self.quantization = self.load_format = "bitsandbytes"
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:2117` 到 `code/vllm/vllm/engine/arg_utils.py:2120`
+位置：`code/vllm/vllm/engine/arg_utils.py:2229` 到 `code/vllm/vllm/engine/arg_utils.py:2232`
 
 因此 bitsandbytes 既是量化方法，也是专门的加载格式。
 
@@ -1315,7 +1313,7 @@ if model_config.quantization == "bitsandbytes":
 model_loader_extra_config["tensorizer_config"]
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1656` 到 `code/vllm/vllm/engine/arg_utils.py:1665`
+位置：`code/vllm/vllm/engine/arg_utils.py:1708` 到 `code/vllm/vllm/engine/arg_utils.py:1717`
 
 ### 16.4 DummyModelLoader
 
@@ -1327,7 +1325,7 @@ model_loader_extra_config["tensorizer_config"]
 self.load_config.load_format = "dummy"
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5161` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5163`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5249` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5251`
 
 这种路径通常用于 profiling、dummy run 或不需要真实权重的初始化流程。
 
@@ -1436,7 +1434,7 @@ forward：
 adjust_bitsandbytes_4bit_shard()
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/linear.py:94` 到 `code/vllm/vllm/model_executor/layers/linear.py:108`
+位置：`code/vllm/vllm/model_executor/layers/linear.py:97` 到 `code/vllm/vllm/model_executor/layers/linear.py:111`
 
 ---
 

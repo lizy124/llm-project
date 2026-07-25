@@ -255,7 +255,7 @@ OpenAI serving 层默认 sampling 参数；
 9. 应用 dict overrides；
 10. 提取 hf_text_config；
 11. 生成 model_arch_config；
-12. 读取 encoder_config / image_processor_config；
+12. 读取 attention_chunk_size / encoder_config / image_processor_config；
 13. 使用 ModelRegistry 判断 generation / pooling 能力；
 14. 推导 runner_type / convert_type；
 15. inspect_model_cls() 确定实际 architecture 和模型能力；
@@ -264,9 +264,10 @@ OpenAI serving 层默认 sampling 参数；
 18. 推导 dtype；
 19. 修正 sliding_window=0；
 20. 推导 max_model_len；
-21. 初始化 multimodal_config；
-22. 运行模型特定 verify/update；
-23. 校验 quantization、CUDA graph、bitsandbytes。
+21. encoder-decoder 场景禁用 mm processor cache；
+22. 初始化 multimodal_config；
+23. 运行模型特定 verify/update；
+24. 校验 quantization、CUDA graph、bitsandbytes。
 ```
 
 关键代码起点：
@@ -285,7 +286,7 @@ hf_config = get_config(
 self.hf_config = hf_config
 ```
 
-位置：`code/vllm/vllm/config/model.py:555` 到 `code/vllm/vllm/config/model.py:565`
+位置：`code/vllm/vllm/config/model.py:555` 到 `code/vllm/vllm/config/model.py:564`
 
 这一段是 HF config 进入 `ModelConfig` 的核心入口。
 
@@ -364,7 +365,7 @@ for key, value in self.hf_overrides.items():
         hf_overrides_kw[key] = value
 ```
 
-位置：`code/vllm/vllm/config/model.py:500` 到 `code/vllm/vllm/config/model.py:510`
+位置：`code/vllm/vllm/config/model.py:517` 到 `code/vllm/vllm/config/model.py:531`
 
 扁平字段会传给 `get_config()`，让它参与 config 加载和 `model_type` 判断。
 
@@ -375,7 +376,7 @@ if dict_overrides:
     self._apply_dict_overrides(hf_config, dict_overrides)
 ```
 
-位置：`code/vllm/vllm/config/model.py:545` 到 `code/vllm/vllm/config/model.py:546`
+位置：`code/vllm/vllm/config/model.py:566` 到 `code/vllm/vllm/config/model.py:567`
 
 `_apply_dict_overrides()` 会处理 nested config：
 
@@ -397,7 +398,7 @@ else:
 
 `get_config()` 定义在 `transformers_utils/config.py`。
 
-入口：`code/vllm/vllm/transformers_utils/config.py:653`
+入口：`code/vllm/vllm/transformers_utils/config.py:655`
 
 它的主流程是：
 
@@ -456,7 +457,7 @@ if not config.architectures:
 
 普通 HF 格式由 `HFConfigParser.parse()` 处理。
 
-入口：`code/vllm/vllm/transformers_utils/config.py:206`
+入口：`code/vllm/vllm/transformers_utils/config.py:208`
 
 它先用 `PretrainedConfig.get_config_dict()` 读取原始 dict：
 
@@ -529,7 +530,7 @@ Failed to load the model config. If the model is a custom model not yet availabl
 
 如果 `config_format="mistral"`，会走 `MistralConfigParser.parse()`。
 
-入口：`code/vllm/vllm/transformers_utils/config.py:303`
+入口：`code/vllm/vllm/transformers_utils/config.py:305`
 
 它读取的是 `params.json`：
 
@@ -611,7 +612,7 @@ patch_rope_parameters(config)
 patch_rope_parameters(config.get_text_config())
 ```
 
-位置：`code/vllm/vllm/transformers_utils/config.py:766` 到 `code/vllm/vllm/transformers_utils/config.py:768`
+位置：`code/vllm/vllm/transformers_utils/config.py:768` 到 `code/vllm/vllm/transformers_utils/config.py:770`
 
 `patch_rope_parameters()` 做几类兼容：
 
@@ -647,7 +648,7 @@ self.hf_config = hf_config
 self.hf_text_config = get_hf_text_config(self.hf_config)
 ```
 
-位置：`code/vllm/vllm/config/model.py:544` 到 `code/vllm/vllm/config/model.py:547`
+位置：`code/vllm/vllm/config/model.py:565` 到 `code/vllm/vllm/config/model.py:568`
 
 `hf_config` 是模型根 config。
 
@@ -710,7 +711,7 @@ quantization_config；
 self.model_arch_config = self.get_model_arch_config()
 ```
 
-位置：`code/vllm/vllm/config/model.py:548`
+位置：`code/vllm/vllm/config/model.py:569`
 
 `get_model_arch_config()` 根据 `hf_config.model_type` 选择 convertor：
 
@@ -722,7 +723,7 @@ convertor = convertor_cls(self.hf_config, self.hf_text_config)
 return convertor.convert()
 ```
 
-位置：`code/vllm/vllm/config/model.py:728` 到 `code/vllm/vllm/config/model.py:735`
+位置：`code/vllm/vllm/config/model.py:748` 到 `code/vllm/vllm/config/model.py:755`
 
 `ModelArchitectureConfig` 定义的是 vLLM runtime 真正需要的一组结构化字段：
 
@@ -806,7 +807,7 @@ model_arch_config = ModelArchitectureConfig(
 )
 ```
 
-位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:345` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:361`
+位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:356` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:372`
 
 一些模型有特殊 convertor：
 
@@ -819,7 +820,7 @@ deepseek_mtp / qwen3_next_mtp / step3p5_mtp 等：使用 next-token prediction �
 gemma4：特殊 head_dim / global_head_dim 逻辑。
 ```
 
-注册表位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:580` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:614`
+注册表位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:642` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:684`
 
 ---
 
@@ -833,7 +834,7 @@ def architectures(self) -> list[str]:
     return self.model_arch_config.architectures
 ```
 
-位置：`code/vllm/vllm/config/model.py:810` 到 `code/vllm/vllm/config/model.py:812`
+位置：`code/vllm/vllm/config/model.py:857` 到 `code/vllm/vllm/config/model.py:858`
 
 来源通常是 HF `config.json` 的：
 
@@ -875,7 +876,7 @@ is_generative_model = registry.is_text_generation_model(architectures, self)
 is_pooling_model = registry.is_pooling_model(architectures, self)
 ```
 
-位置：`code/vllm/vllm/config/model.py:557` 到 `code/vllm/vllm/config/model.py:560`
+位置：`code/vllm/vllm/config/model.py:578` 到 `code/vllm/vllm/config/model.py:581`
 
 `registry` property 指向：
 
@@ -883,7 +884,7 @@ is_pooling_model = registry.is_pooling_model(architectures, self)
 return me_models.ModelRegistry
 ```
 
-位置：`code/vllm/vllm/config/model.py:806` 到 `code/vllm/vllm/config/model.py:808`
+位置：`code/vllm/vllm/config/model.py:826` 到 `code/vllm/vllm/config/model.py:829`
 
 `ModelRegistry.is_text_generation_model()` 本质是先 inspect 模型类，再读模型能力：
 
@@ -939,7 +940,7 @@ self.convert_type = self._get_convert_type(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:562` 到 `code/vllm/vllm/config/model.py:567`
+位置：`code/vllm/vllm/config/model.py:583` 到 `code/vllm/vllm/config/model.py:588`
 
 默认 runner 的推导逻辑：
 
@@ -962,7 +963,7 @@ for arch in architectures:
 return "generate"
 ```
 
-位置：`code/vllm/vllm/config/model.py:870` 到 `code/vllm/vllm/config/model.py:892`
+位置：`code/vllm/vllm/config/model.py:916` 到 `code/vllm/vllm/config/model.py:938`
 
 这里有三层判断：
 
@@ -1006,7 +1007,7 @@ if (
     )
 ```
 
-位置：`code/vllm/vllm/config/model.py:569` 到 `code/vllm/vllm/config/model.py:577`
+位置：`code/vllm/vllm/config/model.py:590` 到 `code/vllm/vllm/config/model.py:598`
 
 如果用户要求 generate，但模型不是 generation 模型且没有 converter：
 
@@ -1017,7 +1018,7 @@ if self.runner_type == "generate" and not is_generative_model:
         raise ValueError("This model does not support `--runner generate`.")
 ```
 
-位置：`code/vllm/vllm/config/model.py:578` 到 `code/vllm/vllm/config/model.py:582`
+位置：`code/vllm/vllm/config/model.py:599` 到 `code/vllm/vllm/config/model.py:603`
 
 如果用户要求 pooling，但模型不是 pooling 模型且没有 converter：
 
@@ -1028,7 +1029,7 @@ if self.runner_type == "pooling" and not is_pooling_model:
         raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:583` 到 `code/vllm/vllm/config/model.py:591`
+位置：`code/vllm/vllm/config/model.py:604` 到 `code/vllm/vllm/config/model.py:612`
 
 所以 `runner_type` 不是单纯接受用户输入，它会和 registry 能力、converter 能力一起校验。
 
@@ -1113,8 +1114,6 @@ ModelRegistry 告诉 vLLM “这个架构在 vLLM 中实际支持哪些能力”
 if self.tokenizer_mode == "auto":
     if self.model_impl == "terratorch":
         self.tokenizer_mode = "terratorch"
-    elif arch == "Grok1ForCausalLM":
-        self.tokenizer_mode = "grok2"
     elif arch == "MoonshotKimiaForCausalLM":
         self.tokenizer_mode = "kimi_audio"
     elif arch == "DeepseekV32ForCausalLM":
@@ -1123,7 +1122,7 @@ if self.tokenizer_mode == "auto":
         self.tokenizer_mode = "deepseek_v4"
 ```
 
-位置：`code/vllm/vllm/config/model.py:600` 到 `code/vllm/vllm/config/model.py:612`
+位置：`code/vllm/vllm/config/model.py:621` 到 `code/vllm/vllm/config/model.py:637`
 
 这说明 tokenizer config 并不完全由 `tokenizer` 路径决定，某些模型架构会强制使用特殊 tokenizer backend。
 
@@ -1149,7 +1148,7 @@ if self.runner_type == "pooling":
         self.pooler_config.seq_pooling_type = default_seq_pooling_type
 ```
 
-位置：`code/vllm/vllm/config/model.py:620` 到 `code/vllm/vllm/config/model.py:637`
+位置：`code/vllm/vllm/config/model.py:639` 到 `code/vllm/vllm/config/model.py:656`
 
 `get_pooling_config()` 会读取 sentence-transformers 的 `modules.json` 和 pooling module 的 `config.json`：
 
@@ -1188,7 +1187,7 @@ self.dtype: torch.dtype = _get_and_verify_dtype(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:639` 到 `code/vllm/vllm/config/model.py:646`
+位置：`code/vllm/vllm/config/model.py:658` 到 `code/vllm/vllm/config/model.py:665`
 
 `_get_and_verify_dtype()` 的第一步是拿 config dtype：
 
@@ -1198,7 +1197,7 @@ config_dtype = ModelArchConfigConvertorBase.get_torch_dtype(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:2018` 到 `code/vllm/vllm/config/model.py:2029`
+位置：`code/vllm/vllm/config/model.py:2089` 到 `code/vllm/vllm/config/model.py:2099`
 
 `get_torch_dtype()` 的来源顺序：
 
@@ -1211,7 +1210,7 @@ config_dtype = ModelArchConfigConvertorBase.get_torch_dtype(
 6. 默认 torch.float32。
 ```
 
-位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:164` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:204`
+位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:169` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:216`
 
 如果用户传 `dtype="auto"`，会调用 `_resolve_auto_dtype()`：
 
@@ -1224,7 +1223,7 @@ if dtype == "auto":
     )
 ```
 
-位置：`code/vllm/vllm/config/model.py:2032` 到 `code/vllm/vllm/config/model.py:2040`
+位置：`code/vllm/vllm/config/model.py:2102` 到 `code/vllm/vllm/config/model.py:2110`
 
 自动 dtype 的规则：
 
@@ -1282,7 +1281,7 @@ self.original_max_model_len = self.max_model_len
 self.max_model_len = self.get_and_verify_max_len(self.max_model_len)
 ```
 
-位置：`code/vllm/vllm/config/model.py:656` 到 `code/vllm/vllm/config/model.py:657`
+位置：`code/vllm/vllm/config/model.py:675` 到 `code/vllm/vllm/config/model.py:676`
 
 `get_and_verify_max_len()` 会在特定 pooling 模型下读取 tokenizer config：
 
@@ -1298,7 +1297,7 @@ if (
     )
 ```
 
-位置：`code/vllm/vllm/config/model.py:1700` 到 `code/vllm/vllm/config/model.py:1712`
+位置：`code/vllm/vllm/config/model.py:1754` 到 `code/vllm/vllm/config/model.py:1766`
 
 随后调用 `_get_and_verify_max_len()`：
 
@@ -1315,7 +1314,7 @@ max_model_len = _get_and_verify_max_len(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:1713` 到 `code/vllm/vllm/config/model.py:1722`
+位置：`code/vllm/vllm/config/model.py:1767` 到 `code/vllm/vllm/config/model.py:1776`
 
 `_get_and_verify_max_len()` 的基础长度来自 `model_arch_config.derived_max_model_len_and_key`：
 
@@ -1325,7 +1324,7 @@ max_model_len = _get_and_verify_max_len(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:2100` 到 `code/vllm/vllm/config/model.py:2103`
+位置：`code/vllm/vllm/config/model.py:2145` 到 `code/vllm/vllm/config/model.py:2148`
 
 这个字段由 `ModelArchConfigConvertorBase.derive_max_model_len_and_key()` 生成。
 
@@ -1343,7 +1342,7 @@ max_seq_length
 seq_len
 ```
 
-位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:310` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:343`
+位置：`code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:321` 到 `code/vllm/vllm/transformers_utils/model_arch_config_convertor.py:354`
 
 ---
 
@@ -1365,7 +1364,7 @@ if (
     derived_max_model_len = sliding_window
 ```
 
-位置：`code/vllm/vllm/config/model.py:2105` 到 `code/vllm/vllm/config/model.py:2114`
+位置：`code/vllm/vllm/config/model.py:2150` 到 `code/vllm/vllm/config/model.py:2159`
 
 另外，有些 checkpoint 用 `sliding_window=0` 表示禁用，vLLM 会转成 `None`：
 
@@ -1375,7 +1374,7 @@ if self.get_sliding_window() == 0:
     self.hf_text_config.sliding_window = None
 ```
 
-位置：`code/vllm/vllm/config/model.py:648` 到 `code/vllm/vllm/config/model.py:654`
+位置：`code/vllm/vllm/config/model.py:667` 到 `code/vllm/vllm/config/model.py:673`
 
 ### 24.2 tokenizer_config
 
@@ -1388,7 +1387,7 @@ tokenizer_model_max_length = tokenizer_config.get(
 derived_max_model_len = min(derived_max_model_len, tokenizer_model_max_length)
 ```
 
-位置：`code/vllm/vllm/config/model.py:2115` 到 `code/vllm/vllm/config/model.py:2120`
+位置：`code/vllm/vllm/config/model.py:2165` 到 `code/vllm/vllm/config/model.py:2170`
 
 ### 24.3 没有任何长度字段
 
@@ -1400,7 +1399,7 @@ spec draft model 有 target max len：用 target；
 否则默认 2048，并 warning。
 ```
 
-位置：`code/vllm/vllm/config/model.py:2122` 到 `code/vllm/vllm/config/model.py:2141`
+位置：`code/vllm/vllm/config/model.py:2172` 到 `code/vllm/vllm/config/model.py:2191`
 
 ### 24.4 RoPE scaling
 
@@ -1418,7 +1417,7 @@ if rope_parameters is not None and "gemma3" not in hf_config.model_type:
     derived_max_model_len *= scaling_factor
 ```
 
-位置：`code/vllm/vllm/config/model.py:2143` 到 `code/vllm/vllm/config/model.py:2175`
+位置：`code/vllm/vllm/config/model.py:2193` 到 `code/vllm/vllm/config/model.py:2225`
 
 ### 24.5 sentence-transformers encoder config
 
@@ -1429,7 +1428,7 @@ if encoder_config and "max_seq_length" in encoder_config:
     derived_max_model_len = encoder_config["max_seq_length"]
 ```
 
-位置：`code/vllm/vllm/config/model.py:2177` 到 `code/vllm/vllm/config/model.py:2178`
+位置：`code/vllm/vllm/config/model.py:2227` 到 `code/vllm/vllm/config/model.py:2228`
 
 ### 24.6 用户不传 max_model_len
 
@@ -1448,7 +1447,7 @@ if max_model_len is None or max_model_len == -1:
     max_model_len = current_platform.check_max_model_len(max_model_len)
 ```
 
-位置：`code/vllm/vllm/config/model.py:2180` 到 `code/vllm/vllm/config/model.py:2196`
+位置：`code/vllm/vllm/config/model.py:2230` 到 `code/vllm/vllm/config/model.py:2246`
 
 ### 24.7 用户传的 max_model_len 太大
 
@@ -1464,7 +1463,7 @@ elif max_model_len > derived_max_model_len:
             raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:2198` 到 `code/vllm/vllm/config/model.py:2227`
+位置：`code/vllm/vllm/config/model.py:2248` 到 `code/vllm/vllm/config/model.py:2277`
 
 最终返回 int：
 
@@ -1472,7 +1471,7 @@ elif max_model_len > derived_max_model_len:
 return int(max_model_len)
 ```
 
-位置：`code/vllm/vllm/config/model.py:2227`
+位置：`code/vllm/vllm/config/model.py:2277`
 
 ---
 
@@ -1486,7 +1485,7 @@ return int(max_model_len)
 def try_get_generation_config(self) -> dict[str, Any]:
 ```
 
-位置：`code/vllm/vllm/config/model.py:1398`
+位置：`code/vllm/vllm/config/model.py:1451`
 
 规则：
 
@@ -1508,7 +1507,7 @@ else:
     )
 ```
 
-位置：`code/vllm/vllm/config/model.py:1410` 到 `code/vllm/vllm/config/model.py:1424`
+位置：`code/vllm/vllm/config/model.py:1463` 到 `code/vllm/vllm/config/model.py:1477`
 
 底层 `try_get_generation_config()` 先尝试读取 `generation_config.json`：
 
@@ -1535,7 +1534,7 @@ return GenerationConfig.from_model_config(config)
 return config.to_diff_dict()
 ```
 
-位置：`code/vllm/vllm/config/model.py:1426` 到 `code/vllm/vllm/config/model.py:1429`
+位置：`code/vllm/vllm/config/model.py:1479` 到 `code/vllm/vllm/config/model.py:1482`
 
 也就是只返回非默认字段。
 
@@ -1549,7 +1548,7 @@ return config.to_diff_dict()
 def get_diff_sampling_param(self) -> dict[str, Any]:
 ```
 
-位置：`code/vllm/vllm/config/model.py:1431`
+位置：`code/vllm/vllm/config/model.py:1484`
 
 它的规则是：
 
@@ -1559,7 +1558,7 @@ config = {} if src == "vllm" else self.try_get_generation_config()
 config.update(self.override_generation_config)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1446` 到 `code/vllm/vllm/config/model.py:1451`
+位置：`code/vllm/vllm/config/model.py:1499` 到 `code/vllm/vllm/config/model.py:1504`
 
 只抽取这些字段作为 sampling 参数：
 
@@ -1572,7 +1571,7 @@ min_p
 max_new_tokens
 ```
 
-位置：`code/vllm/vllm/config/model.py:1453` 到 `code/vllm/vllm/config/model.py:1460`
+位置：`code/vllm/vllm/config/model.py:1506` 到 `code/vllm/vllm/config/model.py:1513`
 
 其中 HF 的 `max_new_tokens` 会映射成 vLLM 的 `max_tokens`：
 
@@ -1583,7 +1582,7 @@ if "max_new_tokens" in diff_sampling_param:
     )
 ```
 
-位置：`code/vllm/vllm/config/model.py:1465` 到 `code/vllm/vllm/config/model.py:1470`
+位置：`code/vllm/vllm/config/model.py:1520` 到 `code/vllm/vllm/config/model.py:1523`
 
 如果这些参数来自模型自己的 generation config，而不是 `generation_config="vllm"`，vLLM 会 warning：
 
@@ -1591,7 +1590,7 @@ if "max_new_tokens" in diff_sampling_param:
 Default vLLM sampling parameters have been overridden by the model's generation_config.json ...
 ```
 
-位置：`code/vllm/vllm/config/model.py:1474` 到 `code/vllm/vllm/config/model.py:1482`
+位置：`code/vllm/vllm/config/model.py:1527` 到 `code/vllm/vllm/config/model.py:1537`
 
 这些默认 sampling 参数会被多个 serving 入口使用，例如：
 
@@ -1661,7 +1660,7 @@ if self._model_info.supports_multimodal:
     self.multimodal_config = MultiModalConfig(**mm_config_kwargs)
 ```
 
-位置：`code/vllm/vllm/config/model.py:663` 到 `code/vllm/vllm/config/model.py:701`
+位置：`code/vllm/vllm/config/model.py:682` 到 `code/vllm/vllm/config/model.py:721`
 
 多模态参数来源于用户输入，例如：
 
@@ -1690,7 +1689,7 @@ self.hf_image_processor_config = get_hf_image_processor_config(
 )
 ```
 
-位置：`code/vllm/vllm/config/model.py:552` 到 `code/vllm/vllm/config/model.py:555`
+位置：`code/vllm/vllm/config/model.py:574` 到 `code/vllm/vllm/config/model.py:576`
 
 对于 encoder-decoder 模型，`ModelConfig` 会禁用 mm processor cache：
 
@@ -1700,7 +1699,7 @@ if self.is_encoder_decoder:
     logger.info("Encoder-decoder model detected, disabling mm processor cache.")
 ```
 
-位置：`code/vllm/vllm/config/model.py:659` 到 `code/vllm/vllm/config/model.py:662`
+位置：`code/vllm/vllm/config/model.py:678` 到 `code/vllm/vllm/config/model.py:680`
 
 判断 encoder-decoder 的 property：
 
@@ -1730,7 +1729,7 @@ return _is_encoder_decoder(config) or _is_encoder_decoder(config.get_text_config
 self._verify_quantization()
 ```
 
-位置：`code/vllm/vllm/config/model.py:723` 到 `code/vllm/vllm/config/model.py:724`
+位置：`code/vllm/vllm/config/model.py:743` 到 `code/vllm/vllm/config/model.py:744`
 
 `_verify_quantization()` 的输入主要是：
 
@@ -1760,7 +1759,7 @@ if quant_cfg is not None:
             break
 ```
 
-位置：`code/vllm/vllm/config/model.py:970` 到 `code/vllm/vllm/config/model.py:1034`
+位置：`code/vllm/vllm/config/model.py:1016` 到 `code/vllm/vllm/config/model.py:1083`
 
 如果用户没传 quantization，则使用 config 中解析出的量化方法：
 
@@ -1771,7 +1770,7 @@ elif self.quantization != quant_method:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1036` 到 `code/vllm/vllm/config/model.py:1046`
+位置：`code/vllm/vllm/config/model.py:1085` 到 `code/vllm/vllm/config/model.py:1095`
 
 然后检查平台支持：
 
@@ -1781,7 +1780,7 @@ if self.quantization not in supported_quantization:
 current_platform.verify_quantization(self.quantization)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1048` 到 `code/vllm/vllm/config/model.py:1054`
+位置：`code/vllm/vllm/config/model.py:1097` 到 `code/vllm/vllm/config/model.py:1103`
 
 因此：
 
@@ -1801,7 +1800,7 @@ ModelConfig._verify_quantization() 负责最终决定 self.quantization 并校�
 self._try_verify_and_update_model_config()
 ```
 
-位置：`code/vllm/vllm/config/model.py:721` 到 `code/vllm/vllm/config/model.py:723`
+位置：`code/vllm/vllm/config/model.py:741` 到 `code/vllm/vllm/config/model.py:743`
 
 逻辑：
 
@@ -1814,7 +1813,7 @@ if cls is not None:
     cls.verify_and_update_model_config(self)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1117` 到 `code/vllm/vllm/config/model.py:1133`
+位置：`code/vllm/vllm/config/model.py:1166` 到 `code/vllm/vllm/config/model.py:1181`
 
 这一步给具体模型一个机会修正 `ModelConfig`。
 
@@ -1850,7 +1849,7 @@ def verify_with_parallel_config(
 ) -> None:
 ```
 
-位置：`code/vllm/vllm/config/model.py:1157`
+位置：`code/vllm/vllm/config/model.py:1206`
 
 核心校验包括：
 
@@ -1871,7 +1870,7 @@ if total_num_attention_heads % tensor_parallel_size != 0:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1161` 到 `code/vllm/vllm/config/model.py:1168`
+位置：`code/vllm/vllm/config/model.py:1210` 到 `code/vllm/vllm/config/model.py:1217`
 
 PP 支持校验：
 
@@ -1882,7 +1881,7 @@ if pipeline_parallel_size > 1 and not self.registry.is_pp_supported_model(
     raise NotImplementedError(...)
 ```
 
-位置：`code/vllm/vllm/config/model.py:1173` 到 `code/vllm/vllm/config/model.py:1180`
+位置：`code/vllm/vllm/config/model.py:1222` 到 `code/vllm/vllm/config/model.py:1229`
 
 这说明：
 
@@ -2102,7 +2101,7 @@ hf_config_path：如果指定，则 config 从这个路径 / repo 读取；
 
 `ModelConfig` 调用 `get_config(self.hf_config_path or self.model, ...)`。
 
-位置：`code/vllm/vllm/config/model.py:534` 到 `code/vllm/vllm/config/model.py:535`
+位置：`code/vllm/vllm/config/model.py:555` 到 `code/vllm/vllm/config/model.py:556`
 
 ### 36.2 hf_config 和 model_arch_config 有什么区别？
 
@@ -2122,7 +2121,7 @@ architecture：ModelRegistry 最终解析出的实际使用 architecture。
 
 `architecture` property 返回 `self._architecture`。
 
-位置：`code/vllm/vllm/config/model.py:814` 到 `code/vllm/vllm/config/model.py:817`
+位置：`code/vllm/vllm/config/model.py:860` 到 `code/vllm/vllm/config/model.py:863`
 
 ### 36.4 model_type 和 architecture 有什么区别？
 
@@ -2150,7 +2149,7 @@ generation_config 主要影响默认 sampling 参数，例如 temperature、top_
 只有 runner_type="pooling" 且 position_embedding_type="absolute" 的路径下，ModelConfig 才会读取 tokenizer_config 来参与 max_model_len 推导。
 ```
 
-位置：`code/vllm/vllm/config/model.py:1700` 到 `code/vllm/vllm/config/model.py:1712`
+位置：`code/vllm/vllm/config/model.py:1754` 到 `code/vllm/vllm/config/model.py:1766`
 
 ### 36.7 trust_remote_code 影响什么？
 

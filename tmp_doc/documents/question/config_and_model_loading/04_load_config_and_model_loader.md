@@ -54,7 +54,7 @@ DefaultModelLoader / 特殊 loader 是具体权重读取实现；
 
 ## 2. LoadConfig 关心什么
 
-`LoadConfig` 定义在 `load.py:25` 到 `load.py:148`。
+`LoadConfig` 定义在 `load.py:26` 到 `load.py:149`。
 
 核心字段可以分成几类。
 
@@ -64,7 +64,7 @@ DefaultModelLoader / 特殊 loader 是具体权重读取实现；
 load_format: str | LoadFormats = "auto"
 ```
 
-位置：`load.py:29`
+位置：`load.py:30`
 
 它决定最终选择哪个 loader，以及默认 loader 内部应该用哪类权重文件。
 
@@ -96,7 +96,7 @@ def _lowercase_load_format(cls, load_format: str) -> str:
     return load_format.lower()
 ```
 
-位置：`load.py:134` 到 `load.py:136`
+位置：`load.py:135` 到 `load.py:137`
 
 所以命令行里写 `SAFETENSORS`、`Safetensors`，最后都会变成 `safetensors`。
 
@@ -107,7 +107,7 @@ download_dir: str | None = None
 ignore_patterns: list[str] | str = Field(default_factory=lambda: ["original/**/*"])
 ```
 
-位置：`load.py:59` 和 `load.py:99`
+位置：`load.py:60` 和 `load.py:100`
 
 含义是：
 
@@ -125,7 +125,7 @@ logger.info(
 )
 ```
 
-位置：`load.py:142` 到 `load.py:146`
+位置：`load.py:143` 到 `load.py:147`
 
 ### 2.3 safetensors 读取策略
 
@@ -137,7 +137,7 @@ safetensors_prefetch_num_threads: int = 8
 safetensors_prefetch_block_size: int = 16 * 1024 * 1024
 ```
 
-位置：`load.py:62` 到 `load.py:92`
+位置：`load.py:63` 到 `load.py:93`
 
 `safetensors_load_strategy` 支持：
 
@@ -151,7 +151,7 @@ torchao：用于 torchao 量化 safetensors 的重建。
 
 这个字段不会在 `LoadConfig` 里执行读取，它会传给 `safetensors_weights_iterator()`。
 
-位置：`default_loader.py:254` 到 `default_loader.py:265`
+位置：`default_loader.py:287` 到 `default_loader.py:298`
 
 ### 2.4 loader 额外配置
 
@@ -159,7 +159,7 @@ torchao：用于 torchao 量化 safetensors 的重建。
 model_loader_extra_config: dict | TensorizerConfig = Field(default_factory=dict)
 ```
 
-位置：`load.py:93`
+位置：`load.py:94`
 
 它是给具体 loader 的扩展参数，不同 loader 接受的 key 不一样。
 
@@ -171,7 +171,9 @@ num_threads
 enable_weights_track
 ```
 
-位置：`default_loader.py:78` 到 `default_loader.py:91`
+位置：`default_loader.py:78` 到 `default_loader.py:127`
+
+另外，如果启用 `enable_multithread_load`，当前实现只允许默认 lazy safetensors 策略；当 `safetensors_load_strategy` 不是 `None` 或 `lazy` 时会直接报错，避免用户配置被静默忽略。
 
 `ShardedStateLoader` 接受：
 
@@ -189,7 +191,7 @@ concurrency
 memory_limit
 ```
 
-位置：`runai_streamer_loader.py:30` 到 `runai_streamer_loader.py:65`
+位置：`runai_streamer_loader.py:30` 到 `runai_streamer_loader.py:79`
 
 `TensorizerLoader` 使用 `tensorizer_config`，并拒绝让用户覆盖 `device`、`dtype`、`mode`。
 
@@ -202,7 +204,7 @@ device: str | None = None
 pt_load_map_location: str | dict[str, str] = "cpu"
 ```
 
-位置：`load.py:96` 和 `load.py:105`
+位置：`load.py:97` 和 `load.py:106`
 
 区别是：
 
@@ -224,7 +226,7 @@ target_device = torch.device(load_device)
 
 在 PyTorch 权重 iterator 里，`pt_load_map_location` 会传给 `pt_weights_iterator()` 或 `multi_thread_pt_weights_iterator()`。
 
-位置：`default_loader.py:267` 到 `default_loader.py:281`
+位置：`default_loader.py:300` 到 `default_loader.py:314`
 
 ---
 
@@ -232,7 +234,7 @@ target_device = torch.device(load_device)
 
 V1 GPU 主路径中，模型加载发生在 `GPUModelRunner.load_model()`。
 
-入口：`gpu_model_runner.py:5143`
+入口：`gpu_model_runner.py:5231`
 
 核心代码：
 
@@ -245,7 +247,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`gpu_model_runner.py:5161` 到 `gpu_model_runner.py:5166`
+位置：`gpu_model_runner.py:5249` 到 `gpu_model_runner.py:5254`
 
 较新的 `v1/worker/gpu/model_runner.py` 也有同样模式：
 
@@ -402,7 +404,7 @@ BaseModelLoader 负责“骨架”；
 
 ## 7. initialize_model 如何实例化模型
 
-`initialize_model()` 定义在 `utils.py:40` 到 `utils.py:97`。
+`initialize_model()` 定义在 `utils.py:41` 到 `utils.py:98`。
 
 主路径：
 
@@ -419,9 +421,9 @@ with set_current_vllm_config(vllm_config, check_compile=True, prefix=prefix):
     return model
 ```
 
-位置：`utils.py:49` 到 `utils.py:64`
+位置：`utils.py:50` 到 `utils.py:65`
 
-这说明模型类不是由 `LoadConfig` 决定的，而是由 `ModelConfig` / Hugging Face config / registry 决定的。
+这说明模型类不是由 `LoadConfig` 决定的，而是由 `ModelConfig` / Hugging Face config / registry 决定的。当前实现还保留了 old-style out-of-tree 模型类的兼容分支：如果构造函数不同时接受 `vllm_config` 和 `prefix`，会根据旧参数名尝试组装 kwargs 并打印弃用警告。
 
 模型类解析链路是：
 
@@ -432,7 +434,7 @@ model_config.hf_config.architectures
   → model_class
 ```
 
-位置：`utils.py:182` 到 `utils.py:215`
+位置：`utils.py:193` 到 `utils.py:225`
 
 如果请求 embedding / classify，会在解析后包装模型类：
 
@@ -441,7 +443,7 @@ convert_type == embed    → as_embedding_model(model_cls)
 convert_type == classify → as_seq_cls_model(model_cls)
 ```
 
-位置：`utils.py:203` 到 `utils.py:211`
+位置：`utils.py:213` 到 `utils.py:221`
 
 所以要区分：
 
@@ -477,7 +479,7 @@ mistral
 
 ## 9. DefaultModelLoader 第一阶段：准备权重文件
 
-入口：`default_loader.py:97`
+入口：`default_loader.py:128`
 
 ```python
 def _prepare_weights(...):
@@ -491,7 +493,7 @@ hf_weights_files：实际要读的权重文件列表；
 use_safetensors：后续是否按 safetensors 读取。
 ```
 
-位置：`default_loader.py:97` 到 `default_loader.py:209`
+位置：`default_loader.py:128` 到 `default_loader.py:242`
 
 ### 9.1 ModelScope / 本地目录判断
 
@@ -503,7 +505,7 @@ model_name_or_path = (
 is_local = os.path.isdir(model_name_or_path)
 ```
 
-位置：`default_loader.py:108` 到 `default_loader.py:113`
+位置：`default_loader.py:139` 到 `default_loader.py:145`
 
 含义：
 
@@ -525,7 +527,7 @@ if load_format == "auto":
     )
 ```
 
-位置：`default_loader.py:120` 到 `default_loader.py:133`
+位置：`default_loader.py:151` 到 `default_loader.py:163`
 
 也就是说：
 
@@ -548,15 +550,15 @@ pt                         → *.pt
 npcache                    → *.bin
 ```
 
-位置：`default_loader.py:135` 到 `default_loader.py:153`
+位置：`default_loader.py:166` 到 `default_loader.py:184`
 
-如果 `fall_back_to_pt` 为真，还会追加：
+如果 `fall_back_to_pt` 为真且当前不是 safetensors 路径，还会追加：
 
 ```python
 allow_patterns += ["*.pt"]
 ```
 
-位置：`default_loader.py:155` 到 `default_loader.py:156`
+位置：`default_loader.py:186` 到 `default_loader.py:189`
 
 `fall_back_to_pt` 默认来自模型对象：
 
@@ -564,7 +566,7 @@ allow_patterns += ["*.pt"]
 fall_back_to_pt=getattr(model, "fall_back_to_pt_during_load", True)
 ```
 
-位置：`default_loader.py:293` 到 `default_loader.py:299`
+位置：`default_loader.py:326` 到 `default_loader.py:332`
 
 所以某些模型可以通过自身属性禁止或允许 fallback 到 `.pt`。
 
@@ -583,7 +585,7 @@ hf_folder = download_weights_from_hf(
 )
 ```
 
-位置：`default_loader.py:161` 到 `default_loader.py:169`
+位置：`default_loader.py:194` 到 `default_loader.py:202`
 
 本地路径则直接使用：
 
@@ -591,7 +593,7 @@ hf_folder = download_weights_from_hf(
 hf_folder = model_name_or_path
 ```
 
-位置：`default_loader.py:170` 到 `default_loader.py:171`
+位置：`default_loader.py:203` 到 `default_loader.py:204`
 
 ### 9.5 按 pattern 找到第一组可用权重
 
@@ -604,7 +606,7 @@ for pattern in allow_patterns:
         break
 ```
 
-位置：`default_loader.py:176` 到 `default_loader.py:183`
+位置：`default_loader.py:209` 到 `default_loader.py:215`
 
 关键点：
 
@@ -632,7 +634,7 @@ hf_weights_files = filter_duplicate_safetensors_files(
 )
 ```
 
-位置：`default_loader.py:184` 到 `default_loader.py:200`
+位置：`default_loader.py:217` 到 `default_loader.py:233`
 
 原因是有些模型目录里同时存在：
 
@@ -650,7 +652,7 @@ consolidated.safetensors
 hf_weights_files = filter_files_not_needed_for_inference(hf_weights_files)
 ```
 
-位置：`default_loader.py:201` 到 `default_loader.py:202`
+位置：`default_loader.py:234` 到 `default_loader.py:235`
 
 它会过滤掉 optimizer、training state 等推理不需要的文件。
 
@@ -658,7 +660,7 @@ hf_weights_files = filter_files_not_needed_for_inference(hf_weights_files)
 
 ## 10. DefaultModelLoader 第二阶段：选择权重 iterator
 
-入口：`default_loader.py:211`
+入口：`default_loader.py:244`
 
 ```python
 def _get_weights_iterator(self, source):
@@ -673,7 +675,7 @@ if self.load_config.load_format == "npcache":
     weights_iterator = np_cache_weights_iterator(...)
 ```
 
-位置：`default_loader.py:223` 到 `default_loader.py:232`
+位置：`default_loader.py:256` 到 `default_loader.py:265`
 
 限制：
 
@@ -681,7 +683,7 @@ if self.load_config.load_format == "npcache":
 npcache 当前只支持 *.bin checkpoint。
 ```
 
-位置：`default_loader.py:223` 到 `default_loader.py:225`
+位置：`default_loader.py:256` 到 `default_loader.py:258`
 
 ### 10.2 safetensors / fastsafetensors / instanttensor
 
@@ -693,7 +695,7 @@ instanttensor   → instanttensor_weights_iterator()
 其他            → safetensors_weights_iterator() 或 multi_thread_safetensors_weights_iterator()
 ```
 
-位置：`default_loader.py:233` 到 `default_loader.py:265`
+位置：`default_loader.py:266` 到 `default_loader.py:298`
 
 其中普通 safetensors 会接收：
 
@@ -705,7 +707,7 @@ safetensors_prefetch_num_threads
 safetensors_prefetch_block_size
 ```
 
-位置：`default_loader.py:254` 到 `default_loader.py:264`
+位置：`default_loader.py:287` 到 `default_loader.py:298`
 
 ### 10.3 PyTorch bin / pt
 
@@ -716,7 +718,7 @@ enable_multithread_load=True  → multi_thread_pt_weights_iterator()
 否则                          → pt_weights_iterator()
 ```
 
-位置：`default_loader.py:266` 到 `default_loader.py:281`
+位置：`default_loader.py:299` 到 `default_loader.py:314`
 
 这里会使用：
 
@@ -734,7 +736,7 @@ pt_load_map_location
 return ((source.prefix + name, tensor) for (name, tensor) in weights_iterator)
 ```
 
-位置：`default_loader.py:283` 到 `default_loader.py:286`
+位置：`default_loader.py:316` 到 `default_loader.py:319`
 
 这让 secondary weights 或子模块加载时可以把权重名挂到某个前缀下。
 
@@ -759,7 +761,7 @@ for source in secondary_weights:
     yield from self._get_weights_iterator(source)
 ```
 
-位置：`default_loader.py:288` 到 `default_loader.py:307`
+位置：`default_loader.py:321` 到 `default_loader.py:340`
 
 这说明模型实现可以影响 loader 行为：
 
@@ -773,7 +775,7 @@ secondary_weights：额外加载第二组权重，并可带 prefix。
 
 ## 12. DefaultModelLoader 第四阶段：load_weights
 
-入口：`default_loader.py:381`
+入口：`default_loader.py:415`
 
 核心代码：
 
@@ -787,7 +789,7 @@ self._init_ep_weight_filter(model_config)
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`default_loader.py:381` 到 `default_loader.py:395`
+位置：`default_loader.py:415` 到 `default_loader.py:427`
 
 这里有三个关键点。
 
@@ -799,7 +801,7 @@ loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 safetensors_load_strategy = torchao
 ```
 
-位置：`default_loader.py:383` 到 `default_loader.py:390`
+位置：`default_loader.py:416` 到 `default_loader.py:423`
 
 这样底层 safetensors iterator 会按 torchao tensor subclass 方式重建权重。
 
@@ -814,7 +816,7 @@ enable_ep_weight_filter
 未启用 EPLB
 ```
 
-位置：`default_loader.py:318` 到 `default_loader.py:380`
+位置：`default_loader.py:351` 到 `default_loader.py:413`
 
 结果保存在：
 
@@ -824,7 +826,7 @@ self.local_expert_ids
 
 然后传给 `safetensors_weights_iterator()`。
 
-位置：`default_loader.py:254` 到 `default_loader.py:264`
+位置：`default_loader.py:287` 到 `default_loader.py:298`
 
 含义是：
 
@@ -843,7 +845,7 @@ if weights_not_loaded:
     raise ValueError(...)
 ```
 
-位置：`default_loader.py:401` 到 `default_loader.py:437`
+位置：`default_loader.py:447` 到 `default_loader.py:470`
 
 默认只对非量化模型启用：
 
@@ -853,7 +855,7 @@ default_enable_weights_track = (
 )
 ```
 
-位置：`default_loader.py:401` 到 `default_loader.py:410`
+位置：`default_loader.py:434` 到 `default_loader.py:443`
 
 也可以用 `model_loader_extra_config.enable_weights_track` 覆盖。
 
@@ -885,7 +887,7 @@ for layer in model.modules():
         initialize_dummy_weights(layer, model_config)
 ```
 
-位置：`dummy_loader.py:36` 到 `dummy_loader.py:44`
+位置：`dummy_loader.py:36` 到 `dummy_loader.py:45`
 
 用途：
 
@@ -897,7 +899,7 @@ profile / benchmark / 内存评估；
 
 注意：如果 `load_dummy_weights=True`，GPU ModelRunner 会直接把 `load_format` 改成 `dummy`。
 
-位置：`gpu_model_runner.py:5161` 到 `gpu_model_runner.py:5163`
+位置：`gpu_model_runner.py:5249` 到 `gpu_model_runner.py:5251`
 
 ---
 
@@ -1143,7 +1145,7 @@ self._bind_quant_states_to_params(model, stacked_quant_state_dict)
 torch.accelerator.empty_cache()
 ```
 
-位置：`bitsandbytes_loader.py:804` 到 `bitsandbytes_loader.py:836`
+位置：`bitsandbytes_loader.py:799` 到 `bitsandbytes_loader.py:831`
 
 最终效果是：
 
@@ -1183,7 +1185,7 @@ concurrency：写入 RUNAI_STREAMER_CONCURRENCY；
 memory_limit：写入 RUNAI_STREAMER_MEMORY_LIMIT。
 ```
 
-位置：`runai_streamer_loader.py:30` 到 `runai_streamer_loader.py:65`
+位置：`runai_streamer_loader.py:30` 到 `runai_streamer_loader.py:79`
 
 如果设置了 `AWS_ENDPOINT_URL` 但没设置 `RUNAI_STREAMER_S3_ENDPOINT`，它会补：
 
@@ -1191,7 +1193,7 @@ memory_limit：写入 RUNAI_STREAMER_MEMORY_LIMIT。
 os.environ["RUNAI_STREAMER_S3_ENDPOINT"] = aws_endpoint_url
 ```
 
-位置：`runai_streamer_loader.py:67` 到 `runai_streamer_loader.py:70`
+位置：`runai_streamer_loader.py:75` 到 `runai_streamer_loader.py:79`
 
 ### 17.2 权重读取
 
@@ -1338,10 +1340,11 @@ process_weights_after_loading(model, model_config, target_device)
 ```text
 1. 遍历所有模块，如果 quant_method 是 QuantizeMethodBase，则调用 quant_method.process_weights_after_loading(module)；
 2. 对 Attention / MLAAttention / MMEncoderAttention 调用 process_weights_after_loading；
-3. torchao 模型设置 reload 相关属性。
+3. 对 HpcModule 调用 process_weights_after_loading(model)，覆盖 DummyModelLoader 等不会走模型 load_weights() 的路径；
+4. torchao 模型设置 reload 相关属性。
 ```
 
-位置：`utils.py:100` 到 `utils.py:131`
+位置：`utils.py:101` 到 `utils.py:141`
 
 如果某些参数因为 CPU offload 在 CPU 上，`device_loading_context()` 会临时把它们搬到 target device 做处理，结束后再搬回去。
 
@@ -1365,7 +1368,7 @@ def download_model(self, model_config):
     self._prepare_weights(...)
 ```
 
-位置：`default_loader.py:309` 到 `default_loader.py:316`
+位置：`default_loader.py:342` 到 `default_loader.py:349`
 
 Run:ai、tensorizer、sharded loader 也都有对应的预准备逻辑。
 
@@ -1443,7 +1446,7 @@ auto 先检查 Mistral consolidated*.safetensors；
 hf 再按 *.safetensors → *.bin → 可选 *.pt 查找。
 ```
 
-位置：`default_loader.py:120` 到 `default_loader.py:183`
+位置：`default_loader.py:151` 到 `default_loader.py:215`
 
 ### 24.3 safetensors_load_strategy 是否影响所有格式？
 
@@ -1455,7 +1458,7 @@ hf 再按 *.safetensors → *.bin → 可选 *.pt 查找。
 safetensors_weights_iterator(..., self.load_config.safetensors_load_strategy, ...)
 ```
 
-位置：`default_loader.py:254` 到 `default_loader.py:265`
+位置：`default_loader.py:287` 到 `default_loader.py:298`
 
 `pt`、`npcache`、`dummy`、`sharded_state` 等路径不使用这个字段。
 
@@ -1471,7 +1474,7 @@ fastsafetensors  → fastsafetensors_weights_iterator()
 instanttensor    → instanttensor_weights_iterator()
 ```
 
-位置：`default_loader.py:233` 到 `default_loader.py:265`
+位置：`default_loader.py:266` 到 `default_loader.py:298`
 
 ### 24.5 sharded_state 是否能读普通 HF checkpoint？
 
@@ -1509,7 +1512,7 @@ if unexpected_keys:
     raise ValueError(...)
 ```
 
-位置：`default_loader.py:78` 到 `default_loader.py:91`
+位置：`default_loader.py:78` 到 `default_loader.py:127`
 
 ---
 

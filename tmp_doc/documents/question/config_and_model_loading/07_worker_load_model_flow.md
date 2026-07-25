@@ -159,7 +159,7 @@ else:
     self.worker.load_model()
 ```
 
-位置：`multiproc_executor.py:593` 到 `multiproc_executor.py:634`。
+位置：`multiproc_executor.py:597` 到 `multiproc_executor.py:637`。
 
 关键点：
 
@@ -168,7 +168,7 @@ WorkerProc 在发送 READY 之前已经完成 init_device() 和 load_model()；
 所以 MultiprocExecutor.wait_for_ready() 返回时，本地 worker 进程里的模型已经加载完成。
 ```
 
-READY 发送位置：`multiproc_executor.py:862` 到 `multiproc_executor.py:869`。
+READY 发送位置：`multiproc_executor.py:875` 到 `multiproc_executor.py:882`。
 
 这避免了一个常见误解：
 
@@ -266,6 +266,9 @@ GPU Worker 的设备初始化入口在 `vllm/v1/worker/gpu_worker.py:249`。
 ```python
 self.device = torch.device(f"cuda:{self.local_rank}")
 torch.accelerator.set_device_index(self.device)
+visible_device_index = current_platform.logical_device_id_to_visible_device_id(self.local_rank)
+self.device = torch.device(f"cuda:{visible_device_index}")
+torch.accelerator.set_device_index(self.device)
 current_platform.check_if_supports_dtype(self.model_config.dtype)
 
 init_worker_distributed_environment(
@@ -281,7 +284,7 @@ self.init_snapshot = MemorySnapshot(device=self.device)
 self.requested_memory = request_memory(init_snapshot, self.cache_config)
 ```
 
-位置：`gpu_worker.py:285` 到 `gpu_worker.py:315`。
+位置：`gpu_worker.py:357` 到 `gpu_worker.py:390`。
 
 然后创建 ModelRunner：
 
@@ -292,7 +295,7 @@ else:
     self.model_runner = GPUModelRunnerV1(self.vllm_config, self.device)
 ```
 
-位置：`gpu_worker.py:326` 到 `gpu_worker.py:341`。
+位置：`gpu_worker.py:401` 到 `gpu_worker.py:416`。
 
 为什么必须先 `init_device()` 再 `load_model()`？
 
@@ -310,7 +313,7 @@ else:
 
 ## 6. GPUWorker.load_model：Worker 层做了什么
 
-入口在 `vllm/v1/worker/gpu_worker.py:349`。
+入口在 `vllm/v1/worker/gpu_worker.py:424`。
 
 核心代码：
 
@@ -323,7 +326,7 @@ with (
     self.model_runner.load_model(load_dummy_weights=load_dummy_weights)
 ```
 
-位置：`gpu_worker.py:349` 到 `gpu_worker.py:356`。
+位置：`gpu_worker.py:424` 到 `gpu_worker.py:431`。
 
 Worker 层做三件事：
 
@@ -339,12 +342,13 @@ Worker 层做三件事：
 ```python
 self.weight_transfer_engine = WeightTransferEngineFactory.create_engine(
     self.vllm_config.weight_transfer_config,
-    self.vllm_config.parallel_config,
+    self.vllm_config,
+    self.device,
     self.model_runner.get_model(),
 )
 ```
 
-位置：`gpu_worker.py:358` 到 `gpu_worker.py:363`。
+位置：`gpu_worker.py:433` 到 `gpu_worker.py:439`。
 
 这说明 `Worker.load_model()` 本身不直接读权重文件，它是模型加载的设备侧保护壳：负责内存池、配置上下文和加载后的权重传输引擎。
 
@@ -352,7 +356,7 @@ self.weight_transfer_engine = WeightTransferEngineFactory.create_engine(
 
 ## 7. GPUModelRunner.load_model：真正加载模型
 
-V1 `GPUModelRunner.load_model()` 在 `vllm/v1/worker/gpu_model_runner.py:5142`。
+V1 `GPUModelRunner.load_model()` 在 `vllm/v1/worker/gpu_model_runner.py:5230`。
 
 ### 7.1 选择 model loader
 
@@ -368,7 +372,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`gpu_model_runner.py:5161` 到 `gpu_model_runner.py:5166`。
+位置：`gpu_model_runner.py:5249` 到 `gpu_model_runner.py:5254`。
 
 这里的选择由 `LoadConfig.load_format` 决定。
 
@@ -416,7 +420,7 @@ with DeviceMemoryProfiler() as m:
 self.model_memory_usage = m.consumed_memory
 ```
 
-位置：`gpu_model_runner.py:5158` 到 `gpu_model_runner.py:5231`。
+位置：`gpu_model_runner.py:5247` 到 `gpu_model_runner.py:5321`。
 
 这个值后面会用于 `Worker.determine_available_memory()`：
 
@@ -427,7 +431,7 @@ with memory_profiling(
 ) as profile_result:
 ```
 
-位置：`gpu_worker.py:406` 到 `gpu_worker.py:410`。
+位置：`gpu_worker.py:482` 到 `gpu_worker.py:488`。
 
 所以模型加载阶段不仅产生 `self.model`，还会记录权重显存占用。
 
@@ -445,10 +449,10 @@ MoE / EPLB：识别 MoE 模型并加入 EplbState。
 对应位置：
 
 ```text
-gpu_model_runner.py:5167 到 5170    LoRA
-gpu_model_runner.py:5171 到 5199    drafter / drafter MoE EPLB
-gpu_model_runner.py:5200             EAGLE3 auxiliary hidden states
-gpu_model_runner.py:5202 到 5228    MoE / EPLB
+gpu_model_runner.py:5255 到 5258    LoRA
+gpu_model_runner.py:5259 到 5288    drafter / drafter MoE EPLB
+gpu_model_runner.py:5290             EAGLE3 auxiliary hidden states
+gpu_model_runner.py:5292 到 5318    MoE / EPLB
 ```
 
 ### 7.4 OOM 错误处理
@@ -461,7 +465,7 @@ increasing --tensor-parallel-size,
 or using --quantization.
 ```
 
-位置：`gpu_model_runner.py:5232` 到 `gpu_model_runner.py:5242`。
+位置：`gpu_model_runner.py:5322` 到 `gpu_model_runner.py:5332`。
 
 ### 7.5 加载后准备通信 buffer 和多模态状态
 
@@ -469,9 +473,13 @@ or using --quantization.
 
 ```python
 prepare_communication_buffer_for_model(self.model)
+if (drafter := getattr(self, "drafter", None)) and (
+    drafter_model := getattr(drafter, "model", None)
+):
+    prepare_communication_buffer_for_model(drafter_model)
 ```
 
-位置：`gpu_model_runner.py:5248` 到 `gpu_model_runner.py:5253`。
+位置：`gpu_model_runner.py:5338` 到 `gpu_model_runner.py:5343`。
 
 随后会设置：
 
@@ -481,7 +489,7 @@ requires_sequential_video_encoding
 EPLB async loop
 ```
 
-位置：`gpu_model_runner.py:5254` 到 `gpu_model_runner.py:5271`。
+位置：`gpu_model_runner.py:5344` 到 `gpu_model_runner.py:5361`。
 
 ### 7.6 根据编译配置包装模型
 
@@ -493,7 +501,7 @@ self.model.compile(fullgraph=True, backend=backend)
 return
 ```
 
-位置：`gpu_model_runner.py:5273` 到 `gpu_model_runner.py:5283`。
+位置：`gpu_model_runner.py:5363` 到 `gpu_model_runner.py:5373`。
 
 否则，vLLM 自己控制 cudagraph 行为。
 
@@ -505,7 +513,7 @@ CUDAGraphWrapper
 UBatchWrapper
 ```
 
-位置：`gpu_model_runner.py:5287` 到 `gpu_model_runner.py:5317`。
+位置：`gpu_model_runner.py:5377` 到 `gpu_model_runner.py:5407`。
 
 最后调用：
 
@@ -513,7 +521,7 @@ UBatchWrapper
 get_offloader().post_init()
 ```
 
-位置：`gpu_model_runner.py:5318`。
+位置：`gpu_model_runner.py:5408`。
 
 ---
 
@@ -587,7 +595,7 @@ with set_current_vllm_config(vllm_config, check_compile=True, prefix=prefix):
     return model
 ```
 
-位置：`utils.py:49` 到 `utils.py:64`。
+位置：`utils.py:50` 到 `utils.py:65`。
 
 这说明模型结构初始化已经能访问完整 `VllmConfig`，包括 cache、parallel、quant、lora、scheduler 等信息。
 
@@ -600,10 +608,11 @@ with set_current_vllm_config(vllm_config, check_compile=True, prefix=prefix):
 ```text
 1. 如果模块有 QuantizeMethodBase，调用 quant_method.process_weights_after_loading(module)；
 2. 对 Attention / MLAAttention / MMEncoderAttention 调 process_weights_after_loading(model_config.dtype)；
-3. torchao 场景设置 reload 相关属性。
+3. 对 HpcModule 调 process_weights_after_loading(model)；
+4. torchao 场景设置 reload 相关属性。
 ```
 
-位置：`utils.py:100` 到 `utils.py:130`。
+位置：`utils.py:101` 到 `utils.py:141`。
 
 这一步通常用于：
 
@@ -647,7 +656,7 @@ pt：*.pt；
 npcache：*.bin。
 ```
 
-位置：`default_loader.py:113` 到 `default_loader.py:209`。
+位置：`default_loader.py:139` 到 `default_loader.py:242`。
 
 ### 9.2 创建权重 iterator
 
@@ -663,7 +672,7 @@ safetensors → safetensors_weights_iterator 或 multi_thread_safetensors_weight
 pt/bin → pt_weights_iterator 或 multi_thread_pt_weights_iterator
 ```
 
-位置：`default_loader.py:223` 到 `default_loader.py:286`。
+位置：`default_loader.py:256` 到 `default_loader.py:319`。
 
 ### 9.3 load_weights 调模型自己的 load_weights
 
@@ -676,7 +685,7 @@ self._init_ep_weight_filter(model_config)
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`default_loader.py:392` 到 `default_loader.py:394`。
+位置：`default_loader.py:425` 到 `default_loader.py:427`。
 
 这说明具体每个权重名如何映射到模型参数，最终由模型类自己的 `load_weights()` 实现决定。
 
@@ -688,7 +697,7 @@ loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 3. 对 online quant / postprocess quant 的参数做例外处理。
 ```
 
-位置：`default_loader.py:396` 到 `default_loader.py:437`。
+位置：`default_loader.py:429` 到 `default_loader.py:464`。
 
 ### 9.4 EP weight filter
 
@@ -700,7 +709,7 @@ ep_rank = dp_rank * pcp_size * tp_size + pcp_rank * tp_size + tp_rank
 local_expert_ids = compute_local_expert_ids(...)
 ```
 
-位置：`default_loader.py:318` 到 `default_loader.py:380`。
+位置：`default_loader.py:351` 到 `default_loader.py:413`。
 
 这样可以在读取 safetensors 时跳过非本 rank 的 expert 权重，降低大 MoE 模型的存储 I/O 和内存压力。
 
@@ -717,20 +726,21 @@ local_expert_ids = compute_local_expert_ids(...)
 ```text
 1. register_all_kvcache_specs(vllm_config);
 2. model_executor.get_kv_cache_specs();
-3. 如果模型有 KV cache，调用 model_executor.determine_available_memory();
-4. get_kv_cache_configs(vllm_config, kv_cache_specs, available_gpu_memory);
-5. 如果 auto-fit 改了 max_model_len，同步给 workers；
-6. generate_scheduler_kv_cache_config();
-7. 写回 cache_config.num_gpu_blocks / block_size / kv_cache_size_tokens / max_concurrency；
-8. validate_block_size();
-9. model_executor.initialize_from_config(kv_cache_configs)。
+3. 如果发现 non_causal KV cache spec，禁用 chunked prefill / prefix caching；
+4. 如果模型有 KV cache，调用 model_executor.determine_available_memory();
+5. get_kv_cache_configs(vllm_config, kv_cache_specs, available_gpu_memory);
+6. 如果 auto-fit 改了 max_model_len，同步给 workers；
+7. generate_scheduler_kv_cache_config();
+8. 写回 cache_config.num_gpu_blocks / block_size / kv_cache_size_tokens / max_concurrency；
+9. validate_block_size();
+10. model_executor.initialize_from_config(kv_cache_configs)。
 ```
 
 位置：`core.py:243` 到 `core.py:321`。
 
 ### 10.1 determine_available_memory 做什么
 
-入口：`gpu_worker.py:371`。
+入口：`gpu_worker.py:448`。
 
 如果用户显式设置 `kv_cache_memory_bytes`：
 
@@ -739,7 +749,7 @@ local_expert_ids = compute_local_expert_ids(...)
 但跳过自动显存估算，直接返回用户指定的 KV cache bytes。
 ```
 
-位置：`gpu_worker.py:384` 到 `gpu_worker.py:402`。
+位置：`gpu_worker.py:462` 到 `gpu_worker.py:480`。
 
 否则会：
 
@@ -751,7 +761,7 @@ local_expert_ids = compute_local_expert_ids(...)
 5. 返回可用于 KV cache 的显存。
 ```
 
-位置：`gpu_worker.py:404` 到 `gpu_worker.py:524`。
+位置：`gpu_worker.py:482` 到 `gpu_worker.py:606`。
 
 这解释了为什么必须先 load model：
 
@@ -767,7 +777,7 @@ local_expert_ids = compute_local_expert_ids(...)
 
 Worker 分配 KV cache 的入口是 `GPUWorker.initialize_from_config()`。
 
-位置：`gpu_worker.py:562`。
+位置：`gpu_worker.py:717`。
 
 核心代码：
 
@@ -779,7 +789,7 @@ with self._maybe_get_memory_pool_context(tag="kv_cache"):
     self.model_runner.initialize_kv_cache(kv_cache_config)
 ```
 
-位置：`gpu_worker.py:566` 到 `gpu_worker.py:579`。
+位置：`gpu_worker.py:720` 到 `gpu_worker.py:743`。
 
 这里有几个关键点：
 
@@ -806,7 +816,7 @@ compilation_times = self.collective_rpc("compile_or_warm_up_model")
 
 位置：`vllm/v1/executor/abstract.py:118` 到 `abstract.py:137`。
 
-GPU Worker 的实现入口在 `gpu_worker.py:591`。
+GPU Worker 的实现入口在 `gpu_worker.py:745`。
 
 它会：
 
@@ -823,7 +833,7 @@ GPU Worker 的实现入口在 `gpu_worker.py:591`。
 10. freeze_gc_heap()，减少推理期 GC 扫描静态对象。
 ```
 
-位置：`gpu_worker.py:591` 到 `gpu_worker.py:752`。
+位置：`gpu_worker.py:745` 到 `gpu_worker.py:921`。
 
 这里的顺序也很重要：
 
