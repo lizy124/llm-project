@@ -149,7 +149,7 @@ return ModelConfig(
 )
 ```
 
-位置：`code/vllm/vllm/engine/arg_utils.py:1569` 到 `code/vllm/vllm/engine/arg_utils.py:1641`
+位置：`code/vllm/vllm/engine/arg_utils.py:1619` 到 `code/vllm/vllm/engine/arg_utils.py:1693`
 
 这说明：
 
@@ -239,7 +239,7 @@ OpenAI serving 层默认 sampling 参数；
 
 `ModelConfig` 使用 pydantic dataclass，初始化后的主要工作在 `__post_init__()`。
 
-入口位置：`code/vllm/vllm/config/model.py:458`
+入口位置：`code/vllm/vllm/config/model.py:478`
 
 主流程可以概括为：
 
@@ -285,7 +285,7 @@ hf_config = get_config(
 self.hf_config = hf_config
 ```
 
-位置：`code/vllm/vllm/config/model.py:534` 到 `code/vllm/vllm/config/model.py:544`
+位置：`code/vllm/vllm/config/model.py:555` 到 `code/vllm/vllm/config/model.py:565`
 
 这一段是 HF config 进入 `ModelConfig` 的核心入口。
 
@@ -307,7 +307,7 @@ if self.tokenizer_revision is None:
 self.tokenizer = maybe_model_redirect(self.tokenizer)
 ```
 
-位置：`code/vllm/vllm/config/model.py:481` 到 `code/vllm/vllm/config/model.py:491`
+位置：`code/vllm/vllm/config/model.py:502` 到 `code/vllm/vllm/config/model.py:512`
 
 这里有几个重要点：
 
@@ -328,7 +328,7 @@ if isinstance(served_model_name, list):
 return served_model_name
 ```
 
-位置：`code/vllm/vllm/config/model.py:1872` 到 `code/vllm/vllm/config/model.py:1884`
+位置：`code/vllm/vllm/config/model.py:1922` 到 `code/vllm/vllm/config/model.py:1934`
 
 因此：
 

@@ -261,7 +261,7 @@ Scheduler 侧 KV Connector 是外部 KV Cache / KVPool 在调度阶段的代理�
 - 本地 prefix cache 查询；
 - 本地 block 分配；
 - GPU KV tensor load / save；
-- waiting / running / preemption 主状态机；
+- 请求生命周期状态：waiting / running / preempted / waiting-for-remote-KV / finished 的流转
 - attention metadata / slot mapping。
 ```
 
@@ -521,6 +521,28 @@ connector.get_num_new_matched_tokens(
 (N, True)：外部新增命中 N tokens，需要 scheduler step 间异步 load；
 (None, bool)：connector 暂时无法判断，Scheduler 本轮跳过该请求，后续再查。
 ```
+
+`load_kv_async` 不是 Scheduler 自己推导出来的配置项，而是具体 KV Connector 在 `get_num_new_matched_tokens()` 的第二个返回值中报告给 Scheduler。用户通常通过 `--kv-transfer-config` 选择 `kv_connector`，并通过 `kv_connector_extra_config` 传 connector-specific 参数，间接影响 connector 是否采用 async load；Scheduler 只消费这个布尔值，并据此决定是否暂停本轮 forward、分配外部 KV 的本地落地点、以及是否把请求放入 `WAITING_FOR_REMOTE_KVS`。
+
+代码依据：
+
+```text
+config/kv_transfer.py
+  KVTransferConfig.kv_connector
+  KVTransferConfig.kv_role
+  KVTransferConfig.kv_connector_extra_config
+
+engine/arg_utils.py
+  --kv-transfer-config
+
+kv_connector/v1/base.py
+  get_num_new_matched_tokens(...) -> tuple[int | None, bool]
+
+v1/core/sched/scheduler.py
+  ext_tokens, load_kv_async = connector.get_num_new_matched_tokens(...)
+```
+
+例如 `LMCacheMPConnector` 会在 lookup 结果未就绪时返回 `(None, True)`，在确认需要 load 外部 KV 时返回 `(need_to_load, need_to_load > 0)`；这说明 async 与否由 connector 实现按自身状态决定，而不是由 Scheduler 直接判断。
 
 ### 4.5 合并 computed tokens
 

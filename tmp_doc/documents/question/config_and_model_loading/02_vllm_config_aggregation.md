@@ -11,6 +11,10 @@
 - `code/vllm/vllm/config/device.py`
 - `code/vllm/vllm/config/load.py`
 - `code/vllm/vllm/config/compilation.py`
+- `code/vllm/vllm/config/observability.py`
+- `code/vllm/vllm/config/profiler.py`
+- `code/vllm/vllm/config/kv_events.py`
+- `code/vllm/vllm/config/kv_transfer.py`
 - `code/vllm/vllm/v1/engine/core.py`
 - `code/vllm/vllm/v1/executor/abstract.py`
 - `code/vllm/vllm/v1/worker/worker_base.py`
@@ -82,7 +86,7 @@ CLI / Python API 参数
   → ModelRunner(vllm_config)
 ```
 
-核心入口在 `arg_utils.py:1724`：
+核心入口在 `arg_utils.py:1833`：
 
 ```python
 def create_engine_config(
@@ -92,7 +96,7 @@ def create_engine_config(
 ) -> VllmConfig:
 ```
 
-最终构造点在 `arg_utils.py:2255`：
+最终构造点在 `arg_utils.py:2355`：
 
 ```python
 config = VllmConfig(
@@ -129,7 +133,7 @@ config = VllmConfig(
 
 ## 3. VllmConfig 本身包含什么
 
-`VllmConfig` 定义在 `vllm/config/vllm.py:297`。
+`VllmConfig` 定义在 `vllm/config/vllm.py:288`。
 
 核心字段可以分成几类：
 
@@ -175,7 +179,7 @@ config = VllmConfig(
   shutdown_timeout
 ```
 
-对应源码在 `vllm.py:302` 到 `vllm.py:387`。
+对应源码在 `vllm.py:295` 到 `vllm.py:382`。
 
 这说明 `VllmConfig` 不是一个轻量参数包，而是全系统配置的根对象。后续模块拿到的通常不是一堆散装参数，而是同一个 `VllmConfig`，再从里面取自己需要的子配置。
 
@@ -214,7 +218,7 @@ kv_transfer_config / kv_events_config
 
 ### 5.1 先注册平台并创建 DeviceConfig
 
-位置：`arg_utils.py:1734` 到 `arg_utils.py:1738`
+位置：`arg_utils.py:1843` 到 `arg_utils.py:1847`
 
 ```text
 1. current_platform.pre_register_and_update();
@@ -226,7 +230,7 @@ kv_transfer_config / kv_events_config
 
 ### 5.2 再创建 ModelConfig
 
-位置：`arg_utils.py:1757`
+位置：`arg_utils.py:1866`
 
 ```python
 model_config = self.create_model_config()
@@ -250,7 +254,7 @@ V2 ModelRunner 是否可用
 
 ### 5.3 根据模型能力设置 chunked prefill 和 prefix caching 默认值
 
-位置：`arg_utils.py:1762` 到 `arg_utils.py:1764`，具体逻辑在 `arg_utils.py:2397`。
+位置：`arg_utils.py:1871` 到 `arg_utils.py:1873`，具体逻辑在 `arg_utils.py:2515`。
 
 ```text
 enable_chunked_prefill 为空：使用 model_config.is_chunked_prefill_supported
@@ -263,7 +267,7 @@ enable_prefix_caching 为空：使用 model_config.is_prefix_caching_supported
 
 ### 5.4 构造 CacheConfig
 
-位置：`arg_utils.py:1781`
+位置：`arg_utils.py:1890`
 
 ```python
 cache_config = CacheConfig(
@@ -297,7 +301,7 @@ TurboQuant KV cache:
 
 ### 5.5 构造 ParallelConfig
 
-位置：`arg_utils.py:1984`
+位置：`arg_utils.py:2094`
 
 `ParallelConfig` 不是简单复制 `tp/pp/dp`，还会处理多节点、外部 LB、Ray runtime env、placement group、DP rank 推导等。
 
@@ -325,7 +329,7 @@ CUDA graph / sequence parallel 兼容性。
 
 ### 5.6 构造 SpeculativeConfig / DiffusionConfig
 
-位置：`arg_utils.py:2034` 到 `arg_utils.py:2038`
+位置：`arg_utils.py:2145` 到 `arg_utils.py:2149`
 
 `SpeculativeConfig` 构造时会把 target model 和 target parallel config 注入进去：
 
@@ -338,7 +342,7 @@ speculative_config.target_parallel_config = parallel_config
 
 ### 5.7 设置 max_num_seqs 和 max_num_batched_tokens
 
-位置：`arg_utils.py:2040` 到 `arg_utils.py:2055`
+位置：`arg_utils.py:2151` 到 `arg_utils.py:2167`
 
 `SchedulerConfig` 需要的两个核心 token budget 字段会在这里补齐：
 
@@ -359,7 +363,7 @@ world_size：CPU 默认值会乘 world_size
 
 ### 5.8 构造 SchedulerConfig
 
-位置：`arg_utils.py:2056`
+位置：`arg_utils.py:2167`
 
 ```python
 scheduler_config = SchedulerConfig(
@@ -387,7 +391,7 @@ max_model_len
 
 ### 5.9 构造 LoRAConfig
 
-位置：`arg_utils.py:2084`
+位置：`arg_utils.py:2196`
 
 只有 `enable_lora` 为真时才创建 `LoRAConfig`，否则为 `None`。
 
@@ -398,11 +402,11 @@ max_model_len
 LoRA + speculative decoding 时，max_num_batched_tokens 必须容纳 seqs * (spec_tokens + 1)。
 ```
 
-### 5.10 处理 Attention / Mamba / Kernel / Compilation 覆盖
+### 5.10 处理 Attention / Mamba / Kernel / Load / Compilation 覆盖
 
-位置：`arg_utils.py:2121` 到 `arg_utils.py:2237`
+位置：`arg_utils.py:2233` 到 `arg_utils.py:2350`
 
-这部分处理“顶层便捷参数”和“完整 config JSON”之间的互斥关系。
+这部分处理“顶层便捷参数”和“完整 config JSON”之间的互斥关系，并在最终 `VllmConfig` 构造前创建 `LoadConfig` 和 `OffloadConfig`。
 
 例子：
 
@@ -424,7 +428,7 @@ LoRA + speculative decoding 时，max_num_batched_tokens 必须容纳 seqs * (sp
 
 ### 5.11 最后实例化 VllmConfig
 
-位置：`arg_utils.py:2255` 到 `arg_utils.py:2282`
+位置：`arg_utils.py:2355` 到 `arg_utils.py:2382`
 
 一旦调用 `VllmConfig(...)`，就会进入 `VllmConfig.__post_init__()`，进行第二阶段的全局校验和默认值补全。
 
@@ -432,7 +436,7 @@ LoRA + speculative decoding 时，max_num_batched_tokens 必须容纳 seqs * (sp
 
 ## 6. VllmConfig.__post_init__ 做了什么
 
-入口在 `vllm.py:864`：
+入口在 `vllm.py:917`：
 
 ```python
 def __post_init__(self):
@@ -443,7 +447,7 @@ def __post_init__(self):
 
 ### 6.1 设置 instance_id 并做模型特定修正
 
-位置：`vllm.py:867` 到 `vllm.py:879`
+位置：`vllm.py:920` 到 `vllm.py:932`
 
 ```text
 1. 生成 instance_id；
@@ -453,7 +457,7 @@ def __post_init__(self):
 5. parallel_config.is_moe_model = model_config.is_moe。
 ```
 
-`try_verify_and_update_config()` 在 `vllm.py:1902`，会根据模型 architecture 调用模型专属配置修正：
+`try_verify_and_update_config()` 在 `vllm.py:2110`，会根据模型 architecture 调用模型专属配置修正：
 
 ```text
 MODELS_CONFIG_MAP[architecture].verify_and_update_config(self)
@@ -479,15 +483,15 @@ KV connector 与 expandable_segments 组合可能被拒绝。
 对应位置：
 
 ```text
-vllm.py:881 到 vllm.py:907
-vllm.py:908 到 vllm.py:918
-vllm.py:821 到 vllm.py:862
-vllm.py:1568
+vllm.py:934 到 vllm.py:957
+vllm.py:958 到 vllm.py:971
+vllm.py:874 到 vllm.py:915
+vllm.py:1641
 ```
 
 ### 6.3 补充 QuantizationConfig
 
-位置：`vllm.py:920` 到 `vllm.py:923`
+位置：`vllm.py:973` 到 `vllm.py:976`
 
 ```python
 if self.quant_config is None and self.model_config is not None:
@@ -505,13 +509,13 @@ if self.quant_config is None and self.model_config is not None:
 4. 调用 quant_config.maybe_update_config() 根据 HF config 做更新。
 ```
 
-位置：`vllm.py:618` 到 `vllm.py:652`。
+位置：`vllm.py:651` 到 `vllm.py:684`。
 
 这说明量化配置是 ModelConfig、LoadConfig、平台能力共同决定的。
 
 ### 6.4 决定 async scheduling
 
-位置：`vllm.py:944` 到 `vllm.py:1019`
+位置：`vllm.py:997` 到 `vllm.py:1119`
 
 `VllmConfig` 会取 executor class：
 
@@ -525,7 +529,7 @@ executor_supports_async_sched = executor_class.supports_async_scheduling()
 
 ```text
 用户显式开启：不兼容就直接报错；
-用户未指定：能开则开，遇到 pooling、部分 speculative method、executor 不支持等情况则关闭；
+用户未指定：能开则开，遇到 pooling、部分 speculative method、executor 不支持、ROCm DeepEP high-throughput DBO 等情况则关闭；
 用户显式关闭：保持关闭。
 ```
 
@@ -549,7 +553,7 @@ SchedulerConfig.async_scheduling
 
 ### 6.5 应用 enforce_eager / TORCH_COMPILE_DISABLE / breakable cudagraph
 
-位置：`vllm.py:1071` 到 `vllm.py:1125`
+位置：`vllm.py:1143` 到 `vllm.py:1197`
 
 规则包括：
 
@@ -564,7 +568,7 @@ compilation_config.backend=eager 或 mode 非 VLLM_COMPILE：提示 Inductor-onl
 
 ### 6.6 应用平台默认值和 optimization level
 
-位置：`vllm.py:1143` 到 `vllm.py:1173`
+位置：`vllm.py:1215` 到 `vllm.py:1245`
 
 ```text
 1. current_platform.apply_config_platform_defaults(self);
@@ -587,7 +591,7 @@ O2/O3：开启更完整的 cudagraph 和更多 fusion 默认值。
 
 ### 6.7 设置 scheduled tokens 与 CUDA graph sizes
 
-`_set_max_num_scheduled_tokens()` 在 `vllm.py:1595`。
+`_set_max_num_scheduled_tokens()` 在 `vllm.py:1668`。
 
 如果启用 speculative decoding，需要给 draft tokens 预留 batch slots：
 
@@ -598,7 +602,7 @@ max_num_scheduled_tokens = max_num_batched_tokens - scheduled_token_delta
 
 如果结果小于等于 0，会报错。
 
-`_set_cudagraph_sizes()` 在 `vllm.py:1645`。
+`_set_cudagraph_sizes()` 在 `vllm.py:1718`。
 
 它会根据：
 
@@ -625,6 +629,7 @@ compilation_config.cudagraph_capture_sizes
 1, 2, 4,
 8 到 256 之间步长 8，
 256 之后步长 16，
+如果 max_num_batched_tokens 不在列表中且不超过 max_cudagraph_capture_size，也会追加捕获，
 并受 max_num_batched_tokens 和 max_cudagraph_capture_size 截断。
 ```
 
@@ -632,7 +637,7 @@ compilation_config.cudagraph_capture_sizes
 
 ### 6.8 处理 KV offloading 到 KVTransferConfig
 
-位置：`vllm.py:785` 到 `vllm.py:820`，调用点在 `vllm.py:1468` 到 `vllm.py:1470`。
+位置：`vllm.py:838` 到 `vllm.py:872`，调用点在 `vllm.py:1541` 到 `vllm.py:1543`。
 
 如果 `cache_config.kv_offloading_size` 不为空：
 
@@ -647,7 +652,7 @@ kv_role 固定为 kv_both。
 
 ### 6.9 Hybrid KV cache manager 默认值
 
-位置：`vllm.py:1472` 到 `vllm.py:1543`
+位置：`vllm.py:1545` 到 `vllm.py:1617`
 
 `SchedulerConfig.disable_hybrid_kv_cache_manager` 会根据平台、模型和 KV connector 自动决定：
 
@@ -663,7 +668,7 @@ KV connector 不支持 HMA：禁用并 warning；
 
 ### 6.10 最终平台检查与 V2 ModelRunner 判断
 
-位置：`vllm.py:1360` 到 `vllm.py:1367`，以及 `vllm.py:528` 到 `vllm.py:555`。
+位置：`vllm.py:1433` 到 `vllm.py:1436`，以及 `vllm.py:531` 到 `vllm.py:572`。
 
 `use_v2_model_runner` 会受这些因素影响：
 
@@ -953,7 +958,7 @@ self.parallel_config.rank = rank
 
 ### 8.4 GPUModelRunner
 
-`GPUModelRunner.__init__()` 在 `vllm/v1/worker/gpu_model_runner.py:421`。
+`GPUModelRunner.__init__()` 在 `vllm/v1/worker/gpu_model_runner.py:448`。
 
 它缓存：
 
@@ -970,7 +975,7 @@ speculative_config
 observability_config
 ```
 
-位置：`gpu_model_runner.py:426` 到 `gpu_model_runner.py:436`。
+位置：`gpu_model_runner.py:453` 到 `gpu_model_runner.py:463`。
 
 关键使用包括：
 
@@ -986,7 +991,7 @@ model_config.get_vocab_size() → sampling metadata / buffers
 reasoning_config → logits processor 是否需要 output_token_ids
 ```
 
-位置集中在 `gpu_model_runner.py:438` 到 `gpu_model_runner.py:510`，以及 `gpu_model_runner.py:655` 到 `gpu_model_runner.py:688`。
+位置集中在 `gpu_model_runner.py:465` 到 `gpu_model_runner.py:529`，以及后续采样与 metadata 初始化段。
 
 ### 8.5 KV cache 相关模块
 
@@ -1108,7 +1113,7 @@ KV connector + PyTorch allocator env
 
 ## 13. compute_hash 的作用
 
-`VllmConfig.compute_hash()` 在 `vllm.py:393`。
+`VllmConfig.compute_hash()` 在 `vllm.py:384`。
 
 它收集会影响计算图结构的配置因素：
 

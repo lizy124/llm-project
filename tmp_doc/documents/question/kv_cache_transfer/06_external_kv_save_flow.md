@@ -95,6 +95,52 @@ B. 执行过程中逐步 store：
 
 本文标题里的“请求结束后保存”主要指 A，但实际 vLLM connector API 同时支持 A 和 B。
 
+这里有两个容易混淆的点：
+
+```text
+1. request_finished*() 发生在 Scheduler 认为请求生成结束之后。
+
+   这里的“请求结束”只表示：这个 request 不再继续生成 token。
+   它不表示：request 的 KV blocks 已经释放，也不表示 KV save/send 已完成。
+
+   如果 connector 返回 delay_free_blocks=True，Scheduler 会继续保留这些 blocks，
+   后续通过 SchedulerOutput.kv_connector_metadata 把 save/send 计划交给
+   Worker / ModelRunner 侧 connector 执行。
+
+2. finished_sending 不是 Worker 直接调用 Scheduler 方法。
+
+   Worker / ModelRunner 侧 connector 在 get_finished(...) 中得到发送完成的 request ids，
+   填入 ModelRunnerOutput.kv_connector_output.finished_sending；
+   Scheduler 在下一次 update_from_output() 中消费这个 KVConnectorOutput，
+   再调用 _free_blocks() 释放对应 request 的本地 blocks。
+```
+
+因此，完整心智模型应当是：
+
+```text
+某个 scheduler step 的 Worker forward 产出 sampled token
+  → Scheduler.update_from_output() 处理输出
+  → 发现 request 满足 stop / max_tokens / EOS
+  → Scheduler 标记 request finished
+  → Scheduler 调用 connector.request_finished*()
+  → connector 登记：这个已结束 request 的 KV blocks 需要保存 / 发送
+  → connector 返回 delay_free_blocks=True，Scheduler 暂不释放 blocks
+  → 后续 SchedulerOutput 携带 save/send metadata
+  → Worker / ModelRunner 侧 connector bind_connector_metadata(...)
+  → attention forward 后调用 save_kv_layer(...)
+  → wait_for_save() 等待保存 / 发送完成
+  → get_finished(...) 生成 finished_sending
+  → ModelRunnerOutput.kv_connector_output 回传 Scheduler
+  → Scheduler._update_from_kv_xfer_finished() 释放 blocks
+```
+
+一句话记忆：
+
+```text
+request finished = 不再继续生成 token；
+不等于 KV blocks 已释放，也不等于 KV save/send 已完成。
+```
+
 ---
 
 ## 4. KV Connector 抽象层如何定义 save

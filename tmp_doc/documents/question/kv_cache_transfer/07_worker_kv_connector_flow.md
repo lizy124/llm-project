@@ -1163,7 +1163,65 @@ ExampleConnector 是 debug 实现：
 
 ---
 
-## 22. MooncakeStore / KVPool 类 Worker connector 的定位
+## 22. Mooncake 系 connector：直连 P/D 与共享 Store
+
+vLLM 里 Mooncake 相关 connector 有两套，容易混淆：
+
+```text
+MooncakeConnector：
+  路径：code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/mooncake_connector.py
+  定位：P/D 直连 KV 传输。Prefill 实例计算 KV，Decode 实例从远端 prefill 拉取 KV，或 Prefill 侧把 KV 推给 Decode 侧。
+
+MooncakeStoreConnector：
+  路径：code/vllm/vllm/distributed/kv_transfer/kv_connector/v1/mooncake/store/connector.py
+  定位：使用 MooncakeDistributedStore 作为共享 KV pool。producer 和 consumer 分别向 store 写入 / 从 store 读取 KV，支持基于 hash key 的去重和复用。
+```
+
+二者都实现统一的 KVConnector 接口，但传输模型不同：
+
+```text
+MooncakeConnector：
+  更像 P/D 两端直接协调传输；metadata 中记录 reqs_to_recv / reqs_to_send 和本地 block ids；Worker 侧注册 KV cache 地址后通过 Mooncake TransferEngine 直接传输。
+
+MooncakeStoreConnector：
+  更像外部 KVPool；Scheduler 侧按 block hash 查询 store 命中，Worker 侧通过 MooncakeDistributedStore 的 batch get/put 把 KV 写入或读出本地 paged KV cache。
+```
+
+MooncakeConnector 的 Scheduler 侧核心动作包括：
+
+```text
+get_num_new_matched_tokens()：
+  D 侧看到 request.kv_transfer_params.do_remote_prefill 时，返回可从远端 prefill 获取的 prompt token 数，并标记 async load。
+
+update_state_after_alloc()：
+  D 侧在本地 block 分配完成后，把 request 和 local_block_ids 放进 _reqs_need_recv；
+  P 侧 do_remote_decode 时，把 request 放进 _reqs_need_send。
+
+build_connector_meta()：
+  把 _reqs_need_recv / _reqs_need_send 打包成 MooncakeConnectorMetadata，交给 Worker。
+
+request_finished()：
+  P 侧请求结束时，如果需要把 KV 发给 D，可能返回 delay_free_blocks=True，等 finished_sending 后再释放 block。
+```
+
+MooncakeConnector 的 Worker 侧核心动作包括：
+
+```text
+register_kv_caches()：
+  注册每层 KV cache tensor 的地址、block 长度、layer index 和 group index。
+
+start_load_kv()：
+  根据 MooncakeConnectorMetadata 启动 recv / send 相关传输。
+
+get_finished()：
+  回报哪些 request 的 sending / recving 已经完成。
+```
+
+需要注意：`MooncakeConnector` 注释里明确写了 `does not do layerwise saving`，它的 `wait_for_layer_load()`、`save_kv_layer()`、`wait_for_save()` 是 no-op；具体传输由 connector 自己的 metadata、后台协调和 Mooncake TransferEngine 驱动。
+
+---
+
+## 23. MooncakeStore / KVPool 类 Worker connector 的定位
 
 `MooncakeStoreConnector` 更接近 KVPool 场景。
 
@@ -1227,7 +1285,7 @@ ModelRunner 不需要知道外部 KVPool 的具体协议，只需要在正确的
 
 ---
 
-### 22.1 外部 KV 数据加载的物理路径：直写 GPU 还是经过 host buffer？
+### 23.1 外部 KV 数据加载的物理路径：直写 GPU 还是经过 host buffer？
 
 Scheduler 侧的 `allocate_slots()` 为 `ext_comp` 区间从 `BlockPool` 分配了空 block，Worker connector 需要把外部 KV 数据写入这些 block 对应的 GPU 显存。不同 connector 的物理路径不同：
 

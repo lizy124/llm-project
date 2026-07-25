@@ -420,6 +420,42 @@ Scheduler 把请求放进 waiting 队列后，connector 可以提前读取 reque
 
 不是所有 connector 都需要重写它；默认是 no-op。
 
+几个实现的差异可以帮助理解它的边界：
+
+```text
+base KVConnectorBase_V1：
+  默认 no-op，只定义 hook。
+
+MultiConnector：
+  遍历所有子 connector，逐个调用 c.on_new_request(request)。
+
+NIXL scheduler：
+  如果 request.kv_transfer_params 中有 do_remote_prefill，并且带有 remote_engine_id、remote_request_id、remote_host、remote_port、tp_size 等字段，
+  就把该 remote request 记录到 heartbeat 跟踪表中。
+
+Offloading scheduler：
+  根据 request 创建 req_context / offloading_context，包装成 RequestOffloadState，保存到 _req_status[request_id]。
+```
+
+所以 `on_new_request()` 的定位是：
+
+```text
+新请求注册 hook；
+用于 connector 自己的 per-request bookkeeping；
+不分配 KV block；
+不执行 KV load / save；
+不生成本轮 transfer metadata。
+```
+
+后续真正决定命中多少、load 到哪些 block、metadata 里带什么，仍然发生在：
+
+```text
+get_num_new_matched_tokens()
+KVCacheManager.allocate_slots()
+update_state_after_alloc()
+build_connector_meta()
+```
+
 ---
 
 ## 10. waiting 阶段：先查本地 prefix cache
@@ -812,6 +848,41 @@ self.kv_cache_manager.get_blocks(request_id)
 ```
 
 用来生成后续 Worker load / save metadata。
+
+这里要注意一个边界：
+
+```text
+KVCacheManager 只是提供 get_blocks() / get_block_ids() 这类查询能力；
+它不会直接把 block ids 发给 Worker，也不会直接发给 Worker-side connector。
+```
+
+实际传递分两条：
+
+```text
+给 Scheduler-side connector：
+  Scheduler 在 allocate_slots() 成功后，直接调用
+  connector.update_state_after_alloc(request, kv_cache_manager.get_blocks(request_id), external_tokens)。
+  这里传的是 KVCacheBlocks，connector 可以从中拿 block ids。
+
+给 Worker / Worker-side connector：
+  Scheduler 把 block ids 写进 NewRequestData / CachedRequestData，放入 SchedulerOutput；
+  同时 Scheduler-side connector.build_connector_meta() 把 load / save 计划写进 SchedulerOutput.kv_connector_metadata；
+  Worker / ModelRunner 消费 SchedulerOutput 后，更新 InputBatch.block_table，并让 Worker-side connector 消费 kv_connector_metadata。
+```
+
+所以更精确的表述是：
+
+```text
+KVCacheManager 提供本地 block / block_ids；
+Scheduler 把它们交给 SchedulerOutput 和 Scheduler-side connector；
+Worker 通过 SchedulerOutput 消费 block ids 和 kv_connector_metadata。
+```
+
+不是：
+
+```text
+KVCacheManager 直接发给 Worker / KV Connector。
+```
 
 ---
 
