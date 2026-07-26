@@ -85,6 +85,7 @@
 本次复审记录：
 - llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 EngineArgs / ModelConfig / VllmConfig / ModelRegistry / model_loader / Worker / GPUModelRunner 等源码锚点行号，未发现需要重写主结论的直接冲突。
 - llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 interfaces_base / interfaces / registry / model_loader / Llama / Attention / GPUModelRunner / pooler / vocab embedding / logits processor 等源码锚点行号；同步修正 Llama 权重映射为 WeightsMapper 形式、Attention KV cache spec 的 encoder-only 返回 None、post-load HPC module 处理和 MoE 接口字段，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\02_model_registry_and_resolution.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 registry / ModelConfig / model_loader / platform 等源码锚点行号；同步补充 _LazyRegisteredModel 对完整模块名用 find_spec() 定位缓存文件、Transformers backend wrapper/MoE 变体和 model_class_overrides 注册入口，主结论未重写。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -156,7 +157,7 @@
 - llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\README.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\01_model_architecture_role.md，否，是
-- llm-project\tmp_doc\documents\question\model_architectures\02_model_registry_and_resolution.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\02_model_registry_and_resolution.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\03_model_config_and_task_detection.md，否，否
 - llm-project\tmp_doc\documents\question\model_architectures\04_model_class_construction.md，否，否
 - llm-project\tmp_doc\documents\question\model_architectures\05_forward_interface_contract.md，否，否

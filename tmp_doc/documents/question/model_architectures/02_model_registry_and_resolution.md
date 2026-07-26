@@ -93,7 +93,7 @@ get_config()
   → self.architectures
 ```
 
-对应源码：`vllm/config/model.py:534` 到 `vllm/config/model.py:548`
+对应源码：`vllm/config/model.py:555` 到 `vllm/config/model.py:569`
 
 `ModelConfig.architectures` 是一个 property：
 
@@ -103,7 +103,7 @@ def architectures(self) -> list[str]:
     return self.model_arch_config.architectures
 ```
 
-位置：`vllm/config/model.py:811`
+位置：`vllm/config/model.py:857`
 
 所以 registry 接收的不是直接裸读 `hf_config.architectures` 的结果，而是经过 `ModelArchitectureConfig` 归一后的 architecture 列表。
 
@@ -132,7 +132,7 @@ _TRANSFORMERS_SUPPORTED_MODELS
 _TRANSFORMERS_BACKEND_MODELS
 ```
 
-位置：`registry.py:71` 到 `registry.py:690`
+位置：`registry.py:71` 到 `registry.py:686`
 
 每个条目的形态是：
 
@@ -175,7 +175,7 @@ _VLLM_MODELS = {
 }
 ```
 
-位置：`registry.py:692` 到 `registry.py:703`
+位置：`registry.py:688` 到 `registry.py:699`
 
 这说明 registry 的“支持列表”不是只服务文本生成，而是覆盖：
 
@@ -199,7 +199,7 @@ ModelRegistry = _ModelRegistry(
 )
 ```
 
-位置：`registry.py:1377` 到 `registry.py:1385`
+位置：`registry.py:1405` 到 `registry.py:1413`
 
 这里有两个关键点：
 
@@ -232,7 +232,7 @@ vllm.model_executor.models.qwen2
 vllm.model_executor.models.bert
 ```
 
-位置：`registry.py:1368` 到 `registry.py:1375`
+位置：`registry.py:1396` 到 `registry.py:1402`
 
 ### 5.2 完整模块名
 
@@ -267,7 +267,7 @@ class _BaseRegisteredModel(ABC):
     def load_model_cls(self) -> type[nn.Module]: ...
 ```
 
-位置：`registry.py:798` 到 `registry.py:805`
+位置：`registry.py:808` 到 `registry.py:815`
 
 ### 6.1 _RegisteredModel：已经 import 的 class
 
@@ -279,7 +279,7 @@ model_cls 是 nn.Module 子类
   → 直接保存 model_cls
 ```
 
-位置：`registry.py:808` 到 `registry.py:828`
+位置：`registry.py:818` 到 `registry.py:838`
 
 ### 6.2 _LazyRegisteredModel：延迟 import 的 class
 
@@ -299,7 +299,7 @@ mod = importlib.import_module(self.module_name)
 return getattr(mod, self.class_name)
 ```
 
-位置：`registry.py:946` 到 `registry.py:948`
+位置：`registry.py:974` 到 `registry.py:976`
 
 为什么要 lazy import？
 
@@ -339,7 +339,7 @@ supports_transcription
 supports_transcription_only
 ```
 
-位置：`registry.py:745` 到 `registry.py:765`
+位置：`registry.py:756` 到 `registry.py:775`
 
 `_ModelInfo.from_model_cls()` 会调用 `interfaces_base.py` 和 `interfaces.py` 里的探测函数：
 
@@ -355,7 +355,7 @@ is_hybrid()
 ...
 ```
 
-位置：`registry.py:767` 到 `registry.py:795`
+位置：`registry.py:777` 到 `registry.py:805`
 
 这说明 registry 的作用不是“字符串查表”这么简单。
 
@@ -383,7 +383,7 @@ mi = _run_in_subprocess(
 )
 ```
 
-位置：`registry.py:932` 到 `registry.py:935`
+位置：`registry.py:960` 到 `registry.py:963`
 
 注释写得很明确：
 
@@ -406,11 +406,11 @@ inspect 模型类可能触发模块 import；
 python -m vllm.model_executor.models.registry
 ```
 
-位置：`registry.py:705` 到 `registry.py:709`
+位置：`registry.py:701` 到 `registry.py:705`
 
 `_run_in_subprocess()` 通过 `cloudpickle` 把 lambda 和输出路径传给子进程，子进程执行 `_run()` 后把结果 pickle 回临时文件。
 
-位置：`registry.py:1390` 到 `registry.py:1435`
+位置：`registry.py:1418` 到 `registry.py:1445`
 
 ---
 
@@ -425,20 +425,21 @@ python -m vllm.model_executor.models.registry
 关键逻辑：
 
 ```text
-1. 找到模型模块文件路径；
-2. 计算文件 hash；
-3. 如果缓存里的 hash 相同，直接读取 _ModelInfo；
-4. 如果缓存缺失或 stale，重新子进程 inspect；
-5. inspect 成功后写回缓存。
+1. 先按 vllm.model_executor.models.* 的传统路径定位模块文件；
+2. 对 vllm.models.* 等完整模块名，用 importlib.util.find_spec() 定位实际文件；
+3. 计算文件 hash；
+4. 如果缓存里的 hash 相同，直接读取 _ModelInfo；
+5. 如果缓存缺失或 stale，重新子进程 inspect；
+6. inspect 成功后写回缓存。
 ```
 
 对应源码：
 
 ```text
-_get_cache_dir()               registry.py:841
-_load_modelinfo_from_cache()   registry.py:848
-_save_modelinfo_to_cache()     registry.py:880
-inspect_model_cls()            registry.py:897
+_get_cache_dir()               registry.py:851
+_load_modelinfo_from_cache()   registry.py:877
+_save_modelinfo_to_cache()     registry.py:909
+inspect_model_cls()            registry.py:927
 ```
 
 这个设计让 registry 同时满足：
@@ -464,7 +465,7 @@ is_generative_model = registry.is_text_generation_model(architectures, self)
 is_pooling_model = registry.is_pooling_model(architectures, self)
 ```
 
-位置：`vllm/config/model.py:557` 到 `vllm/config/model.py:560`
+位置：`vllm/config/model.py:578` 到 `vllm/config/model.py:581`
 
 这一步用于后面判断：
 
@@ -485,7 +486,7 @@ self.convert_type = self._get_convert_type(
 )
 ```
 
-位置：`vllm/config/model.py:562` 到 `vllm/config/model.py:567`
+位置：`vllm/config/model.py:583` 到 `vllm/config/model.py:588`
 
 如果用户传的是 `--runner auto` / `--convert auto`，ModelConfig 会结合 registry 能力和 architecture suffix 默认规则来推断。
 
@@ -498,7 +499,7 @@ self._architecture = arch
 logger.info("Resolved architecture: %s", arch)
 ```
 
-位置：`vllm/config/model.py:593` 到 `vllm/config/model.py:598`
+位置：`vllm/config/model.py:614` 到 `vllm/config/model.py:619`
 
 这一步的结果后续会被大量使用：
 
@@ -510,7 +511,7 @@ self._model_info.default_tok_pooling_type
 self._architecture
 ```
 
-例如多模态配置初始化依赖：`vllm/config/model.py:663` 到 `vllm/config/model.py:701`
+例如多模态配置初始化依赖：`vllm/config/model.py:683` 到 `vllm/config/model.py:721`
 
 ---
 
@@ -531,15 +532,20 @@ ForTextEncoding             → pooling / embed
 EmbeddingModel              → pooling / embed
 ForSequenceClassification   → pooling / classify
 ForTokenClassification      → pooling / classify
+ForAudioClassification      → pooling / classify
+ForImageClassification      → pooling / classify
+ForVideoClassification      → pooling / classify
+ClassificationModel         → pooling / classify
+ForRewardModeling           → pooling / embed
 RewardModel                 → pooling / embed
 Model                       → pooling / embed
 ```
 
-位置：`vllm/config/model.py:1889` 到 `vllm/config/model.py:1909`
+位置：`vllm/config/model.py:1937` 到 `vllm/config/model.py:1957`
 
 `try_match_architecture_defaults()` 会根据 architecture suffix 匹配默认 runner / convert。
 
-位置：`vllm/config/model.py:1916` 到 `vllm/config/model.py:1933`
+位置：`vllm/config/model.py:1964` 到 `vllm/config/model.py:1981`
 
 ### 11.2 registry._normalize_arch()
 
@@ -554,7 +560,7 @@ Model                       → pooling / embed
 如果替换后的 base_arch 在 registry 中，就用 base_arch 查询。
 ```
 
-位置：`registry.py:1147` 到 `registry.py:1171`
+位置：`registry.py:1175` 到 `registry.py:1199`
 
 可以理解成：
 
@@ -572,9 +578,9 @@ SomeModelForSequenceClassification
 
 入口：`_ModelRegistry.inspect_model_cls()`
 
-位置：`registry.py:1173` 到 `registry.py:1223`
+位置：`registry.py:1201` 到 `registry.py:1251`
 
-流程可以拆成 5 步。
+流程可以拆成 6 步。
 
 ### 12.1 参数归一
 
@@ -583,7 +589,7 @@ architectures 是 str → 转成 list[str]
 architectures 为空 → 抛 ValueError
 ```
 
-位置：`registry.py:1178` 到 `registry.py:1181`
+位置：`registry.py:1206` 到 `registry.py:1209`
 
 ### 12.2 强制 Transformers backend
 
@@ -601,7 +607,7 @@ _try_resolve_transformers(architectures[0], model_config)
 
 如果能解析到 transformers backend class，再 inspect 这个 backend class。
 
-位置：`registry.py:1183` 到 `registry.py:1189`
+位置：`registry.py:1211` 到 `registry.py:1217`
 
 ### 12.3 Terratorch 特例
 
@@ -617,7 +623,7 @@ model_config.model_impl == "terratorch"
 Terratorch
 ```
 
-位置：`registry.py:1190` 到 `registry.py:1192`
+位置：`registry.py:1218` 到 `registry.py:1220`
 
 ### 12.4 auto 模式下先尝试 Transformers fallback
 
@@ -630,7 +636,7 @@ convert_type == "none"
 
 则尝试 `_try_resolve_transformers()`。
 
-位置：`registry.py:1194` 到 `registry.py:1204`
+位置：`registry.py:1222` 到 `registry.py:1232`
 
 这里的语义是：
 
@@ -649,7 +655,7 @@ for arch in architectures:
         return (model_info, arch)
 ```
 
-位置：`registry.py:1206` 到 `registry.py:1210`
+位置：`registry.py:1234` 到 `registry.py:1238`
 
 注意返回的是：
 
@@ -669,7 +675,7 @@ model_impl == "auto"
 
 会再次尝试 `_try_resolve_transformers()`。
 
-位置：`registry.py:1212` 到 `registry.py:1221`
+位置：`registry.py:1240` 到 `registry.py:1249`
 
 最后仍失败则进入 `_raise_for_unsupported()`。
 
@@ -679,7 +685,7 @@ model_impl == "auto"
 
 入口：`_ModelRegistry.resolve_model_cls()`
 
-位置：`registry.py:1225` 到 `registry.py:1277`
+位置：`registry.py:1253` 到 `registry.py:1305`
 
 它和 `inspect_model_cls()` 几乎同构，区别是：
 
@@ -706,7 +712,7 @@ resolve_model_cls() 返回真正的 type[nn.Module]。
 return _try_load_model_cls(model_arch, self.models[model_arch])
 ```
 
-位置：`registry.py:1065` 到 `registry.py:1069`
+位置：`registry.py:1093` 到 `registry.py:1097`
 
 `_try_load_model_cls()` 内部会先做平台校验：
 
@@ -714,7 +720,7 @@ return _try_load_model_cls(model_arch, self.models[model_arch])
 current_platform.verify_model_arch(model_arch)
 ```
 
-位置：`registry.py:951` 到 `registry.py:963`
+位置：`registry.py:979` 到 `registry.py:991`
 
 这意味着即使 registry 表里有某个模型，当前平台也可能拒绝加载它。
 
@@ -724,7 +730,7 @@ current_platform.verify_model_arch(model_arch)
 
 入口：`_try_resolve_transformers()`
 
-位置：`registry.py:1077` 到 `registry.py:1145`
+位置：`registry.py:1105` 到 `registry.py:1173`
 
 它解决的是：
 
@@ -742,15 +748,21 @@ _TRANSFORMERS_BACKEND_MODELS
 
 直接返回这个 architecture。
 
-位置：`registry.py:1082` 到 `registry.py:1083`
+位置：`registry.py:1110` 到 `registry.py:1111`
 
 例如：
 
 ```text
 TransformersForCausalLM
+TransformersMoEForCausalLM
 TransformersMultiModalForCausalLM
+TransformersMultiModalMoEForCausalLM
 TransformersEmbeddingModel
+TransformersMoEEmbeddingModel
+TransformersMultiModalEmbeddingModel
 TransformersForSequenceClassification
+TransformersMoEForSequenceClassification
+TransformersMultiModalForSequenceClassification
 ```
 
 ### 14.2 处理 auto_map 和 trust_remote_code
@@ -767,7 +779,7 @@ TransformersForSequenceClassification
 
 registry 会先尝试加载 `AutoConfig` / `AutoModel` 对应的动态模块。
 
-位置：`registry.py:1085` 到 `registry.py:1107`
+位置：`registry.py:1113` 到 `registry.py:1135`
 
 加载动态模块时会传入：
 
@@ -793,11 +805,11 @@ registry 会先查：
 getattr(transformers, architecture, None)
 ```
 
-位置：`registry.py:1109`
+位置：`registry.py:1137`
 
 如果找不到，再从 `auto_map` 中找 `AutoModel*` 动态模块。
 
-位置：`registry.py:1111` 到 `registry.py:1123`
+位置：`registry.py:1140` 到 `registry.py:1151`
 
 如果仍找不到，并且用户显式指定了：
 
@@ -807,7 +819,7 @@ model_impl == "transformers"
 
 就抛出清晰错误。
 
-位置：`registry.py:1128` 到 `registry.py:1134`
+位置：`registry.py:1153` 到 `registry.py:1162`
 
 ### 14.4 检查 backend 兼容性
 
@@ -817,7 +829,7 @@ model_impl == "transformers"
 model_module.is_backend_compatible()
 ```
 
-位置：`registry.py:1136` 到 `registry.py:1143`
+位置：`registry.py:1164` 到 `registry.py:1171`
 
 通过后返回：
 
@@ -825,15 +837,21 @@ model_module.is_backend_compatible()
 model_config._get_transformers_backend_cls()
 ```
 
-位置：`registry.py:1145`
+位置：`registry.py:1173`
 
 也就是说最终跑的不是 Transformers 原类本身，而是 vLLM 的 backend wrapper class，例如：
 
 ```text
 TransformersForCausalLM
+TransformersMoEForCausalLM
 TransformersMultiModalForCausalLM
+TransformersMultiModalMoEForCausalLM
 TransformersEmbeddingModel
+TransformersMoEEmbeddingModel
+TransformersMultiModalEmbeddingModel
 TransformersForSequenceClassification
+TransformersMoEForSequenceClassification
+TransformersMultiModalForSequenceClassification
 ```
 
 ---
@@ -872,7 +890,7 @@ TransformersForSequenceClassification
 如果 fallback 成功，会打印性能/功能可能不完整的 warning。
 ```
 
-warning 位置在 model_loader：`vllm/model_executor/model_loader/utils.py:193` 到 `vllm/model_executor/model_loader/utils.py:201`
+warning 位置在 model_loader：`vllm/model_executor/model_loader/utils.py:203` 到 `vllm/model_executor/model_loader/utils.py:211`
 
 ### 15.4 model_impl="terratorch"
 
@@ -897,7 +915,7 @@ model_cls, arch = model_config.registry.resolve_model_cls(
 )
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:186` 到 `vllm/model_executor/model_loader/utils.py:191`
+位置：`vllm/model_executor/model_loader/utils.py:196` 到 `vllm/model_executor/model_loader/utils.py:201`
 
 然后根据 `convert_type` 可能做适配：
 
@@ -908,7 +926,7 @@ elif convert_type == "classify":
     model_cls = as_seq_cls_model(model_cls)
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:203` 到 `vllm/model_executor/model_loader/utils.py:213`
+位置：`vllm/model_executor/model_loader/utils.py:213` 到 `vllm/model_executor/model_loader/utils.py:223`
 
 最后返回：
 
@@ -916,7 +934,7 @@ elif convert_type == "classify":
 return model_cls, arch
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:215`
+位置：`vllm/model_executor/model_loader/utils.py:225`
 
 ### 16.1 结果会被缓存
 
@@ -931,7 +949,7 @@ model_impl
 hf_config.architectures
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:218` 到 `vllm/model_executor/model_loader/utils.py:234`
+位置：`vllm/model_executor/model_loader/utils.py:228` 到 `vllm/model_executor/model_loader/utils.py:238`
 
 ### 16.2 initialize_model() 构造模型
 
@@ -941,7 +959,7 @@ hf_config.architectures
 model_class, _ = get_model_architecture(model_config)
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:49` 到 `vllm/model_executor/model_loader/utils.py:52`
+位置：`vllm/model_executor/model_loader/utils.py:50` 到 `vllm/model_executor/model_loader/utils.py:53`
 
 新式模型类应该支持：
 
@@ -949,11 +967,11 @@ model_class, _ = get_model_architecture(model_config)
 model_class(vllm_config=vllm_config, prefix=prefix)
 ```
 
-位置：`vllm/model_executor/model_loader/utils.py:57` 到 `vllm/model_executor/model_loader/utils.py:64`
+位置：`vllm/model_executor/model_loader/utils.py:58` 到 `vllm/model_executor/model_loader/utils.py:64`
 
 如果是旧式 out-of-tree 模型类，vLLM 会 warning 并尝试用老参数名兼容。
 
-位置：`vllm/model_executor/model_loader/utils.py:66` 到 `vllm/model_executor/model_loader/utils.py:90`
+位置：`vllm/model_executor/model_loader/utils.py:67` 到 `vllm/model_executor/model_loader/utils.py:98`
 
 ---
 
@@ -961,7 +979,7 @@ model_class(vllm_config=vllm_config, prefix=prefix)
 
 `_ModelRegistry.register_model()` 支持外部注册。
 
-入口：`registry.py:986` 到 `registry.py:1030`
+入口：`registry.py:1014` 到 `registry.py:1058`
 
 支持两种形式：
 
@@ -981,7 +999,11 @@ ModelRegistry.register_model(
 
 如果 architecture 已经存在，新的注册会覆盖旧的注册项，并记录 debug 日志。
 
-位置：`registry.py:1006` 到 `registry.py:1012`
+位置：`registry.py:1034` 到 `registry.py:1040`
+
+当前 `ModelConfig` 还提供了 `model_class_overrides` 开发调试入口。每次访问 `model_config.registry` 时会先调用 `_maybe_register_model_class_overrides()`，把 `{"Architecture": "module:class"}` 形式的覆盖项注册到进程内的全局 `ModelRegistry`；该 guard 是进程本地的，worker 进程会各自注册一次。
+
+位置：`vllm/config/model.py:283` 到 `vllm/config/model.py:289`，`vllm/config/model.py:826` 到 `vllm/config/model.py:854`
 
 ---
 
@@ -989,7 +1011,7 @@ ModelRegistry.register_model(
 
 如果所有解析路径都失败，会进入 `_raise_for_unsupported()`。
 
-位置：`registry.py:1032` 到 `registry.py:1063`
+位置：`registry.py:1060` 到 `registry.py:1091`
 
 它会区分三类情况。
 
@@ -1002,13 +1024,13 @@ Model architectures [...] failed to be inspected.
 Please check the logs for more details.
 ```
 
-位置：`registry.py:1033` 到 `registry.py:1039`
+位置：`registry.py:1063` 到 `registry.py:1067`
 
 ### 18.2 以前支持，现在移除了
 
 `_PREVIOUSLY_SUPPORTED_MODELS` 记录被移除的 architecture 和最后支持版本。
 
-位置：`registry.py:711` 到 `registry.py:735`
+位置：`registry.py:707` 到 `registry.py:745`
 
 错误会提示：
 
@@ -1016,13 +1038,13 @@ Please check the logs for more details.
 这个 architecture 支持到 vX.Y.Z，若要使用请安装旧版 vLLM。
 ```
 
-位置：`registry.py:1041` 到 `registry.py:1050`
+位置：`registry.py:1069` 到 `registry.py:1078`
 
 ### 18.3 已迁移到 out-of-tree plugin
 
 `_OOT_SUPPORTED_MODELS` 记录已迁移到插件的模型。
 
-位置：`registry.py:737` 到 `registry.py:742`
+位置：`registry.py:747` 到 `registry.py:752`
 
 例如：
 
@@ -1032,7 +1054,7 @@ BartModel → https://github.com/vllm-project/bart-plugin
 
 错误会提示安装对应 plugin。
 
-位置：`registry.py:1051` 到 `registry.py:1058`
+位置：`registry.py:1079` 到 `registry.py:1086`
 
 ### 18.4 完全不支持
 
@@ -1043,7 +1065,7 @@ Model architectures [...] are not supported for now.
 Supported architectures: ...
 ```
 
-位置：`registry.py:1060` 到 `registry.py:1063`
+位置：`registry.py:1088` 到 `registry.py:1091`
 
 ---
 
@@ -1107,7 +1129,7 @@ registry 对它的处理是：
 全部失败才走 fallback 或 unsupported。
 ```
 
-位置：`registry.py:1206` 到 `registry.py:1210`，`registry.py:1260` 到 `registry.py:1264`
+位置：`registry.py:1234` 到 `registry.py:1238`，`registry.py:1288` 到 `registry.py:1292`
 
 因此多个 architecture 的语义是：
 
@@ -1206,11 +1228,11 @@ model_impl = "vllm"
 current_platform.verify_model_arch(model_arch)
 ```
 
-位置：`registry.py:956` 到 `registry.py:960`
+位置：`registry.py:984` 到 `registry.py:987`
 
 平台接口里也会解析模型类，用于平台能力判断。
 
-位置：`vllm/platforms/interface.py:722`
+位置：`vllm/platforms/interface.py:944`
 
 这意味着：
 
