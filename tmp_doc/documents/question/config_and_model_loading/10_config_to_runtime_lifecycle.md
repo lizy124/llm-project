@@ -141,13 +141,13 @@ Scheduler 必须拿到 KV cache config 后才能调度逻辑 blocks。
 
 `EngineArgs` 是用户参数进入 vLLM 配置系统的入口。
 
-位置：`code/vllm/vllm/engine/arg_utils.py:412`
+位置：`code/vllm/vllm/engine/arg_utils.py:417`
 
 ```python
 class EngineArgs:
 ```
 
-`EngineArgs.__post_init__()` 在：`code/vllm/vllm/engine/arg_utils.py:722`
+`EngineArgs.__post_init__()` 在：`code/vllm/vllm/engine/arg_utils.py:737`
 
 它负责对用户输入做第一层整理，例如：
 
@@ -171,7 +171,7 @@ EngineArgs = 用户参数的结构化容器。
 
 ## 5. 第二阶段：EngineArgs 创建 VllmConfig
 
-核心入口是：`code/vllm/vllm/engine/arg_utils.py:1724`
+核心入口是：`code/vllm/vllm/engine/arg_utils.py:1833`
 
 ```python
 def create_engine_config(self, usage_context: UsageContext | None = None) -> VllmConfig:
@@ -199,12 +199,12 @@ KVTransferConfig
 几个关键位置：
 
 ```text
-ModelConfig      code/vllm/vllm/engine/arg_utils.py:1757
-CacheConfig      code/vllm/vllm/engine/arg_utils.py:1781
-ParallelConfig   code/vllm/vllm/engine/arg_utils.py:1984
-SchedulerConfig  code/vllm/vllm/engine/arg_utils.py:2056
-LoadConfig       code/vllm/vllm/engine/arg_utils.py:2194
-VllmConfig       code/vllm/vllm/engine/arg_utils.py:2255
+ModelConfig      code/vllm/vllm/engine/arg_utils.py:1629
+CacheConfig      code/vllm/vllm/engine/arg_utils.py:1890
+ParallelConfig   code/vllm/vllm/engine/arg_utils.py:2094
+SchedulerConfig  code/vllm/vllm/engine/arg_utils.py:2167
+LoadConfig       code/vllm/vllm/engine/arg_utils.py:1719 / 2306
+VllmConfig       code/vllm/vllm/engine/arg_utils.py:2355
 ```
 
 这一阶段最重要的是：
@@ -218,17 +218,17 @@ VllmConfig       code/vllm/vllm/engine/arg_utils.py:2255
 
 ## 6. VllmConfig 是什么
 
-`VllmConfig` 定义在：`code/vllm/vllm/config/vllm.py:297`
+`VllmConfig` 定义在：`code/vllm/vllm/config/vllm.py:288`
 
 它是 vLLM 的总配置对象，聚合了启动和运行时需要的大部分子配置。
 
-初始化后会进入：`code/vllm/vllm/config/vllm.py:864`
+初始化后会进入：`code/vllm/vllm/config/vllm.py:917`
 
 ```python
 def __post_init__(self):
 ```
 
-然后调用：`code/vllm/vllm/config/vllm.py:873`
+然后调用：`code/vllm/vllm/config/vllm.py:926`
 
 ```python
 self.try_verify_and_update_config()
@@ -276,16 +276,16 @@ VllmConfig = 启动前最终配置账本。
 关键位置：
 
 ```text
-读取 HF config              code/vllm/vllm/config/model.py:534
-保存 hf_config              code/vllm/vllm/config/model.py:544
-保存 hf_text_config         code/vllm/vllm/config/model.py:547
-生成 model_arch_config      code/vllm/vllm/config/model.py:548
-读取 architectures          code/vllm/vllm/config/model.py:557
-判断 generation / pooling   code/vllm/vllm/config/model.py:559
-决定 runner_type            code/vllm/vllm/config/model.py:562
-决定 convert_type           code/vllm/vllm/config/model.py:565
-inspect model class         code/vllm/vllm/config/model.py:593
-保存 _model_info/_architecture code/vllm/vllm/config/model.py:596
+读取 HF config              code/vllm/vllm/config/model.py:555
+保存 hf_config              code/vllm/vllm/config/model.py:565
+保存 hf_text_config         code/vllm/vllm/config/model.py:568
+生成 model_arch_config      code/vllm/vllm/config/model.py:569
+读取 architectures          code/vllm/vllm/config/model.py:578
+判断 generation / pooling   code/vllm/vllm/config/model.py:580
+决定 runner_type            code/vllm/vllm/config/model.py:583
+决定 convert_type           code/vllm/vllm/config/model.py:586
+inspect model class         code/vllm/vllm/config/model.py:616
+保存 _model_info/_architecture code/vllm/vllm/config/model.py:617
 ```
 
 这说明：
@@ -555,7 +555,7 @@ WorkerWrapper 根据 worker_cls 创建真实 Worker；
 
 ## 14. 第六阶段：GPUWorker 初始化 device
 
-GPU worker 的 device 初始化入口：`code/vllm/vllm/v1/worker/gpu_worker.py:249`
+GPU worker 的 device 初始化入口：`code/vllm/vllm/v1/worker/gpu_worker.py:297`
 
 ```python
 def init_device(self):
@@ -574,11 +574,11 @@ def init_device(self):
 关键位置：
 
 ```text
-设置 CUDA device              code/vllm/vllm/v1/worker/gpu_worker.py:285
-初始化 distributed environment code/vllm/vllm/v1/worker/gpu_worker.py:294
-记录初始显存快照              code/vllm/vllm/v1/worker/gpu_worker.py:313
-构造 model runner             code/vllm/vllm/v1/worker/gpu_worker.py:326
-默认 GPUModelRunnerV1         code/vllm/vllm/v1/worker/gpu_worker.py:341
+设置 CUDA device              code/vllm/vllm/v1/worker/gpu_worker.py:361
+初始化 distributed environment code/vllm/vllm/v1/worker/gpu_worker.py:369
+记录初始显存快照              code/vllm/vllm/v1/worker/gpu_worker.py:388
+构造 model runner             code/vllm/vllm/v1/worker/gpu_worker.py:408
+默认 GPUModelRunnerV1         code/vllm/vllm/v1/worker/gpu_worker.py:416
 ```
 
 这个阶段还没有加载模型权重。
@@ -593,9 +593,9 @@ device ready + distributed ready + model_runner object ready
 
 ## 15. GPUModelRunner 初始化
 
-`GPUModelRunner` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:418`
+`GPUModelRunner` 定义在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:445`
 
-初始化入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:421`
+初始化入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:448`
 
 ```python
 class GPUModelRunner(...):
@@ -643,7 +643,7 @@ GPUModelRunner.__init__() 创建的是执行容器，
 
 ## 16. 第七阶段：Worker.load_model 加载模型
 
-GPUWorker 加载模型入口：`code/vllm/vllm/v1/worker/gpu_worker.py:349`
+GPUWorker 加载模型入口：`code/vllm/vllm/v1/worker/gpu_worker.py:424`
 
 ```python
 def load_model(self) -> None:
@@ -655,9 +655,9 @@ def load_model(self) -> None:
 self.model_runner.load_model()
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:356`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:431`
 
-ModelRunner 侧入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5143`
+ModelRunner 侧入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 
 ```python
 def load_model(self, load_dummy_weights: bool = False) -> None:
@@ -672,7 +672,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5163` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5166`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5251` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5253`
 
 之后还会处理：
 
@@ -719,9 +719,10 @@ def load_model(self, vllm_config: VllmConfig, model_config: ModelConfig) -> nn.M
 ```text
 initialize_model code/vllm/vllm/model_executor/model_loader/base_loader.py:55
 load_weights      code/vllm/vllm/model_executor/model_loader/base_loader.py:64
+process_weights_after_loading code/vllm/vllm/model_executor/model_loader/base_loader.py:80
 ```
 
-`initialize_model()` 定义在：`code/vllm/vllm/model_executor/model_loader/utils.py:41`
+`initialize_model()` 定义在：`code/vllm/vllm/model_executor/model_loader/utils.py:42`
 
 它会先解析模型类：
 
@@ -730,7 +731,7 @@ if model_class is None:
     model_class, _ = get_model_architecture(model_config)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:51` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:52`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:53`
 
 然后实例化：
 
@@ -738,9 +739,9 @@ if model_class is None:
 model = model_class(vllm_config=vllm_config, prefix=prefix)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:61` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:62`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:63`
 
-权重加载的默认实现入口在：`code/vllm/vllm/model_executor/model_loader/default_loader.py:381`
+权重加载的默认实现入口在：`code/vllm/vllm/model_executor/model_loader/default_loader.py:415`
 
 ```python
 DefaultModelLoader.load_weights
@@ -797,13 +798,13 @@ Executor 抽象接口：`code/vllm/vllm/v1/executor/abstract.py:149`
 def get_kv_cache_specs(self):
 ```
 
-Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:547`
+Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:701`
 
 ```python
 def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
 ```
 
-ModelRunner 侧真正实现：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7459`
+ModelRunner 侧真正实现：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7623`
 
 ```python
 def get_kv_cache_spec(self) -> dict[str, KVCacheSpec]:
@@ -829,7 +830,7 @@ available_gpu_memory = self.model_executor.determine_available_memory()
 
 位置：`code/vllm/vllm/v1/engine/core.py:283`
 
-Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:372`
+Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:448`
 
 ```python
 def determine_available_memory(self) -> int:
@@ -847,9 +848,9 @@ def determine_available_memory(self) -> int:
 关键位置：
 
 ```text
-memory_profiling       code/vllm/vllm/v1/worker/gpu_worker.py:406
-model_runner.profile_run code/vllm/vllm/v1/worker/gpu_worker.py:410
-GPUModelRunner.profile_run code/vllm/vllm/v1/worker/gpu_model_runner.py:6227
+memory_profiling       code/vllm/vllm/v1/worker/gpu_worker.py:484
+model_runner.profile_run code/vllm/vllm/v1/worker/gpu_worker.py:488
+GPUModelRunner.profile_run code/vllm/vllm/v1/worker/gpu_model_runner.py:6345
 ```
 
 为什么要 profile？
@@ -913,7 +914,7 @@ Executor 抽象实现：`code/vllm/vllm/v1/executor/abstract.py:118`
 def initialize_from_config(self, kv_cache_configs):
 ```
 
-Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:563`
+Worker 侧入口：`code/vllm/vllm/v1/worker/gpu_worker.py:717`
 
 ```python
 def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
@@ -925,7 +926,7 @@ def initialize_from_config(self, kv_cache_config: KVCacheConfig) -> None:
 self.cache_config.num_gpu_blocks = kv_cache_config.num_blocks
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:568`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:722`
 
 然后调用：
 
@@ -933,9 +934,9 @@ self.cache_config.num_gpu_blocks = kv_cache_config.num_blocks
 self.model_runner.initialize_kv_cache(kv_cache_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_worker.py:578`
+位置：`code/vllm/vllm/v1/worker/gpu_worker.py:732`
 
-ModelRunner 侧入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7303`
+ModelRunner 侧入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:7467`
 
 ```python
 def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...):
@@ -956,9 +957,9 @@ def initialize_kv_cache(self, kv_cache_config: KVCacheConfig, ...):
 物理分配相关位置：
 
 ```text
-initialize_kv_cache_tensors code/vllm/vllm/v1/worker/gpu_model_runner.py:7220
-bind_kv_cache               code/vllm/vllm/v1/worker/gpu_model_runner.py:7267
-initialize_kv_cache          code/vllm/vllm/v1/worker/gpu_model_runner.py:7303
+initialize_kv_cache_tensors code/vllm/vllm/v1/worker/gpu_model_runner.py:7384
+bind_kv_cache               code/vllm/vllm/v1/worker/gpu_model_runner.py:7431
+initialize_kv_cache          code/vllm/vllm/v1/worker/gpu_model_runner.py:7467
 ```
 
 这一步完成后，模型 forward 所需的 KV cache 才真正存在。
@@ -977,7 +978,7 @@ initialize_kv_cache          code/vllm/vllm/v1/worker/gpu_model_runner.py:7303
 compile_or_warm_up_model
 ```
 
-Worker 入口：`code/vllm/vllm/v1/worker/gpu_worker.py:592`
+Worker 入口：`code/vllm/vllm/v1/worker/gpu_worker.py:746`
 
 ```python
 def compile_or_warm_up_model(self) -> None:
@@ -997,20 +998,20 @@ def compile_or_warm_up_model(self) -> None:
 关键位置：
 
 ```text
-_dummy_run              code/vllm/vllm/v1/worker/gpu_worker.py:619
-kernel_warmup           code/vllm/vllm/v1/worker/gpu_worker.py:626
-model_runner.capture_model code/vllm/vllm/v1/worker/gpu_worker.py:630
-sampler/pooler warmup   code/vllm/vllm/v1/worker/gpu_worker.py:720
-reset seed              code/vllm/vllm/v1/worker/gpu_worker.py:732
+_dummy_run              code/vllm/vllm/v1/worker/gpu_worker.py:775
+kernel_warmup           code/vllm/vllm/v1/worker/gpu_worker.py:780
+model_runner.capture_model code/vllm/vllm/v1/worker/gpu_worker.py:784
+sampler/pooler warmup   code/vllm/vllm/v1/worker/gpu_worker.py:865
+reset seed              code/vllm/vllm/v1/worker/gpu_worker.py:888
 ```
 
-ModelRunner capture 入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6584`
+ModelRunner capture 入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6702`
 
 ```python
 def capture_model(self) -> None:
 ```
 
-实际 warmup / capture：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6651`
+实际 warmup / capture：`code/vllm/vllm/v1/worker/gpu_model_runner.py:6769`
 
 ```python
 _warmup_and_capture
@@ -1077,27 +1078,31 @@ Inproc client 会调用 EngineCore：`code/vllm/vllm/v1/engine/core_client.py:28
 InprocClient.get_output
 ```
 
-EngineCore 主循环入口：`code/vllm/vllm/v1/engine/core.py:479`
+EngineCore 主循环入口：`code/vllm/vllm/v1/engine/core.py:488`
 
 ```python
-def step(self) -> EngineCoreOutputs:
+def step(self) -> tuple[dict[int, EngineCoreOutputs], bool]:
 ```
 
 主流程：
 
 ```python
-scheduler_output = self.scheduler.schedule()
-model_output = self.model_executor.execute_model(scheduler_output)
-...
+scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+future = self.model_executor.execute_model(scheduler_output, non_block=True)
+grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+model_output = future.result()
+if model_output is None:
+    model_output = self.model_executor.sample_tokens(grammar_output)
 engine_core_outputs = self.scheduler.update_from_output(...)
 ```
 
 关键位置：
 
 ```text
-scheduler.schedule        code/vllm/vllm/v1/engine/core.py:490
-model_executor.execute_model code/vllm/vllm/v1/engine/core.py:491
-scheduler.update_from_output code/vllm/vllm/v1/engine/core.py:504
+scheduler.schedule        code/vllm/vllm/v1/engine/core.py:499
+model_executor.execute_model code/vllm/vllm/v1/engine/core.py:500
+sample_tokens fallback    code/vllm/vllm/v1/engine/core.py:507
+scheduler.update_from_output code/vllm/vllm/v1/engine/core.py:513
 ```
 
 这时启动阶段创建的对象开始进入运行时闭环：
@@ -1126,13 +1131,13 @@ UniProc 路径：`code/vllm/vllm/v1/executor/uniproc_executor.py:108`
 def execute_model(...):
 ```
 
-Worker 入口：`code/vllm/vllm/v1/worker/gpu_worker.py:808`
+Worker 入口：`code/vllm/vllm/v1/worker/gpu_worker.py:1002`
 
 ```python
 def execute_model(self, scheduler_output: SchedulerOutput, ...):
 ```
 
-ModelRunner 入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4044`
+ModelRunner 入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4097`
 
 ```python
 def execute_model(self, scheduler_output, intermediate_tensors=None):
@@ -1149,19 +1154,20 @@ _preprocess()
 set_forward_context()
 _model_forward()
 compute_logits / pooling
-sample_tokens()
+暂存 ExecuteModelState 并返回 None
+EngineCore 侧调用 sample_tokens(grammar_output)
 ModelRunnerOutput
 ```
 
 关键位置：
 
 ```text
-_prepare_inputs          code/vllm/vllm/v1/worker/gpu_model_runner.py:4128
-_build_attention_metadata code/vllm/vllm/v1/worker/gpu_model_runner.py:4255
-set_forward_context      code/vllm/vllm/v1/worker/gpu_model_runner.py:4303
-_model_forward 调用点    code/vllm/vllm/v1/worker/gpu_model_runner.py:4320
-_model_forward 定义      code/vllm/vllm/v1/worker/gpu_model_runner.py:3757
-sample_tokens            code/vllm/vllm/v1/worker/gpu_model_runner.py:4423
+_prepare_inputs          code/vllm/vllm/v1/worker/gpu_model_runner.py:4181
+_build_attention_metadata code/vllm/vllm/v1/worker/gpu_model_runner.py:4308
+set_forward_context      code/vllm/vllm/v1/worker/gpu_model_runner.py:4363
+_model_forward 调用点    code/vllm/vllm/v1/worker/gpu_model_runner.py:4380
+_model_forward 定义      code/vllm/vllm/v1/worker/gpu_model_runner.py:3810
+sample_tokens            code/vllm/vllm/v1/worker/gpu_model_runner.py:4483
 ```
 
 这说明启动阶段的所有准备最终都会汇聚到 `GPUModelRunner.execute_model()`。
@@ -1473,7 +1479,7 @@ ModelConfig 会在这个阶段读取 HF config、解析 architecture、inspect �
 Executor 创建 Worker，Worker 初始化 device 和 distributed，再创建 GPUModelRunner 并加载模型。
 模型加载完成后，EngineCore 查询模型的 KV cache spec，调用 Worker profile 显存，生成 KVCacheConfig 和 scheduler KV cache config。
 接着 Worker / ModelRunner 分配物理 KV cache，执行 warmup、compile、CUDA graph capture。
-最后 Scheduler 和执行层进入 ready 状态，每轮 EngineCore.step() 由 Scheduler 生成 SchedulerOutput，经 Executor / Worker 送到 ModelRunner 执行，再用 ModelRunnerOutput 更新 Scheduler 状态。
+最后 Scheduler 和执行层进入 ready 状态，每轮 EngineCore.step() 由 Scheduler 生成 SchedulerOutput，经 Executor / Worker 送到 ModelRunner 执行；当前实现中 forward 可先返回 `None` 并由 EngineCore 再调用 `sample_tokens()` 取出 ModelRunnerOutput，随后更新 Scheduler 状态。
 ```
 
 最短心智模型：
@@ -1568,7 +1574,8 @@ EngineCore.step()
   │    ├─ _prepare_inputs()
   │    ├─ _build_attention_metadata()
   │    ├─ _model_forward()
-  │    └─ sample_tokens()
+  │    └─ 暂存 ExecuteModelState / 返回 None
+  ├─ model_executor.sample_tokens()
   └─ scheduler.update_from_output()
 ```
 

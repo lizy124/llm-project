@@ -82,6 +82,9 @@
 - 只修正文档本身的问题，不顺手修改无关专题或无关代码。
 - 进度记录只写本次实际处理过的文件；不要为了填满专题清单而推进大批量复审。
 
+本次复审记录：
+- llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 EngineArgs / ModelConfig / VllmConfig / ModelRegistry / model_loader / Worker / GPUModelRunner 等源码锚点行号，未发现需要重写主结论的直接冲突。
+- llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 interfaces_base / interfaces / registry / model_loader / Llama / Attention / GPUModelRunner / pooler / vocab embedding / logits processor 等源码锚点行号；同步修正 Llama 权重映射为 WeightsMapper 形式、Attention KV cache spec 的 encoder-only 返回 None、post-load HPC module 处理和 MoE 接口字段，主结论未重写。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -147,12 +150,12 @@
 - llm-project\tmp_doc\documents\question\config_and_model_loading\05_model_registry_and_arch_resolution.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\06_weight_loading_and_quantization.md，否，是
 - llm-project\tmp_doc\documents\question\config_and_model_loading\07_worker_load_model_flow.md，否，是
-- llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\09_advanced_config_hooks.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\10_config_to_runtime_lifecycle.md，否，否
-- llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\README.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\01_model_architecture_role.md，否，否
+- llm-project\tmp_doc\documents\question\config_and_model_loading\08_model_layers_and_execution_interface.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\09_advanced_config_hooks.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\10_config_to_runtime_lifecycle.md，否，是
+- llm-project\tmp_doc\documents\question\config_and_model_loading\config_and_model_loading_overview.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\README.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\01_model_architecture_role.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\02_model_registry_and_resolution.md，否，否
 - llm-project\tmp_doc\documents\question\model_architectures\03_model_config_and_task_detection.md，否，否
 - llm-project\tmp_doc\documents\question\model_architectures\04_model_class_construction.md，否，否

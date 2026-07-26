@@ -352,7 +352,7 @@ def is_text_generation_model(self, architectures, model_config) -> bool:
     return model_cls.is_text_generation_model
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1280` 到 `code/vllm/vllm/model_executor/models/registry.py:1286`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1307` 到 `code/vllm/vllm/model_executor/models/registry.py:1313`
 
 `ModelRegistry.is_pooling_model()`：
 
@@ -362,7 +362,7 @@ def is_pooling_model(self, architectures, model_config) -> bool:
     return model_cls.is_pooling_model
 ```
 
-位置：`code/vllm/vllm/model_executor/models/registry.py:1288` 到 `code/vllm/vllm/model_executor/models/registry.py:1294`
+位置：`code/vllm/vllm/model_executor/models/registry.py:1315` 到 `code/vllm/vllm/model_executor/models/registry.py:1321`
 
 因此：
 
@@ -419,7 +419,7 @@ with set_current_vllm_config(vllm_config, check_compile=True, prefix=prefix):
     return model
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:40` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:64`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:41` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:65`
 
 这就是为什么新式模型类必须支持：
 
@@ -450,7 +450,7 @@ elif convert_type == "classify":
     model_cls = as_seq_cls_model(model_cls)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:183` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:215`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:193` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:225`
 
 这说明 pooling / embedding / classify 不一定有独立模型文件。
 
@@ -474,7 +474,7 @@ class LlamaBidirectionalModel(as_embedding_model(LlamaForCausalLM)):
     pass
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:577` 到 `code/vllm/vllm/model_executor/models/llama.py:586`
+位置：`code/vllm/vllm/model_executor/models/llama.py:543` 到 `code/vllm/vllm/model_executor/models/llama.py:552`
 
 ---
 
@@ -486,7 +486,7 @@ class LlamaBidirectionalModel(as_embedding_model(LlamaForCausalLM)):
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:381` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:394`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:414` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:428`
 
 这表示模型类需要实现：
 
@@ -506,7 +506,7 @@ if weights_not_loaded:
     raise ValueError(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:414` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:437`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:434` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:445`
 
 典型模型可以自己处理 packed weights，也可以使用 `AutoWeightsLoader`。
 
@@ -521,21 +521,23 @@ def load_weights(self, weights):
     return loader.load_weights(weights)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:569` 到 `code/vllm/vllm/model_executor/models/llama.py:574`
+位置：`code/vllm/vllm/model_executor/models/llama.py:535` 到 `code/vllm/vllm/model_executor/models/llama.py:540`
 
-Llama 内层 `LlamaModel.load_weights()` 则展示了手动 packed mapping：
+Llama 内层 `LlamaModel` 则用 `WeightsMapper` 描述 packed mapping，并在 `load_weights()` 中交给 `AutoWeightsLoader`：
 
 ```python
-stacked_params_mapping = [
-    (".qkv_proj", ".q_proj", "q"),
-    (".qkv_proj", ".k_proj", "k"),
-    (".qkv_proj", ".v_proj", "v"),
-    (".gate_up_proj", ".gate_proj", 0),
-    (".gate_up_proj", ".up_proj", 1),
-]
+hf_to_vllm_mapper = WeightsMapper(
+    orig_to_new_stacked={
+        ".q_proj": (".qkv_proj", "q"),
+        ".k_proj": (".qkv_proj", "k"),
+        ".v_proj": (".qkv_proj", "v"),
+        ".gate_proj": (".gate_up_proj", 0),
+        ".up_proj": (".gate_up_proj", 1),
+    }
+)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:433` 到 `code/vllm/vllm/model_executor/models/llama.py:441`
+位置：`code/vllm/vllm/model_executor/models/llama.py:344` 到 `code/vllm/vllm/model_executor/models/llama.py:354`；`load_weights()` 位置：`code/vllm/vllm/model_executor/models/llama.py:441` 到 `code/vllm/vllm/model_executor/models/llama.py:443`
 
 这对应 vLLM layer 里把 Q/K/V 或 gate/up 合并成单个并行参数的实现。
 
@@ -549,7 +551,7 @@ stacked_params_mapping = [
 process_weights_after_loading(model, model_config, target_device)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/base_loader.py:75` 到 `code/vllm/vllm/model_executor/model_loader/base_loader.py:80`
+位置：`code/vllm/vllm/model_executor/model_loader/base_loader.py:75` 到 `code/vllm/vllm/model_executor/model_loader/base_loader.py:82`
 
 它先遍历所有模块，处理 quantization method：
 
@@ -561,7 +563,7 @@ for _, module in model.named_modules():
             quant_method.process_weights_after_loading(module)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:116`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:101` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:117`
 
 然后处理 attention layer：
 
@@ -573,7 +575,11 @@ for _, module in model.named_modules():
             module.process_weights_after_loading(model_config.dtype)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:119` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:126`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:118` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:127`
+
+随后还会处理依赖 `process_weights_after_loading()` 的 `HpcModule`，避免 DummyModelLoader / reload 场景绕过模型自身 `load_weights()` 时漏掉 HPC 模块后处理。
+
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:129` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:136`
 
 所以模型类初始化出来的 layer 不能只是普通 PyTorch layer；很多 layer 带有：
 
@@ -610,7 +616,7 @@ def _model_forward(
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3757` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3787`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3810` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3840`
 
 调用发生在 `execute_model()` 中，并被 `set_forward_context()` 包住：
 
@@ -637,7 +643,7 @@ with (
     )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4303` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4326`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4362` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 这说明模型 forward 本身只收到 `input_ids`、`positions`、`inputs_embeds` 等显式参数。
 
@@ -664,7 +670,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4354` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4355`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 另一个分支也会调用同样接口：
 
@@ -672,7 +678,7 @@ logits = self.model.compute_logits(sample_hidden_states)
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4374`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4434`
 
 prompt logprobs 路径也会调用：
 
@@ -680,7 +686,7 @@ prompt logprobs 路径也会调用：
 logits = self.model.compute_logits(prompt_hidden_states)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5524` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5528`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5611` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:5617`
 
 因此，generation 模型的职责边界是：
 
@@ -698,7 +704,7 @@ ModelRunner / Sampler：根据 logits 做 grammar mask、采样、logprobs。
 
 Pooling 路径由 `GPUModelRunner._pool()` 处理。
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3342`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3392`
 
 它先构造 pooling metadata：
 
@@ -712,7 +718,7 @@ pooling_metadata.build_pooling_cursor(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3357` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3363`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3407` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3413`
 
 然后调用模型的 `pooler`：
 
@@ -723,7 +729,7 @@ raw_pooler_output: PoolerOutput = model.pooler(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3365` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3368`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3415` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3418`
 
 后续 `_pool()` 负责：
 
@@ -734,7 +740,7 @@ late interaction postprocess；
 把 pooler output 复制回 CPU 或包装成 AsyncGPUPoolingModelRunnerOutput。
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3370` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3405`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3420` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3455`
 
 所以 pooling 模型类只需要提供 `pooler`，而不需要自己处理 request id、finished mask、异步复制或输出对象。
 
@@ -894,11 +900,17 @@ ModelConfig.convert_type 决定是否包装。
 
 ```python
 class LlamaForCausalLM(
-    LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, SupportsEagle3
+    LocalArgmaxMixin,
+    nn.Module,
+    SupportsLoRA,
+    SupportsPP,
+    SupportsEagle,
+    SupportsEagle3,
+    SupportsQuant,
 ):
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:486` 到 `code/vllm/vllm/model_executor/models/llama.py:488`
+位置：`code/vllm/vllm/model_executor/models/llama.py:446` 到 `code/vllm/vllm/model_executor/models/llama.py:454`
 
 它声明 LoRA packed modules：
 
@@ -909,7 +921,7 @@ packed_modules_mapping = {
 }
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:489` 到 `code/vllm/vllm/model_executor/models/llama.py:492`
+位置：`code/vllm/vllm/model_executor/models/llama.py:455` 到 `code/vllm/vllm/model_executor/models/llama.py:460`
 
 LoRA embedding modules：
 
@@ -920,7 +932,7 @@ embedding_modules = {
 }
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:494` 到 `code/vllm/vllm/model_executor/models/llama.py:498`
+位置：`code/vllm/vllm/model_executor/models/llama.py:461` 到 `code/vllm/vllm/model_executor/models/llama.py:464`
 
 初始化时创建三大部分：
 
@@ -944,7 +956,7 @@ else:
     self.lm_head = PPMissingLayer()
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:512` 到 `code/vllm/vllm/model_executor/models/llama.py:533`
+位置：`code/vllm/vllm/model_executor/models/llama.py:478` 到 `code/vllm/vllm/model_executor/models/llama.py:503`
 
 外层暴露接口：
 
@@ -961,7 +973,7 @@ def compute_logits(self, hidden_states):
     return logits
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:547` 到 `code/vllm/vllm/model_executor/models/llama.py:567`
+位置：`code/vllm/vllm/model_executor/models/llama.py:513` 到 `code/vllm/vllm/model_executor/models/llama.py:533`
 
 这就是 vLLM generation 模型最典型的外层形态。
 
@@ -1002,7 +1014,7 @@ self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:363` 到 `code/vllm/vllm/model_executor/models/llama.py:387`
+位置：`code/vllm/vllm/model_executor/models/llama.py:356` 到 `code/vllm/vllm/model_executor/models/llama.py:395`
 
 `embed_input_ids()`：
 
@@ -1011,7 +1023,7 @@ def embed_input_ids(self, input_ids):
     return self.embed_tokens(input_ids)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:389` 到 `code/vllm/vllm/model_executor/models/llama.py:390`
+位置：`code/vllm/vllm/model_executor/models/llama.py:397` 到 `code/vllm/vllm/model_executor/models/llama.py:398`
 
 `forward()` 处理 PP：
 
@@ -1028,7 +1040,7 @@ else:
     residual = intermediate_tensors["residual"]
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:392` 到 `code/vllm/vllm/model_executor/models/llama.py:410`
+位置：`code/vllm/vllm/model_executor/models/llama.py:400` 到 `code/vllm/vllm/model_executor/models/llama.py:418`
 
 逐层执行：
 
@@ -1039,7 +1051,7 @@ for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer
     )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:411` 到 `code/vllm/vllm/model_executor/models/llama.py:420`
+位置：`code/vllm/vllm/model_executor/models/llama.py:419` 到 `code/vllm/vllm/model_executor/models/llama.py:428`
 
 非 last PP rank 返回中间张量：
 
@@ -1050,7 +1062,7 @@ if not get_pp_group().is_last_rank:
     )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:422` 到 `code/vllm/vllm/model_executor/models/llama.py:425`
+位置：`code/vllm/vllm/model_executor/models/llama.py:430` 到 `code/vllm/vllm/model_executor/models/llama.py:433`
 
 last rank 做 norm 并返回 hidden states：
 
@@ -1059,7 +1071,7 @@ hidden_states, _ = self.norm(hidden_states, residual)
 return hidden_states
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:427` 到 `code/vllm/vllm/model_executor/models/llama.py:431`
+位置：`code/vllm/vllm/model_executor/models/llama.py:435` 到 `code/vllm/vllm/model_executor/models/llama.py:439`
 
 ---
 
@@ -1074,7 +1086,7 @@ self.input_layernorm = RMSNorm(...)
 self.post_attention_layernorm = RMSNorm(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:251` 到 `code/vllm/vllm/model_executor/models/llama.py:334`
+位置：`code/vllm/vllm/model_executor/models/llama.py:248` 到 `code/vllm/vllm/model_executor/models/llama.py:331`
 
 forward 结构：
 
@@ -1092,7 +1104,7 @@ hidden_states = self.mlp(hidden_states)
 return hidden_states, residual
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:313` 到 `code/vllm/vllm/model_executor/models/llama.py:330`
+位置：`code/vllm/vllm/model_executor/models/llama.py:310` 到 `code/vllm/vllm/model_executor/models/llama.py:327`
 
 这就是典型 transformer block：
 
@@ -1119,7 +1131,7 @@ self.rotary_emb = get_rope(...)
 self.attn = Attention(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:165` 到 `code/vllm/vllm/model_executor/models/llama.py:222`
+位置：`code/vllm/vllm/model_executor/models/llama.py:162` 到 `code/vllm/vllm/model_executor/models/llama.py:219`
 
 Llama attention forward：
 
@@ -1132,7 +1144,7 @@ output, _ = self.o_proj(attn_output)
 return output
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:224` 到 `code/vllm/vllm/model_executor/models/llama.py:234`
+位置：`code/vllm/vllm/model_executor/models/llama.py:221` 到 `code/vllm/vllm/model_executor/models/llama.py:231`
 
 `Attention.forward()` 的注释说明：
 
@@ -1142,7 +1154,7 @@ attention metadata 由 ModelRunner.execute_model() 中的 set_forward_context �
 Attention.forward() 通过 get_forward_context().attn_metadata 访问。
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:438` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:456`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:485` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:504`
 
 Attention 初始化时选择 backend：
 
@@ -1159,7 +1171,7 @@ self.attn_backend = get_attn_backend(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:301` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:315`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:349` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:358`
 
 并把自己注册到 static forward context：
 
@@ -1168,7 +1180,7 @@ compilation_config.static_forward_context[prefix] = self
 self.attn_type = attn_type
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:396` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:400`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:440` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:444`
 
 这就是 ModelRunner 可以按 layer name 绑定 KV cache 和 slot mapping 的基础。
 
@@ -1194,7 +1206,7 @@ unified_attention_with_output(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:474` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:530`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:530` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:579`
 
 `unified_attention_with_output()` 通过 layer name 取上下文：
 
@@ -1213,7 +1225,7 @@ self.impl.forward(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:734` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:763`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:813` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:840`
 
 `get_attention_context()` 从 `ForwardContext` 取：
 
@@ -1227,7 +1239,7 @@ layer_slot_mapping = slot_mapping.get(layer_name)
 return attn_metadata, attn_layer, kv_cache, layer_slot_mapping
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:649` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:689`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:726` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:766`
 
 这条链路说明：
 
@@ -1248,6 +1260,8 @@ Attention layer 提供：
 ```python
 def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
     block_size = vllm_config.cache_config.block_size
+    if self.attn_type in (AttentionType.ENCODER_ONLY, AttentionType.ENCODER):
+        return None
     assert self.attn_type == AttentionType.DECODER
     quant_mode = get_kv_quant_mode(self.kv_cache_dtype)
     if self.sliding_window is not None:
@@ -1256,7 +1270,7 @@ def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec | None:
         return FullAttentionSpec(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:567` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:611`
+位置：`code/vllm/vllm/model_executor/layers/attention/attention.py:616` 到 `code/vllm/vllm/model_executor/layers/attention/attention.py:688`
 
 因此 attention layer 不只是 forward 计算层，它还参与：
 
@@ -1282,7 +1296,7 @@ class VocabParallelEmbedding(PluggableLayer):
     """Embedding parallelized in the vocabulary dimension."""
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:196` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:235`
+位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:196` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:237`
 
 初始化时会：
 
@@ -1348,7 +1362,7 @@ else:
     self.register_parameter("bias", None)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:523` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:556`
+位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:523` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:553`
 
 它支持 tie weights：
 
@@ -1357,7 +1371,7 @@ def tie_weights(self, embed_tokens: VocabParallelEmbedding):
     return self.quant_method.tie_weights(self, embed_tokens)
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:558` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:560`
+位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:555` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:557`
 
 但它的 forward 被禁止：
 
@@ -1367,7 +1381,7 @@ def forward(self, input_):
     raise RuntimeError("LMHead's weights should be used in the sampler.")
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:562` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:564`
+位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:559` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:561`
 
 这点很重要：
 
@@ -1438,7 +1452,7 @@ def compute_logits(self, hidden_states):
     return self.logits_processor(self.lm_head, hidden_states)
 ```
 
-Llama 位置：`code/vllm/vllm/model_executor/models/llama.py:562` 到 `code/vllm/vllm/model_executor/models/llama.py:567`
+Llama 位置：`code/vllm/vllm/model_executor/models/llama.py:528` 到 `code/vllm/vllm/model_executor/models/llama.py:533`
 
 ---
 
@@ -1462,7 +1476,7 @@ self.down_proj = RowParallelLinear(
 self.act_fn = SiluAndMul()
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:90` 到 `code/vllm/vllm/model_executor/models/llama.py:116`
+位置：`code/vllm/vllm/model_executor/models/llama.py:79` 到 `code/vllm/vllm/model_executor/models/llama.py:119`
 
 forward：
 
@@ -1473,7 +1487,7 @@ x, _ = self.down_proj(x)
 return x
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:118` 到 `code/vllm/vllm/model_executor/models/llama.py:122`
+位置：`code/vllm/vllm/model_executor/models/llama.py:115` 到 `code/vllm/vllm/model_executor/models/llama.py:119`
 
 这里的 `MergedColumnParallelLinear` 把 gate/up 两个 HF 参数合并到一个 vLLM 参数里。
 
@@ -1485,7 +1499,7 @@ up_proj → gate_up_proj shard 1
 q_proj/k_proj/v_proj → qkv_proj q/k/v shard
 ```
 
-Llama mapping 位置：`code/vllm/vllm/model_executor/models/llama.py:433` 到 `code/vllm/vllm/model_executor/models/llama.py:441`
+Llama mapping 位置：`code/vllm/vllm/model_executor/models/llama.py:344` 到 `code/vllm/vllm/model_executor/models/llama.py:354`
 
 这解释了为什么模型类的 `load_weights()` 是接口的一部分：HF checkpoint 参数名和 vLLM fused/packed layer 参数名往往不一一对应。
 
@@ -1506,9 +1520,9 @@ self.lm_head = ParallelLMHead(..., quant_config=quant_config, ...)
 
 Llama 相关位置：
 
-- `code/vllm/vllm/model_executor/models/llama.py:165` 到 `code/vllm/vllm/model_executor/models/llama.py:181`
-- `code/vllm/vllm/model_executor/models/llama.py:95` 到 `code/vllm/vllm/model_executor/models/llama.py:110`
-- `code/vllm/vllm/model_executor/models/llama.py:518` 到 `code/vllm/vllm/model_executor/models/llama.py:524`
+- `code/vllm/vllm/model_executor/models/llama.py:162` 到 `code/vllm/vllm/model_executor/models/llama.py:180`
+- `code/vllm/vllm/model_executor/models/llama.py:92` 到 `code/vllm/vllm/model_executor/models/llama.py:107`
+- `code/vllm/vllm/model_executor/models/llama.py:484` 到 `code/vllm/vllm/model_executor/models/llama.py:490`
 
 模型初始化时，loader 还会配置 quant config：
 
@@ -1517,7 +1531,7 @@ if vllm_config.quant_config is not None:
     configure_quant_config(vllm_config.quant_config, model_class)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:54` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:55`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:55` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:56`
 
 权重加载后，quant method 会做 postprocess：
 
@@ -1525,7 +1539,7 @@ if vllm_config.quant_config is not None:
 quant_method.process_weights_after_loading(module)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:116`
+位置：`code/vllm/vllm/model_executor/model_loader/utils.py:101` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:117`
 
 所以 quantization 的插入点有三处：
 
@@ -1551,7 +1565,7 @@ class SupportsLoRA(Protocol):
     lora_skip_prefixes: ClassVar[list[str]] = []
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:537` 到 `code/vllm/vllm/model_executor/models/interfaces.py:557`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:544` 到 `code/vllm/vllm/model_executor/models/interfaces.py:564`
 
 判断函数会检查：
 
@@ -1561,7 +1575,7 @@ class SupportsLoRA(Protocol):
 是否有 embedding_modules。
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:569` 到 `code/vllm/vllm/model_executor/models/interfaces.py:612`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:567` 到 `code/vllm/vllm/model_executor/models/interfaces.py:620`
 
 Llama 声明：
 
@@ -1578,7 +1592,7 @@ class LlamaForCausalLM(..., SupportsLoRA, ...):
     }
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:486` 到 `code/vllm/vllm/model_executor/models/llama.py:498`
+位置：`code/vllm/vllm/model_executor/models/llama.py:446` 到 `code/vllm/vllm/model_executor/models/llama.py:464`
 
 这说明 LoRA 不靠 ModelRunner 猜模块名，而是模型类声明：
 
@@ -1616,7 +1630,7 @@ class SupportsPP(Protocol):
         ...
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:615` 到 `code/vllm/vllm/model_executor/models/interfaces.py:651`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:623` 到 `code/vllm/vllm/model_executor/models/interfaces.py:659`
 
 `supports_pp()` 还会检查 forward 是否接受 `intermediate_tensors`：
 
@@ -1624,7 +1638,7 @@ class SupportsPP(Protocol):
 return supports_kw(model_forward, "intermediate_tensors")
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:727` 到 `code/vllm/vllm/model_executor/models/interfaces.py:732`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:735` 到 `code/vllm/vllm/model_executor/models/interfaces.py:740`
 
 Llama 外层声明 `SupportsPP`：
 
@@ -1632,7 +1646,7 @@ Llama 外层声明 `SupportsPP`：
 class LlamaForCausalLM(..., SupportsPP, ...):
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:486` 到 `code/vllm/vllm/model_executor/models/llama.py:488`
+位置：`code/vllm/vllm/model_executor/models/llama.py:446` 到 `code/vllm/vllm/model_executor/models/llama.py:454`
 
 Llama 主干创建：
 
@@ -1642,7 +1656,7 @@ self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
 )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:385` 到 `code/vllm/vllm/model_executor/models/llama.py:387`
+位置：`code/vllm/vllm/model_executor/models/llama.py:393` 到 `code/vllm/vllm/model_executor/models/llama.py:395`
 
 外层暴露：
 
@@ -1650,11 +1664,11 @@ self.make_empty_intermediate_tensors = make_empty_intermediate_tensors_factory(
 self.make_empty_intermediate_tensors = self.model.make_empty_intermediate_tensors
 ```
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:535` 到 `code/vllm/vllm/model_executor/models/llama.py:537`
+位置：`code/vllm/vllm/model_executor/models/llama.py:501` 到 `code/vllm/vllm/model_executor/models/llama.py:503`
 
 forward 中非 last rank 返回 `IntermediateTensors`，last rank 返回 hidden states。
 
-位置：`code/vllm/vllm/model_executor/models/llama.py:392` 到 `code/vllm/vllm/model_executor/models/llama.py:431`
+位置：`code/vllm/vllm/model_executor/models/llama.py:400` 到 `code/vllm/vllm/model_executor/models/llama.py:439`
 
 ---
 
@@ -1676,7 +1690,7 @@ class SupportsMultiModal(Protocol):
         ...
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:94` 到 `code/vllm/vllm/model_executor/models/interfaces.py:214`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:100` 到 `code/vllm/vllm/model_executor/models/interfaces.py:219`
 
 多模态模型的 `embed_input_ids()` 支持额外参数：
 
@@ -1694,7 +1708,7 @@ def embed_input_ids(
     return _merge_multimodal_embeddings(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:343` 到 `code/vllm/vllm/model_executor/models/interfaces.py:409`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:349` 到 `code/vllm/vllm/model_executor/models/interfaces.py:415`
 
 关键含义：
 
@@ -1723,7 +1737,7 @@ class IsAttentionFree(Protocol):
     is_attention_free: ClassVar[Literal[True]] = True
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:761` 到 `code/vllm/vllm/model_executor/models/interfaces.py:785`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:769` 到 `code/vllm/vllm/model_executor/models/interfaces.py:793`
 
 Hybrid：
 
@@ -1740,7 +1754,7 @@ class IsHybrid(Protocol):
         ...
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:788` 到 `code/vllm/vllm/model_executor/models/interfaces.py:842`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:796` 到 `code/vllm/vllm/model_executor/models/interfaces.py:850`
 
 Inner state：
 
@@ -1749,7 +1763,7 @@ class HasInnerState(Protocol):
     has_inner_state: ClassVar[Literal[True]] = True
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:735` 到 `code/vllm/vllm/model_executor/models/interfaces.py:758`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:743` 到 `code/vllm/vllm/model_executor/models/interfaces.py:766`
 
 这些能力会被 registry inspect 进 `_ModelInfo`，再被 `ModelConfig` 和 `ModelRunner` 用于：
 
@@ -1772,9 +1786,16 @@ class MixtureOfExperts(Protocol):
     expert_weights: MutableSequence[Sequence[Tensor]]
     num_moe_layers: int
     num_expert_groups: int
+    num_logical_experts: int
+    num_physical_experts: int
+    num_local_physical_experts: int
+    num_routed_experts: int
+    num_shared_experts: int
+    num_redundant_experts: int
+    moe_layers: Iterable["MoERunner"]
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:845` 之后
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:853` 之后
 
 虽然不同 MoE 模型实现差异很大，但接口思想一致：
 
@@ -1791,7 +1812,7 @@ self._init_ep_weight_filter(model_config)
 loaded_weights = model.load_weights(...)
 ```
 
-位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:381` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:394`
+位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:414` 到 `code/vllm/vllm/model_executor/model_loader/default_loader.py:428`
 
 这说明 MoE 不只是 forward 层逻辑，还影响权重加载时“本 rank 应该加载哪些 expert”。
 
@@ -1955,9 +1976,9 @@ LlamaForCausalLM:
 
 相关位置：
 
-- `code/vllm/vllm/model_executor/models/llama.py:365` 到 `code/vllm/vllm/model_executor/models/llama.py:387`
-- `code/vllm/vllm/model_executor/models/llama.py:392` 到 `code/vllm/vllm/model_executor/models/llama.py:431`
-- `code/vllm/vllm/model_executor/models/llama.py:518` 到 `code/vllm/vllm/model_executor/models/llama.py:537`
+- `code/vllm/vllm/model_executor/models/llama.py:365` 到 `code/vllm/vllm/model_executor/models/llama.py:395`
+- `code/vllm/vllm/model_executor/models/llama.py:400` 到 `code/vllm/vllm/model_executor/models/llama.py:439`
+- `code/vllm/vllm/model_executor/models/llama.py:484` 到 `code/vllm/vllm/model_executor/models/llama.py:503`
 
 ModelRunner 侧如果不是 last PP rank，会返回 `IntermediateTensors` 给下一个 stage；last rank 才进入 logits / pooling。
 
@@ -1985,7 +2006,7 @@ compute_logits 只对这些位置计算 vocab logits。
 raise RuntimeError("LMHead's weights should be used in the sampler.")
 ```
 
-位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:562` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:564`
+位置：`code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:559` 到 `code/vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:561`
 
 它的权重由 `LogitsProcessor` 使用，而不是当作普通 layer forward。
 
@@ -2046,7 +2067,7 @@ model_kwargs。
 requires_raw_input_tokens
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:119` 到 `code/vllm/vllm/model_executor/models/interfaces.py:123`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:125` 到 `code/vllm/vllm/model_executor/models/interfaces.py:129`
 
 ---
 

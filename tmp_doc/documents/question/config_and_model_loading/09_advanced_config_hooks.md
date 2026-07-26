@@ -63,7 +63,7 @@ compilation_config: CompilationConfig = Field(default_factory=CompilationConfig)
 kv_transfer_config: KVTransferConfig | None = None
 ```
 
-位置：`vllm.py:326` 到 `vllm.py:355`
+位置：`vllm.py:317` 到 `vllm.py:345`
 
 多模态配置不直接挂在 `VllmConfig` 顶层，而是在 `ModelConfig` 内部：
 
@@ -71,7 +71,7 @@ kv_transfer_config: KVTransferConfig | None = None
 vllm_config.model_config.multimodal_config
 ```
 
-典型读取位置：`gpu_model_runner.py:5254`
+典型读取位置：`gpu_model_runner.py:5344`
 
 这意味着：
 
@@ -102,7 +102,7 @@ if self.kv_transfer_config:
     vllm_factors.append(self.kv_transfer_config.compute_hash())
 ```
 
-位置：`vllm.py:450` 到 `vllm.py:478`
+位置：`vllm.py:441` 到 `vllm.py:467`
 
 多模态有一个特殊点：只有在编译 multimodal encoder 时，`MultiModalConfig.compute_hash()` 才会进入 `VllmConfig` hash。
 
@@ -115,7 +115,7 @@ if (
     vllm_factors.append(self.model_config.multimodal_config.compute_hash())
 ```
 
-位置：`vllm.py:413` 到 `vllm.py:419`
+位置：`vllm.py:405` 到 `vllm.py:410`
 
 含义：
 
@@ -221,7 +221,7 @@ if self.lora_config is not None:
     self.lora_config.verify_with_model_config(self.model_config)
 ```
 
-位置：`vllm.py:905` 到 `vllm.py:906`
+位置：`vllm.py:958` 到 `vllm.py:959`
 
 具体逻辑：
 
@@ -270,7 +270,7 @@ self.model = self.load_lora_model(
 )
 ```
 
-位置：`gpu_model_runner.py:5167` 到 `gpu_model_runner.py:5170`
+位置：`gpu_model_runner.py:5255` 到 `gpu_model_runner.py:5258`
 
 `load_lora_model()` 来自 `LoRAModelRunnerMixin`：
 
@@ -297,7 +297,7 @@ return self.lora_manager.create_lora_manager(model, vllm_config)
 
 ### 5.5 WorkerLoRAManager 负责 adapter 生命周期
 
-`WorkerLoRAManager` 定义在：`worker_manager.py:25`
+`WorkerLoRAManager` 定义在：`worker_manager.py:26`
 
 它保存：
 
@@ -306,7 +306,7 @@ self.lora_config = vllm_config.lora_config
 self.vocab_size = vllm_config.model_config.get_vocab_size()
 ```
 
-位置：`worker_manager.py:46` 到 `worker_manager.py:48`
+位置：`worker_manager.py:48` 到 `worker_manager.py:52`
 
 创建 LoRA manager：
 
@@ -325,7 +325,7 @@ self._adapter_manager = lora_manager
 return lora_manager.model
 ```
 
-位置：`worker_manager.py:81` 到 `worker_manager.py:97`
+位置：`worker_manager.py:85` 到 `worker_manager.py:101`
 
 加载 adapter 时会读 PEFT 配置并校验 LoRA config：
 
@@ -333,7 +333,7 @@ return lora_manager.model
 peft_helper.validate_legal(self.lora_config)
 ```
 
-位置：`worker_manager.py:120` 到 `worker_manager.py:122`
+位置：`worker_manager.py:126` 到 `worker_manager.py:128`
 
 ### 5.6 执行阶段：每个 batch 设置 active LoRA
 
@@ -346,7 +346,7 @@ if self.lora_config:
     )
 ```
 
-位置：`gpu_model_runner.py:2193` 到 `gpu_model_runner.py:2201`
+位置：`gpu_model_runner.py:2243` 到 `gpu_model_runner.py:2247`
 
 `set_active_loras()` 会从 `InputBatch` 中生成：
 
@@ -385,7 +385,7 @@ if self.lora_config and self.lora_manager.supports_tower_connector_lora():
     self.lora_manager.set_active_adapters(lora_requests, tower_mapping)
 ```
 
-位置：`gpu_model_runner.py:2941` 到 `gpu_model_runner.py:2974`
+位置：`gpu_model_runner.py:3033` 到 `gpu_model_runner.py:3040`
 
 如果模型还有 connector，会继续设置 connector mapping：
 
@@ -394,7 +394,7 @@ connector_mapping = LoRAMapping(..., type=LoRAMappingType.CONNECTOR)
 self.lora_manager.set_active_adapters(lora_requests, connector_mapping)
 ```
 
-位置：`gpu_model_runner.py:2975` 到 `gpu_model_runner.py:3008`
+位置：`gpu_model_runner.py:3063` 到 `gpu_model_runner.py:3075`
 
 所以 LoRA 在多模态里可能有三套 mapping：
 
@@ -412,7 +412,7 @@ CONNECTOR：encoder 到 language model 的 projector / connector token。
 
 ### 6.1 MultiModalConfig 描述什么
 
-`MultiModalConfig` 定义在：`multimodal.py:73` 到 `multimodal.py:320`
+`MultiModalConfig` 定义在：`multimodal.py:74` 到 `multimodal.py:348`
 
 核心字段包括：
 
@@ -456,7 +456,7 @@ if isinstance(v, int):
     v = {"count": v}
 ```
 
-位置：`multimodal.py:201` 到 `multimodal.py:224`
+位置：`multimodal.py:211` 到 `multimodal.py:234`
 
 ### 6.3 多模态配置如何影响 hash
 
@@ -469,11 +469,11 @@ mm_encoder_attn_dtype
 mm_encoder_fp8_scale_path
 ```
 
-位置：`multimodal.py:287` 到 `multimodal.py:308`
+位置：`multimodal.py:297` 到 `multimodal.py:318`
 
 并且只有 `compile_mm_encoder=True` 时，才进入 `VllmConfig.compute_hash()`。
 
-位置：`vllm.py:413` 到 `vllm.py:419`
+位置：`vllm.py:405` 到 `vllm.py:410`
 
 这说明：
 
@@ -498,7 +498,7 @@ self.requires_sequential_video_encoding = hasattr(
 )
 ```
 
-位置：`gpu_model_runner.py:5254` 到 `gpu_model_runner.py:5262`
+位置：`gpu_model_runner.py:5344` 到 `gpu_model_runner.py:5352`
 
 这里不是加载权重，而是在模型加载完成后根据模型接口和配置决定执行路径。
 
@@ -521,7 +521,7 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
     )
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3493`
+位置：`gpu_model_runner.py:3505` 到 `gpu_model_runner.py:3549`
 
 主链路是：
 
@@ -545,7 +545,7 @@ pe_tensor = mm_kwargs[i][1]["embedding"].data
 self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 ```
 
-位置：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2924`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
 这对应 `enable_mm_embeds` / prompt embeddings 类输入：
 
@@ -564,7 +564,7 @@ encoder_outputs = self._execute_mm_encoder(scheduler_output)
 model_kwargs.update({"encoder_outputs": encoder_outputs})
 ```
 
-位置：`gpu_model_runner.py:3552` 到 `gpu_model_runner.py:3559`
+位置：`gpu_model_runner.py:3611` 到 `gpu_model_runner.py:3612`
 
 这和 VLM prompt replacement 不同：
 
@@ -581,14 +581,14 @@ encoder-decoder：encoder output 作为 encoder_outputs 传给 decoder。
 
 ### 7.1 SpeculativeConfig 描述什么
 
-`SpeculativeConfig` 定义在：`speculative.py:74`
+`SpeculativeConfig` 定义在：`speculative.py:80`
 
 主要字段：
 
 ```text
 num_speculative_tokens：每轮草稿 token 数；
 model：draft model / eagle head / proposer 资源；
-method：ngram、draft_model、eagle、eagle3、mtp、suffix、custom_class 等；
+method：ngram、draft_model、eagle、eagle3、dflash、dspark、mtp、suffix、custom_class 等；
 draft_tensor_parallel_size：draft model TP；
 quantization / moe_backend / attention_backend：draft model 专用配置；
 max_model_len / revision / code_revision：draft model 模型配置；
@@ -599,7 +599,7 @@ draft_load_config：draft model 的加载配置；
 rejection_sample_method / draft_sample_method：验证采样策略。
 ```
 
-位置：`speculative.py:78` 到 `speculative.py:271`
+位置：`speculative.py:86` 到 `speculative.py:284`
 
 ### 7.2 post_init 推断 method
 
@@ -615,7 +615,7 @@ elif self.method is None:
         self.method = "draft_model"
 ```
 
-位置：`speculative.py:564` 到 `speculative.py:588`
+位置：`speculative.py:629` 到 `speculative.py:652`
 
 旧的 MTP method 名会归一成 `mtp`：
 
@@ -624,7 +624,7 @@ if self.method in get_args(MTPModelTypes) and self.method != "mtp":
     self.method = "mtp"
 ```
 
-位置：`speculative.py:589` 到 `speculative.py:593`
+位置：`speculative.py:654` 到 `speculative.py:658`
 
 ### 7.3 ngram / suffix / custom_class 不一定需要 draft model
 
@@ -635,7 +635,7 @@ self.draft_model_config = self.target_model_config
 self.draft_parallel_config = self.target_parallel_config
 ```
 
-位置：`speculative.py:633` 到 `speculative.py:665`
+位置：`speculative.py:702` 到 `speculative.py:737`
 
 custom class 也不创建独立 draft model：
 
@@ -646,11 +646,11 @@ self.draft_model_config = self.target_model_config
 self.draft_parallel_config = self.target_parallel_config
 ```
 
-位置：`speculative.py:668` 到 `speculative.py:679`
+位置：`speculative.py:740` 到 `speculative.py:751`
 
 suffix 会走 `_validate_suffix_decoding()`，并依赖 Arctic Inference。
 
-位置：`speculative.py:666` 到 `speculative.py:667`，`speculative.py:850` 到 `speculative.py:884`
+位置：`speculative.py:738` 到 `speculative.py:739`，`speculative.py:993` 到 `speculative.py:1028`
 
 ### 7.4 draft model 路径会构造新的 ModelConfig
 
@@ -666,7 +666,7 @@ self.draft_model_config = ModelConfig(
 )
 ```
 
-位置：`speculative.py:712` 到 `speculative.py:733`
+位置：`speculative.py:799` 到 `speculative.py:823`
 
 然后自动识别 method：
 
@@ -674,13 +674,14 @@ self.draft_model_config = ModelConfig(
 model name 包含 eagle- → eagle；
 model name 包含 eagle3 → eagle3；
 model name 包含 dflash → dflash；
+model name 包含 dspark 或 architectures 包含 Qwen3DSparkModel → dspark；
 hf_config.model_type == medusa → medusa；
 hf_config.model_type == mlp_speculator → mlp_speculator；
 hf_config.model_type 属于 MTPModelTypes → mtp；
 否则如果 method=draft_model → 普通 draft model。
 ```
 
-位置：`speculative.py:735` 到 `speculative.py:771`
+位置：`speculative.py:837` 到 `speculative.py:878`
 
 ### 7.5 hf_config_override 是模型结构 hook
 
@@ -695,7 +696,7 @@ if hf_config.model_type == "deepseek_mtp":
     )
 ```
 
-位置：`speculative.py:310` 到 `speculative.py:562`
+位置：`speculative.py:326` 到 `speculative.py:627`
 
 这属于配置层直接影响模型类解析的 hook：
 
@@ -724,7 +725,7 @@ if self.speculative_config and get_pp_group().is_last_rank:
     self.rejection_sampler = RejectionSampler(...)
 ```
 
-位置：`gpu_model_runner.py:545` 到 `gpu_model_runner.py:620`
+位置：`gpu_model_runner.py:575` 到 `gpu_model_runner.py:648`
 
 含义：
 
@@ -744,15 +745,15 @@ if hasattr(self, "drafter"):
         self.drafter.load_model(self.model)
 ```
 
-位置：`gpu_model_runner.py:5171` 到 `gpu_model_runner.py:5174`
+位置：`gpu_model_runner.py:5259` 到 `gpu_model_runner.py:5262`
 
 所以 draft model 的加载不是通过主 `LoadConfig` 的普通主模型路径完成，而是在 target model 加载后由 proposer 自己挂接。
 
 如果 `SpeculativeConfig.draft_load_config` 存在，draft proposer 可以使用 draft 专用加载配置。
 
-位置：`speculative.py:196` 到 `speculative.py:198`
+位置：`speculative.py:207` 到 `speculative.py:209`
 
-### 7.8 EAGLE3 / DFlash 会改变 target model 输出
+### 7.8 EAGLE3 / DFlash / DSpark 会改变 target model 输出
 
 `SpeculativeConfig.compute_hash()` 关注：
 
@@ -761,11 +762,12 @@ uses_aux_hidden_states = self.method in (
     "eagle3",
     "extract_hidden_states",
     "dflash",
+    "dspark",
 )
 factors.append(uses_aux_hidden_states)
 ```
 
-位置：`speculative.py:273` 到 `speculative.py:307`
+位置：`speculative.py:286` 到 `speculative.py:324`
 
 如果需要 aux hidden states，模型加载后会设置输出层：
 
@@ -773,7 +775,7 @@ factors.append(uses_aux_hidden_states)
 self._setup_eagle3_aux_hidden_state_outputs()
 ```
 
-位置：`gpu_model_runner.py:5200`
+位置：`gpu_model_runner.py:5290`
 
 具体设置：
 
@@ -785,7 +787,7 @@ aux_layers = self._get_eagle3_aux_layers_from_config()
 self.model.set_aux_hidden_state_layers(aux_layers)
 ```
 
-位置：`gpu_model_runner.py:5320` 到 `gpu_model_runner.py:5339`
+位置：`gpu_model_runner.py:5410` 到 `gpu_model_runner.py:5429`
 
 这说明某些 speculative 方法会改变 target model forward 输出内容，所以必须进入 hash。
 
@@ -801,7 +803,7 @@ logits_indices = spec_decode_metadata.logits_indices
 num_sampled_tokens = num_draft_tokens + 1
 ```
 
-位置：`gpu_model_runner.py:2183` 到 `gpu_model_runner.py:2188`
+位置：`gpu_model_runner.py:2227` 到 `gpu_model_runner.py:2233`
 
 这会影响：
 
@@ -819,7 +821,7 @@ logits 应该从哪些 hidden states 上取；
 
 ### 8.1 CompilationConfig 描述什么
 
-`CompilationConfig` 定义在：`compilation.py:378`
+`CompilationConfig` 定义在：`compilation.py:381`
 
 它分三类配置：
 
@@ -829,7 +831,7 @@ CUDA graph：cudagraph_mode、capture_sizes、warmups、copy_inputs、full/piece
 Inductor：compile_sizes、compile_ranges_endpoints、inductor_compile_config、inductor_passes、PassConfig。
 ```
 
-位置：`compilation.py:386` 到 `compilation.py:425`
+位置：`compilation.py:393` 到 `compilation.py:417`
 
 ### 8.2 compilation mode
 
@@ -883,7 +885,7 @@ if KEY not in self.inductor_compile_config:
     self.inductor_compile_config[KEY] = False
 ```
 
-位置：`compilation.py:887` 到 `compilation.py:903`
+位置：`compilation.py:890` 到 `compilation.py:924`
 
 自定义 Inductor passes 会从 qualified name 解析成 callable：
 
@@ -894,7 +896,7 @@ for k, v in self.inductor_passes.items():
     self.inductor_compile_config[k] = CallableInductorPass(func)
 ```
 
-位置：`compilation.py:923` 到 `compilation.py:938`
+位置：`compilation.py:926` 到 `compilation.py:941`
 
 某些 fusion 会自动要求 custom op：
 
@@ -903,7 +905,7 @@ if self.pass_config.enable_qk_norm_rope_fusion and "+rotary_embedding" not in se
     self.custom_ops.append("+rotary_embedding")
 ```
 
-位置：`compilation.py:940` 到 `compilation.py:953`
+位置：`compilation.py:943` 到 `compilation.py:956`
 
 默认 backend：
 
@@ -912,7 +914,7 @@ if self.backend == "":
     self.backend = current_platform.get_compile_backend()
 ```
 
-位置：`compilation.py:1023` 到 `compilation.py:1024`
+位置：`compilation.py:1026` 到 `compilation.py:1027`
 
 ### 8.5 init_backend 返回 torch.compile backend
 
@@ -928,7 +930,7 @@ assert self.mode == VLLM_COMPILE
 return VllmBackend(vllm_config, prefix=prefix, is_encoder=is_encoder)
 ```
 
-位置：`compilation.py:1026` 到 `compilation.py:1068`
+位置：`compilation.py:1029` 到 `compilation.py:1071`
 
 这就是配置连接到 `torch.compile` / vLLM backend 的入口。
 
@@ -946,7 +948,7 @@ self.compile_sizes = computed_compile_sizes
 self.cudagraph_capture_sizes.sort()
 ```
 
-位置：`compilation.py:1070` 到 `compilation.py:1095`
+位置：`compilation.py:1073` 到 `compilation.py:1098`
 
 因此：
 
@@ -966,7 +968,7 @@ if speculative_config.uses_dynamic_speculative_decoding()
     self.compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
 ```
 
-位置：`vllm.py:768` 到 `vllm.py:783`
+位置：`vllm.py:800` 到 `vllm.py:817`
 
 原因：
 
@@ -986,7 +988,7 @@ self.model.compile(fullgraph=True, backend=backend)
 return
 ```
 
-位置：`gpu_model_runner.py:5273` 到 `gpu_model_runner.py:5283`
+位置：`gpu_model_runner.py:5369` 到 `gpu_model_runner.py:5373`
 
 其他模式下，cudagraph 由 wrapper 控制：
 
@@ -1001,7 +1003,7 @@ elif self.parallel_config.use_ubatching:
     self.model = UBatchWrapper(...)
 ```
 
-位置：`gpu_model_runner.py:5287` 到 `gpu_model_runner.py:5316`
+位置：`gpu_model_runner.py:5380` 到 `gpu_model_runner.py:5406`
 
 所以 compilation hook 主要在两个点生效：
 
@@ -1026,7 +1028,7 @@ set_forward_context(
 )
 ```
 
-位置：`gpu_model_runner.py:4303` 到 `gpu_model_runner.py:4313`
+位置：`gpu_model_runner.py:4363` 到 `gpu_model_runner.py:4373`
 
 这让 attention backend、compiled graph、CUDA graph wrapper 能在 forward 时知道当前 batch 的执行形态。
 
@@ -1090,18 +1092,22 @@ if self.kv_transfer_config is None:
     self.kv_transfer_config = KVTransferConfig()
 ```
 
-位置：`vllm.py:791` 到 `vllm.py:799`
+位置：`vllm.py:844` 到 `vllm.py:852`
 
 native offloading：
 
 ```python
-self.kv_transfer_config.kv_connector = "OffloadingConnector"
+if envs.VLLM_USE_SIMPLE_KV_OFFLOAD:
+    config_connector = "SimpleCPUOffloadConnector"
+else:
+    config_connector = "OffloadingConnector"
+self.kv_transfer_config.kv_connector = config_connector
 self.kv_transfer_config.kv_connector_extra_config.update(
     {"cpu_bytes_to_use": kv_offloading_size * (1 << 30)}
 )
 ```
 
-位置：`vllm.py:801` 到 `vllm.py:809`
+位置：`vllm.py:854` 到 `vllm.py:862`
 
 LMCache offloading：
 
@@ -1109,7 +1115,7 @@ LMCache offloading：
 self.kv_transfer_config.kv_connector = "LMCacheMPConnector"
 ```
 
-位置：`vllm.py:810` 到 `vllm.py:817`
+位置：`vllm.py:863` 到 `vllm.py:869`
 
 最后统一：
 
@@ -1117,7 +1123,7 @@ self.kv_transfer_config.kv_connector = "LMCacheMPConnector"
 self.kv_transfer_config.kv_role = "kv_both"
 ```
 
-位置：`vllm.py:818` 到 `vllm.py:819`
+位置：`vllm.py:871` 到 `vllm.py:872`
 
 这说明 KVTransferConfig 不一定只来自用户显式参数，也可能由 cache offload 自动派生。
 
@@ -1132,7 +1138,7 @@ if has_kv_transfer_group():
     get_kv_transfer_group().handle_preemptions(kv_connector_metadata)
 ```
 
-位置：`gpu_model_runner.py:4075` 到 `gpu_model_runner.py:4078`
+位置：`gpu_model_runner.py:4123` 到 `gpu_model_runner.py:4126`
 
 说明 scheduler 会把 connector metadata 放进 `SchedulerOutput`，Worker 在执行前消费它。
 
@@ -1146,7 +1152,7 @@ if not has_kv_transfer_group():
 return self.kv_connector_no_forward(scheduler_output, self.vllm_config)
 ```
 
-位置：`gpu_model_runner.py:4096` 到 `gpu_model_runner.py:4112`
+位置：`gpu_model_runner.py:4133` 到 `gpu_model_runner.py:4165`
 
 `kv_connector_no_forward()` 会在没有 forward 的情况下仍然执行 connector 生命周期：
 
@@ -1179,7 +1185,7 @@ self.maybe_get_kv_connector_output(
 ) as kv_connector_output
 ```
 
-位置：`gpu_model_runner.py:4315` 到 `gpu_model_runner.py:4318`
+位置：`gpu_model_runner.py:4375` 到 `gpu_model_runner.py:4378`
 
 `_get_kv_connector_output()` 会：
 
@@ -1220,7 +1226,7 @@ if spec_config is not None:
     self.finalize_kv_connector()
 ```
 
-位置：`gpu_model_runner.py:4597` 到 `gpu_model_runner.py:4600`
+位置：`gpu_model_runner.py:4684` 到 `gpu_model_runner.py:4687`
 
 `finalize_kv_connector()`：
 
@@ -1266,7 +1272,7 @@ _execute_mm_encoder()
   → model.embed_multimodal()
 ```
 
-位置：`gpu_model_runner.py:2941` 到 `gpu_model_runner.py:3008`
+位置：`gpu_model_runner.py:3033` 到 `gpu_model_runner.py:3075`
 
 ### 10.2 Spec Decode + Compilation
 
@@ -1276,7 +1282,7 @@ _execute_mm_encoder()
 self.compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
 ```
 
-位置：`vllm.py:768` 到 `vllm.py:783`
+位置：`vllm.py:800` 到 `vllm.py:817`
 
 原因是 verification length 动态变化，full CUDA graph 的 shape 约束更强。
 
@@ -1284,7 +1290,7 @@ self.compilation_config.cudagraph_mode = CUDAGraphMode.PIECEWISE
 
 Spec decode 会推迟 KV connector finalize。
 
-位置：`gpu_model_runner.py:4597` 到 `gpu_model_runner.py:4600`
+位置：`gpu_model_runner.py:4684` 到 `gpu_model_runner.py:4687`
 
 ### 10.4 Multimodal + Compilation
 
@@ -1298,7 +1304,7 @@ encoder_cudagraph_max_vision_items_per_batch
 encoder_cudagraph_max_frames_per_batch
 ```
 
-位置：`compilation.py:516` 到 `compilation.py:553`
+位置：`compilation.py:518` 到 `compilation.py:553`
 
 执行时，如果 encoder cudagraph manager 可用：
 
@@ -1307,7 +1313,7 @@ if self.encoder_cudagraph_manager is not None and supports_modality(modality):
     cudagraph_output = self.encoder_cudagraph_manager.execute(mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3073` 到 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:3140` 到 `gpu_model_runner.py:3145`
 
 ### 10.5 LoRA + Compilation
 
@@ -1374,7 +1380,7 @@ execute_model：多模态、LoRA mapping、spec decode、KV transfer 真正参�
 
 ```text
 LoRAConfig 的 target_modules / max_loras 会影响 LoRA wrapper；
-SpeculativeConfig 的 EAGLE3 / DFlash 会影响 hidden state 输出；
+SpeculativeConfig 的 EAGLE3 / DFlash / DSpark 会影响 hidden state 输出；
 CompilationConfig 会影响 compiled graph；
 KVTransferConfig 通常不影响计算图；
 MultiModalConfig 只有部分 encoder 相关字段影响 encoder 计算图。
@@ -1392,7 +1398,7 @@ MultiModalConfig 只有部分 encoder 相关字段影响 encoder 计算图。
 
 多模态 decoder-only 模型通常会把文本 token 和多模态 embedding 统一成 `inputs_embeds`，再进入 forward。
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3495`
+位置：`gpu_model_runner.py:3505` 到 `gpu_model_runner.py:3549`
 
 ### 12.4 Speculative decoding 的 draft model 是在哪里加载的？
 
@@ -1402,7 +1408,7 @@ MultiModalConfig 只有部分 encoder 相关字段影响 encoder 计算图。
 self.drafter.load_model(self.model)
 ```
 
-位置：`gpu_model_runner.py:5171` 到 `gpu_model_runner.py:5174`
+位置：`gpu_model_runner.py:5259` 到 `gpu_model_runner.py:5262`
 
 ### 12.5 CompilationConfig 是不是只控制 torch.compile？
 
@@ -1434,7 +1440,7 @@ if self.speculative_config and get_pp_group().is_last_rank:
     ... create drafter ...
 ```
 
-位置：`gpu_model_runner.py:542` 到 `gpu_model_runner.py:620`
+位置：`gpu_model_runner.py:575` 到 `gpu_model_runner.py:648`
 
 因为 draft / rejection / sampling 通常需要最终 hidden states / logits，而这些只在最后一个 PP stage 完整可见。
 

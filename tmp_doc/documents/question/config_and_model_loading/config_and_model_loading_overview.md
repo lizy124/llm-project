@@ -125,16 +125,16 @@ EngineArgs 收拢用户参数，VllmConfig 贯穿全系统，ModelConfig 决定�
 
 对应源码主入口：
 
-- `code/vllm/vllm/engine/arg_utils.py:412`
-- `code/vllm/vllm/engine/arg_utils.py:1724`
-- `code/vllm/vllm/config/model.py:458`
-- `code/vllm/vllm/config/vllm.py:297`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:249`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:349`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5143`
-- `code/vllm/vllm/model_executor/model_loader/__init__.py:130`
+- `code/vllm/vllm/engine/arg_utils.py:417`
+- `code/vllm/vllm/engine/arg_utils.py:1833`
+- `code/vllm/vllm/config/model.py:478`
+- `code/vllm/vllm/config/vllm.py:288`
+- `code/vllm/vllm/v1/worker/gpu_worker.py:297`
+- `code/vllm/vllm/v1/worker/gpu_worker.py:424`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
+- `code/vllm/vllm/model_executor/model_loader/__init__.py:122`
 - `code/vllm/vllm/model_executor/model_loader/base_loader.py:43`
-- `code/vllm/vllm/model_executor/model_loader/utils.py:40`
+- `code/vllm/vllm/model_executor/model_loader/utils.py:42`
 
 ---
 
@@ -144,7 +144,7 @@ EngineArgs 收拢用户参数，VllmConfig 贯穿全系统，ModelConfig 决定�
 
 `EngineArgs` 是用户参数进入内部配置系统的聚合入口。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:412`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:417`
 
 它负责：
 
@@ -178,7 +178,7 @@ EngineArgs 负责“把用户参数收口成内部配置”。
 
 `VllmConfig` 是 vLLM 运行时的配置总线。
 
-源码位置：`code/vllm/vllm/config/vllm.py:297`
+源码位置：`code/vllm/vllm/config/vllm.py:288`
 
 它聚合的核心子配置包括：
 
@@ -225,7 +225,7 @@ VllmConfig 负责“把所有运行时配置装进一个可传递的上下文”
 
 `ModelConfig` 描述模型本身以及与模型能力强相关的运行约束。
 
-源码位置：`code/vllm/vllm/config/model.py:101`
+源码位置：`code/vllm/vllm/config/model.py:107`
 
 它负责：
 
@@ -263,7 +263,7 @@ ModelConfig 负责“理解这个模型是什么、能做什么、需要哪些�
 
 `LoadConfig` 描述权重从哪里来、以什么格式加载。
 
-源码位置：`code/vllm/vllm/config/load.py:25`
+源码位置：`code/vllm/vllm/config/load.py:27`
 
 它负责：
 
@@ -297,7 +297,7 @@ LoadConfig 负责“告诉 vLLM 用哪种 loader 和文件格式拿权重”。
 
 `ModelRegistry` 负责从 HF config 的 `architectures` 解析出 vLLM 模型类。
 
-源码位置：`code/vllm/vllm/model_executor/models/registry.py:1174`
+源码位置：`code/vllm/vllm/model_executor/models/registry.py:1405`
 
 它负责：
 
@@ -352,9 +352,9 @@ ModelLoader 负责“把配置变成真实模型和真实权重”。
 
 源码位置：
 
-- `code/vllm/vllm/v1/worker/gpu_worker.py:249`
-- `code/vllm/vllm/v1/worker/gpu_worker.py:349`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5143`
+- `code/vllm/vllm/v1/worker/gpu_worker.py:297`
+- `code/vllm/vllm/v1/worker/gpu_worker.py:424`
+- `code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 
 它们负责：
 
@@ -395,7 +395,7 @@ Worker 准备设备环境，ModelRunner 在设备侧完成模型加载后的执�
 
 `EngineArgs.create_engine_config()` 是配置构造的总入口。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:1724`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:1833`
 
 核心流程可以压缩成：
 
@@ -454,13 +454,13 @@ create_engine_config()
 
 `ModelConfig.__post_init__()` 是模型配置最重要的入口。
 
-源码位置：`code/vllm/vllm/config/model.py:458`
+源码位置：`code/vllm/vllm/config/model.py:478`
 
 它做的事情可以分成 8 步。
 
 ### 4.1 标准化 model / tokenizer / revision
 
-源码位置：`code/vllm/vllm/config/model.py:481`
+源码位置：`code/vllm/vllm/config/model.py:502`
 
 ```text
 - 先确定 served_model_name；
@@ -476,8 +476,8 @@ create_engine_config()
 
 源码位置：
 
-- `code/vllm/vllm/config/model.py:534`
-- `code/vllm/vllm/transformers_utils/config.py:653`
+- `code/vllm/vllm/config/model.py:555`
+- `code/vllm/vllm/transformers_utils/config.py:655`
 
 `ModelConfig` 调用 `get_config()`：
 
@@ -509,7 +509,7 @@ self.hf_image_processor_config
 
 ### 4.3 解析模型能力和 runner 类型
 
-源码位置：`code/vllm/vllm/config/model.py:557`
+源码位置：`code/vllm/vllm/config/model.py:578`
 
 `ModelConfig` 会取出 `architectures`，然后通过 registry 判断：
 
@@ -531,7 +531,7 @@ convert_type = _get_convert_type(architectures, runner_type, convert)
 
 ### 4.4 inspect 模型类
 
-源码位置：`code/vllm/vllm/config/model.py:593`
+源码位置：`code/vllm/vllm/config/model.py:616`
 
 `ModelConfig` 会调用：
 
@@ -554,7 +554,7 @@ ModelConfig 在真正 instantiate model 之前，就知道模型支持 text gene
 
 ### 4.5 设置 tokenizer mode 和 pooler config
 
-源码位置：`code/vllm/vllm/config/model.py:600`
+源码位置：`code/vllm/vllm/config/model.py:621`
 
 典型逻辑：
 
@@ -568,9 +568,9 @@ ModelConfig 在真正 instantiate model 之前，就知道模型支持 text gene
 
 源码位置：
 
-- `code/vllm/vllm/config/model.py:639`
-- `code/vllm/vllm/config/model.py:656`
-- `code/vllm/vllm/config/model.py:2090`
+- `code/vllm/vllm/config/model.py:658`
+- `code/vllm/vllm/config/model.py:676`
+- `code/vllm/vllm/config/model.py:1753`
 
 主要逻辑：
 
@@ -583,7 +583,7 @@ ModelConfig 在真正 instantiate model 之前，就知道模型支持 text gene
 
 ### 4.7 初始化 multimodal config
 
-源码位置：`code/vllm/vllm/config/model.py:663`
+源码位置：`code/vllm/vllm/config/model.py:683`
 
 如果模型信息表明支持 multimodal，会构造 `MultiModalConfig`，并合并：
 
@@ -601,7 +601,7 @@ ModelConfig 在真正 instantiate model 之前，就知道模型支持 text gene
 
 ### 4.8 校验模型配置
 
-源码位置：`code/vllm/vllm/config/model.py:721`
+源码位置：`code/vllm/vllm/config/model.py:743`
 
 最后会执行：
 
@@ -627,8 +627,8 @@ resolve_model_cls()
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/models/registry.py:1174`
-- `code/vllm/vllm/model_executor/models/registry.py:1226`
+- `code/vllm/vllm/model_executor/models/registry.py:1201`
+- `code/vllm/vllm/model_executor/models/registry.py:1253`
 
 两者区别是：
 
@@ -677,7 +677,7 @@ HF config.architectures
 
 `EngineArgs.create_load_config()` 会根据用户参数创建 `LoadConfig`。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:1652`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:1704`
 
 特殊逻辑包括：
 
@@ -744,7 +744,7 @@ load_weights() 把 checkpoint tensor 写入模型参数。
 
 ### 6.3 initialize_model() 如何创建模型对象
 
-源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:40`
+源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:42`
 
 主线是：
 
@@ -769,7 +769,7 @@ model_class(vllm_config=vllm_config, prefix=prefix)
 
 ### 6.4 DefaultModelLoader 如何找权重文件
 
-源码位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:97`
+源码位置：`code/vllm/vllm/model_executor/model_loader/default_loader.py:128`
 
 `_prepare_weights()` 会：
 
@@ -802,8 +802,8 @@ npcache:       *.bin
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/model_loader/default_loader.py:211`
-- `code/vllm/vllm/model_executor/model_loader/default_loader.py:381`
+- `code/vllm/vllm/model_executor/model_loader/default_loader.py:244`
+- `code/vllm/vllm/model_executor/model_loader/default_loader.py:415`
 
 主线是：
 
@@ -837,7 +837,7 @@ loader 负责“枚举和读取 checkpoint tensor”；
 
 ### 7.1 init_device() 只准备环境和 runner
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_worker.py:249`
+源码位置：`code/vllm/vllm/v1/worker/gpu_worker.py:297`
 
 `Worker.init_device()` 做的是：
 
@@ -856,7 +856,7 @@ loader 负责“枚举和读取 checkpoint tensor”；
 
 ### 7.2 Worker.load_model() 进入权重加载区间
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_worker.py:349`
+源码位置：`code/vllm/vllm/v1/worker/gpu_worker.py:424`
 
 `Worker.load_model()` 做的是：
 
@@ -870,7 +870,7 @@ loader 负责“枚举和读取 checkpoint tensor”；
 
 ### 7.3 GPUModelRunner.load_model() 完成模型加载和包装
 
-源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5143`
+源码位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 
 主线是：
 
@@ -982,7 +982,7 @@ online quant:
 
 LoRA 配置在 `EngineArgs.create_engine_config()` 中构造。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:2084`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:2196`
 
 挂接点：
 
@@ -1014,7 +1014,7 @@ ModelConfig._model_info.supports_multimodal
 
 spec decode 配置在 EngineArgs 阶段就要绑定 target model 和 target parallel config。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:1679`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:1731`
 
 挂接点：
 
@@ -1032,7 +1032,7 @@ speculative_config / --spec-* 参数
 
 CompilationConfig 在 `create_engine_config()` 末尾合并 top-level overrides。
 
-源码位置：`code/vllm/vllm/engine/arg_utils.py:2219`
+源码位置：`code/vllm/vllm/engine/arg_utils.py:2319`
 
 挂接点：
 
