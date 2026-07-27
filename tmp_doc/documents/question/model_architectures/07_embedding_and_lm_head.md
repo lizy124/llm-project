@@ -57,7 +57,7 @@ self.embed_tokens = VocabParallelEmbedding(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:365` 到 `llama.py:372`
+位置：`vllm/vllm/model_executor/models/llama.py:373` 到 `llama.py:380`
 
 然后封装成：
 
@@ -66,7 +66,7 @@ def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
     return self.embed_tokens(input_ids)
 ```
 
-位置：`llama.py:389` 到 `llama.py:390`
+位置：`llama.py:397` 到 `llama.py:398`
 
 ### 2.2 forward 中使用 embedding
 
@@ -81,7 +81,7 @@ if get_pp_group().is_first_rank:
     residual = None
 ```
 
-位置：`llama.py:400` 到 `llama.py:405`
+位置：`llama.py:400` 到 `llama.py:413`
 
 这说明：
 
@@ -106,7 +106,7 @@ self.lm_head = ParallelLMHead(
 )
 ```
 
-位置：`llama.py:518` 到 `llama.py:524`
+位置：`llama.py:484` 到 `llama.py:490`
 
 然后创建 logits processor：
 
@@ -117,7 +117,7 @@ self.logits_processor = LogitsProcessor(
 )
 ```
 
-位置：`llama.py:528` 到 `llama.py:531`
+位置：`llama.py:494` 到 `llama.py:497`
 
 最终通过 `compute_logits()` 暴露给 ModelRunner：
 
@@ -127,7 +127,7 @@ def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
     return logits
 ```
 
-位置：`llama.py:562` 到 `llama.py:567`
+位置：`llama.py:528` 到 `llama.py:533`
 
 ---
 
@@ -159,7 +159,7 @@ return self.model(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3784` 到 `gpu_model_runner.py:3790`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3834` 到 `gpu_model_runner.py:3840`
 
 所以 embedding 接入点不是 ModelRunner 的特殊分支，而是模型 `forward()` 内部对 `inputs_embeds` 和 `input_ids` 的选择。
 
@@ -314,7 +314,7 @@ inputs_embeds → hidden_states
 input_ids → embed_tokens → hidden_states
 ```
 
-LLaMA 的逻辑见：`llama.py:400` 到 `llama.py:405`
+LLaMA 的逻辑见：`llama.py:400` 到 `llama.py:413`
 
 ### 5.2 prompt_embeds 从请求进入
 
@@ -335,8 +335,8 @@ dtype 必须能安全转换到模型 dtype；
 
 位置：
 
-- `vllm/vllm/renderers/embed_utils.py:16` 到 `embed_utils.py:80`
-- `vllm/vllm/renderers/base.py:753` 到 `base.py:778`
+- `vllm/vllm/renderers/embed_utils.py:16` 到 `embed_utils.py:80`：反序列化 base64 payload，并校验 2D shape、hidden size、dtype。
+- `vllm/vllm/renderers/base.py:804` 到 `base.py:832`：处理已传入的 `prompt_embeds` tensor，校验 2D shape 并转到 CPU 便于进程间传输。
 
 这类输入最终会作为 embedding 形态进入后续执行链路。
 
@@ -366,11 +366,11 @@ return _merge_multimodal_embeddings(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/interfaces.py:397` 到 `interfaces.py:410`
+位置：`vllm/vllm/model_executor/models/interfaces.py:397` 到 `interfaces.py:415`
 
 如果多模态 token 超出 vocab，vLLM 会先把这些 token id mask 成 0 再做文本 embedding，避免 embedding lookup 越界；随后多模态 embedding 会覆盖对应位置。
 
-位置：`interfaces.py:363` 到 `interfaces.py:373`
+位置：`interfaces.py:361` 到 `interfaces.py:378`
 
 ---
 
@@ -391,7 +391,7 @@ else:
     self.embed_tokens = PPMissingLayer()
 ```
 
-位置：`llama.py:365` 到 `llama.py:374`
+位置：`llama.py:373` 到 `llama.py:382`
 
 含义是：
 
@@ -417,7 +417,7 @@ else:
     self.lm_head = PPMissingLayer()
 ```
 
-位置：`llama.py:518` 到 `llama.py:533`
+位置：`llama.py:484` 到 `llama.py:500`
 
 因此 PP 链路是：
 
@@ -443,7 +443,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`gpu_model_runner.py:4340` 到 `gpu_model_runner.py:4346`
+位置：`gpu_model_runner.py:4399` 到 `gpu_model_runner.py:4403`
 
 只有最后 PP rank 会继续：
 
@@ -452,7 +452,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu_model_runner.py:4357` 到 `gpu_model_runner.py:4358`
+位置：`gpu_model_runner.py:4414` 到 `gpu_model_runner.py:4415`
 
 ---
 
@@ -473,7 +473,7 @@ if config.tie_word_embeddings:
     self.lm_head = self.lm_head.tie_weights(self.model.embed_tokens)
 ```
 
-位置：`llama.py:525` 到 `llama.py:526`
+位置：`llama.py:491` 到 `llama.py:492`
 
 `ParallelLMHead.tie_weights()` 内部调用 quant method：
 
@@ -482,7 +482,7 @@ def tie_weights(self, embed_tokens: VocabParallelEmbedding):
     return self.quant_method.tie_weights(self, embed_tokens)
 ```
 
-位置：`vocab_parallel_embedding.py:558` 到 `vocab_parallel_embedding.py:560`
+位置：`vocab_parallel_embedding.py:555` 到 `vocab_parallel_embedding.py:557`
 
 默认未量化实现是：
 
@@ -506,7 +506,7 @@ lm_head.weight 与 embed_tokens.weight 指向同一个 Parameter。
 skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None)
 ```
 
-位置：`llama.py:569` 到 `llama.py:574`
+位置：`llama.py:535` 到 `llama.py:540`
 
 ---
 
@@ -522,7 +522,7 @@ def forward(self, input_):
     raise RuntimeError("LMHead's weights should be used in the sampler.")
 ```
 
-位置：`vocab_parallel_embedding.py:562` 到 `vocab_parallel_embedding.py:564`
+位置：`vocab_parallel_embedding.py:559` 到 `vocab_parallel_embedding.py:561`
 
 原因是：
 
@@ -644,7 +644,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`gpu_model_runner.py:4357` 到 `gpu_model_runner.py:4358`
+位置：`gpu_model_runner.py:4414` 到 `gpu_model_runner.py:4415`
 
 V2 中：
 
@@ -653,7 +653,7 @@ sample_hidden_states = hidden_states[input_batch.logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1043` 到 `model_runner.py:1044`
+位置：`vllm/vllm/v1/worker/gpu/model_runner.py:1069` 到 `model_runner.py:1070`
 
 这表示：
 
@@ -704,7 +704,7 @@ embedding_modules = {
 }
 ```
 
-位置：`llama.py:494` 到 `llama.py:498`
+位置：`llama.py:461` 到 `llama.py:464`
 
 含义是：
 
@@ -729,7 +729,7 @@ lora_output = self.punica_wrapper.add_lora_embedding(
 )
 ```
 
-位置：`vllm/vllm/lora/layers/vocal_parallel_embedding.py:102` 到 `vocal_parallel_embedding.py:126`
+位置：`vllm/vllm/lora/layers/vocal_parallel_embedding.py:96` 到 `vocal_parallel_embedding.py:126`
 
 如果存在 added vocab，LoRA wrapper 会把 base layer 中 added vocab 对应的权重暂存到 `embeddings_weights`，并清零 base layer 对应区域，避免重复叠加。
 
@@ -918,7 +918,7 @@ if self.is_pooling_model:
     return self._pool(...)
 ```
 
-位置：`gpu_model_runner.py:4348` 到 `gpu_model_runner.py:4355`
+位置：`gpu_model_runner.py:4405` 到 `gpu_model_runner.py:4412`
 
 所以：
 

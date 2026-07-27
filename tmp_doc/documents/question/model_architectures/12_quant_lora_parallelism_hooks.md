@@ -61,7 +61,7 @@ LlamaForCausalLM
 
 ### 2.1 Attention 里的 hook
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:125`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:122`
 
 `LlamaAttention.__init__()` 里没有使用普通 `nn.Linear`，而是使用：
 
@@ -73,9 +73,9 @@ self.attn = Attention(..., quant_config=quant_config, prefix=f"{prefix}.attn")
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/models/llama.py:165`
-- `code/vllm/vllm/model_executor/models/llama.py:175`
-- `code/vllm/vllm/model_executor/models/llama.py:212`
+- `code/vllm/vllm/model_executor/models/llama.py:162`
+- `code/vllm/vllm/model_executor/models/llama.py:172`
+- `code/vllm/vllm/model_executor/models/llama.py:218`
 
 这三处分别接入：
 
@@ -92,7 +92,7 @@ Attention：
 
 ### 2.2 MLP 里的 hook
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:82`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:79`
 
 `LlamaMLP.__init__()` 使用：
 
@@ -103,8 +103,8 @@ self.down_proj = RowParallelLinear(..., quant_config=quant_config)
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/models/llama.py:95`
-- `code/vllm/vllm/model_executor/models/llama.py:103`
+- `code/vllm/vllm/model_executor/models/llama.py:92`
+- `code/vllm/vllm/model_executor/models/llama.py:100`
 
 这里的含义是：
 
@@ -117,7 +117,7 @@ quant_config 会继续传到每个并行线性层内部。
 
 ### 2.3 顶层模型里的 hook
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:486`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:446`
 
 `LlamaForCausalLM` 继承：
 
@@ -125,7 +125,7 @@ quant_config 会继续传到每个并行线性层内部。
 class LlamaForCausalLM(..., SupportsLoRA, SupportsPP, ...):
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:486`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:446`
 
 并声明：
 
@@ -141,13 +141,16 @@ embedding_modules = {
 }
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:489`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:455` 到 `code/vllm/vllm/model_executor/models/llama.py:463`
 
-这两个字段是 LoRA 和权重加载最关键的模型侧声明：
+这些字段是 LoRA 和权重加载最关键的模型侧声明之一：
 
 ```text
+hf_to_vllm_mapper：
+  告诉 AutoWeightsLoader 如何把 HF 的 q_proj / gate_proj 等名称映射到 qkv_proj / gate_up_proj，并携带 shard_id。
+
 packed_modules_mapping：
-  告诉 LoRA / loader：运行时的 fused module 对应 checkpoint 或 PEFT 里的哪些子模块。
+  告诉 LoRA / adapter 工具：运行时的 fused module 对应 PEFT 里的哪些子模块。
 
 embedding_modules：
   告诉 LoRA：输入 embedding 和输出 lm_head 可以作为特殊 embedding LoRA 目标处理。
@@ -159,7 +162,7 @@ embedding_modules：
 
 量化不是模型文件里写一堆 `if GPTQ / AWQ / FP8`，而是抽象成 `QuantizationConfig` 和 `QuantizeMethodBase`。
 
-核心接口位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:19`
+核心接口位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:20`
 
 ### 3.1 两个核心抽象
 
@@ -176,7 +179,7 @@ process_weights_after_loading(layer)：
   权重加载后做 repack、transpose、online quantize、kernel 格式转换等后处理。
 ```
 
-源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:19`
+源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:20`
 
 `QuantizationConfig` 定义每种量化配置必须实现：
 
@@ -189,7 +192,7 @@ from_config()
 get_quant_method(layer, prefix)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:77`
+源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:87`
 
 其中最关键的是：
 
@@ -197,7 +200,7 @@ get_quant_method(layer, prefix)
 def get_quant_method(self, layer: torch.nn.Module, prefix: str) -> QuantizeMethodBase | None:
 ```
 
-源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:157`
+源码位置：`code/vllm/vllm/model_executor/layers/quantization/base_config.py:180`
 
 这表示：
 
@@ -361,7 +364,7 @@ if isinstance(quant_method, QuantizeMethodBase):
     quant_method.process_weights_after_loading(module)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:100`
+源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:101` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:127`
 
 这一步用于：
 
@@ -373,13 +376,13 @@ if isinstance(quant_method, QuantizeMethodBase):
 - 为 reload / offload 保留必要元数据。
 ```
 
-随后 Attention / MLA / MM encoder attention 也会执行自己的 post-load 逻辑：
+随后 Attention / MLA / MM encoder attention 也会执行自己的 post-load 逻辑，HPC module 也会在这里统一处理：
 
 ```python
 module.process_weights_after_loading(model_config.dtype)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:119`
+源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:118` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:136`
 
 因此量化完整生命周期是：
 
@@ -435,7 +438,7 @@ class LlamaForCausalLM(..., SupportsLoRA, ...):
     }
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:486`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:446`
 
 这告诉 LoRA 系统：
 
@@ -873,7 +876,7 @@ gate_proj + up_proj → gate_up_proj
 1：up_proj
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:433`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:345` 到 `code/vllm/vllm/model_executor/models/llama.py:354`
 
 这样可以让运行时使用 fused GEMM，但 checkpoint 仍然按原始 HF 名称加载。
 
@@ -974,7 +977,7 @@ if is_pp_missing_parameter(name, self):
 
 ### 6.4 LLaMA forward 如何适配 PP
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:392`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:400`
 
 PP first rank：
 
@@ -993,7 +996,7 @@ else:
     residual = intermediate_tensors["residual"]
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:400`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:408` 到 `code/vllm/vllm/model_executor/models/llama.py:417`
 
 非 last rank 返回：
 
@@ -1001,7 +1004,7 @@ else:
 return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:422`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:430` 到 `code/vllm/vllm/model_executor/models/llama.py:433`
 
 last rank 才执行最终 norm 并返回 hidden states：
 
@@ -1010,7 +1013,7 @@ hidden_states, _ = self.norm(hidden_states, residual)
 return hidden_states
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:427`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:435` 到 `code/vllm/vllm/model_executor/models/llama.py:439`
 
 因此 PP 模型 forward 的结构是：
 
@@ -1036,7 +1039,7 @@ else:
     self.embed_tokens = PPMissingLayer()
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:365`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:373` 到 `code/vllm/vllm/model_executor/models/llama.py:382`
 
 ```python
 if get_pp_group().is_last_rank:
@@ -1045,7 +1048,7 @@ else:
     self.norm = PPMissingLayer()
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:380`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:388` 到 `code/vllm/vllm/model_executor/models/llama.py:391`
 
 ```python
 if get_pp_group().is_last_rank:
@@ -1054,12 +1057,12 @@ else:
     self.lm_head = PPMissingLayer()
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:518`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:484` 到 `code/vllm/vllm/model_executor/models/llama.py:499`
 
 这说明：
 
 ```text
-embedding 通常只在 first PP rank；
+embedding 通常在 first PP rank；如果 tied word embeddings 且当前是 last rank，也会创建 embed_tokens 供 lm_head 共享；
 norm / lm_head / logits_processor 通常只在 last PP rank；
 中间 rank 只处理 transformer blocks 和 IntermediateTensors。
 ```
@@ -1169,30 +1172,30 @@ MoE / EP 的 hook 比 dense layer 多一层 expert mapping，因为 adapter 名�
 
 ### 8.1 LLaMA 的 load_weights 映射
 
-`LlamaModel.load_weights()` 里定义：
+`LlamaModel` 现在通过 `hf_to_vllm_mapper` 声明 stacked 名称映射：
 
 ```python
-stacked_params_mapping = [
-    (".qkv_proj", ".q_proj", "q"),
-    (".qkv_proj", ".k_proj", "k"),
-    (".qkv_proj", ".v_proj", "v"),
-    (".gate_up_proj", ".gate_proj", 0),
-    (".gate_up_proj", ".up_proj", 1),
-]
+hf_to_vllm_mapper = WeightsMapper(
+    orig_to_new_stacked={
+        ".q_proj": (".qkv_proj", "q"),
+        ".k_proj": (".qkv_proj", "k"),
+        ".v_proj": (".qkv_proj", "v"),
+        ".gate_proj": (".gate_up_proj", 0),
+        ".up_proj": (".gate_up_proj", 1),
+    }
+)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:433`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:345` 到 `code/vllm/vllm/model_executor/models/llama.py:354`
 
-加载时：
+加载时交给 `AutoWeightsLoader` 应用 mapper：
 
 ```python
-name = name.replace(weight_name, param_name)
-param = params_dict[name]
-weight_loader = param.weight_loader
-weight_loader(param, loaded_weight, shard_id)
+loader = AutoWeightsLoader(self)
+return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:456`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:441` 到 `code/vllm/vllm/model_executor/models/llama.py:443`
 
 这做了几件事：
 
@@ -1225,9 +1228,9 @@ prefix=maybe_prefix(prefix, "lm_head")
 
 源码位置：
 
-- `code/vllm/vllm/model_executor/models/llama.py:172`
-- `code/vllm/vllm/model_executor/models/llama.py:101`
-- `code/vllm/vllm/model_executor/models/llama.py:523`
+- `code/vllm/vllm/model_executor/models/llama.py:169`
+- `code/vllm/vllm/model_executor/models/llama.py:98`
+- `code/vllm/vllm/model_executor/models/llama.py:489`
 
 `prefix` 影响：
 
@@ -1250,11 +1253,11 @@ loader = AutoWeightsLoader(self, skip_prefixes=(['lm_head.'] if tie_word_embeddi
 return loader.load_weights(weights)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:569`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:535` 到 `code/vllm/vllm/model_executor/models/llama.py:540`
 
-而 `LlamaModel.load_weights()` 展示了手写 stacked mapping 的模式。
+而 `LlamaModel.load_weights()` 展示了 `WeightsMapper.orig_to_new_stacked` + `AutoWeightsLoader` 的模式。
 
-这两种方式本质都依赖参数上的 `weight_loader`：
+这些方式本质都依赖参数或子模块上的 `weight_loader`：
 
 ```text
 模型 loader 负责把 checkpoint name 映射到 vLLM param name；
@@ -1374,7 +1377,7 @@ Attention 层也接收 `quant_config`：
 self.attn = Attention(..., quant_config=quant_config, ...)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/models/llama.py:212`
+源码位置：`code/vllm/vllm/model_executor/models/llama.py:218`
 
 加载后 attention 会执行：
 
@@ -1382,7 +1385,7 @@ self.attn = Attention(..., quant_config=quant_config, ...)
 module.process_weights_after_loading(model_config.dtype)
 ```
 
-源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:119`
+源码位置：`code/vllm/vllm/model_executor/model_loader/utils.py:118` 到 `code/vllm/vllm/model_executor/model_loader/utils.py:127`
 
 这主要服务：
 
@@ -1401,7 +1404,7 @@ module.process_weights_after_loading(model_config.dtype)
 
 ```text
 initialize_model(vllm_config)
-  → configure_quant_config(vllm_config.quant_config, model_class)
+  → set_current_vllm_config(vllm_config, ...)
   → LlamaForCausalLM(vllm_config, prefix)
   → LlamaModel(...)
   → make_layers(num_hidden_layers, layer_fn, prefix="model.layers")

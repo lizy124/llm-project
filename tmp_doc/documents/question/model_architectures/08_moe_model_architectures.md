@@ -93,7 +93,7 @@ input_layernorm
   → block_sparse_moe
 ```
 
-位置：`vllm/vllm/model_executor/models/mixtral.py:238` 到 `mixtral.py:293`
+位置：`vllm/vllm/model_executor/models/mixtral.py:233` 到 `mixtral.py:288`
 
 核心代码形态：
 
@@ -102,7 +102,7 @@ hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
 hidden_states = self.block_sparse_moe(hidden_states)
 ```
 
-位置：`mixtral.py:290` 到 `mixtral.py:292`
+位置：`mixtral.py:285` 到 `mixtral.py:288`
 
 Qwen2-MoE 和 DeepSeek 也是同样的 block 位置：
 
@@ -138,7 +138,7 @@ router_logits, _ = self.gate(hidden_states)
 final_hidden_states = self.experts(hidden_states, router_logits)
 ```
 
-位置：`mixtral.py:147` 到 `mixtral.py:154`
+位置：`mixtral.py:142` 到 `mixtral.py:149`
 
 Qwen2-MoE：
 
@@ -149,7 +149,7 @@ final_hidden_states = self.experts(
 )
 ```
 
-位置：`qwen2_moe.py:181` 到 `qwen2_moe.py:193`
+位置：`qwen2_moe.py:179` 到 `qwen2_moe.py:191`
 
 DeepSeek：
 
@@ -160,7 +160,7 @@ final_hidden_states = self.experts(
 )
 ```
 
-位置：`deepseek_v2.py:361` 到 `deepseek_v2.py:388`
+位置：`deepseek_v2.py:396` 到 `deepseek_v2.py:425`
 
 这说明模型文件只把 hidden states 和 router logits 交给 MoE 执行层，真正的 top-k、dispatch、kernel、combine 都在 fused MoE 层内部完成。
 
@@ -170,7 +170,7 @@ final_hidden_states = self.experts(
 
 需要注意：当前源码里的 `FusedMoE` 不是一个传统 `class FusedMoE(nn.Module)`，而是一个工厂函数。
 
-定义位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:102`
+定义位置：`vllm/vllm/model_executor/layers/fused_moe/layer.py:100`
 
 它的职责是创建完整的 MoE 执行管线：
 
@@ -186,7 +186,7 @@ FusedMoE(...)
   → return runner
 ```
 
-位置：`layer.py:102` 到 `layer.py:391`
+位置：`layer.py:100` 到 `layer.py:420`
 
 源码注释也明确说它会创建：
 
@@ -196,7 +196,7 @@ FusedMoE(...)
 - MoERunner：编排完整 forward pass。
 ```
 
-位置：`layer.py:148` 到 `layer.py:160`
+位置：`layer.py:147` 到 `layer.py:159`
 
 所以模型文件里的：
 
@@ -294,7 +294,7 @@ logical_num_experts = num_experts
 expert_map_manager = ExpertMapManager(...)
 ```
 
-位置：`layer.py:250` 到 `layer.py:266`
+位置：`layer.py:267` 到 `layer.py:278`
 
 它负责：
 
@@ -307,7 +307,7 @@ expert_map_manager = ExpertMapManager(...)
 
 后续 `RoutedExperts` 会把这些映射注册成 buffer。
 
-位置：`routed_experts.py:225` 到 `routed_experts.py:240`
+位置：`routed_experts.py:231` 到 `routed_experts.py:245`
 
 ### 6.4 创建 Router
 
@@ -317,7 +317,7 @@ expert_map_manager = ExpertMapManager(...)
 router = create_fused_moe_router(...)
 ```
 
-位置：`layer.py:268` 到 `layer.py:294`
+位置：`layer.py:282` 到 `layer.py:319`
 
 传入的关键参数包括：
 
@@ -340,7 +340,7 @@ num_logical_experts
 
 `RoutedExperts` 是 expert 权重容器。
 
-位置：`layer.py:334` 到 `layer.py:366`
+位置：`layer.py:367` 到 `layer.py:395`
 
 它保存：
 
@@ -378,7 +378,7 @@ runner = runner_cls(
 return runner
 ```
 
-位置：`layer.py:368` 到 `layer.py:391`
+位置：`layer.py:400` 到 `layer.py:420`
 
 从这一步之后，模型层调用 `self.experts(hidden_states, router_logits)`，实际就是调用 `MoERunner.forward()`。
 
@@ -416,7 +416,7 @@ def forward(
 ) -> torch.Tensor:
 ```
 
-位置：`moe_runner.py:628` 到 `moe_runner.py:633`
+位置：`moe_runner.py:641` 到 `moe_runner.py:646`
 
 调用序列：
 
@@ -433,13 +433,13 @@ MoERunner.forward()
   → return hidden_states
 ```
 
-位置：`moe_runner.py:654` 到 `moe_runner.py:716`
+位置：`moe_runner.py:667` 到 `moe_runner.py:729`
 
 ### 7.2 custom op 的作用
 
 `MoERunner.forward()` 不直接调用 `_forward_impl()`，而是调用 `_forward_entry`。
 
-位置：`moe_runner.py:290` 到 `moe_runner.py:306`
+位置：`moe_runner.py:290` 到 `moe_runner.py:311`
 
 CUDA 等平台上通常会走：
 
@@ -449,7 +449,7 @@ torch.ops.vllm.moe_forward
 torch.ops.vllm.moe_forward_shared
 ```
 
-位置：`moe_runner.py:302` 到 `moe_runner.py:306`
+位置：`moe_runner.py:307` 到 `moe_runner.py:311`
 
 这些 custom op 的实际实现只是从 forward context 找回 layer，然后调用 `_forward_impl()`。
 
@@ -465,7 +465,7 @@ torch.ops.vllm.moe_forward_shared
 
 ### 7.3 _forward_impl 的核心步骤
 
-入口：`moe_runner.py:779`
+入口：`moe_runner.py:792`
 
 核心流程：
 
@@ -478,7 +478,7 @@ _ensure_moe_quant_config_init()
   → _maybe_combine(shared_output, hidden_states)
 ```
 
-位置：`moe_runner.py:779` 到 `moe_runner.py:833`
+位置：`moe_runner.py:792` 到 `moe_runner.py:846`
 
 其中 `_apply_quant_method()` 是路由和专家计算的关键。
 
@@ -522,11 +522,11 @@ EPLB 启用时，ids 可能经过 physical/redundant expert 映射。
 topk_weights, topk_ids = self.router.select_experts(...)
 ```
 
-位置：`moe_runner.py:559` 到 `moe_runner.py:565`
+位置：`moe_runner.py:572` 到 `moe_runner.py:578`
 
 然后把 `topk_weights/topk_ids` 交给 `RoutedExperts.forward_modular()`。
 
-位置：`moe_runner.py:567` 到 `moe_runner.py:573`
+位置：`moe_runner.py:580` 到 `moe_runner.py:586`
 
 ---
 
@@ -561,7 +561,7 @@ quant_method：实际执行 expert 计算的量化/非量化方法。
 
 `expert_map` 属性会根据 ROCm AITER 路径选择 `_expert_map` 或 `expert_mask`。
 
-位置：`routed_experts.py:219` 到 `routed_experts.py:223`
+位置：`routed_experts.py:226` 到 `routed_experts.py:229`
 
 这解释了为什么模型加载 expert 权重时，不是简单按 checkpoint 名字直接塞张量，而是要通过 expert-aware `weight_loader`。
 
@@ -577,7 +577,7 @@ quant_method：实际执行 expert 计算的量化/非量化方法。
 def fused_experts(...)
 ```
 
-位置：`fused_moe.py:1474` 到 `fused_moe.py:1515`
+位置：`fused_moe.py:1529` 到 `fused_moe.py:1570`
 
 它把参数转给 custom op：
 
@@ -585,7 +585,7 @@ def fused_experts(...)
 torch.ops.vllm.fused_experts(...)
 ```
 
-位置：`fused_moe.py:1490` 到 `fused_moe.py:1515`
+位置：`fused_moe.py:1545` 到 `fused_moe.py:1570`
 
 真正实现：
 
@@ -593,7 +593,7 @@ torch.ops.vllm.fused_experts(...)
 def fused_experts_impl(...)
 ```
 
-位置：`fused_moe.py:1537` 到 `fused_moe.py:1740`
+位置：`fused_moe.py:1592` 到 `fused_moe.py:1795`
 
 ### 10.1 fused_experts_impl 的主流程
 
@@ -614,13 +614,13 @@ hidden_states + topk_ids/topk_weights
 对应位置：
 
 ```text
-输入量化：fused_moe.py:1651 到 fused_moe.py:1657
-expert assignment：fused_moe.py:1659 到 fused_moe.py:1670
-第一段 w1 kernel：fused_moe.py:1672 到 fused_moe.py:1694
-激活：fused_moe.py:1696 到 fused_moe.py:1698
-第二段输入量化：fused_moe.py:1700 到 fused_moe.py:1706
-第二段 w2 kernel：fused_moe.py:1711 到 fused_moe.py:1733
-top-k 汇总：fused_moe.py:1735 到 fused_moe.py:1738
+输入量化：fused_moe.py:1706 到 fused_moe.py:1712
+expert assignment：fused_moe.py:1714 到 fused_moe.py:1725
+第一段 w1 kernel：fused_moe.py:1727 到 fused_moe.py:1749
+激活：fused_moe.py:1751 到 fused_moe.py:1753
+第二段输入量化：fused_moe.py:1755 到 fused_moe.py:1761
+第二段 w2 kernel：fused_moe.py:1766 到 fused_moe.py:1788
+top-k 汇总：fused_moe.py:1790 到 fused_moe.py:1793
 ```
 
 ### 10.2 为什么是两段 expert MLP
@@ -646,7 +646,7 @@ w1 / gate_up projection
 
 入口：`_prepare_expert_assignment()`
 
-位置：`fused_moe.py:1425` 到 `fused_moe.py:1471`
+位置：`fused_moe.py:1480` 到 `fused_moe.py:1526`
 
 它有两类路径：
 
@@ -655,7 +655,7 @@ naive_block_assignment：小 batch / 稀疏激活场景下跳过 moe_align_block
 moe_align_block_size：按 expert 对 token 排序、padding、对齐 block。
 ```
 
-位置：`fused_moe.py:1443` 到 `fused_moe.py:1471`
+位置：`fused_moe.py:1498` 到 `fused_moe.py:1526`
 
 这一步的输出会喂给 Triton / CUDA kernel：
 
@@ -688,7 +688,7 @@ else:
     result = fused_output
 ```
 
-位置：`moe_runner.py:709` 到 `moe_runner.py:712`
+位置：`moe_runner.py:722` 到 `moe_runner.py:725`
 
 ### 11.1 Qwen2-MoE 的 shared experts
 
@@ -698,7 +698,7 @@ else:
 self.shared_expert_gate = ReplicatedLinear(...)
 ```
 
-位置：`qwen2_moe.py:149` 到 `qwen2_moe.py:155`
+位置：`qwen2_moe.py:147` 到 `qwen2_moe.py:153`
 
 如果 `shared_expert_intermediate_size > 0`，再创建：
 
@@ -706,7 +706,7 @@ self.shared_expert_gate = ReplicatedLinear(...)
 self.shared_expert = Qwen2MoeMLP(...)
 ```
 
-位置：`qwen2_moe.py:157` 到 `qwen2_moe.py:168`
+位置：`qwen2_moe.py:155` 到 `qwen2_moe.py:166`
 
 然后传入：
 
@@ -714,7 +714,7 @@ self.shared_expert = Qwen2MoeMLP(...)
 self.experts = FusedMoE(shared_experts=self.shared_expert, ...)
 ```
 
-位置：`qwen2_moe.py:170` 到 `qwen2_moe.py:179`
+位置：`qwen2_moe.py:168` 到 `qwen2_moe.py:177`
 
 这意味着 Qwen2-MoE 的 shared expert 由 `MoERunner` 统一编排，而不是在 sparse block 里手动相加。
 
@@ -729,7 +729,7 @@ else:
     self.shared_experts = DeepseekV2MLP(...)
 ```
 
-位置：`deepseek_v2.py:311` 到 `deepseek_v2.py:325`
+位置：`deepseek_v2.py:346` 到 `deepseek_v2.py:359`
 
 然后同样传给 `FusedMoE`：
 
@@ -740,7 +740,7 @@ self.experts = FusedMoE(
 )
 ```
 
-位置：`deepseek_v2.py:326` 到 `deepseek_v2.py:351`
+位置：`deepseek_v2.py:361` 到 `deepseek_v2.py:386`
 
 特殊点是 ROCm AITER fusion shared experts 启用时，shared experts 可能不作为普通 `DeepseekV2MLP` 存在，而是融合进 routed expert 路径。
 
@@ -785,7 +785,7 @@ MoERunner 的 `_maybe_dispatch()` 会处理 naive DP/EP dispatch：
 get_ep_group().dispatch_router_logits(...)
 ```
 
-位置：`moe_runner.py:724` 到 `moe_runner.py:741`
+位置：`moe_runner.py:737` 到 `moe_runner.py:768`
 
 `_maybe_combine()` 会处理 EP combine：
 
@@ -793,11 +793,11 @@ get_ep_group().dispatch_router_logits(...)
 hidden_states = get_ep_group().combine(...)
 ```
 
-位置：`moe_runner.py:757` 到 `moe_runner.py:765`
+位置：`moe_runner.py:770` 到 `moe_runner.py:779`
 
 PCP 场景还会使用 all-gather / reduce-scatter。
 
-位置：`moe_runner.py:745` 到 `moe_runner.py:771`
+位置：`moe_runner.py:758` 到 `moe_runner.py:785`
 
 ### 12.3 EPLB 和 redundant experts
 
@@ -826,9 +826,9 @@ Mixtral 和 DeepSeek 都会从 parallel config 读取：
 parallel_config.eplb_config.num_redundant_experts
 ```
 
-Mixtral 位置：`mixtral.py:106` 到 `mixtral.py:119`
+Mixtral 位置：`mixtral.py:105` 到 `mixtral.py:109`
 
-DeepSeek 位置：`deepseek_v2.py:286` 到 `deepseek_v2.py:299`
+DeepSeek 位置：`deepseek_v2.py:320` 到 `deepseek_v2.py:327`
 
 当物理专家数变化时，模型的 `update_physical_experts_metadata()` 会更新各层 MoE 元数据，并调用：
 
@@ -836,9 +836,9 @@ DeepSeek 位置：`deepseek_v2.py:286` 到 `deepseek_v2.py:299`
 moe.experts.update_expert_map()
 ```
 
-Mixtral 位置：`mixtral.py:542` 到 `mixtral.py:560`
+Mixtral 位置：`mixtral.py:446` 到 `mixtral.py:463`
 
-DeepSeek 位置：`deepseek_v2.py:1606` 到 `deepseek_v2.py:1620`
+DeepSeek 位置：`deepseek_v2.py:1766` 到 `deepseek_v2.py:1779`
 
 ---
 
@@ -858,7 +858,7 @@ quant_method = quant_config.get_quant_method(self, prefix)
 UnquantizedFusedMoEMethod
 ```
 
-位置：`routed_experts.py:180` 到 `routed_experts.py:196`
+位置：`routed_experts.py:186` 到 `routed_experts.py:202`
 
 底层 `fused_experts()` 支持多种量化标志：
 
@@ -874,7 +874,7 @@ w1_zp / w2_zp
 a1_scale / a2_scale
 ```
 
-位置：`fused_moe.py:1474` 到 `fused_moe.py:1515`
+位置：`fused_moe.py:1529` 到 `fused_moe.py:1570`
 
 在 `fused_experts_impl()` 中，会先对输入量化，再调用对应 kernel：
 
@@ -883,11 +883,11 @@ moe_kernel_quantize_input()
   → dispatch_fused_moe_kernel()
 ```
 
-位置：`fused_moe.py:1651` 到 `fused_moe.py:1694`
+位置：`fused_moe.py:1706` 到 `fused_moe.py:1749`
 
 第二段 `w2` 前也会再次量化中间激活。
 
-位置：`fused_moe.py:1700` 到 `fused_moe.py:1733`
+位置：`fused_moe.py:1755` 到 `fused_moe.py:1788`
 
 所以可以把量化 MoE 理解为：
 
@@ -905,7 +905,7 @@ Mixtral 是最典型、最直观的 routed MoE。
 
 ### 14.1 MixtralMoE
 
-定义位置：`mixtral.py:77`
+定义位置：`mixtral.py:71`
 
 它创建：
 
@@ -914,7 +914,7 @@ self.gate = ReplicatedLinear(...)
 self.experts = FusedMoE(...)
 ```
 
-位置：`mixtral.py:121` 到 `mixtral.py:145`
+位置：`mixtral.py:117` 到 `mixtral.py:140`
 
 forward 中：
 
@@ -925,7 +925,7 @@ hidden_states reshape
   → reshape 回原形状
 ```
 
-位置：`mixtral.py:147` 到 `mixtral.py:154`
+位置：`mixtral.py:142` 到 `mixtral.py:149`
 
 ### 14.2 MixtralDecoderLayer
 
@@ -935,7 +935,7 @@ hidden_states reshape
 self.block_sparse_moe = MixtralMoE(...)
 ```
 
-位置：`mixtral.py:259` 到 `mixtral.py:267`
+位置：`mixtral.py:254` 到 `mixtral.py:262`
 
 这层的 MLP 阶段直接调用：
 
@@ -943,7 +943,7 @@ self.block_sparse_moe = MixtralMoE(...)
 hidden_states = self.block_sparse_moe(hidden_states)
 ```
 
-位置：`mixtral.py:290` 到 `mixtral.py:292`
+位置：`mixtral.py:285` 到 `mixtral.py:288`
 
 ### 14.3 MixtralForCausalLM 的 MoE 元数据
 
@@ -953,7 +953,7 @@ hidden_states = self.block_sparse_moe(hidden_states)
 self.moe_layers.append(layer.block_sparse_moe.experts)
 ```
 
-位置：`mixtral.py:515` 到 `mixtral.py:529`
+位置：`mixtral.py:420` 到 `mixtral.py:431`
 
 并记录：
 
@@ -966,7 +966,7 @@ num_redundant_experts
 num_shared_experts = 0
 ```
 
-位置：`mixtral.py:534` 到 `mixtral.py:540`
+位置：`mixtral.py:438` 到 `mixtral.py:444`
 
 这说明 Mixtral 没有 shared experts，是纯 routed experts 模型。
 
@@ -978,7 +978,7 @@ Qwen2-MoE 的特点是：不是每层都一定是 MoE，并且可能有 shared e
 
 ### 15.1 SparseMoeBlock
 
-定义位置：`qwen2_moe.py:125`
+定义位置：`qwen2_moe.py:123`
 
 核心组件：
 
@@ -989,7 +989,7 @@ shared_expert：可选 dense shared expert；
 experts：FusedMoE runner。
 ```
 
-位置：`qwen2_moe.py:141` 到 `qwen2_moe.py:179`
+位置：`qwen2_moe.py:139` 到 `qwen2_moe.py:177`
 
 forward 仍然是：
 
@@ -998,7 +998,7 @@ gate(hidden_states)
   → FusedMoE(hidden_states, router_logits)
 ```
 
-位置：`qwen2_moe.py:181` 到 `qwen2_moe.py:193`
+位置：`qwen2_moe.py:179` 到 `qwen2_moe.py:191`
 
 ### 15.2 哪些层是 MoE
 
@@ -1013,7 +1013,7 @@ else:
     self.mlp = Qwen2MoeMLP(...)
 ```
 
-位置：`qwen2_moe.py:311` 到 `qwen2_moe.py:330`
+位置：`qwen2_moe.py:309` 到 `qwen2_moe.py:328`
 
 所以 Qwen2-MoE 可能是：
 
@@ -1025,23 +1025,23 @@ else:
 
 ### 15.3 权重加载细节
 
-Qwen2-MoE 的 `load_weights()` 有一个重要保护：
+Qwen2-MoE 的 `hf_to_vllm_mapper` 明确保留一条保护：
 
 ```text
-如果 checkpoint 名字里有 mlp.experts，不能先按 gate_up_proj 规则替换；
-否则专家权重名会被重复改写。
+.experts.gate_up_proj 必须由 MoERunner.load_weights 处理；
+普通 dense/shared expert 的 gate/up 合并才走 mapper。
 ```
 
-位置：`qwen2_moe.py:446` 到 `qwen2_moe.py:458`
+位置：`qwen2_moe.py:422` 到 `qwen2_moe.py:433`
 
-另一个细节是 GGUF shared expert gate：
+实际加载时使用 `AutoWeightsLoader`，并在进入 loader 前处理 GGUF shared expert gate 的 1D 权重：
 
 ```python
-if "mlp.shared_expert_gate" in name and len(loaded_weight.shape) == 1:
+if "mlp.shared_expert_gate" in name and loaded_weight.dim() == 1:
     loaded_weight = loaded_weight[None, :]
 ```
 
-位置：`qwen2_moe.py:522` 到 `qwen2_moe.py:527`
+位置：`qwen2_moe.py:494` 到 `qwen2_moe.py:507`
 
 ---
 
@@ -1051,7 +1051,7 @@ DeepSeek 的 MoE 逻辑比 Mixtral / Qwen2-MoE 更复杂，主要体现在 group
 
 ### 16.1 DeepseekV2MoE
 
-定义位置：`deepseek_v2.py:246`
+定义位置：`deepseek_v2.py:276`
 
 它创建：
 
@@ -1061,7 +1061,7 @@ shared_experts：可选 DeepseekV2MLP；
 FusedMoE：routed experts 执行管线。
 ```
 
-位置：`deepseek_v2.py:274` 到 `deepseek_v2.py:351`
+位置：`deepseek_v2.py:306` 到 `deepseek_v2.py:386`
 
 传给 `FusedMoE` 的关键参数包括：
 
@@ -1081,7 +1081,7 @@ n_shared_experts
 router_logits_dtype
 ```
 
-位置：`deepseek_v2.py:326` 到 `deepseek_v2.py:351`
+位置：`deepseek_v2.py:361` 到 `deepseek_v2.py:386`
 
 这说明 DeepSeek 的 MoE 不是简单 top-k，而是把 grouped top-k、修正 bias、routing scale、SP、EPLB 等都放进统一 runner。
 
@@ -1093,7 +1093,7 @@ DeepSeek MoE 支持 sequence parallel：
 self.is_sequence_parallel = parallel_config.use_sequence_parallel_moe
 ```
 
-位置：`deepseek_v2.py:266`
+位置：`deepseek_v2.py:298`
 
 forward 中如果启用，会先 chunk：
 
@@ -1101,7 +1101,7 @@ forward 中如果启用，会先 chunk：
 hidden_states = sequence_parallel_chunk(hidden_states)
 ```
 
-位置：`deepseek_v2.py:365` 到 `deepseek_v2.py:370`
+位置：`deepseek_v2.py:406` 到 `deepseek_v2.py:407`
 
 MoE 输出后再 gather：
 
@@ -1110,7 +1110,7 @@ final_hidden_states = tensor_model_parallel_all_gather(final_hidden_states, 0)
 final_hidden_states = final_hidden_states[:num_tokens]
 ```
 
-位置：`deepseek_v2.py:382` 到 `deepseek_v2.py:386`
+位置：`deepseek_v2.py:419` 到 `deepseek_v2.py:423`
 
 ### 16.3 哪些层是 DeepSeek MoE
 
@@ -1127,7 +1127,7 @@ else:
     self.mlp = DeepseekV2MLP(...)
 ```
 
-位置：`deepseek_v2.py:1155` 到 `deepseek_v2.py:1173`
+位置：`deepseek_v2.py:1218` 到 `deepseek_v2.py:1264`
 
 所以 DeepSeek 可能前若干层是 dense，后续按频率插入 MoE。
 
@@ -1142,7 +1142,7 @@ else:
   用 example_moe 提取 num experts 元数据。
 ```
 
-位置：`deepseek_v2.py:1686` 到 `deepseek_v2.py:1705`
+位置：`deepseek_v2.py:1846` 到 `deepseek_v2.py:1863`
 
 提取的元数据包括：
 
@@ -1155,7 +1155,7 @@ num_shared_experts
 num_redundant_experts
 ```
 
-位置：`deepseek_v2.py:1587` 到 `deepseek_v2.py:1605`
+位置：`deepseek_v2.py:1747` 到 `deepseek_v2.py:1764`
 
 ---
 
@@ -1190,7 +1190,7 @@ w2_weight：down 参数；
 fused_moe_make_expert_params_mapping(...)
 ```
 
-位置：`layer.py:394` 到 `layer.py:412`
+位置：`layer.py:423` 到 `layer.py:441`
 
 它最终委托给：
 
@@ -1198,7 +1198,7 @@ fused_moe_make_expert_params_mapping(...)
 RoutedExperts.make_expert_params_mapping(...)
 ```
 
-位置：`layer.py:403` 到 `layer.py:412`
+位置：`layer.py:432` 到 `layer.py:441`
 
 返回 tuple 形态：
 
@@ -1222,19 +1222,17 @@ w2：down projection；
 w3：up projection。
 ```
 
-`MixtralModel.get_expert_mapping()`：
+Mixtral 在创建 `FusedMoE` 时通过 `ckpt_names` 指定 checkpoint 名称：
 
 ```python
-ckpt_gate_proj_name="w1"
-ckpt_down_proj_name="w2"
-ckpt_up_proj_name="w3"
+ckpt_names=("w1", "w2", "w3")
 ```
 
-位置：`mixtral.py:367` 到 `mixtral.py:377`
+位置：`mixtral.py:126` 到 `mixtral.py:140`
 
-加载时遍历 `expert_params_mapping`，调用 expert-aware `weight_loader`。
+加载入口改为 `AutoWeightsLoader(self)`，MoE expert 权重最终由 `MoERunner.load_weights()` 转交给 `RoutedExperts.load_weights()` 的 expert-aware loader。
 
-位置：`mixtral.py:413` 到 `mixtral.py:449`
+位置：`mixtral.py:487` 到 `mixtral.py:489`，`moe_runner.py:295` 到 `moe_runner.py:298`，`routed_experts.py:869` 到 `routed_experts.py:930`
 
 ### 17.3 Qwen2-MoE 权重映射
 
@@ -1246,19 +1244,19 @@ down_proj
 up_proj
 ```
 
-位置：`qwen2_moe.py:421` 到 `qwen2_moe.py:430`
+位置：`qwen2_moe.py:422` 到 `qwen2_moe.py:433`
 
-加载时同样走 expert mapping。
+加载时通过 `AutoWeightsLoader` 处理普通映射，expert 权重仍由 `MoERunner` / `RoutedExperts` 的 expert-aware loader 处理。
 
-位置：`qwen2_moe.py:475` 到 `qwen2_moe.py:498`
+位置：`qwen2_moe.py:494` 到 `qwen2_moe.py:507`
 
 ### 17.4 DeepSeek 权重映射
 
 DeepSeek 的 `load_weights()` 更复杂，因为还处理 MLA/MHA、fused indexer、shared experts、FP8 kv scale 等。
 
-expert mapping 构造位置：`deepseek_v2.py:1386` 到 `deepseek_v2.py:1400`
+expert mapping 构造位置：`deepseek_v2.py:1536` 到 `deepseek_v2.py:1550`
 
-普通 expert 加载位置：`deepseek_v2.py:1511` 到 `deepseek_v2.py:1556`
+普通 expert 加载位置：`deepseek_v2.py:1671` 到 `deepseek_v2.py:1710`
 
 ROCm AITER fusion shared experts 特殊处理：
 
@@ -1269,7 +1267,7 @@ checkpoint 中的 mlp.shared_experts.* 可能是一个 widened tensor；
 再走 expert mapping 加载。
 ```
 
-位置：`deepseek_v2.py:1466` 到 `deepseek_v2.py:1510`
+位置：`deepseek_v2.py:1626` 到 `deepseek_v2.py:1669`
 
 ---
 
@@ -1287,11 +1285,11 @@ first PP rank：从 input_ids / inputs_embeds 得到 hidden_states；
 last PP rank：norm 后返回 hidden_states。
 ```
 
-位置：`mixtral.py:341` 到 `mixtral.py:365`
+位置：`mixtral.py:345` 到 `mixtral.py:369`
 
-Qwen2-MoE 同样：`qwen2_moe.py:395` 到 `qwen2_moe.py:419`
+Qwen2-MoE 同样：`qwen2_moe.py:393` 到 `qwen2_moe.py:417`
 
-DeepSeek 同样：`deepseek_v2.py:1297` 到 `deepseek_v2.py:1353`
+DeepSeek 同样：`deepseek_v2.py:1412` 到 `deepseek_v2.py:1500`
 
 这说明：
 
@@ -1354,10 +1352,10 @@ routing：top-k experts per token
 关键位置：
 
 ```text
-MixtralMoE：mixtral.py:77 到 mixtral.py:154
-MixtralDecoderLayer：mixtral.py:238 到 mixtral.py:293
-MoE 元数据：mixtral.py:515 到 mixtral.py:540
-权重映射：mixtral.py:367 到 mixtral.py:377
+MixtralMoE：mixtral.py:71 到 mixtral.py:149
+MixtralDecoderLayer：mixtral.py:233 到 mixtral.py:288
+MoE 元数据：mixtral.py:420 到 mixtral.py:444
+权重加载：mixtral.py:487 到 mixtral.py:489
 ```
 
 ### 20.2 Qwen2-MoE
@@ -1377,10 +1375,10 @@ experts：FusedMoE(shared_experts=...)
 关键位置：
 
 ```text
-SparseMoeBlock：qwen2_moe.py:125 到 qwen2_moe.py:193
-层选择：qwen2_moe.py:311 到 qwen2_moe.py:330
-shared expert：qwen2_moe.py:149 到 qwen2_moe.py:179
-权重加载：qwen2_moe.py:432 到 qwen2_moe.py:534
+SparseMoeBlock：qwen2_moe.py:123 到 qwen2_moe.py:191
+层选择：qwen2_moe.py:309 到 qwen2_moe.py:328
+shared expert：qwen2_moe.py:147 到 qwen2_moe.py:177
+权重加载：qwen2_moe.py:494 到 qwen2_moe.py:507
 ```
 
 ### 20.3 DeepSeek-V2/V3
@@ -1400,11 +1398,11 @@ shared experts：DeepseekV2MLP 或 fused shared experts
 关键位置：
 
 ```text
-DeepseekV2MoE：deepseek_v2.py:246 到 deepseek_v2.py:388
-层选择：deepseek_v2.py:1155 到 deepseek_v2.py:1173
-SP：deepseek_v2.py:365 到 deepseek_v2.py:386
-MoE 元数据：deepseek_v2.py:1587 到 deepseek_v2.py:1705
-权重加载：deepseek_v2.py:1355 到 deepseek_v2.py:1578
+DeepseekV2MoE：deepseek_v2.py:276 到 deepseek_v2.py:425
+层选择：deepseek_v2.py:1218 到 deepseek_v2.py:1264
+SP：deepseek_v2.py:406 到 deepseek_v2.py:423
+MoE 元数据：deepseek_v2.py:1747 到 deepseek_v2.py:1863
+权重加载：deepseek_v2.py:1502 到 deepseek_v2.py:1738
 ```
 
 ---
@@ -1417,7 +1415,7 @@ MoE 元数据：deepseek_v2.py:1587 到 deepseek_v2.py:1705
 
 它是工厂函数，返回 `MoERunner`。
 
-位置：`layer.py:102` 到 `layer.py:147`
+位置：`layer.py:100` 到 `layer.py:147`
 
 ### 21.2 router logits 是在哪里算的？
 
@@ -1439,11 +1437,11 @@ else:
     router_logits, _ = self.gate(hidden_states)
 ```
 
-位置：`deepseek_v2.py:372` 到 `deepseek_v2.py:380`
+位置：`deepseek_v2.py:409` 到 `deepseek_v2.py:417`
 
 `MoERunner._forward_impl()` 里如果 `self.gate is not None`，会实际计算 gate。
 
-位置：`moe_runner.py:804` 到 `moe_runner.py:813`
+位置：`moe_runner.py:817` 到 `moe_runner.py:825`
 
 ### 21.3 expert weights 是每个 expert 一个 Linear 吗？
 
@@ -1451,7 +1449,7 @@ else:
 
 vLLM 把 experts 的权重组织成 fused 参数，由 `RoutedExperts` 持有，并通过 `quant_method` 创建参数。
 
-位置：`routed_experts.py:150` 到 `routed_experts.py:169`
+位置：`routed_experts.py:154` 到 `routed_experts.py:172`
 
 ### 21.4 shared expert 和 routed expert 谁先算？
 
@@ -1467,9 +1465,9 @@ output = shared_output + fused_output
 
 ```text
 SharedExperts 包装：moe_runner.py:277 到 moe_runner.py:285
-触发 shared experts：moe_runner.py:525 到 moe_runner.py:532
-overlap 调度：moe_runner.py:547 到 moe_runner.py:578
-输出相加：moe_runner.py:709 到 moe_runner.py:712
+触发 shared experts：moe_runner.py:538 到 moe_runner.py:545
+overlap 调度：moe_runner.py:560 到 moe_runner.py:591
+输出相加：moe_runner.py:722 到 moe_runner.py:725
 ```
 
 ### 21.5 EP 和 TP 的区别是什么？

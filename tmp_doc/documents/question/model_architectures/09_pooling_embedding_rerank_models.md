@@ -248,6 +248,8 @@ class PoolingParamsUpdate:
 
 位置：`vllm/vllm/model_executor/layers/pooler/common.py:18` 到 `vllm/vllm/model_executor/layers/pooler/common.py:29`
 
+`PoolingParamsUpdate` 还支持用 `__or__` 合并多个 pooler/method 的更新结果，便于 `SequencePooler` / `TokenPooler` 汇总底层 pooling method 的需求。
+
 典型用途是 `StepPool`：它需要根据 `step_tag_id` 在原始 token ids 里筛选位置，所以会设置 `requires_token_ids=True`。
 
 ---
@@ -300,7 +302,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4348` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4358`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4405` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 所以 pooling 模型不进入 `sample_tokens()`，也不需要 grammar bitmask、temperature、top_p、top_k 等采样逻辑。
 
@@ -618,11 +620,12 @@ class PoolingParams(msgspec.Struct, omit_defaults=True, array_like=True):
 `verify()` 会做几类校验：
 
 ```text
-1. 合并 PoolerConfig 默认参数；
-2. 给 use_activation 设置默认值；
-3. 校验 dimensions 是否符合 Matryoshka 配置；
-4. 校验 task 是否允许当前参数；
-5. token-level pooling 默认 skip_reading_prefix_cache=True。
+1. plugin task 跳过常规参数校验，并默认 skip_reading_prefix_cache=True；
+2. 合并 PoolerConfig 默认参数；
+3. 给 use_activation 设置默认值；
+4. 校验 dimensions 是否符合 Matryoshka 配置；
+5. 校验 task 是否允许当前参数；
+6. token-level pooling 默认 skip_reading_prefix_cache=True。
 ```
 
 关键位置：`vllm/vllm/pooling_params.py:89` 到 `vllm/vllm/pooling_params.py:214`
@@ -710,6 +713,8 @@ class PoolingMetadata:
 
 位置：`vllm/vllm/v1/pool/metadata.py:46` 到 `vllm/vllm/v1/pool/metadata.py:55`
 
+初始化时 `PoolingMetadata.__post_init__()` 会从每个 `PoolingParams.task` 派生 `tasks`，并校验每个 pooling request 都已经设置 task。
+
 `build_pooling_cursor()` 根据 `num_scheduled_tokens_np` 和 `query_start_loc_gpu` 构建 token 边界：
 
 ```python
@@ -772,7 +777,7 @@ self.logits_processing_needs_token_ids[req_index] = (
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_input_batch.py:454` 到 `vllm/vllm/v1/worker/gpu_input_batch.py:462`
+位置：`vllm/vllm/v1/worker/gpu_input_batch.py:456` 到 `vllm/vllm/v1/worker/gpu_input_batch.py:464`
 
 构造 `PoolingMetadata` 的入口：
 
@@ -793,7 +798,7 @@ def get_pooling_metadata(self) -> PoolingMetadata:
     )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_input_batch.py:945` 到 `vllm/vllm/v1/worker/gpu_input_batch.py:958`
+位置：`vllm/vllm/v1/worker/gpu_input_batch.py:947` 到 `vllm/vllm/v1/worker/gpu_input_batch.py:960`
 
 这里复用了 `sampling_metadata.prompt_token_ids`，但含义不是采样，而是为了让 pooler 可以拿到 prompt token ids。
 
@@ -807,7 +812,7 @@ def get_pooling_metadata(self) -> PoolingMetadata:
 self.is_pooling_model = model_config.runner_type == "pooling"
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:452`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:480`
 
 创建 `InputBatch` 时会传入：
 
@@ -815,7 +820,7 @@ self.is_pooling_model = model_config.runner_type == "pooling"
 is_pooling_model=self.is_pooling_model
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:687`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:696`
 
 这会影响 `InputBatch` 的行为：
 
@@ -838,7 +843,7 @@ if self.is_pooling_model:
     to_update.apply(pooling_params)
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1215` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:1222`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:1256` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:1263`
 
 这一步很关键：
 
@@ -865,7 +870,7 @@ def _pool(
 ) -> ModelRunnerOutput | AsyncModelRunnerOutput:
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3346` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3352`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3392` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3398`
 
 主流程：
 
@@ -900,7 +905,7 @@ raw_pooler_output: PoolerOutput = model.pooler(
 )
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3358` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3372`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3404` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3418`
 
 然后判断哪些请求已经完成：
 
@@ -911,7 +916,7 @@ finished_mask = [
 ]
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3374` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3377`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3420` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3423`
 
 如果 pooler 还没有完整输出，返回占位：
 
@@ -921,7 +926,7 @@ if raw_pooler_output is None or not any(finished_mask):
     return model_runner_output
 ```
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3391` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3393`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3437` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3439`
 
 这主要服务于：
 
@@ -941,7 +946,7 @@ execute_model()
   → sample_tokens(grammar_output)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:490` 到 `vllm/vllm/v1/engine/core.py:500`
+位置：`vllm/vllm/v1/engine/core.py:488` 到 `vllm/vllm/v1/engine/core.py:508`
 
 而 pooling 模型在 `GPUModelRunner.execute_model()` 中直接返回 `ModelRunnerOutput`，不会返回 `None` 等待采样。
 
@@ -955,7 +960,7 @@ else:
     ... sample_tokens(...)
 ```
 
-位置：`vllm/vllm/v1/engine/core.py:555` 到 `vllm/vllm/v1/engine/core.py:567`
+位置：`vllm/vllm/v1/engine/core.py:555` 到 `vllm/vllm/v1/engine/core.py:568`
 
 所以 pooling 模型的执行链路是：
 
@@ -1005,7 +1010,7 @@ if pooling_output is not None:
     )
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:312` 到 `vllm/vllm/v1/engine/output_processor.py:317`
+位置：`vllm/vllm/v1/engine/output_processor.py:313` 到 `vllm/vllm/v1/engine/output_processor.py:318`
 
 `_new_pooling_output()`：
 
@@ -1014,7 +1019,7 @@ def _new_pooling_output(self, pooling_output: torch.Tensor) -> PoolingOutput:
     return PoolingOutput(data=pooling_output)
 ```
 
-位置：`vllm/vllm/v1/engine/output_processor.py:413` 到 `vllm/vllm/v1/engine/output_processor.py:414`
+位置：`vllm/vllm/v1/engine/output_processor.py:420` 到 `vllm/vllm/v1/engine/output_processor.py:421`
 
 最终 `PoolingRequestOutput` 定义为：
 
@@ -1201,7 +1206,7 @@ ScoringIOProcessors = {
 }
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:730` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:739`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:793` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:802`
 
 ---
 
@@ -1222,7 +1227,7 @@ data_2 = score_data_to_prompts(scoring_data.data_2, "document", self.model_confi
 return self._preprocess_cmpl_offline(prompts=data_1 + data_2, ...)
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:212` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:225`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:246` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:259`
 
 后处理时，把前 `n_queries` 个输出当 query embeddings，后面的当 doc embeddings：
 
@@ -1231,7 +1236,7 @@ emb_data_1 = outputs[:n_queries]
 emb_data_2 = outputs[n_queries:]
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:227` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:230`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:261` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:264`
 
 然后计算 cosine similarity：
 
@@ -1241,7 +1246,7 @@ pair_score = F.cosine_similarity(
 )
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:235` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:238`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:270` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:272`
 
 最终重新包装成 `PoolingRequestOutput(outputs=pair_score)`。
 
@@ -1272,7 +1277,7 @@ score_type = "cross-encoder"
 prompt_inputs = tokenizer(text=prompt_1, text_pair=prompt_2, **local_kwargs)
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:535` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:537`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:589` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:591`
 
 如果模型支持 score template，则由模型类提供 prompt 模板：
 
@@ -1281,7 +1286,7 @@ full_prompt = self.model.get_score_template(prompt_1, prompt_2)
 prompt_inputs = tokenizer(full_prompt, **local_kwargs)
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:507` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:514`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:561` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:568`
 
 `SupportsScoreTemplate` 协议定义为：
 
@@ -1327,7 +1332,7 @@ d_emb = emb_2.outputs.data
 maxsim_score = compute_maxsim_score(q_emb, d_emb)
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:277` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:284`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:311` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:318`
 
 典型公式是：
 
@@ -1471,7 +1476,7 @@ prompt += "\n".join(doc_prompts) + "\n"
 prompt += f"<query>\n{query}{query_emb_token}\n</query>"
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:650` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:663`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:700` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:714`
 
 后处理时：
 
@@ -1482,7 +1487,7 @@ doc_embeds = embeds[:-1]
 scores = F.cosine_similarity(query_embeds, doc_embeds)
 ```
 
-位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:707` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:715`
+位置：`vllm/vllm/entrypoints/pooling/scoring/io_processor.py:770` 到 `vllm/vllm/entrypoints/pooling/scoring/io_processor.py:778`
 
 它比较特殊：
 

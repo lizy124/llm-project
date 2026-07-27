@@ -63,7 +63,7 @@ residual / norm 的排列方式。
 
 Llama 是最典型的“标准 decoder-only block”例子。
 
-位置：`vllm/model_executor/models/llama.py:82`
+位置：`vllm/model_executor/models/llama.py:79`
 
 ### 2.1 LlamaMLP
 
@@ -75,7 +75,7 @@ self.down_proj = RowParallelLinear(...)
 self.act_fn = SiluAndMul()
 ```
 
-位置：`llama.py:95` 到 `llama.py:116`
+位置：`llama.py:92` 到 `llama.py:113`
 
 forward 很短：
 
@@ -85,7 +85,7 @@ x = self.act_fn(x)
 x, _ = self.down_proj(x)
 ```
 
-位置：`llama.py:118` 到 `llama.py:122`
+位置：`llama.py:115` 到 `llama.py:119`
 
 这说明：
 
@@ -106,7 +106,7 @@ self.rotary_emb = get_rope(...)
 self.attn = Attention(...)
 ```
 
-位置：`llama.py:165` 到 `llama.py:222`
+位置：`llama.py:162` 到 `llama.py:219`
 
 forward 链路是：
 
@@ -118,7 +118,7 @@ attn_output = self.attn(q, k, v)
 output, _ = self.o_proj(attn_output)
 ```
 
-位置：`llama.py:224` 到 `llama.py:234`
+位置：`llama.py:221` 到 `llama.py:231`
 
 也就是说：
 
@@ -138,7 +138,7 @@ self.input_layernorm = RMSNorm(...)
 self.post_attention_layernorm = RMSNorm(...)
 ```
 
-位置：`llama.py:285` 到 `llama.py:310`
+位置：`llama.py:282` 到 `llama.py:308`
 
 forward 中 residual 和 norm 的组织方式是：
 
@@ -155,7 +155,7 @@ attention 后：
   hidden_states = mlp(hidden_states)
 ```
 
-位置：`llama.py:313` 到 `llama.py:330`
+位置：`llama.py:310` 到 `llama.py:327`
 
 这里的重点是：
 
@@ -181,7 +181,7 @@ hidden_states
 
 ### 3.1 QKVParallelLinear：q/k/v 的融合投影和 TP 切分
 
-定义位置：`vllm/model_executor/layers/linear.py:914`
+定义位置：`vllm/model_executor/layers/linear.py:942`
 
 `QKVParallelLinear` 的作用是把 attention 的 Q、K、V 三个投影合并成一个 column-parallel linear。
 
@@ -196,7 +196,7 @@ v_head_size
 quant_config
 ```
 
-位置：`linear.py:942` 到 `linear.py:957`
+位置：`linear.py:970` 到 `linear.py:985`
 
 它会根据 tensor parallel size 计算本 rank 的：
 
@@ -207,7 +207,7 @@ num_kv_head_replicas：当 KV heads 少于 TP size 时的复制倍数
 output_sizes：[q_proj_size, k_proj_size, v_proj_size]
 ```
 
-位置：`linear.py:965` 到 `linear.py:984`
+位置：`linear.py:993` 到 `linear.py:1008`
 
 这就是为什么 GQA / MQA 能复用同一个 linear：
 
@@ -219,7 +219,7 @@ KV heads 在数量不足时可以跨 rank 复制。
 
 ### 3.2 Attention：统一入口，后端可替换
 
-定义位置：`vllm/model_executor/layers/attention/attention.py:192`
+定义位置：`vllm/model_executor/layers/attention/attention.py:221`
 
 `Attention` 的注释直接说明它负责三件事：
 
@@ -229,7 +229,7 @@ KV heads 在数量不足时可以跨 rank 复制。
 3. 返回 attention output。
 ```
 
-位置：`attention.py:192` 到 `attention.py:202`
+位置：`attention.py:221` 到 `attention.py:231`
 
 初始化时会根据 head size、dtype、KV cache dtype、attention type 等选择 backend：
 
@@ -239,7 +239,7 @@ impl_cls = self.attn_backend.get_impl_cls()
 self.impl = impl_cls(...)
 ```
 
-位置：`attention.py:318` 到 `attention.py:400`
+位置：`attention.py:348` 到 `attention.py:430`
 
 因此模型文件里写的是：
 
@@ -257,13 +257,13 @@ FlashAttention / FlashInfer / Triton attention / Flex attention / 其他平台 b
 
 ### 3.3 Attention.forward 不显式接收 attention metadata
 
-`Attention.forward()` 的签名只有：
+`Attention.forward()` 的显式参数是 q/k/v 和输出形状 / dtype，不把 attention metadata 放进模型 forward 参数：
 
 ```python
-def forward(self, query, key, value, output_shape=None)
+def forward(self, query, key, value, output_shape=None, output_dtype=None)
 ```
 
-位置：`attention.py:452` 到 `attention.py:461`
+位置：`attention.py:485` 到 `attention.py:495`
 
 但注释说明 attention metadata 来自 forward context：
 
@@ -272,9 +272,9 @@ attn_metadata 由 ModelRunner.execute_model() 外层的 set_forward_context 设�
 Attention 通过 get_forward_context().attn_metadata 读取。
 ```
 
-位置：`attention.py:462` 到 `attention.py:470`
+位置：`attention.py:496` 到 `attention.py:504`
 
-真正取 context 的辅助函数是：
+真正取 context 的辅助函数是 `get_attention_context()`：
 
 ```python
 forward_context = get_forward_context()
@@ -282,9 +282,10 @@ attn_metadata_raw = forward_context.attn_metadata
 attn_layer = forward_context.no_compile_layers[layer_name]
 kv_cache = attn_layer.kv_cache
 slot_mapping = forward_context.slot_mapping
+layer_slot_mapping = slot_mapping.get(layer_name)
 ```
 
-位置：`attention.py:670` 到 `attention.py:710`
+位置：`attention.py:726` 到 `attention.py:766`
 
 所以 attention block 的隐式依赖是：
 
@@ -310,11 +311,11 @@ unified_kv_cache_update(key, value, layer_name)
 unified_attention_with_output(query, key, value, output, layer_name)
 ```
 
-位置：`attention.py:505` 到 `attention.py:543`
+位置：`attention.py:540` 到 `attention.py:579`
 
 `unified_kv_cache_update()` 内部会拿到当前 layer 的 slot mapping，然后调用 backend 的 `do_kv_cache_update()`。
 
-位置：`attention.py:713` 到 `attention.py:736`
+位置：`attention.py:769` 到 `attention.py:792`
 
 `unified_attention_with_output()` 则调用：
 
@@ -327,10 +328,12 @@ self.impl.forward(
     kv_cache,
     attn_metadata,
     output=output,
+    output_scale=output_scale,
+    output_block_scale=output_block_scale,
 )
 ```
 
-位置：`attention.py:755` 到 `attention.py:784`
+位置：`attention.py:813` 到 `attention.py:840`
 
 这说明：
 
@@ -347,9 +350,9 @@ attention output 最后通常走：
 output, _ = self.o_proj(attn_output)
 ```
 
-Llama 位置：`llama.py:232` 到 `llama.py:234`
+Llama 位置：`llama.py:229` 到 `llama.py:231`
 
-`o_proj` 是 `RowParallelLinear`，定义位置：`linear.py:1491`。
+`o_proj` 是 `RowParallelLinear`，定义位置：`linear.py:1537`。
 
 它的语义是：
 
@@ -359,7 +362,7 @@ Llama 位置：`llama.py:232` 到 `llama.py:234`
 需要时通过 tensor_model_parallel_all_reduce 合并结果。
 ```
 
-核心 all-reduce 位置：`linear.py:1646` 到 `linear.py:1649`
+核心 all-reduce 位置：`linear.py:1690` 到 `linear.py:1693`
 
 ---
 
@@ -376,7 +379,7 @@ x
 
 ### 4.1 MergedColumnParallelLinear：融合 gate_proj 和 up_proj
 
-定义位置：`vllm/model_executor/layers/linear.py:577`
+定义位置：`vllm/model_executor/layers/linear.py:580`
 
 `MergedColumnParallelLinear` 的作用是把多个 column-parallel linear 沿输出维度拼起来。
 
@@ -386,16 +389,16 @@ Llama 用它表示：
 gate_proj + up_proj
 ```
 
-位置：`llama.py:95` 到 `llama.py:102`
+位置：`llama.py:92` 到 `llama.py:99`
 
-对应权重加载时，Llama 明确把 HF checkpoint 的两个名字映射到一个 fused 参数：
+对应权重加载时，Llama 通过 `WeightsMapper` 把 HF checkpoint 的两个名字映射到一个 fused 参数：
 
 ```python
-(".gate_up_proj", ".gate_proj", 0),
-(".gate_up_proj", ".up_proj", 1),
+".gate_proj": (".gate_up_proj", 0),
+".up_proj": (".gate_up_proj", 1),
 ```
 
-位置：`llama.py:434` 到 `llama.py:441`
+位置：`llama.py:345` 到 `llama.py:354`
 
 因此文档里看到的：
 
@@ -413,7 +416,7 @@ Llama 使用：
 self.act_fn = SiluAndMul()
 ```
 
-位置：`llama.py:112` 到 `llama.py:116`
+位置：`llama.py:109` 到 `llama.py:113`
 
 `SiluAndMul` 定义位置：`activation.py:116`。
 
@@ -425,7 +428,7 @@ x[..., d:] = up
 return silu(gate) * up
 ```
 
-位置：`activation.py:137` 到 `activation.py:148`
+位置：`activation.py:140` 到 `activation.py:149`
 
 Gemma2 则使用：
 
@@ -433,7 +436,7 @@ Gemma2 则使用：
 self.act_fn = GeluAndMul(approximate="tanh")
 ```
 
-位置：`gemma2.py:85` 到 `gemma2.py:95`
+位置：`gemma2.py:81` 到 `gemma2.py:92`
 
 这说明 MLP 的底层组织可以复用，只替换 activation 就能适配不同模型。
 
@@ -445,18 +448,18 @@ MLP 的 down projection 通常是：
 self.down_proj = RowParallelLinear(...)
 ```
 
-Llama 位置：`llama.py:103` 到 `llama.py:111`
+Llama 位置：`llama.py:100` 到 `llama.py:108`
 
 它会根据 `reduce_results` 决定是否 all-reduce。
 
-位置：`linear.py:1536` 到 `linear.py:1538`，`linear.py:1646` 到 `linear.py:1649`
+位置：`linear.py:1535` 到 `linear.py:1538`，`linear.py:1690` 到 `linear.py:1693`
 
 因此 dense MLP 在 TP 下可以记成：
 
 ```text
 gate_up_proj：column parallel，输出每个 rank 的 intermediate shard
 activation：本地执行
- down_proj：row parallel，把结果规约回 hidden_size
+down_proj：row parallel，把结果规约回 hidden_size
 ```
 
 ### 4.4 MoE 不是重写 MLP，而是替换 MLP block
@@ -471,17 +474,17 @@ SiluAndMul
 RowParallelLinear
 ```
 
-位置：`deepseek_v2.py:199` 到 `deepseek_v2.py:243`
+位置：`deepseek_v2.py:229` 到 `deepseek_v2.py:273`
 
 MoE block 则用：
 
 ```python
 self.gate = GateLinear(...)
-self.shared_experts = DeepseekV2MLP(...)
-self.experts = FusedMoE(...)
+self.shared_experts = DeepseekV2MLP(...)  # 可选
+self.experts = FusedMoE(shared_experts=self.shared_experts, gate=self.gate, ...)
 ```
 
-位置：`deepseek_v2.py:274` 到 `deepseek_v2.py:351`
+位置：`deepseek_v2.py:276` 到 `deepseek_v2.py:386`
 
 forward 里：
 
@@ -492,7 +495,7 @@ hidden_states
   → 必要时 sequence_parallel all_gather
 ```
 
-位置：`deepseek_v2.py:361` 到 `deepseek_v2.py:388`
+位置：`deepseek_v2.py:396` 到 `deepseek_v2.py:425`
 
 所以 MoE 可以理解为：
 
@@ -509,7 +512,7 @@ vLLM 的 norm 组件在：`vllm/model_executor/layers/layernorm.py`。
 
 ### 5.1 RMSNorm
 
-定义位置：`layernorm.py:35`
+定义位置：`layernorm.py:37`
 
 核心语义是：
 
@@ -517,7 +520,7 @@ vLLM 的 norm 组件在：`vllm/model_executor/layers/layernorm.py`。
 x -> weight * x / sqrt(mean(x^2) + eps)
 ```
 
-位置：`layernorm.py:37` 到 `layernorm.py:42`
+位置：`layernorm.py:38` 到 `layernorm.py:42`
 
 但它的 forward 支持：
 
@@ -545,7 +548,7 @@ fused_add_rms_norm(x, residual)
 hidden_states, residual = self.input_layernorm(hidden_states, residual)
 ```
 
-位置：`llama.py:323` 到 `llama.py:324`
+位置：`llama.py:320` 到 `llama.py:321`
 
 而不是显式写：
 
@@ -577,7 +580,7 @@ pre_feedforward_layernorm
 post_feedforward_layernorm
 ```
 
-位置：`gemma2.py:217` 到 `gemma2.py:226`
+位置：`gemma2.py:213` 到 `gemma2.py:222`
 
 forward 顺序也和 Llama 不完全一样：
 
@@ -590,7 +593,7 @@ input norm
   → post_feedforward norm
 ```
 
-位置：`gemma2.py:228` 到 `gemma2.py:250`
+位置：`gemma2.py:224` 到 `gemma2.py:246`
 
 这说明：
 
@@ -617,7 +620,7 @@ DeepSeekV2 的 MLA 相关路径里会用到 `LayerNorm`，例如：
 self.k_norm = LayerNorm(self.head_dim, eps=1e-6)
 ```
 
-位置：`deepseek_v2.py:644`
+位置：`deepseek_v2.py:683`
 
 所以 norm block 不是只有 RMSNorm；模型可以选择 RMSNorm、GemmaRMSNorm、LayerNorm 或 gated norm。
 
@@ -633,9 +636,9 @@ RoPE 入口在：`vllm/model_executor/layers/rotary_embedding/__init__.py:33`
 self.rotary_emb = get_rope(...)
 ```
 
-Llama 位置：`llama.py:243` 到 `llama.py:248`
+Llama 位置：`llama.py:240` 到 `llama.py:245`
 
-Gemma2 位置：`gemma2.py:151` 到 `gemma2.py:156`
+Gemma2 位置：`gemma2.py:147` 到 `gemma2.py:152`
 
 ### 6.1 get_rope() 的输入
 
@@ -685,19 +688,21 @@ dtype
 `get_rope()` 会根据 `rope_type` 选择：
 
 ```text
-default：RotaryEmbedding 或 MRotaryEmbedding
+default：RotaryEmbedding / MRotaryEmbedding，或 FOPE 分支的 FourierRotaryEmbedding
+proportional：Gemma4RotaryEmbedding
 llama3：Llama3RotaryEmbedding
+mllama4：Llama4VisionRotaryEmbedding
 linear：LinearScalingRotaryEmbedding
 ntk / dynamic：NTK scaling 相关实现
 yarn：YaRNScalingRotaryEmbedding 或 MRotaryEmbedding
-deepseek_yarn：DeepseekScalingRotaryEmbedding
+deepseek_yarn / deepseek_llama_scaling：DeepseekScalingRotaryEmbedding 或 DeepseekV4ScalingRotaryEmbedding
 longrope：Phi3LongRoPEScaledRotaryEmbedding
 xdrope：XDRotaryEmbedding
 openpangu：MRotaryEmbeddingInterleaved
-proportional：Gemma4RotaryEmbedding
+telechat3-yarn：TeleChat3RoPEScaledRotaryEmbedding
 ```
 
-位置：`rotary_embedding/__init__.py:101` 到 `rotary_embedding/__init__.py:382`
+位置：`rotary_embedding/__init__.py:101` 到 `rotary_embedding/__init__.py:384`
 
 所以模型 attention 里只需要：
 
@@ -727,7 +732,7 @@ ReplicatedLinear
 
 ### 7.1 LinearBase 统一处理 quant_method
 
-`LinearBase` 定义位置：`linear.py:228`。
+`LinearBase` 定义位置：`linear.py:231`。
 
 初始化时会选择量化方法：
 
@@ -740,7 +745,7 @@ else:
     raise ValueError(...)
 ```
 
-位置：`linear.py:269` 到 `linear.py:274`
+位置：`linear.py:271` 到 `linear.py:277`
 
 也就是说，模型文件只传：
 
@@ -752,7 +757,7 @@ quant_config=quant_config
 
 ### 7.2 ColumnParallelLinear
 
-定义位置：`linear.py:392`
+定义位置：`linear.py:397`
 
 语义：
 
@@ -772,13 +777,13 @@ else:
     output = output_parallel
 ```
 
-位置：`linear.py:548` 到 `linear.py:566`
+位置：`linear.py:551` 到 `linear.py:569`
 
 QKV 和 gate_up 都是 column-parallel 的特化。
 
 ### 7.3 RowParallelLinear
 
-定义位置：`linear.py:1491`
+定义位置：`linear.py:1537`
 
 语义：
 
@@ -801,7 +806,7 @@ if self.reduce_results and self.tp_size > 1:
     output = tensor_model_parallel_all_reduce(output_parallel)
 ```
 
-位置：`linear.py:1628` 到 `linear.py:1654`
+位置：`linear.py:1672` 到 `linear.py:1698`
 
 attention 的 `o_proj` 和 MLP 的 `down_proj` 通常都使用它。
 
@@ -816,16 +821,16 @@ packed_modules_mapping = {
 }
 ```
 
-位置：`llama.py:489` 到 `llama.py:492`
+位置：`llama.py:457` 到 `llama.py:460`
 
-LlamaModel.load_weights 也会把 HF 权重名映射到 fused 参数：
+LlamaModel 的 `hf_to_vllm_mapper` 也会把 HF 权重名映射到 fused 参数，`load_weights()` 交给 `AutoWeightsLoader` 使用该 mapper：
 
 ```text
 q_proj / k_proj / v_proj → qkv_proj
 gate_proj / up_proj → gate_up_proj
 ```
 
-位置：`llama.py:434` 到 `llama.py:469`
+位置：`llama.py:345` 到 `llama.py:354`，`llama.py:441` 到 `llama.py:443`
 
 这说明模型结构看起来是 vLLM 自己的 fused 形态，但仍能加载 HuggingFace 原始 checkpoint。
 
@@ -862,9 +867,9 @@ gate_proj / up_proj → gate_up_proj
 
 对应源码：
 
-- `LlamaAttention.forward()`：`llama.py:224`
-- `LlamaMLP.forward()`：`llama.py:118`
-- `LlamaDecoderLayer.forward()`：`llama.py:313`
+- `LlamaAttention.forward()`：`llama.py:221`
+- `LlamaMLP.forward()`：`llama.py:115`
+- `LlamaDecoderLayer.forward()`：`llama.py:310`
 
 如果再放到整个 model 里：
 
@@ -876,7 +881,7 @@ embed_tokens(input_ids)
   → compute_logits(hidden_states)  # 在 ModelRunner 后处理阶段调用
 ```
 
-LlamaModel forward 位置：`llama.py:392` 到 `llama.py:431`
+LlamaModel forward 位置：`llama.py:400` 到 `llama.py:439`
 
 ---
 
@@ -888,7 +893,7 @@ LlamaModel forward 位置：`llama.py:392` 到 `llama.py:431`
 self.start_layer, self.end_layer, self.layers = make_layers(...)
 ```
 
-位置：`llama.py:375` 到 `llama.py:379`
+位置：`llama.py:383` 到 `llama.py:387`
 
 forward 时只执行当前 PP rank 负责的切片：
 
@@ -897,7 +902,7 @@ for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer
     hidden_states, residual = layer(...)
 ```
 
-位置：`llama.py:412` 到 `llama.py:420`
+位置：`llama.py:420` 到 `llama.py:428`
 
 非最后 PP rank 返回：
 
@@ -905,7 +910,7 @@ for idx, layer in enumerate(islice(self.layers, self.start_layer, self.end_layer
 IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 ```
 
-位置：`llama.py:422` 到 `llama.py:425`
+位置：`llama.py:430` 到 `llama.py:433`
 
 最后 PP rank 才执行 final norm：
 
@@ -913,7 +918,7 @@ IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 hidden_states, _ = self.norm(hidden_states, residual)
 ```
 
-位置：`llama.py:427`
+位置：`llama.py:435`
 
 所以 block 复用和 PP 的关系是：
 
@@ -936,7 +941,7 @@ Attention
 RowParallelLinear
 ```
 
-位置：`gemma2.py:99` 到 `gemma2.py:184`
+位置：`gemma2.py:95` 到 `gemma2.py:180`
 
 但它的差异包括：
 
@@ -951,9 +956,9 @@ DecoderLayer 有 input / post_attention / pre_feedforward / post_feedforward 四
 
 对应位置：
 
-- attention scaling / sliding：`gemma2.py:133`、`gemma2.py:158` 到 `gemma2.py:170`
-- MLP activation：`gemma2.py:85` 到 `gemma2.py:95`
-- norm 排列：`gemma2.py:217` 到 `gemma2.py:250`
+- attention scaling / sliding：`gemma2.py:129`、`gemma2.py:154` 到 `gemma2.py:168`
+- MLP activation：`gemma2.py:81` 到 `gemma2.py:92`
+- norm 排列：`gemma2.py:213` 到 `gemma2.py:246`
 
 这说明：
 
@@ -978,7 +983,7 @@ SiluAndMul
 RowParallelLinear
 ```
 
-位置：`deepseek_v2.py:199` 到 `deepseek_v2.py:243`
+位置：`deepseek_v2.py:229` 到 `deepseek_v2.py:273`
 
 区别是它额外支持：
 
@@ -999,7 +1004,7 @@ DeepseekV2MLP：可选 shared experts
 FusedMoE：执行 routed experts
 ```
 
-位置：`deepseek_v2.py:246` 到 `deepseek_v2.py:351`
+位置：`deepseek_v2.py:276` 到 `deepseek_v2.py:386`
 
 forward 里要么内部 router，要么先 gate：
 
@@ -1008,7 +1013,7 @@ router_logits = gate(hidden_states)
 final_hidden_states = experts(hidden_states, router_logits)
 ```
 
-位置：`deepseek_v2.py:372` 到 `deepseek_v2.py:380`
+位置：`deepseek_v2.py:409` 到 `deepseek_v2.py:417`
 
 因此 MoE 不是 attention block 的变体，而是 FFN / MLP block 的替换。
 
@@ -1022,15 +1027,15 @@ DeepseekV2MLAAttention
 DeepseekV2Attention
 ```
 
-位置：`deepseek_v2.py:1132` 到 `deepseek_v2.py:1138`
+位置：`deepseek_v2.py:1212` 到 `deepseek_v2.py:1217`
 
-MLA 路径还会返回特殊的 KV cache spec：
+MLA / sparse MLA 相关路径还会接入特殊的 KV cache spec，例如 indexer cache 返回：
 
 ```python
 return MLAAttentionSpec(...)
 ```
 
-位置：`deepseek_v2.py:589` 到 `deepseek_v2.py:590`
+位置：`deepseek_v2.py:628` 到 `deepseek_v2.py:634`
 
 这说明：
 

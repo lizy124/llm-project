@@ -120,7 +120,7 @@ vision_tower(pixel_values)
   → language_model.model(inputs_embeds=...)
 ```
 
-对应源码：`llava.py:562` 到 `llava.py:576`、`llava.py:643` 到 `llava.py:666`、`llava.py:668` 到 `llava.py:720`
+对应源码：`llava.py:560` 到 `llava.py:576`、`llava.py:641` 到 `llava.py:665`、`llava.py:666` 到 `llava.py:718`
 
 例如 Qwen2-VL：
 
@@ -131,7 +131,7 @@ visual(pixel_values, grid_thw)
   → language_model.model(inputs_embeds=..., positions=mrope_positions)
 ```
 
-对应源码：`qwen2_vl.py:1298` 到 `qwen2_vl.py:1311`、`qwen2_vl.py:1365` 到 `qwen2_vl.py:1453`、`qwen2_vl.py:1687` 到 `qwen2_vl.py:1718`
+对应源码：`qwen2_vl.py:1271` 到 `qwen2_vl.py:1299`、`qwen2_vl.py:1348` 到 `qwen2_vl.py:1436`、`qwen2_vl.py:1670` 到 `qwen2_vl.py:1701`
 
 例如 Qwen2-Audio：
 
@@ -151,7 +151,7 @@ audio_tower(input_features, attention_mask)
 
 多模态模型通常继承或满足 `SupportsMultiModal`。
 
-源码：`interfaces.py:95` 到 `interfaces.py:410`
+源码：`interfaces.py:100` 到 `interfaces.py:415`
 
 核心接口是：
 
@@ -160,6 +160,7 @@ supports_multimodal = True
 get_placeholder_str(modality, i)
 embed_multimodal(**kwargs)
 get_language_model()
+configure_mm_token_handling(vocab_size, mm_token_ids)
 embed_input_ids(input_ids, multimodal_embeddings, is_multimodal)
 ```
 
@@ -186,7 +187,7 @@ if modality.startswith("video"):
     return "<|vision_start|><|video_pad|><|vision_end|>"
 ```
 
-位置：`qwen2_vl.py:1279` 到 `qwen2_vl.py:1286`
+位置：`qwen2_vl.py:1262` 到 `qwen2_vl.py:1269`
 
 Qwen2-Audio：
 
@@ -211,7 +212,7 @@ if modality.startswith("audio"):
 要求：输出顺序必须和 prompt 中多模态 item 出现顺序一致。
 ```
 
-接口定义位置：`interfaces.py:155` 到 `interfaces.py:165`
+接口定义位置：`interfaces.py:160` 到 `interfaces.py:169`
 
 LLaVA 的实现：
 
@@ -252,7 +253,7 @@ _parse_and_validate_audio_input()
 
 `embed_input_ids()` 是把文本 embedding 和多模态 embedding 合并的关键。
 
-默认实现位置：`interfaces.py:375` 到 `interfaces.py:410`
+默认实现位置：`interfaces.py:380` 到 `interfaces.py:415`
 
 流程是：
 
@@ -265,7 +266,7 @@ _parse_and_validate_audio_input()
 
 真正 scatter 的函数是 `_merge_multimodal_embeddings()`。
 
-位置：`utils.py:479` 到 `utils.py:515`
+位置：`utils.py:526` 到 `utils.py:562`
 
 关键逻辑：
 
@@ -297,7 +298,7 @@ with self._mark_language_model(...):
   创建 language_model
 ```
 
-位置：`interfaces.py:216` 到 `interfaces.py:293`
+位置：`interfaces.py:221` 到 `interfaces.py:298`
 
 作用是：
 
@@ -418,7 +419,7 @@ extract_embeds_range()
 
 进入 V1 执行层后，多模态信息主要在 `SchedulerOutput` 里传给 Worker。
 
-定义位置：`output.py:180` 到 `output.py:215`
+定义位置：`output.py:182` 到 `output.py:217`
 
 和多模态直接相关的字段：
 
@@ -430,7 +431,7 @@ free_encoder_mm_hashes
 
 ### 6.1 `NewRequestData.mm_features`
 
-`NewRequestData` 定义位置：`output.py:30` 到 `output.py:65`
+`NewRequestData` 定义位置：`output.py:32` 到 `output.py:67`
 
 其中：
 
@@ -443,11 +444,11 @@ prompt_is_token_ids：混合 token ids / embeddings 时的标记。
 
 `GPUModelRunner._update_states()` 会把 `new_req_data.mm_features` 放进 `CachedRequestState`。
 
-位置：`gpu_model_runner.py:1224` 到 `gpu_model_runner.py:1237`
+位置：`gpu_model_runner.py:1265` 到 `gpu_model_runner.py:1278`
 
 ### 6.2 `scheduled_encoder_inputs`
 
-字段注释：`output.py:201` 到 `output.py:204`
+字段注释：`output.py:203` 到 `output.py:206`
 
 含义是：
 
@@ -473,7 +474,7 @@ req_id -> encoder input indices that need processing
 
 ### 6.3 `free_encoder_mm_hashes`
 
-字段注释：`output.py:213` 到 `output.py:215`
+字段注释：`output.py:215` 到 `output.py:217`
 
 `GPUModelRunner._update_states()` 会释放这些 encoder cache：
 
@@ -482,7 +483,7 @@ for mm_hash in scheduler_output.free_encoder_mm_hashes:
     self.encoder_cache.pop(mm_hash, None)
 ```
 
-位置：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+位置：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 这说明多模态 encoder cache 的生命周期由 Scheduler 决定，Worker 只按指令释放。
 
@@ -492,7 +493,7 @@ for mm_hash in scheduler_output.free_encoder_mm_hashes:
 
 `GPUModelRunner.execute_model()` 中，多模态真正进入模型的位置在 `_preprocess()`。
 
-主调用位置：`gpu_model_runner.py:4274` 到 `gpu_model_runner.py:4283`
+主调用位置：`gpu_model_runner.py:4324` 到 `gpu_model_runner.py:4333`
 
 ```text
 execute_model()
@@ -517,7 +518,7 @@ _preprocess()
 
 ## 8. `_update_states()` 如何保存 mm_features
 
-入口：`gpu_model_runner.py:1127`
+入口：`gpu_model_runner.py:1162`
 
 新请求进入 Worker 时，会创建 `CachedRequestState`：
 
@@ -533,7 +534,7 @@ num_computed_tokens
 lora_request
 ```
 
-位置：`gpu_model_runner.py:1224` 到 `gpu_model_runner.py:1237`
+位置：`gpu_model_runner.py:1265` 到 `gpu_model_runner.py:1278`
 
 同时，如果模型使用 M-RoPE / XD-RoPE，会在新请求阶段预计算 positions：
 
@@ -542,7 +543,7 @@ uses_mrope → _init_mrope_positions(req_state)
 uses_xdrope_dim > 0 → _init_xdrope_positions(req_state)
 ```
 
-位置：`gpu_model_runner.py:1248` 到 `gpu_model_runner.py:1254`
+位置：`gpu_model_runner.py:1289` 到 `gpu_model_runner.py:1295`
 
 这一步说明：
 
@@ -550,11 +551,13 @@ uses_xdrope_dim > 0 → _init_xdrope_positions(req_state)
 多模态位置信息不是 forward 时临时猜的，而是在请求进入 batch 状态时就基于 prompt_token_ids + mm_features 计算。
 ```
 
+当前实现里，`prompt_embeds` 会在 `_init_mrope_positions()` 中从 `mrope_features` 过滤掉；这些预计算 embedding 位置按文本位置处理，因为它们没有 image/video 的 grid_thw 信息。
+
 ---
 
 ## 9. `_execute_mm_encoder()` 如何运行 tower / projector
 
-入口：`gpu_model_runner.py:2892`
+入口：`gpu_model_runner.py:2956`
 
 ### 9.1 先从 SchedulerOutput 取本轮需要跑的 encoder input
 
@@ -565,7 +568,7 @@ _batch_mm_inputs_from_scheduler()
   → 收集 mm_hashes / mm_kwargs / mm_lora_refs
 ```
 
-位置：`gpu_model_runner.py:2849` 到 `gpu_model_runner.py:2890`
+位置：`gpu_model_runner.py:2913` 到 `gpu_model_runner.py:2954`
 
 这一步只处理本轮 scheduler 认为需要 encoder 的多模态 item。
 
@@ -581,7 +584,7 @@ _batch_mm_inputs_from_scheduler()
   从待编码列表中过滤掉
 ```
 
-位置：`gpu_model_runner.py:2902` 到 `gpu_model_runner.py:2927`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
 这说明 vLLM 把“预计算 embedding”也统一成 encoder_cache + gather 的路径。
 
@@ -596,7 +599,7 @@ for modality, num_items, mm_kwargs_batch in group_and_batch_mm_kwargs(...):
     encoder_outputs.extend(batch_outputs)
 ```
 
-位置：`gpu_model_runner.py:3013` 到 `gpu_model_runner.py:3091`
+位置：`gpu_model_runner.py:3080` 到 `gpu_model_runner.py:3153`
 
 这一步调用的就是模型类实现的 `embed_multimodal()`。
 
@@ -607,7 +610,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
     self.encoder_cache[mm_hash] = output
 ```
 
-位置：`gpu_model_runner.py:3093` 到 `gpu_model_runner.py:3099`
+位置：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
 cache key 是 `mm_feature.identifier`，通常来自多模态输入 hash。
 
@@ -621,17 +624,17 @@ cache key 是 `mm_feature.identifier`，通常来自多模态输入 hash。
 3. multimodal pruning 或 sequential video encoding 时的视频逐个编码。
 ```
 
-LoRA mapping 位置：`gpu_model_runner.py:2944` 到 `gpu_model_runner.py:3011`
+LoRA mapping 位置：`gpu_model_runner.py:3008` 到 `gpu_model_runner.py:3075`
 
-Encoder CUDA Graph 位置：`gpu_model_runner.py:3074` 到 `gpu_model_runner.py:3087`
+Encoder CUDA Graph 位置：`gpu_model_runner.py:3139` 到 `gpu_model_runner.py:3150`
 
-逐个视频编码位置：`gpu_model_runner.py:3033` 到 `gpu_model_runner.py:3062`
+逐个视频编码位置：`gpu_model_runner.py:3097` 到 `gpu_model_runner.py:3125`
 
 ---
 
 ## 10. `_gather_mm_embeddings()` 如何把 encoder cache 切回本轮 token window
 
-入口：`gpu_model_runner.py:3101`
+入口：`gpu_model_runner.py:3165`
 
 它解决的问题是：
 
@@ -653,7 +656,7 @@ for req_id in input_batch.req_ids:
   标记 is_mm_embed mask
 ```
 
-位置：`gpu_model_runner.py:3120` 到 `gpu_model_runner.py:3173`
+位置：`gpu_model_runner.py:3184` 到 `gpu_model_runner.py:3246`
 
 关键对象：
 
@@ -692,13 +695,13 @@ False 的位置：保留普通 token embedding。
 (mm_embeds, is_mm_embed)
 ```
 
-位置：`gpu_model_runner.py:3105` 到 `gpu_model_runner.py:3200`
+位置：`gpu_model_runner.py:3170` 到 `gpu_model_runner.py:3273`
 
 ---
 
 ## 11. `_preprocess()` 如何合并到 inputs_embeds
 
-入口：`gpu_model_runner.py:3430`
+入口：`gpu_model_runner.py:3476`
 
 多模态路径的判断条件：
 
@@ -708,7 +711,7 @@ and is_first_rank
 and not is_encoder_decoder
 ```
 
-位置：`gpu_model_runner.py:3451`
+位置：`gpu_model_runner.py:3501`
 
 ### 11.1 decoder-only 多模态模型
 
@@ -723,7 +726,7 @@ and not is_encoder_decoder
 6. model.forward(input_ids=input_ids or None, inputs_embeds=inputs_embeds, positions=...)
 ```
 
-位置：`gpu_model_runner.py:3451` 到 `gpu_model_runner.py:3503`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3553`
 
 这里有一个重要设计：
 
@@ -731,7 +734,9 @@ and not is_encoder_decoder
 多模态模型统一使用 inputs_embeds 路径，即使文本 token 也先变成 embedding。
 ```
 
-对应注释位置：`gpu_model_runner.py:3460` 到 `gpu_model_runner.py:3462`
+如果同一批次启用了预计算 `prompt_embeds`，当前实现会先只 embedding token-id 位置，再用 `torch.where(is_token_ids, ...)` 避免覆盖已经写入的 prompt embedding 位置。
+
+对应注释位置：`gpu_model_runner.py:3510` 到 `gpu_model_runner.py:3512`
 
 原因是：
 
@@ -753,7 +758,7 @@ else:
 inputs_embeds = self.inputs_embeds.gpu[:num_tokens]
 ```
 
-位置：`gpu_model_runner.py:3419` 到 `gpu_model_runner.py:3428`
+位置：`gpu_model_runner.py:3465` 到 `gpu_model_runner.py:3474`
 
 大多数多模态模型只传 `inputs_embeds`，但少数模型可能还需要 raw `input_ids`。
 
@@ -767,7 +772,7 @@ if is_encoder_decoder and scheduler_output.scheduled_encoder_inputs:
     model_kwargs.update({"encoder_outputs": encoder_outputs})
 ```
 
-位置：`gpu_model_runner.py:3555` 到 `gpu_model_runner.py:3562`
+位置：`gpu_model_runner.py:3605` 到 `gpu_model_runner.py:3612`
 
 这类模型的心智模型是：
 
@@ -784,7 +789,7 @@ decoder 根据 encoder_outputs 生成文本。
 
 ### 12.1 GPUModelRunner 的 position buffer
 
-初始化位置：`gpu_model_runner.py:768` 到 `gpu_model_runner.py:790`
+初始化位置：`gpu_model_runner.py:803` 到 `gpu_model_runner.py:824`
 
 ```text
 uses_mrope：创建 shape=(3, max_num_tokens + 1) 的 mrope_positions；
@@ -793,18 +798,18 @@ uses_xdrope_dim > 0：创建 shape=(xdrope_dim, max_num_tokens + 1) 的 xdrope_p
 
 `_get_positions()` 会根据模型类型返回普通 positions、M-RoPE positions 或 XD-RoPE positions。
 
-位置：`gpu_model_runner.py:982` 到 `gpu_model_runner.py:994`
+位置：`gpu_model_runner.py:1016` 到 `gpu_model_runner.py:1028`
 
 ### 12.2 新请求阶段预计算 prompt positions
 
-M-RoPE：`gpu_model_runner.py:1590` 到 `gpu_model_runner.py:1620`
+M-RoPE：`gpu_model_runner.py:1631` 到 `gpu_model_runner.py:1661`
 
 ```text
 req_state.mrope_positions, req_state.mrope_position_delta =
   model.get_mrope_input_positions(input_tokens, mrope_features)
 ```
 
-XD-RoPE：`gpu_model_runner.py:1622` 到 `gpu_model_runner.py:1633`
+XD-RoPE：`gpu_model_runner.py:1663` 到 `gpu_model_runner.py:1674`
 
 ```text
 req_state.xdrope_positions =
@@ -813,9 +818,9 @@ req_state.xdrope_positions =
 
 ### 12.3 每轮执行阶段切出 scheduled positions
 
-M-RoPE：`gpu_model_runner.py:2654` 到 `gpu_model_runner.py:2701`
+M-RoPE：`gpu_model_runner.py:2718` 到 `gpu_model_runner.py:2765`
 
-XD-RoPE：`gpu_model_runner.py:2703` 到 `gpu_model_runner.py:2745`
+XD-RoPE：`gpu_model_runner.py:2767` 到 `gpu_model_runner.py:2812`
 
 逻辑是：
 
@@ -828,7 +833,7 @@ decode completion 部分：根据 context_len 在线生成后续 positions。
 
 Qwen2-VL 实现了 `SupportsMRoPE.get_mrope_input_positions()`。
 
-位置：`qwen2_vl.py:1240` 到 `qwen2_vl.py:1277`
+位置：`qwen2_vl.py:1223` 到 `qwen2_vl.py:1260`
 
 它会遍历 image / video 的 grid 信息：
 
@@ -854,7 +859,7 @@ video：可根据 second_per_grid_ts 和 tokens_per_second 调整时间维。
 (3, seq_len)
 ```
 
-对应 forward 注释：`qwen2_vl.py:1695` 到 `qwen2_vl.py:1707`
+对应 forward 注释：`qwen2_vl.py:1683` 到 `qwen2_vl.py:1687`
 
 ---
 
@@ -885,7 +890,7 @@ LlavaForConditionalGeneration
   → forward()
 ```
 
-位置：`llava.py:504` 到 `llava.py:756`
+位置：`llava.py:502` 到 `llava.py:754`
 
 LLaVA 的 forward 注释特别说明：
 
@@ -894,7 +899,7 @@ input_ids 已经提前插入足够多的 image placeholder token，
 这样 positions 和 attention metadata 与视觉 embedding token 数一致。
 ```
 
-位置：`llava.py:676` 到 `llava.py:701`
+位置：`llava.py:676` 到 `llava.py:699`
 
 ### 13.2 Qwen2-VL：视觉 transformer + merger + M-RoPE
 
@@ -920,7 +925,7 @@ Qwen2VLForConditionalGeneration
   → embed_multimodal()
 ```
 
-位置：`qwen2_vl.py:1180` 到 `qwen2_vl.py:1738`
+位置：`qwen2_vl.py:1163` 到 `qwen2_vl.py:1740`
 
 Qwen2-VL 同时支持：
 
@@ -993,7 +998,7 @@ model.multi_modal_projector.→ multi_modal_projector.
 lm_head.                    → language_model.lm_head.
 ```
 
-位置：`llava.py:517` 到 `llava.py:525`
+位置：`llava.py:515` 到 `llava.py:523`
 
 加载：
 
@@ -1002,7 +1007,7 @@ loader = AutoWeightsLoader(self)
 return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 ```
 
-位置：`llava.py:728` 到 `llava.py:730`
+位置：`llava.py:726` 到 `llava.py:728`
 
 ### 14.2 Qwen2-VL
 
@@ -1015,9 +1020,9 @@ lm_head.              → language_model.lm_head.
 model.                → language_model.model.
 ```
 
-位置：`qwen2_vl.py:1188` 到 `qwen2_vl.py:1198`
+位置：`qwen2_vl.py:1171` 到 `qwen2_vl.py:1180`
 
-加载：`qwen2_vl.py:1726` 到 `qwen2_vl.py:1728`
+加载：`qwen2_vl.py:1709` 到 `qwen2_vl.py:1711`
 
 ### 14.3 Qwen2-Audio
 
@@ -1041,9 +1046,9 @@ connector
 tower_model
 ```
 
-LLaVA：`llava.py:732` 到 `llava.py:740`
+LLaVA：`llava.py:730` 到 `llava.py:738`
 
-Qwen2-VL：`qwen2_vl.py:1730` 到 `qwen2_vl.py:1738`
+Qwen2-VL：`qwen2_vl.py:1713` 到 `qwen2_vl.py:1721`
 
 这个映射对多模态 LoRA、模块分组、权重管理很重要。
 
@@ -1061,7 +1066,7 @@ language model：LLM backbone。
 
 `GPUModelRunner._execute_mm_encoder()` 中，如果 LoRA manager 支持 tower / connector LoRA，会构建两类 mapping。
 
-位置：`gpu_model_runner.py:2944` 到 `gpu_model_runner.py:3011`
+位置：`gpu_model_runner.py:3008` 到 `gpu_model_runner.py:3075`
 
 关键逻辑：
 
@@ -1081,7 +1086,7 @@ get_num_mm_connector_tokens(num_vision_tokens)
 get_mm_mapping()
 ```
 
-LLaVA 示例：`llava.py:742` 到 `llava.py:756`
+LLaVA 示例：`llava.py:740` 到 `llava.py:754`
 
 ---
 
@@ -1104,7 +1109,7 @@ LLaVA 示例：`llava.py:742` 到 `llava.py:756`
 
 ### 16.2 encoder cache
 
-位置：`gpu_model_runner.py:535` 到 `gpu_model_runner.py:536`
+位置：`gpu_model_runner.py:563` 到 `gpu_model_runner.py:564`
 
 ```python
 self.encoder_cache: dict[str, torch.Tensor] = {}
@@ -1117,11 +1122,11 @@ self.encoder_cache: dict[str, torch.Tensor] = {}
 避免 decode 或 chunked prefill 后续 step 重复跑视觉/音频 encoder。
 ```
 
-写入位置：`gpu_model_runner.py:3093` 到 `gpu_model_runner.py:3099`
+写入位置：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
-读取位置：`gpu_model_runner.py:3153` 到 `gpu_model_runner.py:3162`
+读取位置：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3235`
 
-释放位置：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+释放位置：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 两者区别：
 
@@ -1149,7 +1154,7 @@ KV cache 写入位置一致。
 
 LLaVA forward 注释强调了这一点。
 
-位置：`llava.py:676` 到 `llava.py:701`
+位置：`llava.py:676` 到 `llava.py:699`
 
 ### 17.2 ModelRunner 先 prepare inputs，再 gather mm embeddings
 
@@ -1160,7 +1165,7 @@ _prepare_inputs may reorder the batch,
 so we must gather multi modal outputs after that to ensure the correct order
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3448`
+位置：`gpu_model_runner.py:3497` 到 `gpu_model_runner.py:3498`
 
 也就是说：
 
@@ -1193,7 +1198,7 @@ decode 阶段：
 
 vLLM 用 `SupportsMultiModalPruning` 表示这类能力。
 
-定义位置：`interfaces.py:413` 到 `interfaces.py:448`
+定义位置：`interfaces.py:418` 到 `interfaces.py:455`
 
 它需要实现：
 
@@ -1207,7 +1212,7 @@ recompute_mrope_positions(input_ids, multimodal_embeddings, mrope_positions, num
 self.model.recompute_mrope_positions(...)
 ```
 
-位置：`gpu_model_runner.py:3175` 到 `gpu_model_runner.py:3188`
+位置：`gpu_model_runner.py:3248` 到 `gpu_model_runner.py:3260`
 
 含义是：
 
@@ -1229,7 +1234,7 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
   执行多模态 encoder / gather / embed_input_ids
 ```
 
-位置：`gpu_model_runner.py:3451` 到 `gpu_model_runner.py:3503`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3553`
 
 非 first PP rank：
 
@@ -1238,7 +1243,7 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
 而是接收上一个 PP stage 发来的 IntermediateTensors。
 ```
 
-位置：`gpu_model_runner.py:3547` 到 `gpu_model_runner.py:3553`
+位置：`gpu_model_runner.py:3597` 到 `gpu_model_runner.py:3603`
 
 模型类 forward 也会处理这个情况：
 
@@ -1247,9 +1252,9 @@ if intermediate_tensors is not None:
     inputs_embeds = None
 ```
 
-LLaVA：`llava.py:713` 到 `llava.py:718`
+LLaVA：`llava.py:711` 到 `llava.py:718`
 
-Qwen2-VL：`qwen2_vl.py:1709` 到 `qwen2_vl.py:1717`
+Qwen2-VL：`qwen2_vl.py:1692` 到 `qwen2_vl.py:1701`
 
 Qwen2-Audio：`qwen2_audio.py:469` 到 `qwen2_audio.py:474`
 
@@ -1389,7 +1394,7 @@ num_actual_tokens != num_expected_tokens
 
 然后抛出 placeholder 数量不匹配错误。
 
-位置：`utils.py:501` 到 `utils.py:511`
+位置：`utils.py:545` 到 `utils.py:560`
 
 ### 21.8 图像 embedding 会每个 decode step 都重新算吗？
 
@@ -1416,7 +1421,7 @@ is_pooling_model → _pool()
 
 decoder-only 模型通常把多模态 embedding scatter 到 decoder prompt 的 `inputs_embeds`；encoder-decoder 模型则把 `_execute_mm_encoder()` 的结果作为 `encoder_outputs` 传给 decoder。
 
-位置：`gpu_model_runner.py:3555` 到 `gpu_model_runner.py:3562`
+位置：`gpu_model_runner.py:3605` 到 `gpu_model_runner.py:3612`
 
 ---
 

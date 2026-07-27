@@ -135,6 +135,9 @@ TensorizerLoader：
 RunaiModelStreamerLoader：
   流式加载路径。
 
+ModelExpressModelLoader：
+  ModelExpress 格式加载路径。
+
 DummyModelLoader：
   dummy weights / profile / 测试场景。
 ```
@@ -177,8 +180,8 @@ MoE expert 如何映射。
 ```text
 initialize_model(vllm_config)
   → self.load_weights(model, model_config)
-  → quant_method.process_weights_after_loading(...)
-  → process_weights_after_loading(model, vllm_config)
+  → finalize_layerwise_processing(model, model_config)  # online quant
+  → process_weights_after_loading(model, model_config, target_device)
   → model.eval()
 ```
 
@@ -213,10 +216,11 @@ RoutedExperts / FusedMoE
 ```text
 DefaultModelLoader.load_weights(model, model_config)
   → 准备 maybe_download / revision / fall_back_to_pt
+  → 初始化可选 EP weight filter
   → get_all_weights(model_config, model)
   → model.load_weights(weights)
   → 记录 loaded_weights
-  → 检查 missing / unexpected weights
+  → 按 enable_weights_track 决定是否检查 missing / unexpected weights
 ```
 
 其中：
@@ -352,7 +356,7 @@ vLLM 这样做的原因是：
 ```python
 def load_weights(self, weights):
     loader = AutoWeightsLoader(self, skip_prefixes=[...])
-    return loader.load_weights(weights)
+    return loader.load_weights(weights, mapper=self.hf_to_vllm_mapper)
 ```
 
 `AutoWeightsLoader` 位于 `model_executor/models/utils.py`。
@@ -361,10 +365,11 @@ def load_weights(self, weights):
 
 ```text
 checkpoint name
-  → 可选 WeightsMapper 重写
+  → 可选 WeightsMapper 重写，并可把 stacked shard_id 写到 tensor.shard_id
   → 按 . 分段递归查找 module / parameter
   → 如果子模块有 load_weights()，下放给子模块
   → 如果参数有 weight_loader，调用参数自定义 loader
+  → MergedColumnParallelLinear / QKVParallelLinear 等子模块可读取 tensor.shard_id
   → 否则使用 default_weight_loader
 ```
 
@@ -372,9 +377,9 @@ checkpoint name
 
 ```text
 1. checkpoint 名称和 vLLM 模型结构大体一致；
-2. 名称只需要少量 mapper 修正；
+2. 名称可通过 mapper 修正，包括 stacked qkv / gate_up 映射；
 3. 子模块 / 参数已经定义好了自己的加载逻辑；
-4. 模型没有特别复杂的跨参数融合规则。
+4. 复杂 MoE、特殊多模态前缀或 tied 权重仍可能需要外层手写过滤。
 ```
 
 它不等于完全“无映射”。
@@ -403,9 +408,10 @@ param.weight_loader
 ```text
 orig_to_new_prefix
 orig_to_new_substr
-regex mapping
-suffix mapping
-直接 renaming
+orig_to_new_regex
+orig_to_new_suffix
+orig_to_new_renaming
+orig_to_new_stacked：把原始 q/k/v 或 gate/up 名称映射到 fused 名称，并携带 shard_id
 ```
 
 可以把它理解为：
@@ -431,11 +437,11 @@ model.layers.0...
 需要注意：
 
 ```text
-WeightsMapper 只改名字，
-不负责 tensor 切片、融合、量化解包。
+WeightsMapper 不负责 tensor 切片、融合、量化解包；
+但 orig_to_new_stacked 可以在改名时把 shard_id 挂到 loaded tensor 上。
 ```
 
-真正写入 tensor 仍然要靠参数的 `weight_loader`。
+真正写入 tensor 仍然要靠参数或子模块的 `weight_loader`。
 
 ---
 
@@ -468,8 +474,8 @@ gate_proj + up_proj → gate_up_proj
 
 ```text
 1. 量化配置识别 fused module；
-2. AutoWeightsLoader / 模型工具理解 packed 模块关系；
-3. 模型保存 / 加载 / adapter 相关逻辑；
+2. LoRA / adapter 相关逻辑把外部 target module 对齐到 fused module；
+3. 模型保存 / 加载 / 工具层理解 packed 模块关系；
 4. 判断某个原始 module 是否属于 fused 参数。
 ```
 
@@ -668,33 +674,39 @@ output_dim
 packed_dim
 packed_factor
 weight_loader
-needs_scalar_to_array
 marlin_tile_size
+tp_rank / tp_size
 ```
 
 常见类型可以这样理解：
 
 ```text
 BasevLLMParameter：
-  vLLM 参数基类，保存加载相关 metadata。
+  vLLM 参数基类，保存加载相关 metadata 和当前 TP 信息。
 
 ModelWeightParameter：
-  普通模型权重，常用于 linear weight。
+  普通模型权重，组合 column / row parallel 加载能力。
 
 RowvLLMParameter：
   RowParallelLinear 相关参数，按 input dim shard。
 
-ColumnvLLMParameter：
-  ColumnParallelLinear 相关参数，按 output dim shard。
+PackedColumnParameter：
+  packed-on-disk 且只走 column parallel 的参数。
 
 PackedvLLMParameter：
-  packed / quantized 参数，加载时要考虑 packed_dim 和 packed_factor。
+  packed / quantized 参数，加载时要考虑 packed_dim、packed_factor 和 marlin tile。
 
 PerTensorScaleParameter：
-  per-tensor scale 参数，可能需要 scalar to array。
+  fused linear 的 per-tensor scale 参数，可按 shard_id 写入对应 scale。
+
+ChannelQuantScaleParameter / GroupQuantScaleParameter：
+  channel-wise / group-wise quant scale 参数。
 
 BlockQuantScaleParameter：
   block quantization scale 参数，按 block 布局加载。
+
+SharedWeightParameter：
+  支持多个 partition 共享底层 tensor 的特殊参数。
 ```
 
 这些参数存在的意义是：
@@ -839,7 +851,7 @@ q_proj / k_proj / v_proj → qkv_proj
 
 ```text
 q/k/v checkpoint tensor
-  → 标记 shard_id
+  → 手写 load_weights 或 WeightsMapper.orig_to_new_stacked 标记 shard_id
   → QKVParallelLinear 依据 TP + head layout 计算本 rank slice
   → 写入 qkv_proj fused tensor 对应区域
 ```
@@ -978,14 +990,14 @@ gate_up_proj.qweight
 gate_up_proj.scales
 ```
 
-因此 `configure_quant_config()` 会把模型的：
+因此模型构造和量化配置初始化阶段会使用模型的：
 
 ```text
 hf_to_vllm_mapper
 packed_modules_mapping
 ```
 
-传给 quant config。
+让 quant config 看到 HF 名称到 vLLM fused module 的关系。
 
 这样量化后端才能理解：
 
@@ -1095,13 +1107,14 @@ checkpoint expert id
 
 ## 24. DefaultModelLoader 和 MoE expert filtering
 
-在 Expert Parallel 场景下，默认加载器可能会提前过滤非本 rank 的 expert 权重。
+在 Expert Parallel 场景下，如果 `enable_ep_weight_filter` 开启且没有启用 EPLB，默认加载器可能会提前过滤非本 rank 的 expert 权重。
 
 原因是：
 
 ```text
 checkpoint 中包含所有 experts，
-但当前 rank 只需要其中一部分。
+但当前 rank 通常只需要其中一部分；
+如果启用 EPLB，冗余 physical expert slot 可能还需要其他 logical expert 权重，加载器会跳过提前过滤。
 ```
 
 如果不提前过滤，会导致：
@@ -1117,7 +1130,7 @@ checkpoint 中包含所有 experts，
 
 ```text
 ModelLoader 层：
-  可能过滤非本地 expert checkpoint tensor。
+  在满足 EP filter 条件时，可能过滤非本地 expert checkpoint tensor。
 
 MoE module 层：
   把本地 expert tensor 写入 fused expert 参数。

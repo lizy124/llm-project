@@ -89,6 +89,13 @@
 - llm-project\tmp_doc\documents\question\model_architectures\03_model_config_and_task_detection.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 tasks / scheduler / ModelConfig / registry / interfaces / adapters / arg_utils / GPUModelRunner / PoolingRunner 等源码锚点行号；同步修正 tokenizer_mode 默认项、prefix caching 默认条件和 execute_model 前半段流程描述，主结论未重写。
 - llm-project\tmp_doc\documents\question\model_architectures\04_model_class_construction.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 GPUModelRunner / ModelConfig / ModelRegistry / model_loader / Llama / Attention / vocab embedding / adapters 等源码锚点行号；同步修正 LlamaForCausalLM 支持 SupportsQuant、decoder layer quant_config 获取方式、MLP bias 示例和 PP missing 权重跳过描述，主结论未重写。
 - llm-project\tmp_doc\documents\question\model_architectures\05_forward_interface_contract.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 GPUModelRunner / interfaces_base / interfaces / Llama / adapters / forward_context 等源码路径和锚点行号；同步修正 execute_model 前后链路中的 _prepare_inputs 与 _preprocess 分工、ForwardContext 字段、LlamaForCausalLM SupportsQuant 和 Llama 权重映射描述，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\08_moe_model_architectures.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 FusedMoE / MoERunner / RoutedExperts / fused_moe / Mixtral / Qwen2-MoE / DeepSeek-V2 等源码锚点行号；同步修正 Mixtral 与 Qwen2-MoE 当前权重加载入口为 AutoWeightsLoader + MoERunner/RoutedExperts expert-aware loader，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\09_pooling_embedding_rerank_models.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 pooling params / metadata / InputBatch / GPUModelRunner / EngineCore / OutputProcessor / scoring IO processor 等源码锚点行号；补充 PoolingParamsUpdate 合并、plugin verify 和 PoolingMetadata task 校验说明，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\11_weight_loading_and_name_mapping.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 BaseModelLoader / DefaultModelLoader / AutoWeightsLoader / WeightsMapper / parameter / quant mapping / EP weight filter 等描述；同步修正在线量化 finalize、orig_to_new_stacked shard_id、参数类型和 EPLB 下不提前过滤 expert 权重等说明，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\12_quant_lora_parallelism_hooks.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 LLaMA / QuantizationConfig / model_loader post-load / LoRA manager / PP hook 等源码锚点行号；同步修正 LLaMA 权重映射为 hf_to_vllm_mapper + AutoWeightsLoader、post-load HPC module 处理、tied embedding 下 last PP rank 也可能创建 embed_tokens 等说明，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\07_embedding_and_lm_head.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 Llama / VocabParallelEmbedding / LogitsProcessor / GPUModelRunner / prompt_embeds / multimodal interfaces / LoRA embedding-logits / pooling 等源码锚点行号；同步修正 prompt_embeds 在 embed_utils 与 renderer base 中的职责描述，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\06_attention_mlp_norm_blocks.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 Llama / Attention / linear / layernorm / activation / rotary embedding / Gemma2 / DeepSeekV2 等源码锚点行号；同步修正 Attention.forward 参数、get_attention_context、unified attention output scale 参数、Llama WeightsMapper 权重映射、RoPE 变体清单和 DeepSeekV2 MoE / MLA 描述，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 multimodal registry / processor / inputs / SchedulerOutput / GPUModelRunner / SupportsMultiModal / LLaVA / Qwen2-VL / Qwen2-Audio 等源码锚点行号；同步补充 configure_mm_token_handling、prompt_embeds 在 M-RoPE 初始化中过滤为文本位置、混合 prompt_embeds 时不覆盖预计算 embedding 位置等当前实现细节，主结论未重写。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -164,13 +171,13 @@
 - llm-project\tmp_doc\documents\question\model_architectures\03_model_config_and_task_detection.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\04_model_class_construction.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\05_forward_interface_contract.md，否，是
-- llm-project\tmp_doc\documents\question\model_architectures\06_attention_mlp_norm_blocks.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\07_embedding_and_lm_head.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\08_moe_model_architectures.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\09_pooling_embedding_rerank_models.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\11_weight_loading_and_name_mapping.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\12_quant_lora_parallelism_hooks.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\06_attention_mlp_norm_blocks.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\07_embedding_and_lm_head.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\08_moe_model_architectures.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\09_pooling_embedding_rerank_models.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\11_weight_loading_and_name_mapping.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\12_quant_lora_parallelism_hooks.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\13_add_new_model_checklist.md，否，否
 - llm-project\tmp_doc\documents\question\model_architectures\model_architectures_overview.md，否，否
 - llm-project\tmp_doc\documents\question\multimodal\README.md，否，否
