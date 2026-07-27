@@ -107,7 +107,7 @@ runner_type: RunnerType = "generate"
 
 ### 2.3 convert_type：把已有模型适配成另一种形态
 
-`ModelConfig` 中相关类型在 `vllm/vllm/config/model.py:77` 到 `vllm/vllm/config/model.py:79`：
+`ModelConfig` 中相关类型在 `vllm/vllm/config/model.py:83` 到 `vllm/vllm/config/model.py:85`：
 
 ```python
 RunnerOption = Literal["auto", RunnerType]
@@ -115,7 +115,7 @@ ConvertType = Literal["none", "embed", "classify"]
 ConvertOption = Literal["auto", ConvertType]
 ```
 
-允许的 runner / convert 组合在 `vllm/vllm/config/model.py:89`：
+允许的 runner / convert 组合在 `vllm/vllm/config/model.py:95`：
 
 ```python
 _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
@@ -137,7 +137,7 @@ _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
 
 ## 3. ModelConfig 初始化时的主链路
 
-入口是 `ModelConfig.__post_init__()`，位置：`vllm/vllm/config/model.py:458`
+入口是 `ModelConfig.__post_init__()`，位置：`vllm/vllm/config/model.py:483`
 
 和 task / capability 直接相关的主线可以压缩成：
 
@@ -154,11 +154,12 @@ _RUNNER_CONVERTS: dict[RunnerType, list[ConvertType]] = {
 10. 校验 runner_type 和模型能力是否兼容；
 11. registry.inspect_model_cls() 得到 _ModelInfo；
 12. 按 runner_type 初始化 pooler_config；
-13. 按 _ModelInfo.supports_multimodal 初始化 multimodal_config；
-14. 继续解析 dtype、max_model_len、quantization、cuda graph 等执行配置。
+13. 解析 dtype、max_model_len；
+14. 按 _ModelInfo.supports_multimodal 初始化 multimodal_config；
+15. 继续解析 quantization、cuda graph 等执行配置。
 ```
 
-对应代码集中在 `vllm/vllm/config/model.py:534` 到 `vllm/vllm/config/model.py:724`。
+对应代码集中在 `vllm/vllm/config/model.py:555` 到 `vllm/vllm/config/model.py:721`。
 
 关键片段是：
 
@@ -176,7 +177,7 @@ self.convert_type = self._get_convert_type(
 )
 ```
 
-位置：`vllm/vllm/config/model.py:557` 到 `vllm/vllm/config/model.py:567`
+位置：`vllm/vllm/config/model.py:578` 到 `vllm/vllm/config/model.py:588`
 
 这说明：
 
@@ -191,7 +192,7 @@ runner_type 决定执行大类，convert_type 决定是否需要模型 adapter�
 
 ### 4.1 registry 不是只看 architecture 名字
 
-registry 中 `_ModelInfo` 记录模型类能力，位置：`vllm/vllm/model_executor/models/registry.py:745`
+registry 中 `_ModelInfo` 记录模型类能力，位置：`vllm/vllm/model_executor/models/registry.py:755`
 
 ```python
 @dataclass(frozen=True)
@@ -217,7 +218,7 @@ class _ModelInfo:
     supports_transcription_only: bool
 ```
 
-这些字段来自模型类接口探测，构造位置：`vllm/vllm/model_executor/models/registry.py:768`
+这些字段来自模型类接口探测，构造位置：`vllm/vllm/model_executor/models/registry.py:777`
 
 ```python
 return _ModelInfo(
@@ -303,7 +304,7 @@ def is_pooling_model(...):
 
 ### 5.1 用户显式指定时直接使用
 
-`_get_runner_type()` 在 `vllm/vllm/config/model.py:894`：
+`_get_runner_type()` 在 `vllm/vllm/config/model.py:940`：
 
 ```python
 def _get_runner_type(...):
@@ -322,7 +323,7 @@ def _get_runner_type(...):
 
 ### 5.2 auto + convert=auto/none：按模型默认能力推断
 
-`_get_runner_type()` 的核心逻辑在 `vllm/vllm/config/model.py:903`：
+`_get_runner_type()` 的核心逻辑在 `vllm/vllm/config/model.py:949`：
 
 ```python
 if convert in {"auto", "none"}:
@@ -340,7 +341,7 @@ else:
 
 ### 5.3 默认 runner 的优先级
 
-`_get_default_runner_type()` 在 `vllm/vllm/config/model.py:870`。
+`_get_default_runner_type()` 在 `vllm/vllm/config/model.py:916`。
 
 它的判断顺序是：
 
@@ -353,7 +354,7 @@ else:
 4. 否则默认 generate。
 ```
 
-对应代码：`vllm/vllm/config/model.py:876` 到 `vllm/vllm/config/model.py:892`
+对应代码：`vllm/vllm/config/model.py:922` 到 `vllm/vllm/config/model.py:938`
 
 ```python
 if get_pooling_config(self.model, self.revision):
@@ -376,7 +377,7 @@ return "generate"
 
 ### 5.4 architecture 后缀默认规则
 
-默认后缀规则在 `vllm/vllm/config/model.py:1892`：
+默认后缀规则在 `vllm/vllm/config/model.py:1940`：
 
 ```python
 _SUFFIX_TO_DEFAULTS: list[tuple[str, tuple[RunnerType, ConvertType]]] = [
@@ -417,7 +418,7 @@ _SUFFIX_TO_DEFAULTS: list[tuple[str, tuple[RunnerType, ConvertType]]] = [
 
 ### 6.1 用户显式指定时直接使用
 
-`_get_convert_type()` 在 `vllm/vllm/config/model.py:949`：
+`_get_convert_type()` 在 `vllm/vllm/config/model.py:995`：
 
 ```python
 if convert != "auto":
@@ -435,7 +436,7 @@ if convert != "auto":
 
 ### 6.2 默认 convert 的判断顺序
 
-`_get_default_convert_type()` 在 `vllm/vllm/config/model.py:918`。
+`_get_default_convert_type()` 在 `vllm/vllm/config/model.py:964`。
 
 它的逻辑是：
 
@@ -447,7 +448,7 @@ if convert != "auto":
 5. 否则 → none。
 ```
 
-对应代码：`vllm/vllm/config/model.py:925` 到 `vllm/vllm/config/model.py:947`
+对应代码：`vllm/vllm/config/model.py:971` 到 `vllm/vllm/config/model.py:993`
 
 ```python
 if runner_type == "generate" and registry.is_text_generation_model(...):
@@ -504,7 +505,7 @@ class ModelForEmbedding(_create_pooling_model_cls(cls)):
 
 `ModelConfig` 解析出 `runner_type` / `convert_type` 后，会立即校验是否兼容。
 
-位置：`vllm/vllm/config/model.py:569` 到 `vllm/vllm/config/model.py:591`
+位置：`vllm/vllm/config/model.py:590` 到 `vllm/vllm/config/model.py:612`
 
 ### 7.1 纯 pooling 模型不能按 generate 跑
 
@@ -563,7 +564,7 @@ if self.runner_type == "pooling" and not is_pooling_model:
 
 `runner_type=pooling` 只说明走 pooling 执行路径，但具体是 `embed`、`classify`、`token_embed` 还是 `token_classify`，还要看 `PoolerConfig.task` 和模型支持任务。
 
-入口是 `ModelConfig.get_pooling_task()`，位置：`vllm/vllm/config/model.py:1488`
+入口是 `ModelConfig.get_pooling_task()`，位置：`vllm/vllm/config/model.py:1539`
 
 ```python
 def get_pooling_task(
@@ -589,7 +590,7 @@ def get_pooling_task(
 5. 都不支持 → None。
 ```
 
-对应优先级在 `vllm/vllm/config/model.py:1510` 到 `vllm/vllm/config/model.py:1520`：
+对应优先级在 `vllm/vllm/config/model.py:1561` 到 `vllm/vllm/config/model.py:1571`：
 
 ```python
 priority: list[PoolingTask] = [
@@ -629,7 +630,7 @@ ModelConfig 层知道 pooling task 的完整分类；
 
 multimodal 不是 `runner_type`，而是模型类能力。
 
-模型类通过 `SupportsMultiModal` 协议声明能力，位置：`vllm/vllm/model_executor/models/interfaces.py:95`
+模型类通过 `SupportsMultiModal` 协议声明能力，位置：`vllm/vllm/model_executor/models/interfaces.py:100`
 
 ```python
 class SupportsMultiModal(Protocol):
@@ -639,7 +640,7 @@ class SupportsMultiModal(Protocol):
     requires_raw_input_tokens: ClassVar[bool] = False
 ```
 
-registry inspect 时会写入 `_ModelInfo.supports_multimodal` 等字段：`vllm/vllm/model_executor/models/registry.py:777` 到 `vllm/vllm/model_executor/models/registry.py:784`
+registry inspect 时会写入 `_ModelInfo.supports_multimodal` 等字段：`vllm/vllm/model_executor/models/registry.py:787` 到 `vllm/vllm/model_executor/models/registry.py:793`
 
 ```python
 supports_multimodal=supports_multimodal(model),
@@ -648,7 +649,7 @@ requires_raw_input_tokens=requires_raw_input_tokens(model),
 supports_multimodal_encoder_tp_data=supports_multimodal_encoder_tp_data(model),
 ```
 
-`ModelConfig` 中初始化 multimodal config 的条件是：`vllm/vllm/config/model.py:663`
+`ModelConfig` 中初始化 multimodal config 的条件是：`vllm/vllm/config/model.py:683`
 
 ```python
 if self._model_info.supports_multimodal:
@@ -682,21 +683,20 @@ multimodal 可以和 generate 共存，也可以和 pooling 共存；
 
 `ModelConfig` 会在 architecture 确定后，为特殊模型设置默认 tokenizer mode。
 
-位置：`vllm/vllm/config/model.py:600` 到 `vllm/vllm/config/model.py:618`
+位置：`vllm/vllm/config/model.py:621` 到 `vllm/vllm/config/model.py:637`
 
 ```text
-Grok1ForCausalLM        → grok2
+model_impl=terratorch    → terratorch
 MoonshotKimiaForCausalLM → kimi_audio
-DeepseekV32ForCausalLM  → deepseek_v32
-DeepseekV4ForCausalLM   → deepseek_v4
-Terratorch              → terratorch
+DeepseekV32ForCausalLM   → deepseek_v32
+DeepseekV4ForCausalLM    → deepseek_v4
 ```
 
 这不是 task detection，但会影响输入如何被 tokenizer / renderer 处理。
 
 ### 10.2 dtype
 
-`dtype` 在 runner_type 确定后解析：`vllm/vllm/config/model.py:639`
+`dtype` 在 runner_type 确定后解析：`vllm/vllm/config/model.py:658`
 
 ```python
 self.dtype: torch.dtype = _get_and_verify_dtype(
@@ -717,7 +717,7 @@ is_pooling_model 参数来自 runner_type == "pooling"，所以 dtype 校验会�
 
 ### 10.3 max_model_len
 
-`max_model_len` 在 config 和 runner 能力确定后解析：`vllm/vllm/config/model.py:656` 到 `vllm/vllm/config/model.py:657`
+`max_model_len` 在 config 和 runner 能力确定后解析：`vllm/vllm/config/model.py:675` 到 `vllm/vllm/config/model.py:676`
 
 ```python
 self.original_max_model_len = self.max_model_len
@@ -735,7 +735,7 @@ self.max_model_len = self.get_and_verify_max_len(self.max_model_len)
 
 ### 10.4 quantization
 
-量化校验在 `ModelConfig.__post_init__()` 末尾触发：`vllm/vllm/config/model.py:724`
+量化校验在 `ModelConfig.__post_init__()` 末尾触发：`vllm/vllm/config/model.py:744`
 
 ```python
 self._verify_quantization()
@@ -745,7 +745,7 @@ self._verify_quantization()
 
 ### 10.5 trust_remote_code
 
-`trust_remote_code` 会传给 `get_config()`：`vllm/vllm/config/model.py:534` 到 `vllm/vllm/config/model.py:543`
+`trust_remote_code` 会传给 `get_config()`：`vllm/vllm/config/model.py:555` 到 `vllm/vllm/config/model.py:564`
 
 ```python
 hf_config = get_config(
@@ -780,17 +780,19 @@ runner_type: RunnerType = "generate"
 
 在 engine args 默认值里，`runner_type` 会影响 chunked prefill 和 prefix caching 的默认行为。
 
-位置：`vllm/vllm/engine/arg_utils.py:2458`
+位置：`vllm/vllm/engine/arg_utils.py:2497`
 
 ```python
 def _set_default_chunked_prefill_and_prefix_caching_args(
     self, model_config: ModelConfig
 ) -> None:
     default_chunked_prefill = model_config.is_chunked_prefill_supported
-    default_prefix_caching = model_config.is_prefix_caching_supported
+    default_prefix_caching = (
+        model_config.is_prefix_caching_supported and not model_config.is_hybrid
+    )
 ```
 
-其中对 pooling 的特殊 warning 在 `vllm/vllm/engine/arg_utils.py:2482` 和 `vllm/vllm/engine/arg_utils.py:2500`：
+其中对 pooling 的特殊 warning 在 `vllm/vllm/engine/arg_utils.py:2525` 和 `vllm/vllm/engine/arg_utils.py:2543`：
 
 ```python
 elif (
@@ -822,7 +824,7 @@ runner_type 不只是模型加载参数，也会影响 scheduler / cache / prefi
 
 执行层最关键的分叉在 `GPUModelRunner.execute_model()`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4300` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4359`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4097` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4458`
 
 ### 12.1 共同前半段
 
@@ -836,6 +838,7 @@ _update_states(scheduler_output)
   → _build_attention_metadata(...)
   → _preprocess(...)
   → set_forward_context(...)
+  → maybe_get_kv_connector_output(...)
   → _model_forward(...)
 ```
 
@@ -847,7 +850,7 @@ runner_type 不是决定“要不要 forward”，而是决定 forward 后如何
 
 ### 12.2 pooling 分支
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4348`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4405`
 
 ```python
 if self.is_pooling_model:
@@ -868,7 +871,7 @@ pooling 模型 forward 后不进入 sampler，直接把 hidden_states 交给 poo
 
 ### 12.3 generation 分支
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4357`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4414`
 
 ```python
 sample_hidden_states = hidden_states[logits_indices]
@@ -887,7 +890,7 @@ generation 模型 forward 后只取需要采样位置的 hidden states，调用 
 
 如果当前不是最后一个 PP rank，会直接返回 `IntermediateTensors`。
 
-位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4340` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4346`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4397` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 ```python
 if not get_pp_group().is_last_rank:

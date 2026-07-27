@@ -2,12 +2,12 @@
 
 源码位置：
 
-- `E:\lizy\code\vllm-project\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\interfaces_base.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\interfaces.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\llama.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\adapters.py`
-- `E:\lizy\code\vllm-project\vllm\vllm\forward_context.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/model_executor/models/interfaces_base.py`
+- `vllm/vllm/model_executor/models/interfaces.py`
+- `vllm/vllm/model_executor/models/llama.py`
+- `vllm/vllm/model_executor/models/adapters.py`
+- `vllm/vllm/forward_context.py`
 
 本问题关注：vLLM 里模型架构很多，为什么 `GPUModelRunner` 可以用几乎同一套调用方式执行它们；模型 class 至少要提供哪些方法；`forward()` 的显式参数和隐式上下文分别是什么；generation、pooling、Pipeline Parallel、多模态、LoRA 等能力如何挂到同一个模型对象上。
 
@@ -29,7 +29,7 @@ self.model(
 )
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:3784` 到 `vllm/v1/worker/gpu_model_runner.py:3790`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3834` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3840`
 
 可以压缩成：
 
@@ -66,7 +66,7 @@ class VllmModel(Protocol[T_co]):
     def forward(self, input_ids: torch.Tensor, positions: torch.Tensor) -> T_co: ...
 ```
 
-位置：`vllm/model_executor/models/interfaces_base.py:46` 到 `vllm/model_executor/models/interfaces_base.py:56`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:46` 到 `vllm/vllm/model_executor/models/interfaces_base.py:56`
 
 因此一个能被 vLLM 识别的模型，最基础要满足：
 
@@ -87,7 +87,7 @@ is_vllm_model(model)
 
 其中 `_check_vllm_model_forward()` 会检查 `forward` 是否支持 `input_ids`、`positions` 这两个 vLLM 关键字。
 
-位置：`vllm/model_executor/models/interfaces_base.py:76` 到 `vllm/model_executor/models/interfaces_base.py:92`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:76` 到 `vllm/vllm/model_executor/models/interfaces_base.py:92`
 
 ---
 
@@ -106,7 +106,7 @@ def _model_forward(
 ) -> Any:
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:3760` 到 `vllm/v1/worker/gpu_model_runner.py:3767`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3810` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3817`
 
 它只做一件事：
 
@@ -120,7 +120,7 @@ return self.model(
 )
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:3784` 到 `vllm/v1/worker/gpu_model_runner.py:3790`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:3834` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:3840`
 
 因此模型实现最好遵守下面这个实际契约：
 
@@ -162,7 +162,7 @@ def forward(
     return model_output
 ```
 
-位置：`vllm/model_executor/models/llama.py:550` 到 `vllm/model_executor/models/llama.py:560`
+位置：`vllm/vllm/model_executor/models/llama.py:516` 到 `vllm/vllm/model_executor/models/llama.py:526`
 
 真正处理 PP 输入、embedding、decoder layer、最终 norm 的是 `LlamaModel.forward()`：
 
@@ -177,7 +177,7 @@ def forward(
 ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
 ```
 
-位置：`vllm/model_executor/models/llama.py:392` 到 `vllm/model_executor/models/llama.py:399`
+位置：`vllm/vllm/model_executor/models/llama.py:400` 到 `vllm/vllm/model_executor/models/llama.py:407`
 
 这就是很多 vLLM 模型的典型分层：
 
@@ -206,7 +206,7 @@ if get_pp_group().is_first_rank:
     residual = None
 ```
 
-位置：`vllm/model_executor/models/llama.py:400` 到 `vllm/model_executor/models/llama.py:405`
+位置：`vllm/vllm/model_executor/models/llama.py:408` 到 `vllm/vllm/model_executor/models/llama.py:413`
 
 含义是：
 
@@ -227,7 +227,7 @@ if get_pp_group().is_first_rank:
 
 `embed_input_ids()` 也是基础 `VllmModel` 的一部分。
 
-位置：`vllm/model_executor/models/interfaces_base.py:52` 到 `vllm/model_executor/models/interfaces_base.py:53`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:52` 到 `vllm/vllm/model_executor/models/interfaces_base.py:53`
 
 ---
 
@@ -241,7 +241,7 @@ if get_pp_group().is_first_rank:
 hidden_states = self.self_attn(positions=positions, hidden_states=hidden_states)
 ```
 
-位置：`vllm/model_executor/models/llama.py:325`
+位置：`vllm/vllm/model_executor/models/llama.py:322`
 
 因此：
 
@@ -262,7 +262,7 @@ def get_mrope_input_positions(
 ) -> tuple[torch.Tensor, int]: ...
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:1459` 到 `vllm/model_executor/models/interfaces.py:1463`
+位置：`vllm/vllm/model_executor/models/interfaces.py:1480` 到 `vllm/vllm/model_executor/models/interfaces.py:1484`
 
 ---
 
@@ -294,7 +294,7 @@ class SupportsPP(Protocol):
         ...
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:617` 到 `vllm/model_executor/models/interfaces.py:653`
+位置：`vllm/vllm/model_executor/models/interfaces.py:623` 到 `vllm/vllm/model_executor/models/interfaces.py:659`
 
 检查函数不只看 `supports_pp=True`，还会检查 `forward` 是否真的支持 `intermediate_tensors` 关键字：
 
@@ -302,7 +302,7 @@ class SupportsPP(Protocol):
 return supports_kw(model_forward, "intermediate_tensors")
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:729` 到 `vllm/model_executor/models/interfaces.py:735`
+位置：`vllm/vllm/model_executor/models/interfaces.py:735` 到 `vllm/vllm/model_executor/models/interfaces.py:740`
 
 Llama 的处理方式是：
 
@@ -329,7 +329,7 @@ else:
     residual = intermediate_tensors["residual"]
 ```
 
-位置：`vllm/model_executor/models/llama.py:406` 到 `vllm/model_executor/models/llama.py:409`
+位置：`vllm/vllm/model_executor/models/llama.py:414` 到 `vllm/vllm/model_executor/models/llama.py:417`
 
 非最后 rank 返回：
 
@@ -340,7 +340,7 @@ if not get_pp_group().is_last_rank:
     )
 ```
 
-位置：`vllm/model_executor/models/llama.py:422` 到 `vllm/model_executor/models/llama.py:425`
+位置：`vllm/vllm/model_executor/models/llama.py:430` 到 `vllm/vllm/model_executor/models/llama.py:433`
 
 这说明：
 
@@ -368,7 +368,7 @@ PP 模型的 forward 返回类型不是固定 Tensor；
 )
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4274` 到 `vllm/v1/worker/gpu_model_runner.py:4283`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4324` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4333`
 
 随后：
 
@@ -382,7 +382,7 @@ model_output = self._model_forward(
 )
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4323` 到 `vllm/v1/worker/gpu_model_runner.py:4329`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4380` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 这些 `model_kwargs` 可能包括：
 
@@ -409,7 +409,7 @@ hidden_states, residual = layer(
 )
 ```
 
-位置：`vllm/model_executor/models/llama.py:415` 到 `vllm/model_executor/models/llama.py:417`
+位置：`vllm/vllm/model_executor/models/llama.py:423` 到 `vllm/vllm/model_executor/models/llama.py:425`
 
 ---
 
@@ -437,7 +437,7 @@ with (
     model_output = self._model_forward(...)
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4305` 到 `vllm/v1/worker/gpu_model_runner.py:4329`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4363` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4386`
 
 `ForwardContext` 中保存的信息包括：
 
@@ -448,12 +448,14 @@ dp_metadata；
 cudagraph_runtime_mode；
 batch_descriptor；
 ubatch_slices；
+is_padding；
 skip_compiled；
 no_compile_layers；
+all_moe_layers / moe_layer_index；
 平台相关 additional_kwargs。
 ```
 
-定义位置：`vllm/forward_context.py:128` 到 `vllm/forward_context.py:180`
+定义位置：`vllm/vllm/forward_context.py:131` 到 `vllm/vllm/forward_context.py:188`
 
 这说明：
 
@@ -483,7 +485,7 @@ hidden_states = model_output
 aux_hidden_states = None
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4335` 到 `vllm/v1/worker/gpu_model_runner.py:4338`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4392` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4395`
 
 ### 10.2 EAGLE 3 辅助 hidden states
 
@@ -493,7 +495,7 @@ aux_hidden_states = None
 hidden_states, aux_hidden_states = model_output
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4332` 到 `vllm/v1/worker/gpu_model_runner.py:4334`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4389` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4391`
 
 Llama backbone 里也能看到这种返回：
 
@@ -503,7 +505,7 @@ if len(aux_hidden_states) > 0:
 return hidden_states
 ```
 
-位置：`vllm/model_executor/models/llama.py:429` 到 `vllm/model_executor/models/llama.py:431`
+位置：`vllm/vllm/model_executor/models/llama.py:437` 到 `vllm/vllm/model_executor/models/llama.py:439`
 
 ### 10.3 非最后 PP rank
 
@@ -516,7 +518,7 @@ if not get_pp_group().is_last_rank:
     return hidden_states
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4340` 到 `vllm/v1/worker/gpu_model_runner.py:4346`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4397` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4403`
 
 ### 10.4 pooling 模型
 
@@ -532,7 +534,7 @@ if self.is_pooling_model:
     )
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4348` 到 `vllm/v1/worker/gpu_model_runner.py:4355`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4405` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4412`
 
 ---
 
@@ -551,7 +553,7 @@ class VllmModelForTextGeneration(VllmModel[T], Protocol[T]):
         ...
 ```
 
-位置：`vllm/model_executor/models/interfaces_base.py:113` 到 `vllm/model_executor/models/interfaces_base.py:122`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:113` 到 `vllm/vllm/model_executor/models/interfaces_base.py:122`
 
 Llama 的实现是：
 
@@ -564,7 +566,7 @@ def compute_logits(
     return logits
 ```
 
-位置：`vllm/model_executor/models/llama.py:562` 到 `vllm/model_executor/models/llama.py:567`
+位置：`vllm/vllm/model_executor/models/llama.py:528` 到 `vllm/vllm/model_executor/models/llama.py:533`
 
 runner 在 forward 之后才调用它：
 
@@ -573,7 +575,7 @@ sample_hidden_states = hidden_states[logits_indices]
 logits = self.model.compute_logits(sample_hidden_states)
 ```
 
-位置：`vllm/v1/worker/gpu_model_runner.py:4357` 到 `vllm/v1/worker/gpu_model_runner.py:4358`
+位置：`vllm/vllm/v1/worker/gpu_model_runner.py:4414` 到 `vllm/vllm/v1/worker/gpu_model_runner.py:4415`
 
 这说明：
 
@@ -607,11 +609,11 @@ class VllmModelForPooling(VllmModel[T_co], Protocol[T_co]):
     pooler: Pooler
 ```
 
-位置：`vllm/model_executor/models/interfaces_base.py:147` 到 `vllm/model_executor/models/interfaces_base.py:212`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:147` 到 `vllm/vllm/model_executor/models/interfaces_base.py:212`
 
 `is_pooling_model(model)` 会先确认它是 vLLM 模型，再检查 `is_pooling_model` 标记。
 
-位置：`vllm/model_executor/models/interfaces_base.py:223` 到 `vllm/model_executor/models/interfaces_base.py:229`
+位置：`vllm/vllm/model_executor/models/interfaces_base.py:223` 到 `vllm/vllm/model_executor/models/interfaces_base.py:229`
 
 很多 embedding / classification 模型不是重新写一整套模型，而是通过 adapter 包装已有 causal LM class：
 
@@ -622,7 +624,7 @@ class ModelForPooling(orig_cls, VllmModelForPooling):
     self.pooler = pooler
 ```
 
-位置：`vllm/model_executor/models/adapters.py:136` 到 `vllm/model_executor/models/adapters.py:167`
+位置：`vllm/vllm/model_executor/models/adapters.py:136` 到 `vllm/vllm/model_executor/models/adapters.py:167`
 
 因此 pooling 路径可以记为：
 
@@ -655,7 +657,7 @@ embed_input_ids(input_ids, multimodal_embeddings, is_multimodal=...)
 get_language_model()
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:95` 到 `vllm/model_executor/models/interfaces.py:410`
+位置：`vllm/vllm/model_executor/models/interfaces.py:100` 到 `vllm/vllm/model_executor/models/interfaces.py:415`
 
 多模态模型通常遵守这个流程：
 
@@ -677,7 +679,7 @@ inputs_embeds = self._embed_text_input_ids(
 )
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:397` 到 `vllm/model_executor/models/interfaces.py:401`
+位置：`vllm/vllm/model_executor/models/interfaces.py:397` 到 `vllm/vllm/model_executor/models/interfaces.py:406`
 
 然后把多模态 embedding scatter 到对应位置：
 
@@ -689,7 +691,7 @@ return _merge_multimodal_embeddings(
 )
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:406` 到 `vllm/model_executor/models/interfaces.py:410`
+位置：`vllm/vllm/model_executor/models/interfaces.py:411` 到 `vllm/vllm/model_executor/models/interfaces.py:415`
 
 所以多模态并没有破坏 ModelRunner 的统一调用方式：
 
@@ -714,13 +716,19 @@ lora_skip_prefixes
 lora_manager
 ```
 
-位置：`vllm/model_executor/models/interfaces.py:538` 到 `vllm/model_executor/models/interfaces.py:559`
+位置：`vllm/vllm/model_executor/models/interfaces.py:544` 到 `vllm/vllm/model_executor/models/interfaces.py:564`
 
 LlamaForCausalLM 声明：
 
 ```python
 class LlamaForCausalLM(
-    LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, SupportsEagle3
+    LocalArgmaxMixin,
+    nn.Module,
+    SupportsLoRA,
+    SupportsPP,
+    SupportsEagle,
+    SupportsEagle3,
+    SupportsQuant,
 ):
     packed_modules_mapping = {
         "qkv_proj": ["q_proj", "k_proj", "v_proj"],
@@ -733,7 +741,7 @@ class LlamaForCausalLM(
     }
 ```
 
-位置：`vllm/model_executor/models/llama.py:486` 到 `vllm/model_executor/models/llama.py:498`
+位置：`vllm/vllm/model_executor/models/llama.py:446` 到 `vllm/vllm/model_executor/models/llama.py:464`
 
 这说明：
 
@@ -759,11 +767,11 @@ def load_weights(self, weights: Iterable[tuple[str, torch.Tensor]]) -> set[str]:
     return loader.load_weights(weights)
 ```
 
-位置：`vllm/model_executor/models/llama.py:569` 到 `vllm/model_executor/models/llama.py:574`
+位置：`vllm/vllm/model_executor/models/llama.py:535` 到 `vllm/vllm/model_executor/models/llama.py:540`
 
-LlamaModel 内部则展示了更细的权重映射逻辑，例如把 HF 的 `q_proj/k_proj/v_proj` 映射到 vLLM 的 packed `qkv_proj`。
+LlamaModel 通过类级 `hf_to_vllm_mapper = WeightsMapper(...)` 描述权重映射，例如把 HF 的 `q_proj/k_proj/v_proj` 映射到 vLLM 的 packed `qkv_proj`。
 
-位置：`vllm/model_executor/models/llama.py:433` 到 `vllm/model_executor/models/llama.py:483`
+位置：`vllm/vllm/model_executor/models/llama.py:345` 到 `vllm/vllm/model_executor/models/llama.py:354`
 
 所以完整的模型接入不是只有 forward：
 
@@ -813,9 +821,11 @@ runner 只关心：
 SchedulerOutput
   → _update_states()
   → _prepare_inputs()
-      input_ids / inputs_embeds / positions / model_kwargs
+      logits_indices / spec_decode_metadata
   → _build_attention_metadata()
       attn_metadata / slot_mappings
+  → _preprocess()
+      input_ids / inputs_embeds / positions / model_kwargs
   → set_forward_context(...)
       attention / KV slot / CUDA graph / DP metadata
   → _model_forward(...)
@@ -828,14 +838,17 @@ SchedulerOutput
 对应关键位置：
 
 ```text
-_prepare_inputs / _preprocess：
-  vllm/v1/worker/gpu_model_runner.py:4274 到 4283
+_prepare_inputs：
+  vllm/vllm/v1/worker/gpu_model_runner.py:4181 到 4184
+
+_build_attention_metadata / _preprocess：
+  vllm/vllm/v1/worker/gpu_model_runner.py:4308 到 4333
 
 set_forward_context + _model_forward：
-  vllm/v1/worker/gpu_model_runner.py:4305 到 4329
+  vllm/vllm/v1/worker/gpu_model_runner.py:4363 到 4386
 
 postprocess hidden_states / PP / pooling / logits：
-  vllm/v1/worker/gpu_model_runner.py:4331 到 4358
+  vllm/vllm/v1/worker/gpu_model_runner.py:4388 到 4415
 ```
 
 ---

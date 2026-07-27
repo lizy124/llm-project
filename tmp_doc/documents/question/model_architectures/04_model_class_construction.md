@@ -67,10 +67,10 @@ GPUWorker.load_model()
 
 关键位置：
 
-- `GPUModelRunner.load_model()` 调 `get_model_loader()` 和 `model_loader.load_model()`：`vllm/vllm/v1/worker/gpu_model_runner.py:5146`
+- `GPUModelRunner.load_model()` 调 `get_model_loader()` 和 `model_loader.load_model()`：`vllm/vllm/v1/worker/gpu_model_runner.py:5231`
 - `get_model_loader()` 根据 `load_format` 选择 loader：`vllm/vllm/model_executor/model_loader/__init__.py:122`
 - `BaseModelLoader.load_model()` 负责 `initialize_model → load_weights → postprocess → eval`：`vllm/vllm/model_executor/model_loader/base_loader.py:42`
-- `initialize_model()` 负责选类并调用 `model_class(vllm_config, prefix)`：`vllm/vllm/model_executor/model_loader/utils.py:40`
+- `initialize_model()` 负责选类并调用 `model_class(vllm_config, prefix)`：`vllm/vllm/model_executor/model_loader/utils.py:42`
 
 ---
 
@@ -90,7 +90,7 @@ self.runner_type = self._get_runner_type(...)
 self.convert_type = self._get_convert_type(...)
 ```
 
-位置：`vllm/vllm/config/model.py:557`
+位置：`vllm/vllm/config/model.py:578`
 
 这一步决定三个关键信息：
 
@@ -113,7 +113,7 @@ def registry(self):
     return me_models.ModelRegistry
 ```
 
-位置：`vllm/vllm/config/model.py:806`
+位置：`vllm/vllm/config/model.py:827`
 
 如果 `runner_type == "pooling"`，还会补齐 `PoolerConfig` 的默认 pooling 类型：
 
@@ -124,7 +124,7 @@ runner_type == pooling
   → 使用 model_info.default_tok_pooling_type
 ```
 
-位置：`vllm/vllm/config/model.py:620`
+位置：`vllm/vllm/config/model.py:640`
 
 ---
 
@@ -138,7 +138,7 @@ vLLM 在 `models/registry.py` 里维护了 architecture 名到实现类的映射
 "LlamaForCausalLM": ("llama", "LlamaForCausalLM")
 ```
 
-位置：`vllm/vllm/model_executor/models/registry.py:71`
+位置：`vllm/vllm/model_executor/models/registry.py:143`
 
 这表示：
 
@@ -178,7 +178,7 @@ registry 不只是一个字典，它还处理：
   抛出 unsupported architecture。
 ```
 
-位置：`vllm/vllm/model_executor/models/registry.py:1225`
+位置：`vllm/vllm/model_executor/models/registry.py:1253`
 
 所以 registry 的定位是：
 
@@ -207,7 +207,7 @@ with set_current_vllm_config(vllm_config, check_compile=True, prefix=prefix):
     return model
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:40`
+位置：`vllm/vllm/model_executor/model_loader/utils.py:42`
 
 这里有几个重要点：
 
@@ -268,7 +268,7 @@ pooling / multimodal / speculative config。
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/default_loader.py:414`
+位置：`vllm/vllm/model_executor/model_loader/default_loader.py:427`
 
 这说明：
 
@@ -299,11 +299,17 @@ PP missing layer 跳过；
 
 ```python
 class LlamaForCausalLM(
-    LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, SupportsEagle3
+    LocalArgmaxMixin,
+    nn.Module,
+    SupportsLoRA,
+    SupportsPP,
+    SupportsEagle,
+    SupportsEagle3,
+    SupportsQuant,
 ):
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:486`
+位置：`vllm/vllm/model_executor/models/llama.py:446`
 
 它的构造分两层：
 
@@ -328,7 +334,7 @@ else:
     self.lm_head = PPMissingLayer()
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:512`
+位置：`vllm/vllm/model_executor/models/llama.py:478`
 
 它的 forward 很薄：
 
@@ -337,7 +343,7 @@ model_output = self.model(input_ids, positions, intermediate_tensors, inputs_emb
 return model_output
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:550`
+位置：`vllm/vllm/model_executor/models/llama.py:516`
 
 logits 不在 `forward()` 中直接产生，而是通过：
 
@@ -345,7 +351,7 @@ logits 不在 `forward()` 中直接产生，而是通过：
 logits = self.logits_processor(self.lm_head, hidden_states)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:562`
+位置：`vllm/vllm/model_executor/models/llama.py:528`
 
 所以 generation 模型外壳可以记为：
 
@@ -375,7 +381,7 @@ compute_logits()：
 class LlamaModel(nn.Module, EagleModelMixin):
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:337`
+位置：`vllm/vllm/model_executor/models/llama.py:334`
 
 构造主体：
 
@@ -400,7 +406,7 @@ else:
     self.norm = PPMissingLayer()
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:347`
+位置：`vllm/vllm/model_executor/models/llama.py:356`
 
 这体现了三个关键设计：
 
@@ -434,7 +440,7 @@ start_layer, end_layer = get_pp_indices(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/utils.py:640`
+位置：`vllm/vllm/model_executor/models/utils.py:687`
 
 然后构造：
 
@@ -448,7 +454,7 @@ modules = torch.nn.ModuleList(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/utils.py:664`
+位置：`vllm/vllm/model_executor/models/utils.py:711`
 
 也就是说每个 PP rank 的 `self.layers` 长度仍然等于总层数，但不属于本 rank 的层会变成 `PPMissingLayer`。
 
@@ -460,7 +466,7 @@ class PPMissingLayer(torch.nn.Identity):
         return args[0] if args else next(iter(kwargs.values()))
 ```
 
-位置：`vllm/vllm/model_executor/models/utils.py:627`
+位置：`vllm/vllm/model_executor/models/utils.py:674`
 
 这样做的好处是：
 
@@ -487,7 +493,7 @@ last PP rank：
   norm(hidden_states, residual) → final hidden_states
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:392`
+位置：`vllm/vllm/model_executor/models/llama.py:400`
 
 所以 PP 场景下，model class 构造出来的是：
 
@@ -508,17 +514,17 @@ class LlamaDecoderLayer(nn.Module):
     def __init__(self, vllm_config: VllmConfig, prefix: str = "", ...):
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:251`
+位置：`vllm/vllm/model_executor/models/llama.py:248`
 
 它从 `vllm_config` 取：
 
 ```text
 config = vllm_config.model_config.hf_config；
 cache_config = vllm_config.cache_config；
-quant_config = vllm_config.quant_config。
+quant_config = self.get_quant_config(vllm_config)。
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:261`
+位置：`vllm/vllm/model_executor/models/llama.py:258`
 
 然后构造：
 
@@ -560,7 +566,7 @@ self.self_attn = attn_layer_type(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:285`
+位置：`vllm/vllm/model_executor/models/llama.py:282`
 
 构造 MLP 和 norm：
 
@@ -570,7 +576,7 @@ self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:300`
+位置：`vllm/vllm/model_executor/models/llama.py:297`
 
 ---
 
@@ -585,7 +591,7 @@ rotary embedding；
 Attention runtime layer。
 ```
 
-构造入口：`vllm/vllm/model_executor/models/llama.py:125`
+构造入口：`vllm/vllm/model_executor/models/llama.py:122`
 
 关键逻辑：
 
@@ -602,7 +608,7 @@ self._init_rotary_emb(config, quant_config=quant_config)
 self.attn = Attention(...)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:141`
+位置：`vllm/vllm/model_executor/models/llama.py:140`
 
 这里体现 TP 对 attention 构造的影响：
 
@@ -624,7 +630,7 @@ self.rotary_emb = get_rope(
 )
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:236`
+位置：`vllm/vllm/model_executor/models/llama.py:233`
 
 attention forward 则是：
 
@@ -637,7 +643,7 @@ hidden_states
   → o_proj
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:224`
+位置：`vllm/vllm/model_executor/models/llama.py:221`
 
 ---
 
@@ -651,7 +657,7 @@ hidden_states
 class Attention(nn.Module, AttentionLayerBase):
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:192`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:221`
 
 构造时会确定：
 
@@ -675,7 +681,7 @@ impl_cls = self.attn_backend.get_impl_cls()
 self.impl = impl_cls(...)
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:318`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:348`
 
 Attention 会把自己注册进 compile config 的 `static_forward_context`：
 
@@ -685,7 +691,7 @@ if prefix in compilation_config.static_forward_context:
 compilation_config.static_forward_context[prefix] = self
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:410`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:440`
 
 这一步很重要，因为后续 ModelRunner / attention backend 会按 layer name 绑定 KV cache、查 attention layer、构造 KV cache spec。
 
@@ -697,7 +703,7 @@ attention metadata 不是显式传给 Attention.forward()；
 Attention 内部通过 get_forward_context().attn_metadata 使用。
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:452`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:485`
 
 KV cache 规格由 `get_kv_cache_spec()` 返回：
 
@@ -708,7 +714,7 @@ sliding window decoder attention：返回 SlidingWindowSpec；
 特殊量化 cache：返回对应 spec。
 ```
 
-位置：`vllm/vllm/model_executor/layers/attention/attention.py:581`
+位置：`vllm/vllm/model_executor/layers/attention/attention.py:616`
 
 所以 attention 构造的意义不只是创建一个 PyTorch layer，它还定义了：
 
@@ -737,7 +743,7 @@ LlamaMLP
   └─ act_fn: SiluAndMul
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:82`
+位置：`vllm/vllm/model_executor/models/llama.py:79`
 
 代码：
 
@@ -745,19 +751,21 @@ LlamaMLP
 self.gate_up_proj = MergedColumnParallelLinear(
     input_size=hidden_size,
     output_sizes=[intermediate_size] * 2,
+    bias=bias,
     quant_config=quant_config,
     prefix=f"{prefix}.gate_up_proj",
 )
 self.down_proj = RowParallelLinear(
     input_size=intermediate_size,
     output_size=hidden_size,
+    bias=bias,
     quant_config=quant_config,
     prefix=f"{prefix}.down_proj",
 )
 self.act_fn = SiluAndMul()
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:95`
+位置：`vllm/vllm/model_executor/models/llama.py:92`
 
 这里也能看到 vLLM 模型类的典型写法：
 
@@ -825,7 +833,7 @@ def forward(self, input_):
     raise RuntimeError("LMHead's weights should be used in the sampler.")
 ```
 
-位置：`vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:562`
+位置：`vllm/vllm/model_executor/layers/vocab_parallel_embedding.py:559`
 
 这解释了为什么 generation 模型里是：
 
@@ -858,16 +866,16 @@ loader = AutoWeightsLoader(
 return loader.load_weights(weights)
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:569`
+位置：`vllm/vllm/model_executor/models/llama.py:535`
 
-`LlamaModel.load_weights()` 中还有 packed 参数映射：
+`LlamaModel.hf_to_vllm_mapper` 中还有 packed 参数映射，`LlamaModel.load_weights()` 会把它传给 `AutoWeightsLoader`：
 
 ```text
 .qkv_proj      ← .q_proj / .k_proj / .v_proj
 .gate_up_proj  ← .gate_proj / .up_proj
 ```
 
-位置：`vllm/vllm/model_executor/models/llama.py:433`
+位置：`vllm/vllm/model_executor/models/llama.py:344`
 
 这解决了 HF checkpoint 和 vLLM 模块结构不完全一致的问题：
 
@@ -881,14 +889,9 @@ vLLM 参数：
   model.layers.0.self_attn.qkv_proj.weight
 ```
 
-加载时还会跳过 PP 不属于本 rank 的参数：
+加载时还会跳过 PP 不属于本 rank 的 missing module：`AutoWeightsLoader._load_module()` 遇到 `StageMissingLayer / PPMissingLayer` 会直接返回；通用的 `is_pp_missing_parameter()` 也会根据 missing layer 前缀判断参数是否缺失。
 
-```python
-if is_pp_missing_parameter(name, self):
-    continue
-```
-
-位置：`vllm/vllm/model_executor/models/llama.py:464`
+位置：`vllm/vllm/model_executor/models/utils.py:318`、`vllm/vllm/model_executor/models/utils.py:744`
 
 所以权重加载不是简单 `load_state_dict()`，而是：
 
@@ -916,7 +919,7 @@ elif convert_type == "classify":
     model_cls = as_seq_cls_model(model_cls)
 ```
 
-位置：`vllm/vllm/model_executor/model_loader/utils.py:203`
+位置：`vllm/vllm/model_executor/model_loader/utils.py:193`
 
 `as_embedding_model()` 会基于原始模型动态创建一个 subclass：
 
@@ -974,7 +977,7 @@ self.score = ReplicatedLinear(...)
 return DispatchPooler.for_seq_cls(pooler_config, classifier=self.score)
 ```
 
-位置：`vllm/vllm/model_executor/models/adapters.py:287`
+位置：`vllm/vllm/model_executor/models/adapters.py:321`
 
 因此 pooling 模型构造可以记为：
 
@@ -1014,7 +1017,7 @@ MultimodalForConditionalGeneration
 
 `ModelConfig` 会根据 `model_info.supports_multimodal` 初始化 `MultiModalConfig`：
 
-位置：`vllm/vllm/config/model.py:663`
+位置：`vllm/vllm/config/model.py:682`
 
 从 model class construction 的角度看，多模态模型本质是：
 
