@@ -6,8 +6,8 @@
 
 该目录是在 `qwen_397b` 单机 16 卡 PD 分离部署基础上，加了池化能力的版本。部署形态仍然是：
 
-- P / Prefill：NPU `0-7`，`2 DP x 4 TP`，HTTP 端口 `8000-8001`，vLLM DP RPC 端口 `12321`。
-- D / Decode：NPU `8-15`，`2 DP x 4 TP`，HTTP 端口 `8004-8005`，vLLM DP RPC 端口 `12322`。
+- P / Prefill：NPU `0-7`，`4 DP x 2 TP`，HTTP 端口 `8000-8003`，vLLM DP RPC 端口 `12321`。
+- D / Decode：NPU `8-15`，`4 DP x 2 TP`，HTTP 端口 `8004-8007`，vLLM DP RPC 端口 `12322`。
 - P/D 通过 Mooncake 传 KV cache。
 - 池化版在 `kv-transfer-config` 中使用 `MultiConnector`，包含 `MooncakeConnectorV1` 和 `AscendStoreConnector`。
 
@@ -34,8 +34,8 @@ P 模板：`run_dp_template_p.sh`
         "kv_role": "kv_producer",
         "kv_port": "61001",
         "kv_connector_extra_config": {
-          "prefill": {"dp_size": 2, "tp_size": 4},
-          "decode": {"dp_size": 2, "tp_size": 4}
+          "prefill": {"dp_size": 4, "tp_size": 2},
+          "decode": {"dp_size": 4, "tp_size": 2}
         }
       },
       {
@@ -63,8 +63,8 @@ D 模板：`run_dp_template_d.sh`
 
 - `12321`：P 这一个 vLLM DP 组的 `--data-parallel-rpc-port`。
 - `12322`：D 这一个 vLLM DP 组的 `--data-parallel-rpc-port`。
-- `8000-8001`：P 各 DP rank 对外提供 OpenAI API 的 HTTP 端口。
-- `8004-8005`：D 各 DP rank 对外提供 OpenAI API 的 HTTP 端口。
+- `8000-8003`：P 各 DP rank 对外提供 OpenAI API 的 HTTP 端口。
+- `8004-8007`：D 各 DP rank 对外提供 OpenAI API 的 HTTP 端口。
 - `61001`：P 侧 Mooncake KV transfer 配置端口。
 - `61101`：D 侧 Mooncake KV transfer 配置端口。
 - `60000/60001`：日志里报错的 Ascend/HCCL 通信端口，不是 vLLM DP RPC 端口，也不是 Mooncake `61001/61101`。
@@ -75,18 +75,22 @@ D 模板：`run_dp_template_d.sh`
 
 这里的一个 DP 组是指：一批使用同一套 `--data-parallel-size`、同一个 `--data-parallel-address`、同一个 `--data-parallel-rpc-port`，并且 `--data-parallel-rank` 覆盖 `0..DP_SIZE-1` 的 vLLM 实例。
 
-P 的 2 个 rank 构成一个 Prefill DP 组：
+P 的 4 个 rank 构成一个 Prefill DP 组：
 
 ```bash
-bash run_dp_template_p.sh 0,1,2,3 8000 2 0 90.90.97.27 12321 4
-bash run_dp_template_p.sh 4,5,6,7 8001 2 1 90.90.97.27 12321 4
+bash run_dp_template_p.sh 0,1 8000 4 0 90.90.97.27 12321 2
+bash run_dp_template_p.sh 2,3 8001 4 1 90.90.97.27 12321 2
+bash run_dp_template_p.sh 4,5 8002 4 2 90.90.97.27 12321 2
+bash run_dp_template_p.sh 6,7 8003 4 3 90.90.97.27 12321 2
 ```
 
-D 的 2 个 rank 构成另一个 Decode DP 组：
+D 的 4 个 rank 构成另一个 Decode DP 组：
 
 ```bash
-bash run_dp_template_d.sh 8,9,10,11    8004 2 0 90.90.97.27 12322 4
-bash run_dp_template_d.sh 12,13,14,15  8005 2 1 90.90.97.27 12322 4
+bash run_dp_template_d.sh 8,9   8004 4 0 90.90.97.27 12322 2
+bash run_dp_template_d.sh 10,11 8005 4 1 90.90.97.27 12322 2
+bash run_dp_template_d.sh 12,13 8006 4 2 90.90.97.27 12322 2
+bash run_dp_template_d.sh 14,15 8007 4 3 90.90.97.27 12322 2
 ```
 
 因此 P 组内部共用 `12321` 是合理的，D 组内部共用 `12322` 是合理的，但 P/D 是两套独立 DP 组，不能全部写成 `12321`。
@@ -186,7 +190,7 @@ Failed to enable listening for the host network adapter socket. Reason: The IP a
 
 - 不是 vLLM DP RPC 端口 `12321/12322`。
 - 不是 Mooncake KV transfer 端口 `61001/61101`。
-- 不是 HTTP 服务端口 `8000-8001/8004-8005`。
+- 不是 HTTP 服务端口 `8000-8007`。
 
 它们属于 Ascend/HCCL 通信端口段，通常可以通过环境变量 `HCCL_IF_BASE_PORT` 显式调整。
 
@@ -208,7 +212,7 @@ P 节点失败不是单一的 `12321/12322` 配错问题。
 在目标机器上确认是否还有旧的 P/D/vLLM/HCCL 进程占用端口或 NPU 资源。重点检查：
 
 - `60000/60001` 是否被旧进程占用。
-- `8000-8001/8004-8005` 是否有旧 vLLM 服务。
+- `8000-8007` 是否有旧 vLLM 服务。
 - `12321/12322` 是否有旧 DP 组残留。
 - 是否有旧的 Ascend runtime 进程没有退出干净。
 

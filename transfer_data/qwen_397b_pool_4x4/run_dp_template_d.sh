@@ -14,10 +14,10 @@ set -euo pipefail
 
 if [ "$#" -ne 7 ]; then
   echo "Usage: $0 <visible_devices> <port> <dp_size> <dp_rank> <dp_address> <dp_rpc_port> <tp_size>"
-  echo "Example: $0 0,1 8000 4 0 90.90.97.27 12321 2"
+  echo "Example: $0 8,9 8004 4 0 90.90.97.27 12322 2"
   exit 1
 fi
-export VLLM_STARTUP_TIMEOUT=6000
+
 VISIBLE_DEVICES="$1"
 VLLM_ENGINE_PORT="$2"
 DP_SIZE="$3"
@@ -35,8 +35,8 @@ NIC_NAME="${NIC_NAME:-enp194s0f0}"
 
 VLLM_HOST="${VLLM_HOST:-0.0.0.0}"
 
-# P side: kv_producer
-KV_ROLE="kv_producer"
+# D side: kv_consumer
+KV_ROLE="kv_consumer"
 KV_PORT="${KV_PORT:-55010}"
 
 PREFILL_DP_SIZE="${PREFILL_DP_SIZE:-${DP_SIZE}}"
@@ -105,7 +105,7 @@ if ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor >/dev/null 2>&1; the
 fi
 
 echo "============================================================"
-echo "Starting vLLM Prefill (P) DP rank"
+echo "Starting vLLM Decode (D) DP rank"
 echo "  ASCEND_RT_VISIBLE_DEVICES=${ASCEND_RT_VISIBLE_DEVICES}"
 echo "  VLLM_HOST=${VLLM_HOST}"
 echo "  VLLM_ENGINE_PORT=${VLLM_ENGINE_PORT}"
@@ -119,7 +119,7 @@ echo "  KV_PORT=${KV_PORT}"
 echo "============================================================"
 
 # ============================================================
-# Start vLLM — Prefill
+# Start vLLM — Decode
 # ============================================================
 
 exec vllm serve /data/weights/Qwen3.5-397B-A17B-w4a8-org \
@@ -136,7 +136,7 @@ exec vllm serve /data/weights/Qwen3.5-397B-A17B-w4a8-org \
   --host "${VLLM_HOST}" \
   --port "${VLLM_ENGINE_PORT}" \
   --max-num-seqs "${MAX_NUM_SEQS:-10}" \
-  --max-model-len "${MAX_MODEL_LEN:-110000}" \
+  --max-model-len "${MAX_MODEL_LEN:-140000}" \
   --max-num-batched-tokens "${MAX_NUM_BATCHED_TOKENS:-8192}" \
   --gpu-memory-utilization "${GPU_MEMORY_UTILIZATION:-0.9}" \
   --seed "${SEED:-1024}" \
@@ -153,29 +153,29 @@ exec vllm serve /data/weights/Qwen3.5-397B-A17B-w4a8-org \
   --kv-transfer-config \
   '{
       "kv_connector": "MultiConnector",
-      "kv_role": "kv_producer",
+      "kv_role": "kv_consumer",
       "kv_load_failure_policy": "fail",
       "kv_connector_extra_config": {
           "connectors": [
               {
                   "kv_connector": "MooncakeConnectorV1",
                   "kv_buffer_device": "npu",
-                  "kv_role": "kv_producer",
-                  "kv_port": "61001", 
+                  "kv_role": "kv_consumer",
+                  "kv_port": "61101", 
                   "kv_connector_extra_config": {
-                      "prefill": {
-                          "dp_size": 2,
-                          "tp_size": 4
+                      "prefill": { 
+                          "dp_size": 4,
+                          "tp_size": 2
                       },
                       "decode": {
-                          "dp_size": 2,
-                          "tp_size": 4
+                          "dp_size": 4,
+                          "tp_size": 2
                       }
                   }
               },
               {
                   "kv_connector": "AscendStoreConnector",
-                  "kv_role": "kv_producer",
+                  "kv_role": "kv_consumer",
                   "kv_connector_extra_config": {
                       "lookup_rpc_port":"0",
                       "backend": "mooncake"

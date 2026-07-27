@@ -5,9 +5,9 @@
 # Proxy Port: 1999
 # Connector: MooncakeConnectorV1 (prefill-first)
 #
-# Single machine (162): 2 P instances (port 8000-8001) + 2 D instances (port 8004-8005)
-#   P: NPUs 0-7  (dp_rank 0-1, dp-rpc 12321)
-#   D: NPUs 8-15 (dp_rank 0-1, dp-rpc 12322)
+# Single machine (162): 4 P instances (port 8000-8003) + 4 D instances (port 8004-8007)
+#   P: NPUs 0-7  (dp_rank 0-3, dp-rpc 12321)
+#   D: NPUs 8-15 (dp_rank 0-3, dp-rpc 12322)
 #   P/D 各自独立 DP 组，通过 Mooncake 传输 KV cache
 #
 
@@ -19,10 +19,14 @@ python3 load_balance_proxy_server_example.py \
   --prefiller-hosts \
     90.90.97.27 \
     90.90.97.27 \
+    90.90.97.27 \
+    90.90.97.27 \
   --prefiller-ports \
-    8000 8001 \
+    8000 8001 8002 8003 \
   --decoder-hosts \
     90.90.97.27 \
     90.90.97.27 \
+    90.90.97.27 \
+    90.90.97.27 \
   --decoder-ports \
-    8004 8005
+    8004 8005 8006 8007

@@ -163,13 +163,13 @@ exec vllm serve /data/weights/Qwen3.5-397B-A17B-w4a8-org \
                   "kv_role": "kv_producer",
                   "kv_port": "61001", 
                   "kv_connector_extra_config": {
-                      "prefill": {
-                          "dp_size": 2,
-                          "tp_size": 4
+                      "prefill": { 
+                          "dp_size": 4,
+                          "tp_size": 2
                       },
                       "decode": {
-                          "dp_size": 2,
-                          "tp_size": 4
+                          "dp_size": 4,
+                          "tp_size": 2
                       }
                   }
               },
