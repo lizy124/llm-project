@@ -245,21 +245,26 @@ mm_encoder_tp_mode
 mm_encoder_attn_backend
 mm_encoder_attn_dtype
 mm_encoder_fp8_scale_path
+mm_encoder_fp8_scale_save_path
+mm_encoder_fp8_scale_save_margin
 skip_mm_profiling
 video_pruning_rate
+mm_tensor_ipc
+mm_ipc_gpu_memory_gb
 ```
 
-位置：`code/vllm/vllm/config/multimodal.py:139` 到 `code/vllm/vllm/config/multimodal.py:194`
+位置：`code/vllm/vllm/config/multimodal.py:139` 到 `code/vllm/vllm/config/multimodal.py:209`
 
-它们影响的是多模态 encoder 执行：
+它们影响的是多模态 encoder 执行和多模态 tensor 传输：
 
 ```text
 - 是否只跑 encoder；
 - encoder TP 是切权重还是切数据；
 - ViT encoder attention backend；
-- encoder attention FP8；
+- encoder attention FP8 和 scale 读写；
 - 是否跳过多模态 profiling；
-- video token pruning。
+- video token pruning；
+- 多模态 tensor IPC 方式和前端 GPU 多模态内存预留。
 ```
 
 ### 3.4 compute_hash()
@@ -428,7 +433,7 @@ return {
 }
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:684` 到 `code/vllm/vllm/multimodal/parse.py:690`
+位置：`code/vllm/vllm/multimodal/parse.py:692` 到 `code/vllm/vllm/multimodal/parse.py:698`
 
 如果输入 key 不在其中：
 
@@ -436,7 +441,7 @@ return {
 raise ValueError(f"Unsupported modality: {k}")
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:692` 到 `code/vllm/vllm/multimodal/parse.py:704`
+位置：`code/vllm/vllm/multimodal/parse.py:700` 到 `code/vllm/vllm/multimodal/parse.py:710`
 
 ### 5.2 image / audio / video 的处理方向
 
@@ -451,9 +456,9 @@ video：帧序列 / ndarray / tensor / 带 metadata 的 tuple
 关键位置：
 
 ```text
-_parse_audio_data(): code/vllm/vllm/multimodal/parse.py:566
-_parse_image_data(): code/vllm/vllm/multimodal/parse.py:605
-_parse_video_data(): code/vllm/vllm/multimodal/parse.py:626
+_parse_audio_data(): code/vllm/vllm/multimodal/parse.py:567
+_parse_image_data(): code/vllm/vllm/multimodal/parse.py:606
+_parse_video_data(): code/vllm/vllm/multimodal/parse.py:634
 ```
 
 如果传入的是 embeddings，解析器会返回 embedding item：
@@ -463,7 +468,7 @@ if self.is_embeddings(data):
     return ImageEmbeddingItems(data, self.expected_hidden_size)
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:612` 到 `code/vllm/vllm/multimodal/parse.py:613`
+位置：`code/vllm/vllm/multimodal/parse.py:613` 到 `code/vllm/vllm/multimodal/parse.py:614`
 
 这就是 `enable_mm_embeds` 能接入的基础。
 
@@ -481,7 +486,7 @@ return self.renderer._process_multimodal(...)
 
 位置：`code/vllm/vllm/inputs/preprocess.py:90` 到 `code/vllm/vllm/inputs/preprocess.py:109`
 
-真正处理在：`code/vllm/vllm/renderers/base.py:682`
+真正处理在：`code/vllm/vllm/renderers/base.py:728`
 
 ```python
 def _process_multimodal(
@@ -510,7 +515,7 @@ mm_inputs = mm_processor.apply(mm_processor_inputs, mm_timing_ctx)
 return mm_inputs
 ```
 
-位置：`code/vllm/vllm/renderers/base.py:692` 到 `code/vllm/vllm/renderers/base.py:720`
+位置：`code/vllm/vllm/renderers/base.py:740` 到 `code/vllm/vllm/renderers/base.py:766`
 
 输出的 `mm_inputs` 是 `MultiModalInput`，通常包含：
 
@@ -530,7 +535,7 @@ mm_uuid_items = parse_mm_uuids(mm_uuids)
 mm_uuid_items = self._process_mm_uuids(...)
 ```
 
-位置：`code/vllm/vllm/renderers/base.py:699` 到 `code/vllm/vllm/renderers/base.py:704`
+位置：`code/vllm/vllm/renderers/base.py:745` 到 `code/vllm/vllm/renderers/base.py:750`
 
 如果同时关闭 prefix caching 和 processor cache，Renderer 会用请求局部 id 覆盖 uuid：
 
@@ -541,7 +546,7 @@ if mm_processor_cache_gb == 0 and not enable_prefix_caching:
     }
 ```
 
-位置：`code/vllm/vllm/renderers/base.py:662` 到 `code/vllm/vllm/renderers/base.py:677`
+位置：`code/vllm/vllm/renderers/base.py:699` 到 `code/vllm/vllm/renderers/base.py:725`
 
 这说明多模态 hash/uuid 不只是为了 processor cache，也会影响 encoder output 复用。
 
@@ -731,7 +736,7 @@ class NewRequestData:
     mm_features: list[MultiModalFeatureSpec]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:30` 到 `code/vllm/vllm/v1/core/sched/output.py:35`
+位置：`code/vllm/vllm/v1/core/sched/output.py:32` 到 `code/vllm/vllm/v1/core/sched/output.py:43`
 
 `from_request()` 直接从 request 搬运：
 
@@ -739,7 +744,7 @@ class NewRequestData:
 mm_features=request.mm_features
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:53` 到 `code/vllm/vllm/v1/core/sched/output.py:57`
+位置：`code/vllm/vllm/v1/core/sched/output.py:55` 到 `code/vllm/vllm/v1/core/sched/output.py:67`
 
 ### 9.3 SchedulerOutput.scheduled_encoder_inputs
 
@@ -749,7 +754,7 @@ mm_features=request.mm_features
 scheduled_encoder_inputs: dict[str, list[int]]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:201` 到 `code/vllm/vllm/v1/core/sched/output.py:204`
+位置：`code/vllm/vllm/v1/core/sched/output.py:203` 到 `code/vllm/vllm/v1/core/sched/output.py:206`
 
 注释说明：
 
@@ -764,7 +769,7 @@ req_id -> encoder input indices that need processing.
 free_encoder_mm_hashes: list[str]
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:213` 到 `code/vllm/vllm/v1/core/sched/output.py:215`
+位置：`code/vllm/vllm/v1/core/sched/output.py:215` 到 `code/vllm/vllm/v1/core/sched/output.py:217`
 
 它告诉 worker 哪些 encoder output 可以从物理 cache 中删除。
 
@@ -860,11 +865,11 @@ encoder_cache_size = mm_budget.encoder_cache_size if mm_budget else 0
 self.encoder_cache_manager = EncoderCacheManager(cache_size=encoder_cache_size)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:199` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:225`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:204` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:230`
 
 核心判断在 `_try_schedule_encoder_inputs()`。
 
-入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1279`
+入口：`code/vllm/vllm/v1/core/sched/scheduler.py:1367`
 
 ```python
 def _try_schedule_encoder_inputs(
@@ -890,7 +895,7 @@ An encoder input will be scheduled if:
 - The encoder cache has space to store it.
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1291` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1298`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1379` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1387`
 
 ### 11.2 找到本轮 token window 覆盖的 mm_features
 
@@ -904,7 +909,7 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1321` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1325`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1409` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1413`
 
 这说明多模态 encoder 调度是和“本轮要计算的 token 范围”绑定的。
 
@@ -915,9 +920,21 @@ if self.encoder_cache_manager.check_and_update_cache(request, i):
     continue
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1361` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1364`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1449` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1452`
 
 如果 encoder output 已经缓存，只更新引用关系，不让 worker 重跑 encoder。
+
+如果配置了 ECConnector，Scheduler 还会检查远端 encoder cache：
+
+```python
+if self.ec_connector is not None and self.ec_connector.has_cache_item(item_identifier):
+    external_load_encoder_input.append(i)
+    continue
+```
+
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1507` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1513`
+
+这种情况下本轮会分配逻辑账本并通过 EC connector 加载，而不是把该 item 放进本地 encoder 执行列表。
 
 ### 11.4 cache 或预算不够时会截断本轮 token
 
@@ -932,7 +949,7 @@ if not self.encoder_cache_manager.can_allocate(...):
     break
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1382` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1401`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1470` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1489`
 
 这点很重要：
 
@@ -950,7 +967,7 @@ for i in encoder_inputs_to_schedule:
     self.encoder_cache_manager.allocate(request, i)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:599` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:607`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:648` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:656`
 
 最后构造 `SchedulerOutput`：
 
@@ -963,7 +980,7 @@ SchedulerOutput(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1060` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1072`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1142` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1157`
 
 ---
 
@@ -1073,7 +1090,7 @@ self.uses_xdrope_dim = model_config.uses_xdrope_dim
 self.supports_mm_inputs = self.mm_registry.supports_multimodal_inputs(model_config)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:488` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:494`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:518` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:524`
 
 还会创建 `MultiModalBudget`：
 
@@ -1085,7 +1102,7 @@ self.mm_budget = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:821` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:825`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:856` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:860`
 
 对于输入 embeddings，会预分配 buffer：
 
@@ -1095,7 +1112,7 @@ self.inputs_embeds = self._make_buffer(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:751` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:756`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:786` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:791`
 
 这说明多模态模型通常走 `inputs_embeds` 输入，而不是只传 `input_ids`。
 
@@ -1119,7 +1136,7 @@ req_state = CachedRequestState(
 self.requests[req_id] = req_state
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1224` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1238`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1265` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1279`
 
 流式追加或恢复请求时也会更新：
 
@@ -1127,7 +1144,7 @@ self.requests[req_id] = req_state
 req_state.mm_features = new_req_data.mm_features
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1567` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1571`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1610` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1614`
 
 同时，worker 会根据 scheduler 要求释放物理 encoder cache：
 
@@ -1136,13 +1153,13 @@ for mm_hash in scheduler_output.free_encoder_mm_hashes:
     self.encoder_cache.pop(mm_hash, None)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1158` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1160`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1199` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1201`
 
 ---
 
 ## 15. _batch_mm_inputs_from_scheduler()：从 SchedulerOutput 取本轮 encoder 输入
 
-入口在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2866`
+入口在：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2913`
 
 ```python
 scheduled_encoder_inputs = scheduler_output.scheduled_encoder_inputs
@@ -1164,7 +1181,7 @@ for req_id, encoder_input_ids in scheduled_encoder_inputs.items():
         mm_lora_refs.append((req_id, mm_feature.mm_position))
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2875` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2885`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2942` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2952`
 
 输出三类信息：
 
@@ -1178,7 +1195,7 @@ mm_lora_refs：tower connector LoRA 需要的请求和 placeholder 位置信息�
 
 ## 16. _execute_mm_encoder()：真正执行多模态 encoder
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2889`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2956`
 
 ```python
 def _execute_mm_encoder(self, scheduler_output) -> list[torch.Tensor]:
@@ -1194,7 +1211,7 @@ self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 self.maybe_save_ec_to_connector(self.encoder_cache, mm_hashes[i])
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2899` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2915`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2966` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2991`
 
 这类输入已经在模型 embedding space 里，所以不跑 encoder，只直接放进 encoder cache，后续复用 `_gather_mm_embeddings()` 的统一路径。
 
@@ -1206,7 +1223,7 @@ self.maybe_save_ec_to_connector(self.encoder_cache, mm_hashes[i])
 for modality, num_items, mm_kwargs_batch in group_and_batch_mm_kwargs(...):
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3013` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3017`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3080` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3082`
 
 原因是不同 modality 或不同模型输入形态不能随便混在一个 encoder batch 里。
 
@@ -1218,7 +1235,7 @@ for modality, num_items, mm_kwargs_batch in group_and_batch_mm_kwargs(...):
 batch_outputs = model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3084` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3085`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3147` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3150`
 
 如果配置了 encoder CUDA graph，则可能走：
 
@@ -1226,7 +1243,7 @@ batch_outputs = model.embed_multimodal(**mm_kwargs_batch)
 cudagraph_output = self.encoder_cudagraph_manager.execute(mm_kwargs_batch)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3073` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3083`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3138` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3148`
 
 输出检查：
 
@@ -1234,7 +1251,7 @@ cudagraph_output = self.encoder_cudagraph_manager.execute(mm_kwargs_batch)
 sanity_check_mm_encoder_outputs(batch_outputs, expected_num_items=num_items)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3087`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3152`
 
 ### 16.4 缓存 encoder output
 
@@ -1246,7 +1263,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
     self.maybe_save_ec_to_connector(self.encoder_cache, mm_hash)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3092` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3096`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3157` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3161`
 
 因此物理 tensor cache 在 worker 侧，key 是 `MultiModalFeatureSpec.identifier`。
 
@@ -1254,7 +1271,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
 
 ## 17. _gather_mm_embeddings()：从 encoder_cache 按 placeholder 切片取 embedding
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3100`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3165`
 
 ```python
 def _gather_mm_embeddings(
@@ -1275,7 +1292,7 @@ for req_id in self.input_batch.req_ids:
     num_computed_tokens = req_state.num_computed_tokens + shift_computed_tokens
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3116` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3121`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3184` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3189`
 
 然后找本轮 token window 中涉及的 mm_features：
 
@@ -1287,7 +1304,7 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3123` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3128`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3191` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3196`
 
 ### 17.2 根据 mm_position 计算切片范围
 
@@ -1299,7 +1316,7 @@ start_pos = pos_info.offset
 num_encoder_tokens = pos_info.length
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3130` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3133`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3197` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3202`
 
 如果本轮只覆盖该 placeholder 的一部分，会计算对应 embedding 区间：
 
@@ -1309,19 +1326,21 @@ curr_embeds_start, curr_embeds_end = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3141` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3143`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3209` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3211`
 
 ### 17.3 从 encoder_cache 获取 output
 
 ```python
 mm_hash = mm_feature.identifier
 encoder_output = self.encoder_cache.get(mm_hash, None)
-assert encoder_output is not None, f"Encoder cache miss for {mm_hash}."
+if encoder_output is None:
+    ...
+    raise RuntimeError(f"Encoder cache miss for {mm_hash}.")
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3149` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3151`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3217` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3228`
 
-这里如果 miss，就说明 Scheduler 和 Worker 的 encoder cache 状态不一致，或者前面没正确执行 `_execute_mm_encoder()`。
+这里如果 miss，通常说明 Scheduler 和 Worker 的 encoder cache 状态不一致，或者前面没正确执行 `_execute_mm_encoder()`；当前实现对 drafter 的前看位置会先跳过，其他情况抛 `RuntimeError`。
 
 ### 17.4 生成 is_mm_embed mask
 
@@ -1339,7 +1358,7 @@ is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] = True
 mm_embeds_req.append(mm_embeds_item)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3159` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3169`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3236` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3246`
 
 这一步是“placeholder token 转 embedding”的核心。
 
@@ -1358,7 +1377,7 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
         mm_embeds, is_mm_embed = self._gather_mm_embeddings(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3447` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3455`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3501` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3509`
 
 ### 18.1 为什么要在 _prepare_inputs 后 gather
 
@@ -1369,13 +1388,13 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
 # modal outputs after that to ensure the correct order
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3443` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3444`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3497` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3498`
 
 这说明多模态 embedding 的拼接必须跟当前 batch row 顺序对齐，不能只按请求原始顺序处理。
 
 ### 18.2 调用 embed_input_ids()
 
-多模态模型统一走 embeddings 输入：
+多模态模型统一走 embeddings 输入。普通多模态路径会调用：
 
 ```python
 inputs_embeds_scheduled = self.model.embed_input_ids(
@@ -1385,7 +1404,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3484` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3488`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3538` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3542`
 
 随后写入预分配 buffer：
 
@@ -1393,7 +1412,11 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 self.inputs_embeds.gpu[:num_scheduled_tokens].copy_(inputs_embeds_scheduled)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3490` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3492`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3544` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3547`
+
+如果同一批里存在预计算 `prompt_embeds`，当前实现会先只 embed token-id 位置，再用 `torch.where()` 避免覆盖已有 prompt embeddings。
+
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3513` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3536`
 
 然后：
 
@@ -1405,7 +1428,7 @@ model_kwargs = {
 }
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3495` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3499`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3549` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3553`
 
 这里的关键点是：
 
@@ -1424,7 +1447,7 @@ input_ids = self.input_ids.gpu[:num_input_tokens]
 inputs_embeds = None
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3526` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3533`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3580` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3586`
 
 所以：
 
@@ -1445,7 +1468,7 @@ if is_encoder_decoder and scheduler_output.scheduled_encoder_inputs:
     model_kwargs.update({"encoder_outputs": encoder_outputs})
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3552` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3559`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3605` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3612`
 
 注释说明：
 
@@ -1454,7 +1477,7 @@ For an encoder-decoder model, our processing here is a bit simpler, because the 
 We are not doing any prompt replacement.
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3552` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3557`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3605` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3610`
 
 也就是说：
 
@@ -1470,7 +1493,7 @@ if self.is_encoder_decoder:
     lo = 0
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1326` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1328`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1414` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1416`
 
 并且 encoder-decoder 当前使用 `EncoderDecoderCacheManager`：
 
@@ -1482,7 +1505,7 @@ self.encoder_cache_manager = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:221` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:225`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:226` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:230`
 
 ---
 
@@ -1585,7 +1608,7 @@ num_encoder_tokens = mm_feature.mm_position.length
 num_encoder_embeds = mm_feature.mm_position.get_num_embeds()
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1330` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1335`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1420` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1422`
 
 在 ModelRunner 中：
 
@@ -1595,7 +1618,7 @@ curr_embeds_start, curr_embeds_end = (
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3141` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3143`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:3209` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:3211`
 
 这说明：
 
@@ -1626,7 +1649,7 @@ self.uses_mrope = model_config.uses_mrope
 self.uses_xdrope_dim = model_config.uses_xdrope_dim
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:489` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:491`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:520` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:521`
 
 在请求状态更新时，会根据 mm_features 计算位置。
 
@@ -1638,7 +1661,7 @@ mrope_features = [
 ]
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1596` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1600`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1636` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1641`
 
 XD-RoPE 则会使用：
 
@@ -1649,7 +1672,7 @@ req_state.xdrope_positions = xdrope_model.get_xdrope_input_positions(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1630` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1633`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1671` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1674`
 
 这说明多模态不仅影响 embeddings，还可能影响 position ids。
 
@@ -1729,7 +1752,7 @@ if self.is_embeddings(data):
     return ImageEmbeddingItems(data, self.expected_hidden_size)
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:612` 到 `code/vllm/vllm/multimodal/parse.py:613`
+位置：`code/vllm/vllm/multimodal/parse.py:613` 到 `code/vllm/vllm/multimodal/parse.py:614`
 
 预算阶段：
 
@@ -1750,7 +1773,7 @@ if modality == "prompt_embeds":
     self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2899` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2915`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:2966` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:2991`
 
 也就是说：
 
@@ -1946,7 +1969,7 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1321` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1325`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1409` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1413`
 
 如果不允许 chunked multimodal input，且本轮只覆盖了 item 的一部分，会回退：
 
@@ -1956,7 +1979,7 @@ if disable_chunked_mm_input and ...:
     break
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1366` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1381`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1454` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1469`
 
 如果预算或 cache 不足，也可能截断：
 
@@ -1964,7 +1987,7 @@ if disable_chunked_mm_input and ...:
 num_new_tokens = start_pos - (...)
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1382` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1401`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1470` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1489`
 
 因此 chunked prefill 下，多模态 encoder 调度和 decoder token 调度是耦合的。
 
@@ -2012,7 +2035,7 @@ scheduled_encoder_inputs: req_id -> list[input_id]
 
 这里的 input_id 是 `Request.mm_features` 中的索引。
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:201` 到 `code/vllm/vllm/v1/core/sched/output.py:204`
+位置：`code/vllm/vllm/v1/core/sched/output.py:203` 到 `code/vllm/vllm/v1/core/sched/output.py:206`
 
 ### 31.5 encoder cache hit 后还会执行 _execute_mm_encoder() 吗？
 
@@ -2020,7 +2043,7 @@ scheduled_encoder_inputs: req_id -> list[input_id]
 
 Scheduler 命中 `EncoderCacheManager.check_and_update_cache()` 后不会把该 item 加进 `scheduled_encoder_inputs`。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1361` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1364`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1449` 到 `code/vllm/vllm/v1/core/sched/scheduler.py:1452`
 
 ### 31.6 多模态输入最终会改变输出对象类型吗？
 

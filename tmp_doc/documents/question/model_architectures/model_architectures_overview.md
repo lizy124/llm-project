@@ -2,19 +2,19 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\model.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\tasks.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\registry.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\interfaces.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\interfaces_base.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\adapters.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\module_mapping.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\model_loader\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\model_loader\default_loader.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\layers\`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\llama.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\config\model.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\tasks.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\registry.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\interfaces.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\interfaces_base.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\adapters.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\utils.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\module_mapping.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\utils.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\model_loader\default_loader.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\layers\`
+- `E:\lizy\code\vllm-project\vllm\vllm\model_executor\models\llama.py`
+- `E:\lizy\code\vllm-project\vllm\vllm\v1\worker\gpu_model_runner.py`
 
 本文按“先定边界，再走模型识别和构造，再拆 forward 接口、layer 组件、权重加载和扩展点”的方式，梳理 vLLM 中 model architecture 适配机制。
 
@@ -216,7 +216,7 @@ architectures = self.architectures
 registry = self.registry
 ```
 
-位置：`model.py:540` 到 `model.py:558`
+位置：`model.py:555` 到 `model.py:580`
 
 `architectures` 通常来自 `hf_config.architectures`，例如：
 
@@ -239,7 +239,7 @@ is_generative_model = registry.is_text_generation_model(architectures, self)
 is_pooling_model = registry.is_pooling_model(architectures, self)
 ```
 
-位置：`model.py:557` 到 `model.py:560`
+位置：`model.py:578` 到 `model.py:581`
 
 这两个判断最终来自 `ModelRegistry.inspect_model_cls()` 返回的 `_ModelInfo`。
 
@@ -252,7 +252,7 @@ self.runner_type = self._get_runner_type(architectures, self.runner, self.conver
 self.convert_type = self._get_convert_type(architectures, self.runner_type, self.convert)
 ```
 
-位置：`model.py:562` 到 `model.py:567`
+位置：`model.py:583` 到 `model.py:588`
 
 这里的含义是：
 
@@ -277,7 +277,7 @@ CausalLM + --runner pooling --convert embed
   → runner_type=pooling, convert_type=none
 ```
 
-如果 runner 和模型能力不匹配，`ModelConfig` 会在这里直接报错。相关检查见 `model.py:569` 到 `model.py:591`。
+如果 runner 和模型能力不匹配，`ModelConfig` 会在这里直接报错。相关检查见 `model.py:590` 到 `model.py:612`。
 
 ### 4.4 inspect model class，固化 `_model_info`
 
@@ -290,7 +290,7 @@ self._architecture = arch
 logger.info("Resolved architecture: %s", arch)
 ```
 
-位置：`model.py:593` 到 `model.py:598`
+位置：`model.py:614` 到 `model.py:619`
 
 这一步很重要，因为后续很多配置都依赖 `_model_info`：
 
@@ -307,11 +307,11 @@ transcription / Mamba / hybrid / noops 等能力。
 
 如果 `runner_type == "pooling"`，会初始化 `PoolerConfig`，并从 `_model_info` 拿默认 pooling type：
 
-位置：`model.py:620` 到 `model.py:637`
+位置：`model.py:639` 到 `model.py:656`
 
 如果 `_model_info.supports_multimodal` 为 True，则初始化 `MultiModalConfig`：
 
-位置：`model.py:663` 到 `model.py:701`
+位置：`model.py:682` 到 `model.py:721`
 
 所以 architecture 选择不是只为了构造 model class，它还会反过来影响配置对象本身。
 
@@ -346,7 +346,7 @@ class _ModelInfo:
     supports_transcription_only: bool
 ```
 
-位置：`registry.py:747` 到 `registry.py:767`
+位置：`registry.py:755` 到 `registry.py:775`
 
 `from_model_cls()` 会调用一组接口判断函数：
 
@@ -361,7 +361,7 @@ supports_transcription(model)
 ...
 ```
 
-位置：`registry.py:768` 到 `registry.py:796`
+位置：`registry.py:777` 到 `registry.py:805`
 
 这说明 vLLM 不是只靠类名判断模型类型，而是把模型类的协议能力统一 inspect 成 `_ModelInfo`。
 
@@ -378,7 +378,7 @@ _LazyRegisteredModel：
   inspect 时再 import，并把 _ModelInfo 缓存到磁盘。
 ```
 
-位置：`registry.py:799` 到 `registry.py:936`
+位置：`registry.py:818` 到 `registry.py:972`
 
 lazy inspect 会在子进程中执行，避免主进程初始化 CUDA：
 
@@ -386,7 +386,7 @@ lazy inspect 会在子进程中执行，避免主进程初始化 CUDA：
 mi = _run_in_subprocess(lambda: _ModelInfo.from_model_cls(self.load_model_cls()))
 ```
 
-位置：`registry.py:933` 到 `registry.py:936`
+位置：`registry.py:960` 到 `registry.py:963`
 
 ### 5.3 resolve 有三条主要路径
 
@@ -400,7 +400,7 @@ model_impl == "transformers"
   → _try_inspect_model_cls / _try_load_model_cls
 ```
 
-位置：`registry.py:1184` 到 `registry.py:1190`，以及 `registry.py:1236` 到 `registry.py:1242`
+位置：`registry.py:1211` 到 `registry.py:1217`，以及 `registry.py:1263` 到 `registry.py:1269`
 
 第二类：Terratorch：
 
@@ -409,7 +409,7 @@ model_impl == "terratorch"
   → arch = "Terratorch"
 ```
 
-位置：`registry.py:1191` 到 `registry.py:1193`，以及 `registry.py:1243` 到 `registry.py:1247`
+位置：`registry.py:1218` 到 `registry.py:1220`，以及 `registry.py:1270` 到 `registry.py:1274`
 
 第三类：默认 vLLM / auto：
 
@@ -419,11 +419,11 @@ for arch in architectures:
   model_info / model_cls = _try_inspect_model_cls / _try_load_model_cls(normalized_arch)
 ```
 
-位置：`registry.py:1207` 到 `registry.py:1211`，以及 `registry.py:1261` 到 `registry.py:1265`
+位置：`registry.py:1234` 到 `registry.py:1238`，以及 `registry.py:1288` 到 `registry.py:1292`
 
 如果 vLLM 没有实现，并且 `model_impl == "auto"`，会尝试 fallback 到 Transformers backend：
 
-位置：`registry.py:1195` 到 `registry.py:1205`，以及 `registry.py:1267` 到 `registry.py:1276`。
+位置：`registry.py:1222` 到 `registry.py:1232`，以及 `registry.py:1276` 到 `registry.py:1303`。
 
 ### 5.4 `_normalize_arch()` 处理 architecture defaults
 
@@ -437,7 +437,7 @@ match = try_match_architecture_defaults(
 )
 ```
 
-位置：`registry.py:1148` 到 `registry.py:1172`
+位置：`registry.py:1175` 到 `registry.py:1199`
 
 这和 `convert_type=embed/classify` 配合，用于把同一个基础模型类复用到 pooling / classify 等任务。
 
@@ -458,7 +458,7 @@ model_cls, arch = model_config.registry.resolve_model_cls(
 )
 ```
 
-位置：`model_loader/utils.py:183` 到 `model_loader/utils.py:191`
+位置：`model_loader/utils.py:193` 到 `model_loader/utils.py:201`
 
 如果 `convert_type` 不是 none，会包一层 adapter：
 
@@ -469,11 +469,11 @@ elif convert_type == "classify":
     model_cls = as_seq_cls_model(model_cls)
 ```
 
-位置：`model_loader/utils.py:203` 到 `model_loader/utils.py:213`
+位置：`model_loader/utils.py:213` 到 `model_loader/utils.py:223`
 
 结果会按 model / convert / runner / trust_remote_code / model_impl / architectures 做缓存：
 
-位置：`model_loader/utils.py:218` 到 `model_loader/utils.py:234`。
+位置：`model_loader/utils.py:228` 到 `model_loader/utils.py:244`。
 
 ### 6.2 `initialize_model()` 要求新式 model class 接收 `vllm_config` 和 `prefix`
 
@@ -494,7 +494,7 @@ def initialize_model(vllm_config, *, prefix="", model_class=None, model_config=N
             return model
 ```
 
-位置：`model_loader/utils.py:40` 到 `model_loader/utils.py:64`
+位置：`model_loader/utils.py:41` 到 `model_loader/utils.py:65`
 
 这是新增模型架构时最基础的构造契约：
 
@@ -504,7 +504,7 @@ class XxxForCausalLM(nn.Module):
         ...
 ```
 
-旧式 model class 仍有兼容路径，但源码会 warning，提示应迁移到 `vllm_config` / `prefix` 风格。位置：`model_loader/utils.py:66` 到 `model_loader/utils.py:97`。
+旧式 model class 仍有兼容路径，但源码会 warning，提示应迁移到 `vllm_config` / `prefix` 风格。位置：`model_loader/utils.py:67` 到 `model_loader/utils.py:98`。
 
 ### 6.3 loader 只调用统一 `load_weights()`
 
@@ -514,7 +514,7 @@ class XxxForCausalLM(nn.Module):
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`default_loader.py:381` 到 `default_loader.py:395`
+位置：`default_loader.py:414` 到 `default_loader.py:445`
 
 所以 checkpoint 命名差异、fused QKV/gate_up、PP missing layer、tie lm_head、quant scale 名称等，主要由模型类自己的 `load_weights()` 或 `AutoWeightsLoader` 配置处理。
 
@@ -538,13 +538,16 @@ self.start_layer, self.end_layer, self.layers = make_layers(
 self.norm = RMSNorm(...)
 ```
 
-位置：`llama.py:347` 到 `llama.py:387`
+位置：`llama.py:344` 到 `llama.py:391`
 
 它还考虑 pipeline parallel：
 
 ```text
 first PP rank：
   持有 embed_tokens。
+
+tie_word_embeddings 时的 last PP rank：
+  也会持有 embed_tokens，供 lm_head tie weights 使用。
 
 last PP rank：
   持有 norm。
@@ -553,7 +556,7 @@ last PP rank：
   对不属于本 rank 的模块放 PPMissingLayer。
 ```
 
-位置：`llama.py:365` 到 `llama.py:383`
+位置：`llama.py:373` 到 `llama.py:391`
 
 ### 7.2 inner model forward
 
@@ -570,7 +573,7 @@ def forward(
 ) -> torch.Tensor | IntermediateTensors | tuple[torch.Tensor, list[torch.Tensor]]:
 ```
 
-位置：`llama.py:392` 到 `llama.py:399`
+位置：`llama.py:400` 到 `llama.py:407`
 
 first rank 从 `input_ids` 或 `inputs_embeds` 得到 hidden states：
 
@@ -581,11 +584,11 @@ else:
     hidden_states = self.embed_input_ids(input_ids)
 ```
 
-位置：`llama.py:400` 到 `llama.py:405`
+位置：`llama.py:408` 到 `llama.py:413`
 
 中间 rank 从 `IntermediateTensors` 接收上一段 pipeline 输出：
 
-位置：`llama.py:406` 到 `llama.py:410`。
+位置：`llama.py:414` 到 `llama.py:417`。
 
 如果不是最后 PP rank，返回 `IntermediateTensors`：
 
@@ -593,11 +596,11 @@ else:
 return IntermediateTensors({"hidden_states": hidden_states, "residual": residual})
 ```
 
-位置：`llama.py:422` 到 `llama.py:425`
+位置：`llama.py:430` 到 `llama.py:433`
 
 最后 rank 才做 final norm 并返回 hidden states：
 
-位置：`llama.py:427` 到 `llama.py:431`。
+位置：`llama.py:435` 到 `llama.py:439`。
 
 ### 7.3 outer model：CausalLM 包装
 
@@ -605,11 +608,17 @@ return IntermediateTensors({"hidden_states": hidden_states, "residual": residual
 
 ```python
 class LlamaForCausalLM(
-    LocalArgmaxMixin, nn.Module, SupportsLoRA, SupportsPP, SupportsEagle, SupportsEagle3
+    LocalArgmaxMixin,
+    nn.Module,
+    SupportsLoRA,
+    SupportsPP,
+    SupportsEagle,
+    SupportsEagle3,
+    SupportsQuant,
 ):
 ```
 
-位置：`llama.py:486` 到 `llama.py:488`
+位置：`llama.py:446` 到 `llama.py:454`
 
 它声明 LoRA / packed mapping：
 
@@ -625,7 +634,7 @@ embedding_modules = {
 }
 ```
 
-位置：`llama.py:489` 到 `llama.py:498`
+位置：`llama.py:455` 到 `llama.py:464`
 
 构造时：
 
@@ -635,7 +644,7 @@ self.lm_head = ParallelLMHead(...)
 self.logits_processor = LogitsProcessor(...)
 ```
 
-位置：`llama.py:500` 到 `llama.py:537`
+位置：`llama.py:466` 到 `llama.py:503`
 
 ### 7.4 outer model forward / logits / weights
 
@@ -646,7 +655,7 @@ model_output = self.model(input_ids, positions, intermediate_tensors, inputs_emb
 return model_output
 ```
 
-位置：`llama.py:550` 到 `llama.py:560`
+位置：`llama.py:516` 到 `llama.py:526`
 
 `compute_logits()` 委托 logits processor：
 
@@ -655,7 +664,7 @@ logits = self.logits_processor(self.lm_head, hidden_states)
 return logits
 ```
 
-位置：`llama.py:562` 到 `llama.py:567`
+位置：`llama.py:528` 到 `llama.py:533`
 
 `load_weights()` 使用 `AutoWeightsLoader`：
 
@@ -667,27 +676,29 @@ loader = AutoWeightsLoader(
 return loader.load_weights(weights)
 ```
 
-位置：`llama.py:569` 到 `llama.py:574`
+位置：`llama.py:535` 到 `llama.py:540`
 
-inner `LlamaModel.load_weights()` 则展示了手写 fused mapping 的模式：
+inner `LlamaModel` 则通过 `hf_to_vllm_mapper` 声明 fused mapping，并把映射交给 `AutoWeightsLoader`：
 
 ```python
-stacked_params_mapping = [
-    (".qkv_proj", ".q_proj", "q"),
-    (".qkv_proj", ".k_proj", "k"),
-    (".qkv_proj", ".v_proj", "v"),
-    (".gate_up_proj", ".gate_proj", 0),
-    (".gate_up_proj", ".up_proj", 1),
-]
+hf_to_vllm_mapper = WeightsMapper(
+    orig_to_new_stacked={
+        ".q_proj": (".qkv_proj", "q"),
+        ".k_proj": (".qkv_proj", "k"),
+        ".v_proj": (".qkv_proj", "v"),
+        ".gate_proj": (".gate_up_proj", 0),
+        ".up_proj": (".gate_up_proj", 1),
+    }
+)
 ```
 
-位置：`llama.py:433` 到 `llama.py:483`
+位置：`llama.py:344` 到 `llama.py:354`，以及 `llama.py:441` 到 `llama.py:443`
 
 ---
 
 ## 8. ModelRunner 对模型 forward 的统一契约
 
-从 `GPUModelRunner._model_forward()` 看，执行层最终只做统一调用：
+从 `GPUModelRunner._model_forward()` 看，执行层最终只做统一调用，位置：`gpu_model_runner.py:3810` 到 `gpu_model_runner.py:3840`：
 
 ```python
 self.model(
@@ -886,14 +897,14 @@ SupportsMRoPE / SupportsXDRoPE / SupportsEncoderCudaGraph：
 对应定义分布在 `interfaces.py`，例如：
 
 ```text
-SupportsMultiModal：interfaces.py:94 开始
-SupportsLoRA：interfaces.py:538 开始
-SupportsPP：interfaces.py:616 开始
-SupportsQuant：interfaces.py:997 开始
-SupportsTranscription：interfaces.py:1075 开始
-SupportsEagle：interfaces.py:1256 开始
-SupportsMRoPE：interfaces.py:1445 开始
-SupportsEncoderCudaGraph：interfaces.py:1544 开始
+SupportsMultiModal：interfaces.py:100 开始
+SupportsLoRA：interfaces.py:544 开始
+SupportsPP：interfaces.py:623 开始
+SupportsQuant：interfaces.py:1006 开始
+SupportsTranscription：interfaces.py:1084 开始
+SupportsEagle：interfaces.py:1362 开始
+SupportsMRoPE：interfaces.py:1467 开始
+SupportsEncoderCudaGraph：interfaces.py:1567 开始
 ```
 
 这些接口不是文档标签，而是运行时判断的依据。例如 `_ModelInfo.from_model_cls()` 会调用 `supports_multimodal(model)`、`supports_pp(model)` 等函数。

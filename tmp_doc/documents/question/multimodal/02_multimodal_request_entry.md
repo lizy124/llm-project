@@ -102,10 +102,10 @@ input_processor.py:370
 async_llm.py:368
   self.input_processor.assign_request_id(request)
 
-core.py:867
+core.py:878
   req = Request.from_engine_core_request(request, self.request_block_hasher)
 
-core.py:403
+core.py:412
   self.scheduler.add_request(request)
 ```
 
@@ -157,7 +157,7 @@ prompt_embeds
 tool_reference
 ```
 
-对应源码：`chat_utils.py:1454` 到 `chat_utils.py:1558`、`chat_utils.py:1627` 到 `chat_utils.py:1735`
+对应源码：`chat_utils.py:1443` 到 `chat_utils.py:1561`、`chat_utils.py:1636` 到 `chat_utils.py:1744`
 
 解析时发生两件事：
 
@@ -172,18 +172,23 @@ tool_reference
 elif part_type in ("image_url", "input_image"):
     mm_parser.parse_image(str_content, uuid)
     modality = "image"
+elif part_type == "prompt_embeds":
+    if not content:
+        raise ValueError(_PROMPT_EMBEDS_MISSING_DATA_ERROR)
+    mm_parser.parse_prompt_embeds(cast(str, content))
+    modality = "prompt_embeds"
+elif part_type == "audio_url":
+    mm_parser.parse_audio(str_content, uuid)
+    modality = "audio"
 elif part_type == "input_audio":
     mm_parser.parse_input_audio(dict_content, uuid)
     modality = "audio"
 elif part_type == "video_url":
     mm_parser.parse_video(str_content, uuid)
     modality = "video"
-elif part_type == "prompt_embeds":
-    mm_parser.parse_prompt_embeds(cast(str, content))
-    modality = "prompt_embeds"
 ```
 
-位置：`chat_utils.py:1678` 到 `chat_utils.py:1706`
+位置：`chat_utils.py:1676` 到 `chat_utils.py:1715`
 
 最终 `parse_chat_messages()` 返回：
 
@@ -193,7 +198,7 @@ mm_data：按 modality 聚合后的真实多模态数据；
 mm_uuids：每个多模态 item 的 uuid / hash 标识来源。
 ```
 
-位置：`chat_utils.py:1863` 到 `chat_utils.py:1899`
+位置：`chat_utils.py:1872` 到 `chat_utils.py:1908`
 
 ### 3.2 OpenAI Completion / Embeddings / Pooling
 
@@ -205,7 +210,7 @@ Completion 请求的 `prompt` 可以是文本、token ids，也可以携带 `pro
 prompt_embeds: bytes | list[bytes] | None = None
 ```
 
-位置：`completion/protocol.py:98`
+位置：`completion/protocol.py:102`
 
 对 pooling / embeddings 类入口来说，最终也会走到同一类 `EngineInput` / `EngineCoreRequest`，只是 `params` 是 `PoolingParams`，`EngineCoreRequest.pooling_params` 非空，`sampling_params` 为空。
 
@@ -216,13 +221,16 @@ offline LLM 侧不是 HTTP request，而是 Python API 直接传入 `PromptType`
 入口在 `offline_utils.py`：
 
 ```text
-_preprocess_cmpl_one() / _preprocess_chat_one()
+_add_completion_requests() / _add_chat_requests()
+  → _preprocess_cmpl_one() / _preprocess_chat_one()
+  → renderer.render_cmpl() / render_chat()
+  → EngineInput
   → _render_and_add_requests()
   → _add_request()
   → llm_engine.add_request(request_id, prompt, params, ...)
 ```
 
-位置：`offline_utils.py:523` 到 `offline_utils.py:565`
+位置：`offline_utils.py:145` 到 `offline_utils.py:239`、`offline_utils.py:290` 到 `offline_utils.py:324`、`offline_utils.py:387` 到 `offline_utils.py:445`、`offline_utils.py:523` 到 `offline_utils.py:571`
 
 `PromptType` 定义在 `inputs/llm.py`，可以是：
 
@@ -233,7 +241,7 @@ EmbedsPrompt
 EncoderDecoderPrompt
 ```
 
-位置：`inputs/llm.py:140` 到 `inputs/llm.py:215`
+位置：`inputs/llm.py:99` 到 `inputs/llm.py:221`
 
 多模态离线输入一般通过 prompt dict 携带：
 
@@ -285,7 +293,7 @@ else:
 
 `PromptType` 是用户 API 层输入。
 
-定义在：`inputs/llm.py:215`
+定义在：`inputs/llm.py:221`
 
 ```python
 PromptType: TypeAlias = DecoderOnlyPrompt | EncoderDecoderPrompt
@@ -303,7 +311,7 @@ encoder-decoder prompt；
 
 `EngineInput` 是 renderer / preprocessor 后的 engine 输入。
 
-定义在：`inputs/engine.py:264`
+定义在：`inputs/engine.py:278`
 
 ```python
 EngineInput: TypeAlias = DecoderOnlyEngineInput | EncoderDecoderInput
@@ -335,7 +343,7 @@ EncoderDecoderInput:
   decoder_prompt
 ```
 
-位置：`inputs/engine.py:29` 到 `inputs/engine.py:264`
+位置：`inputs/engine.py:29` 到 `inputs/engine.py:278`
 
 因此可以把输入演进理解为：
 
@@ -370,7 +378,7 @@ def parse_image(self, image_url: str | None, uuid: str | None = None) -> None:
     self._add_placeholder("image", placeholder)
 ```
 
-位置：`chat_utils.py:955` 到 `chat_utils.py:959`
+位置：`chat_utils.py:964` 到 `chat_utils.py:968`
 
 audio：
 
@@ -389,30 +397,36 @@ def parse_input_audio(self, input_audio: InputAudio | None, uuid: str | None = N
     return self.parse_audio(audio_url, uuid)
 ```
 
-位置：`chat_utils.py:1025` 到 `chat_utils.py:1039`
+位置：`chat_utils.py:1034` 到 `chat_utils.py:1048`
 
 video：
 
 ```python
 def parse_video(self, video_url: str | None, uuid: str | None = None) -> None:
-    video = self._connector.fetch_video(...)
+    video = self._connector.fetch_video(
+        video_url=video_url,
+        video_processor=self._tracker.video_processor_name,
+    )
     placeholder = self._tracker.add("video", (video, uuid))
     self._add_placeholder("video", placeholder)
 ```
 
-位置：`chat_utils.py:1041` 到 `chat_utils.py:1052`
+位置：`chat_utils.py:1050` 到 `chat_utils.py:1062`
 
 `prompt_embeds` 比较特殊：
 
 ```python
+if not self.model_config.enable_prompt_embeds:
+    raise ValueError(_ENABLE_PROMPT_EMBEDS_ERROR)
+
 tensor = safe_load_prompt_embeds(self.model_config, data.encode())
 self._tracker.add("prompt_embeds", (tensor, None))
 self._add_placeholder("prompt_embeds", PROMPT_EMBEDS_PLACEHOLDER_TOKEN)
 ```
 
-位置：`chat_utils.py:941` 到 `chat_utils.py:953`
+位置：`chat_utils.py:950` 到 `chat_utils.py:962`
 
-它不会走普通 HF 多模态 processor 的校验逻辑，而是把预计算 embedding tensor 当成一种特殊 modality 暂存。
+它不会走普通 HF 多模态 processor 的校验逻辑，但会先校验 `enable_prompt_embeds`，再把预计算 embedding tensor 当成一种特殊 modality 暂存。
 
 最后 `resolve_items()` 把 tracker 中的 item 变成：
 
@@ -421,7 +435,7 @@ mm_data: MultiModalDataDict | None
 mm_uuids: MultiModalUUIDDict | None
 ```
 
-位置：`chat_utils.py:792` 到 `chat_utils.py:814`
+位置：`chat_utils.py:792` 到 `chat_utils.py:809`
 
 ---
 
@@ -443,7 +457,7 @@ eng_prompts = [
 return out_conversations, eng_prompts
 ```
 
-位置：`renderers/base.py:978` 到 `renderers/base.py:1012`
+位置：`renderers/base.py:1034` 到 `renderers/base.py:1068`
 
 异步版本同理：
 
@@ -455,7 +469,7 @@ eng_prompts = await asyncio.gather(
 )
 ```
 
-位置：`renderers/base.py:1014` 到 `renderers/base.py:1052`
+位置：`renderers/base.py:1070` 到 `renderers/base.py:1108`
 
 `process_for_engine()` 再分流：
 
@@ -468,7 +482,7 @@ else:
 engine_input["arrival_time"] = arrival_time
 ```
 
-位置：`renderers/base.py:888` 到 `renderers/base.py:903`
+位置：`renderers/base.py:944` 到 `renderers/base.py:981`
 
 `_process_singleton()` 再分流：
 
@@ -478,7 +492,7 @@ if "prompt_embeds" in prompt:
 return self._process_tokens(prompt, skip_mm_cache=skip_mm_cache)
 ```
 
-位置：`renderers/base.py:811` 到 `renderers/base.py:820`
+位置：`renderers/base.py:867` 到 `renderers/base.py:887`
 
 所以 renderer 层有三条主要产物路径：
 
@@ -518,7 +532,7 @@ mm_inputs = mm_processor.apply(mm_processor_inputs, mm_timing_ctx)
 return mm_inputs
 ```
 
-位置：`renderers/base.py:681` 到 `renderers/base.py:720`
+位置：`renderers/base.py:728` 到 `renderers/base.py:766`
 
 返回的 `mm_inputs` 类型是 `MultiModalInput`，字段定义在 `inputs/engine.py`：
 
@@ -532,7 +546,7 @@ class MultiModalInput(_InputOptions):
     mm_placeholders: MultiModalPlaceholders
 ```
 
-位置：`inputs/engine.py:126` 到 `inputs/engine.py:149`
+位置：`inputs/engine.py:135` 到 `inputs/engine.py:163`
 
 这几个字段分别表示：
 
@@ -607,7 +621,7 @@ if inputs["type"] == "enc_dec":
 return None, inputs
 ```
 
-位置：`inputs/engine.py:365` 到 `inputs/engine.py:371`
+位置：`inputs/engine.py:379` 到 `inputs/engine.py:385`
 
 ### 8.3 再抽取 token / embeds 字段
 
@@ -730,7 +744,7 @@ mm_features 是按 prompt 中出现顺序排列的 list；
 
 ## 10. EngineCoreRequest 字段映射
 
-`EngineCoreRequest` 定义在：`v1/engine/__init__.py:86`
+`EngineCoreRequest` 定义在：`v1/engine/__init__.py:88`
 
 核心字段：
 
@@ -758,7 +772,7 @@ class EngineCoreRequest(msgspec.Struct, ...):
     abort_immediately: bool = False
 ```
 
-位置：`v1/engine/__init__.py:86` 到 `v1/engine/__init__.py:135`
+位置：`v1/engine/__init__.py:88` 到 `v1/engine/__init__.py:137`
 
 `InputProcessor.process_inputs()` 构造它时的字段映射是：
 
@@ -848,7 +862,7 @@ if not self.model_config.enable_prompt_embeds:
     raise ValueError("You must set `--enable-prompt-embeds` to input `prompt_embeds`.")
 ```
 
-位置：`renderers/base.py:753` 到 `renderers/base.py:757`
+位置：`renderers/base.py:804` 到 `renderers/base.py:808`
 
 然后把 tensor squeeze 到二维、搬到 CPU，并构造：
 
@@ -861,7 +875,7 @@ return embeds_input(
 )
 ```
 
-位置：`renderers/base.py:759` 到 `renderers/base.py:781`
+位置：`renderers/base.py:810` 到 `renderers/base.py:832`
 
 进入 `InputProcessor` 后：
 
@@ -887,7 +901,7 @@ parser 会：
 3. 在文本中放入 PROMPT_EMBEDS_PLACEHOLDER_TOKEN。
 ```
 
-位置：`chat_utils.py:941` 到 `chat_utils.py:953`、`chat_utils.py:1722` 到 `chat_utils.py:1735`
+位置：`chat_utils.py:950` 到 `chat_utils.py:962`、`chat_utils.py:1699` 到 `chat_utils.py:1743`
 
 之后 renderer 会把这个 sentinel 扩展为对应长度的 placeholder token span。`renderers/hf.py` 中的 mixed mode 注释说明：
 
@@ -897,7 +911,7 @@ _process_multimodal 已经处理了 pre-expanded token ids；
 并把 prompt_embeds entries 加进 mm_kwargs、mm_hashes、mm_placeholders。
 ```
 
-位置：`renderers/hf.py:1201` 到 `renderers/hf.py:1245`
+位置：`renderers/hf.py:1168` 到 `renderers/hf.py:1330`
 
 因此 chat content part 的 `prompt_embeds` 更像一种特殊 multimodal item：
 
@@ -932,7 +946,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
 req = Request.from_engine_core_request(request, self.request_block_hasher)
 ```
 
-位置：`core.py:853` 到 `core.py:867`
+位置：`core.py:864` 到 `core.py:878`
 
 `Request.from_engine_core_request()` 把字段转进调度层的 `Request`：
 
@@ -955,7 +969,7 @@ return cls(
 )
 ```
 
-位置：`request.py:197` 到 `request.py:222`
+位置：`request.py:213` 到 `request.py:237`
 
 `Request.__init__()` 保存：
 
@@ -967,7 +981,7 @@ self.num_prompt_tokens = length_from_prompt_token_ids_or_embeds(prompt_token_ids
 self.mm_features = mm_features or []
 ```
 
-位置：`request.py:121` 到 `request.py:157`
+位置：`request.py:131` 到 `request.py:172`
 
 最后 EngineCore 入队：
 
@@ -975,7 +989,7 @@ self.mm_features = mm_features or []
 self.scheduler.add_request(request)
 ```
 
-位置：`core.py:403`
+位置：`core.py:412`
 
 这说明 scheduler 收到的已经不是原始 OpenAI 请求，也不是 `MultiModalInput` 字典，而是 V1 内部 `Request`：
 
@@ -1122,7 +1136,7 @@ encoder_prompt：TokensInput
 decoder_prompt：MultiModalInput
 ```
 
-位置：`inputs/engine.py:315` 到 `inputs/engine.py:362`
+位置：`inputs/engine.py:329` 到 `inputs/engine.py:376`
 
 因此即使是 encoder-decoder 模型，`InputProcessor.process_inputs()` 最终仍然从 decoder side 的 `MultiModalInput` 抽取 `mm_features`。
 

@@ -191,7 +191,7 @@ class MultiModalDataParser:
     """
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:489` 到 `code/vllm/vllm/multimodal/parse.py:504`
+位置：`code/vllm/vllm/multimodal/parse.py:490` 到 `code/vllm/vllm/multimodal/parse.py:504`
 
 它初始化时保存几类解析参数：
 
@@ -202,7 +202,7 @@ self.video_needs_metadata = video_needs_metadata
 self.expected_hidden_size = expected_hidden_size
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:506` 到 `code/vllm/vllm/multimodal/parse.py:523`
+位置：`code/vllm/vllm/multimodal/parse.py:506` 到 `code/vllm/vllm/multimodal/parse.py:524`
 
 这些参数影响：
 
@@ -230,7 +230,7 @@ def parse_mm_data(self, mm_data: MultiModalDataDict) -> MultiModalDataItems:
     return mm_items
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:692` 到 `code/vllm/vllm/multimodal/parse.py:704`
+位置：`code/vllm/vllm/multimodal/parse.py:700` 到 `code/vllm/vllm/multimodal/parse.py:712`
 
 支持的 modality 来自：
 
@@ -243,7 +243,7 @@ return {
 }
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:684` 到 `code/vllm/vllm/multimodal/parse.py:690`
+位置：`code/vllm/vllm/multimodal/parse.py:692` 到 `code/vllm/vllm/multimodal/parse.py:698`
 
 因此 parser 的职责不是模型预处理，而是：
 
@@ -286,7 +286,7 @@ def get_passthrough_data(self) -> Mapping[str, object]:
     return {}
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:121` 到 `code/vllm/vllm/multimodal/parse.py:125`
+位置：`code/vllm/vllm/multimodal/parse.py:121` 到 `code/vllm/vllm/multimodal/parse.py:126`
 
 embedding 输入走 `EmbeddingItems`：
 
@@ -298,7 +298,7 @@ def get_passthrough_data(self) -> Mapping[str, object]:
     return {f"{self.modality}_embeds": self.data}
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:229` 到 `code/vllm/vllm/multimodal/parse.py:233`
+位置：`code/vllm/vllm/multimodal/parse.py:230` 到 `code/vllm/vllm/multimodal/parse.py:234`
 
 这就是预计算 embedding 可以绕过 HF processor 的原因。
 
@@ -326,7 +326,7 @@ image 解析入口：
 def _parse_image_data(self, data: ModalityData[ImageItem]):
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:605`
+位置：`code/vllm/vllm/multimodal/parse.py:606`
 
 逻辑是：
 
@@ -356,7 +356,7 @@ else:
 return ImageProcessorItems(data_items)
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:612` 到 `code/vllm/vllm/multimodal/parse.py:624`
+位置：`code/vllm/vllm/multimodal/parse.py:613` 到 `code/vllm/vllm/multimodal/parse.py:632`
 
 ### 6.2 audio parser
 
@@ -366,7 +366,7 @@ audio 解析入口：
 def _parse_audio_data(self, data: ModalityData[AudioItem]):
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:566`
+位置：`code/vllm/vllm/multimodal/parse.py:567`
 
 额外处理包括：
 
@@ -390,7 +390,7 @@ if self.target_channels is not None:
     new_audio = normalize_audio(new_audio, spec)
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:590` 到 `code/vllm/vllm/multimodal/parse.py:599`
+位置：`code/vllm/vllm/multimodal/parse.py:591` 到 `code/vllm/vllm/multimodal/parse.py:600`
 
 ### 6.3 video parser
 
@@ -400,7 +400,7 @@ video 解析入口：
 def _parse_video_data(self, data: ModalityData[VideoItem]):
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:626`
+位置：`code/vllm/vllm/multimodal/parse.py:634`
 
 额外处理包括：
 
@@ -426,7 +426,7 @@ else:
     new_videos.append(video)
 ```
 
-位置：`code/vllm/vllm/multimodal/parse.py:652` 到 `code/vllm/vllm/multimodal/parse.py:661`
+位置：`code/vllm/vllm/multimodal/parse.py:660` 到 `code/vllm/vllm/multimodal/parse.py:669`
 
 所以答案是：
 
@@ -610,7 +610,7 @@ class MultiModalFieldConfig:
     modality: str
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:633` 到 `code/vllm/vllm/multimodal/inputs.py:844`
+位置：`code/vllm/vllm/multimodal/inputs.py:646` 到 `code/vllm/vllm/multimodal/inputs.py:891`
 
 常见 field 类型有三种：
 
@@ -632,7 +632,7 @@ for key, config in config_by_key.items():
             keys_by_modality[config.modality].add(key)
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:919` 到 `code/vllm/vllm/multimodal/inputs.py:933`
+位置：`code/vllm/vllm/multimodal/inputs.py:931` 到 `code/vllm/vllm/multimodal/inputs.py:945`
 
 然后按 modality 和 item index 组装：
 
@@ -643,7 +643,7 @@ items_by_modality[modality] = [
 ]
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:935` 到 `code/vllm/vllm/multimodal/inputs.py:952`
+位置：`code/vllm/vllm/multimodal/inputs.py:947` 到 `code/vllm/vllm/multimodal/inputs.py:964`
 
 因此：
 
@@ -787,7 +787,7 @@ class PlaceholderRange:
     is_embed: torch.Tensor | None = None
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:118` 到 `code/vllm/vllm/multimodal/inputs.py:145`
+位置：`code/vllm/vllm/multimodal/inputs.py:119` 到 `code/vllm/vllm/multimodal/inputs.py:146`
 
 它表示：
 
@@ -866,7 +866,7 @@ class MultiModalFeatureSpec:
     mm_hash: str | None = None
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:301` 到 `code/vllm/vllm/multimodal/inputs.py:332`
+位置：`code/vllm/vllm/multimodal/inputs.py:302` 到 `code/vllm/vllm/multimodal/inputs.py:333`
 
 字段含义：
 
@@ -892,7 +892,7 @@ Can be None if the item is cached, to skip IPC between API server
 and engine core processes.
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:311` 到 `code/vllm/vllm/multimodal/inputs.py:317`
+位置：`code/vllm/vllm/multimodal/inputs.py:312` 到 `code/vllm/vllm/multimodal/inputs.py:318`
 
 ---
 
@@ -968,7 +968,7 @@ for k, v in sorted(kwargs.items(), key=lambda kv: kv[0]):
 return hasher.hexdigest()
 ```
 
-位置：`code/vllm/vllm/multimodal/hasher.py:153` 到 `code/vllm/vllm/multimodal/hasher.py:162`
+位置：`code/vllm/vllm/multimodal/hasher.py:154` 到 `code/vllm/vllm/multimodal/hasher.py:163`
 
 支持的序列化对象包括：
 
@@ -1091,7 +1091,7 @@ if self.mm_receiver_cache is not None and request.mm_features:
     )
 ```
 
-位置：`code/vllm/vllm/v1/engine/core.py:862` 到 `code/vllm/vllm/v1/engine/core.py:864`
+位置：`code/vllm/vllm/v1/engine/core.py:873` 到 `code/vllm/vllm/v1/engine/core.py:876`
 
 Worker 执行前也会对 scheduled new requests 应用 cache：
 
@@ -1107,7 +1107,7 @@ def _apply_mm_cache(self, scheduler_output: SchedulerOutput) -> None:
         )
 ```
 
-位置：`code/vllm/vllm/v1/worker/worker_base.py:330` 到 `code/vllm/vllm/v1/worker/worker_base.py:338`
+位置：`code/vllm/vllm/v1/worker/worker_base.py:336` 到 `code/vllm/vllm/v1/worker/worker_base.py:344`
 
 receiver cache 更新 feature 的逻辑是：
 
@@ -1159,7 +1159,7 @@ class MultiModalRegistry:
 class Qwen2_5_VLForConditionalGeneration(...):
 ```
 
-位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1237` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1242`
+位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1221` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1226`
 
 注册时会把 factory 挂到模型类上：
 
@@ -1210,7 +1210,7 @@ class Qwen2_5_VLProcessingInfo(Qwen2VLProcessingInfo):
         )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1148` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1157`
+位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1135` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1141`
 
 它的 processor 增加一个 video 字段配置：
 
@@ -1223,7 +1223,7 @@ class Qwen2_5_VLMultiModalProcessor(Qwen2VLMultiModalProcessor):
         )
 ```
 
-位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1160` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1169`
+位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1144` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1153`
 
 这说明：
 
@@ -1250,7 +1250,7 @@ def get_replacement_qwen2vl(item_idx: int, modality: str):
     return [placeholder[modality]] * num_tokens
 ```
 
-位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1193` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1225`
+位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1177` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1218`
 
 返回的是两个 replacement 规则：
 
@@ -1265,7 +1265,7 @@ return [
 ]
 ```
 
-位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1227` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1234`
+位置：`code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1211` 到 `code/vllm/vllm/model_executor/models/qwen2_5_vl.py:1218`
 
 这个例子说明模型专用 processor 负责两类关键信息：
 
@@ -1273,6 +1273,8 @@ return [
 字段映射：HF output 哪些 key 属于 image/video/audio，怎么拆；
 占位符映射：一个 <image>/<video> 要扩展成多少个 feature placeholder token。
 ```
+
+当前 Qwen2.5-VL 的 video replacement 还会读取 `video_pruning_rate`，在启用 EVS video pruning 时按保留 token 数修正 video placeholder 数量。
 
 ---
 
@@ -1329,7 +1331,7 @@ class MultiModalKwargsItem(UserDict[str, MultiModalFieldElem]):
     """
 ```
 
-位置：`code/vllm/vllm/multimodal/inputs.py:854` 到 `code/vllm/vllm/multimodal/inputs.py:859`
+位置：`code/vllm/vllm/multimodal/inputs.py:866` 到 `code/vllm/vllm/multimodal/inputs.py:871`
 
 合批函数是：
 
@@ -1410,7 +1412,7 @@ V1 request 会保存它：
 self.mm_features = mm_features or []
 ```
 
-位置：`code/vllm/vllm/v1/request.py:157`
+位置：`code/vllm/vllm/v1/request.py:171` 到 `code/vllm/vllm/v1/request.py:172`
 
 Scheduler 输出新请求时，`NewRequestData` 也带着它：
 
@@ -1418,7 +1420,7 @@ Scheduler 输出新请求时，`NewRequestData` 也带着它：
 mm_features=request.mm_features,
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/output.py:52` 到 `code/vllm/vllm/v1/core/sched/output.py:56`
+位置：`code/vllm/vllm/v1/core/sched/output.py:49` 到 `code/vllm/vllm/v1/core/sched/output.py:59`
 
 ModelRunner `_update_states()` 创建 worker 侧请求状态时保存：
 
@@ -1433,7 +1435,7 @@ req_state = CachedRequestState(
 )
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1224` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1238`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:1265` 到 `code/vllm/vllm/v1/worker/gpu_model_runner.py:1278`
 
 后续 `mm_features` 会用于：
 
@@ -1455,7 +1457,7 @@ def get_mrope_input_positions(
 ) -> tuple[torch.Tensor, int]:
 ```
 
-位置：`code/vllm/vllm/model_executor/models/interfaces.py:1457` 到 `code/vllm/vllm/model_executor/models/interfaces.py:1462`
+位置：`code/vllm/vllm/model_executor/models/interfaces.py:1480` 到 `code/vllm/vllm/model_executor/models/interfaces.py:1484`
 
 ---
 

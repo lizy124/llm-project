@@ -237,7 +237,7 @@ _VLLM_MODELS = {
 }
 ```
 
-位置：`registry.py:692` 到 `registry.py:703`
+位置：`registry.py:688` 到 `registry.py:699`
 
 注册项格式是：
 
@@ -252,7 +252,7 @@ _VLLM_MODELS = {
 "Qwen2ForCausalLM": ("qwen2", "Qwen2ForCausalLM")
 ```
 
-位置：`registry.py:152`、`registry.py:198`
+位置：`registry.py:143`、`registry.py:190`
 
 含义是：
 
@@ -272,7 +272,7 @@ class_name = LlamaForCausalLM
 
 `_resolve_module_name()` 会处理这个逻辑。
 
-位置：`registry.py:1368` 到 `registry.py:1374`
+位置：`registry.py:1396` 到 `registry.py:1402`
 
 ---
 
@@ -294,7 +294,7 @@ ModelRegistry = _ModelRegistry(
 )
 ```
 
-位置：`registry.py:1377` 到 `registry.py:1385`
+位置：`registry.py:1405` 到 `registry.py:1413`
 
 解析模型类时：
 
@@ -307,7 +307,7 @@ ModelConfig.architectures
   → getattr(module, class_name)
 ```
 
-位置：`registry.py:1225` 到 `registry.py:1277`
+位置：`registry.py:1253` 到 `registry.py:1305`
 
 inspect 模型能力时：
 
@@ -318,7 +318,7 @@ ModelRegistry.inspect_model_cls()
   → 判断是否 generation / pooling / multimodal / PP / hybrid 等
 ```
 
-位置：`registry.py:1173` 到 `registry.py:1223`
+位置：`registry.py:1201` 到 `registry.py:1251`
 
 `_ModelInfo` 会读取这些能力：
 
@@ -326,15 +326,19 @@ ModelRegistry.inspect_model_cls()
 is_text_generation_model
 is_pooling_model
 attn_type
-supports_multimodal
+default_seq_pooling_type / default_tok_pooling_type / score_type
+supports_multimodal / supports_multimodal_raw_input_only
+requires_raw_input_tokens / supports_multimodal_encoder_tp_data
 supports_pp
 has_inner_state
 is_attention_free
 is_hybrid
-supports_transcription
+has_noops
+supports_mamba_prefix_caching
+supports_transcription / supports_transcription_only
 ```
 
-位置：`registry.py:745` 到 `registry.py:795`
+位置：`registry.py:755` 到 `registry.py:805`
 
 所以新增模型类的继承和 class attributes 会直接影响：
 
@@ -398,7 +402,7 @@ class YourDecoderLayer(nn.Module):
 class YourModel(nn.Module):
     ...
 
-class YourForCausalLM(nn.Module, SupportsLoRA, SupportsPP):
+class YourForCausalLM(nn.Module, SupportsLoRA, SupportsPP, SupportsQuant):
     ...
 ```
 
@@ -454,7 +458,7 @@ self.attn = Attention(
 
 Llama 的 attention 初始化就是这个模式。
 
-位置：`llama.py:165` 到 `llama.py:222`
+位置：`llama.py:162` 到 `llama.py:219`
 
 常见错误：
 
@@ -471,7 +475,7 @@ Llama 的 attention 初始化就是这个模式。
 maybe_prefix(prefix, "model")
 ```
 
-位置：`utils.py:724` 到 `utils.py:734`
+位置：`utils.py:771` 到 `utils.py:781`
 
 ---
 
@@ -588,7 +592,7 @@ attn_output = self.attn(q, k, v)
 output, _ = self.o_proj(attn_output)
 ```
 
-位置：`llama.py:224` 到 `llama.py:234`
+位置：`llama.py:221` 到 `llama.py:231`
 
 这说明：
 
@@ -624,7 +628,7 @@ self.rotary_emb = get_rope(
 )
 ```
 
-位置：`llama.py:236` 到 `llama.py:248`
+位置：`llama.py:233` 到 `llama.py:245`
 
 Qwen2 还会处理：
 
@@ -634,7 +638,7 @@ dual_chunk_attention_config
 qk_norm
 ```
 
-位置：`qwen2.py:239` 到 `qwen2.py:279`
+位置：`qwen2.py:244` 到 `qwen2.py:287`
 
 需要检查：
 
@@ -658,7 +662,7 @@ positions is of shape (3, seq_len) if mrope is enabled for qwen2-vl,
 otherwise (seq_len, ).
 ```
 
-位置：`qwen2.py:315` 到 `qwen2.py:323`
+位置：`qwen2.py:313` 到 `qwen2.py:317`
 
 ---
 
@@ -711,7 +715,7 @@ LlamaModel 的处理方式：
   final norm 后返回 hidden_states。
 ```
 
-位置：`llama.py:392` 到 `llama.py:431`
+位置：`llama.py:400` 到 `llama.py:439`
 
 对应心智模型：
 
@@ -753,7 +757,7 @@ def forward(
     return model_output
 ```
 
-位置：`llama.py:550` 到 `llama.py:560`
+位置：`llama.py:516` 到 `llama.py:526`
 
 logits：
 
@@ -763,7 +767,7 @@ def compute_logits(self, hidden_states: torch.Tensor) -> torch.Tensor | None:
     return logits
 ```
 
-位置：`llama.py:562` 到 `llama.py:567`
+位置：`llama.py:528` 到 `llama.py:533`
 
 注意：
 
@@ -787,7 +791,7 @@ GPUModelRunner 会先取 hidden_states[logits_indices]；
 loaded_weights = model.load_weights(self.get_all_weights(model_config, model))
 ```
 
-位置：`default_loader.py:415` 到 `default_loader.py:427`
+位置：`default_loader.py:414` 到 `default_loader.py:428`
 
 `load_weights()` 的输入是：
 
@@ -815,7 +819,7 @@ loader = AutoWeightsLoader(
 return loader.load_weights(weights)
 ```
 
-位置：`llama.py:569` 到 `llama.py:574`
+位置：`llama.py:535` 到 `llama.py:540`
 
 但是如果 checkpoint 名字和 vLLM 参数名字不一致，就要自定义映射。
 
@@ -844,32 +848,32 @@ vLLM parameter:
   gate_up_proj.weight
 ```
 
-典型映射：
+当前 Llama 用 `WeightsMapper` 声明这组映射：
 
 ```python
-stacked_params_mapping = [
-    (".qkv_proj", ".q_proj", "q"),
-    (".qkv_proj", ".k_proj", "k"),
-    (".qkv_proj", ".v_proj", "v"),
-    (".gate_up_proj", ".gate_proj", 0),
-    (".gate_up_proj", ".up_proj", 1),
-]
+hf_to_vllm_mapper = WeightsMapper(
+    orig_to_new_stacked={
+        ".q_proj": (".qkv_proj", "q"),
+        ".k_proj": (".qkv_proj", "k"),
+        ".v_proj": (".qkv_proj", "v"),
+        ".gate_proj": (".gate_up_proj", 0),
+        ".up_proj": (".gate_up_proj", 1),
+    }
+)
 ```
 
-位置：`llama.py:433` 到 `llama.py:441`
+位置：`llama.py:344` 到 `llama.py:354`
 
 加载时核心逻辑：
 
 ```text
-1. 遍历 checkpoint weight；
-2. 如果命中 q_proj/k_proj/v_proj，替换成 qkv_proj；
-3. 根据 shard_id = q/k/v 调对应 param.weight_loader；
-4. 如果命中 gate_proj/up_proj，替换成 gate_up_proj；
-5. 根据 shard_id = 0/1 加载到 merged column parallel 参数；
-6. 其他参数走 default_weight_loader。
+1. 在 LlamaModel.hf_to_vllm_mapper 声明 q/k/v 与 gate/up 的 stacked 映射；
+2. LlamaModel.load_weights() 调 AutoWeightsLoader.load_weights(..., mapper=...)；
+3. LlamaForCausalLM 复用同一个 mapper，并在 tied embedding 时跳过 lm_head.；
+4. AutoWeightsLoader 根据 mapper、参数自己的 weight_loader 和量化映射完成实际分片加载。
 ```
 
-位置：`llama.py:444` 到 `llama.py:482`
+位置：`llama.py:441` 到 `llama.py:443`，`llama.py:535` 到 `llama.py:540`
 
 检查点：
 
@@ -905,7 +909,7 @@ self.start_layer, self.end_layer, self.layers = make_layers(
 )
 ```
 
-位置：`llama.py:375` 到 `llama.py:379`
+位置：`llama.py:383` 到 `llama.py:387`
 
 `make_layers()` 会根据当前 PP rank 创建：
 
@@ -915,7 +919,7 @@ self.start_layer, self.end_layer, self.layers = make_layers(
 后面缺失层：PPMissingLayer
 ```
 
-位置：`utils.py:640` 到 `utils.py:672`
+位置：`utils.py:687` 到 `utils.py:719`
 
 所以 load_weights 时必须跳过当前 rank 不存在的参数：
 
@@ -924,7 +928,7 @@ if is_pp_missing_parameter(name, self):
     continue
 ```
 
-位置：`llama.py:464` 到 `llama.py:477`
+位置：`utils.py:744` 到 `utils.py:752`
 
 否则 PP 启动时会出现：
 
@@ -964,9 +968,9 @@ if config.tie_word_embeddings:
     self.lm_head = self.model.embed_tokens
 ```
 
-Llama 位置：`llama.py:518` 到 `llama.py:527`
+Llama 位置：`llama.py:484` 到 `llama.py:492`
 
-Qwen2 位置：`qwen2.py:509` 到 `qwen2.py:520`
+Qwen2 位置：`qwen2.py:452` 到 `qwen2.py:463`
 
 load_weights 时通常跳过：
 
@@ -974,7 +978,7 @@ load_weights 时通常跳过：
 skip_prefixes=(["lm_head."] if self.config.tie_word_embeddings else None)
 ```
 
-位置：`llama.py:569` 到 `llama.py:574`
+位置：`llama.py:535` 到 `llama.py:540`
 
 检查点：
 
@@ -1021,7 +1025,7 @@ Llama attention 中的 KV head 逻辑：
   KV heads 在多个 TP rank 上复制。
 ```
 
-位置：`llama.py:143` 到 `llama.py:157`
+位置：`llama.py:140` 到 `llama.py:158`
 
 典型问题：
 
@@ -1044,7 +1048,7 @@ Llama attention 中的 KV head 逻辑：
 SupportsPP
 ```
 
-位置：`interfaces.py:617` 到 `interfaces.py:719`
+位置：`interfaces.py:623` 到 `interfaces.py:740`
 
 还需要：
 
@@ -1074,7 +1078,7 @@ lm_head:
   last rank 才创建真实 lm_head；否则 PPMissingLayer。
 ```
 
-位置：`llama.py:365` 到 `llama.py:386`，`llama.py:518` 到 `llama.py:533`
+位置：`llama.py:373` 到 `llama.py:391`，`llama.py:484` 到 `llama.py:500`
 
 PP forward 返回：
 
@@ -1085,7 +1089,7 @@ if not get_pp_group().is_last_rank:
     )
 ```
 
-位置：`llama.py:422` 到 `llama.py:425`
+位置：`llama.py:430` 到 `llama.py:433`
 
 ---
 
@@ -1097,7 +1101,7 @@ if not get_pp_group().is_last_rank:
 SupportsLoRA
 ```
 
-位置：`interfaces.py:538` 到 `interfaces.py:615`
+位置：`interfaces.py:544` 到 `interfaces.py:620`
 
 并提供：
 
@@ -1115,7 +1119,7 @@ embedding_modules = {
 
 Llama 示例：
 
-位置：`llama.py:486` 到 `llama.py:499`
+位置：`llama.py:446` 到 `llama.py:464`
 
 这些字段告诉 LoRA：
 
@@ -1166,11 +1170,11 @@ if "scale" in name or "zero_point" in name:
         continue
 ```
 
-位置：`llama.py:451` 到 `llama.py:455`
+位置：`llama.py:344` 到 `llama.py:354`，`llama.py:441` 到 `llama.py:443`
 
 `AutoWeightsLoader` 也会根据 quant_config 的 cache scale mapper 处理映射。
 
-位置：`utils.py:348` 到 `utils.py:377`
+位置：`utils.py:46` 起，`utils.py:172` 起，`utils.py:397` 起
 
 检查点：
 
@@ -1199,7 +1203,7 @@ _TOKEN_CLASSIFICATION_MODELS
 _SEQUENCE_CLASSIFICATION_MODELS
 ```
 
-位置：`registry.py:220` 到 `registry.py:335`
+位置：`registry.py:210` 到 `registry.py:328`
 
 这类模型通常不走：
 
@@ -1227,7 +1231,7 @@ class LlamaBidirectionalModel(as_embedding_model(LlamaForCausalLM)):
     pass
 ```
 
-位置：`llama.py:577` 到 `llama.py:586`
+位置：`llama.py:543` 到 `llama.py:552`
 
 这类模型要额外检查：
 
@@ -1250,7 +1254,7 @@ class LlamaBidirectionalModel(as_embedding_model(LlamaForCausalLM)):
 SupportsMultiModal
 ```
 
-位置：`interfaces.py:95` 到 `interfaces.py:411`
+位置：`interfaces.py:100` 到 `interfaces.py:415`
 
 核心要求：
 
@@ -1260,8 +1264,10 @@ SupportsMultiModal
 3. get_language_model()
 4. _mark_language_model()
 5. _mark_tower_model()
-6. 多模态 processor / processing info / dummy inputs
-7. placeholder token 和 multimodal embeddings 合并逻辑
+6. configure_mm_token_handling() 处理 OOV multimodal token
+7. 按需声明 supports_multimodal_raw_input_only / requires_raw_input_tokens / supports_encoder_tp_data
+8. 多模态 processor / processing info / dummy inputs
+9. placeholder token 和 multimodal embeddings 合并逻辑
 ```
 
 官方 contributing 文档要求：
@@ -1321,7 +1327,7 @@ IsAttentionFree
 IsHybrid
 ```
 
-位置：`interfaces.py:737` 到 `interfaces.py:844`
+位置：`interfaces.py:743` 到 `interfaces.py:850`
 
 这类模型通常要实现：
 
@@ -1337,7 +1343,7 @@ IsHybrid
 
 `models/config.py` 中有 Mamba / Hybrid 相关默认配置。
 
-位置：`config.py:404` 起，`config.py:671` 起
+位置：`config.py:402` 起，`config.py:545` 起，`config.py:829` 起
 
 普通 Llama/Qwen 类模型不需要这些，但如果模型有 recurrent state，不补这些会导致：
 
@@ -1376,7 +1382,7 @@ class VerifyAndUpdateConfig:
 MODELS_CONFIG_MAP: dict[str, type[VerifyAndUpdateConfig]] = {...}
 ```
 
-位置：`config.py:671`
+位置：`config.py:829`
 
 适合放这里的逻辑：
 
@@ -1417,7 +1423,7 @@ _TRANSFORMERS_SUPPORTED_MODELS
 _TRANSFORMERS_BACKEND_MODELS
 ```
 
-位置：`registry.py:647` 到 `registry.py:690`
+位置：`registry.py:639` 到 `registry.py:686`
 
 如果模型的 Transformers 实现已兼容 vLLM Transformers backend，可以先通过这条路径接入。
 
@@ -1431,7 +1437,7 @@ model_config.model_impl == "auto"
   → native registry 不命中时 fallback 到 transformers impl
 ```
 
-位置：`registry.py:1077` 到 `registry.py:1145`
+位置：`registry.py:1105` 到 `registry.py:1173`
 
 适合 Transformers backend 的情况：
 
@@ -1486,7 +1492,7 @@ tests/models/registry.py with example HuggingFace models for it.
 )
 ```
 
-位置：`tests/models/registry.py:504` 到 `tests/models/registry.py:510`
+位置：`tests/models/registry.py:496` 到 `tests/models/registry.py:502`
 
 `_HfExamplesInfo` 支持：
 
@@ -1499,6 +1505,7 @@ speculative_model
 speculative_method
 min_transformers_version
 max_transformers_version
+transformers_version_reason
 require_embed_inputs
 dtype
 enforce_eager
@@ -1630,7 +1637,7 @@ LlamaForCausalLM
 Qwen2ForCausalLM
 ```
 
-位置：`supported_models.md:348` 起，`supported_models.md:434`，`supported_models.md:469`
+位置：`supported_models.md:324` 起，`supported_models.md:406`，`supported_models.md:439`，`supported_models.md:472` 起
 
 表格通常要说明：
 
@@ -1679,7 +1686,7 @@ model_cls 是 nn.Module class；
 model_cls 是 "<module>:<class>" 字符串。
 ```
 
-位置：`registry.py:986` 到 `registry.py:1030`
+位置：`registry.py:1014` 到 `registry.py:1058`
 
 插件适合：
 
@@ -1839,7 +1846,7 @@ interleaved sliding window 是否被支持。
 
 LlamaAttention 会按 layer_types 判断某层是否 sliding，并把 sliding_window 传给 Attention。
 
-位置：`llama.py:185` 到 `llama.py:220`
+位置：`llama.py:182` 到 `llama.py:219`
 
 ### 33.2 MLA
 
@@ -1870,7 +1877,7 @@ routed_experts 输出是否需要回传。
 
 相关协议：`MixtureOfExperts`。
 
-位置：`interfaces.py:847` 起
+位置：`interfaces.py:853` 起
 
 ### 33.4 Speculative / MTP / EAGLE
 
@@ -1892,7 +1899,7 @@ SupportsEagle
 SupportsEagle3
 ```
 
-位置：`llama.py:486` 到 `llama.py:488`
+位置：`llama.py:446` 到 `llama.py:454`
 
 ### 33.5 Encoder-decoder / ASR / transcription
 

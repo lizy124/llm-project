@@ -96,6 +96,12 @@
 - llm-project\tmp_doc\documents\question\model_architectures\07_embedding_and_lm_head.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 Llama / VocabParallelEmbedding / LogitsProcessor / GPUModelRunner / prompt_embeds / multimodal interfaces / LoRA embedding-logits / pooling 等源码锚点行号；同步修正 prompt_embeds 在 embed_utils 与 renderer base 中的职责描述，主结论未重写。
 - llm-project\tmp_doc\documents\question\model_architectures\06_attention_mlp_norm_blocks.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 Llama / Attention / linear / layernorm / activation / rotary embedding / Gemma2 / DeepSeekV2 等源码锚点行号；同步修正 Attention.forward 参数、get_attention_context、unified attention output scale 参数、Llama WeightsMapper 权重映射、RoPE 变体清单和 DeepSeekV2 MoE / MLA 描述，主结论未重写。
 - llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 multimodal registry / processor / inputs / SchedulerOutput / GPUModelRunner / SupportsMultiModal / LLaVA / Qwen2-VL / Qwen2-Audio 等源码锚点行号；同步补充 configure_mm_token_handling、prompt_embeds 在 M-RoPE 初始化中过滤为文本位置、混合 prompt_embeds 时不覆盖预计算 embedding 位置等当前实现细节，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\13_add_new_model_checklist.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 registry / Llama / Qwen2 / model_loader / utils / interfaces / models config / tests registry / supported models 等源码锚点行号；同步修正新增模型示例为 SupportsQuant、Llama fused 权重映射为 WeightsMapper + AutoWeightsLoader 形式，并补充 _ModelInfo 与多模态接口当前能力字段，主结论未重写。
+- llm-project\tmp_doc\documents\question\multimodal\README.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，确认目录内专题文件、MultiModalDataParser / MultiModalFeatureSpec / scheduled_encoder_inputs / _execute_mm_encoder 等主链路对象仍匹配当前源码；修正过期的 `vllm/vllm/assets/` 源码路径为 `vllm/vllm/multimodal/media/`，主结论未重写。
+- llm-project\tmp_doc\documents\question\multimodal\02_multimodal_request_entry.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 OpenAI chat parser、offline_utils、Renderer、EngineInput、InputProcessor、EngineCoreRequest、Request / EngineCore 等源码锚点行号；同步修正 offline LLM 当前先 preprocess 成 EngineInput 再 _render_and_add_requests 入队、prompt_embeds parser 的 enable_prompt_embeds 校验和 HF renderer mixed-mode 处理范围，主结论未重写。
+- llm-project\tmp_doc\documents\question\model_architectures\model_architectures_overview.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新当前工作区源码根路径、ModelConfig / ModelRegistry / model_loader / Llama / GPUModelRunner / interfaces 等源码锚点行号；同步修正 LlamaForCausalLM SupportsQuant、LlamaModel hf_to_vllm_mapper + AutoWeightsLoader 权重映射、tie_word_embeddings 下 last PP rank embed_tokens 说明，主结论未重写。
+- llm-project\tmp_doc\documents\question\multimodal\03_parser_processor_mapper.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 MultiModalDataParser / ModalityDataItems / BaseMultiModalProcessor / MultiModalFieldConfig / MultiModalKwargsItems / MultiModalFeatureSpec / hasher / registry / receiver cache / Qwen2.5-VL / V1 InputProcessor / Request / SchedulerOutput / GPUModelRunner / M-RoPE 等源码锚点行号；同步补充 Qwen2.5-VL video_pruning_rate 会影响 video placeholder 数量，主结论未重写。
+- llm-project\tmp_doc\documents\question\multimodal\01_multimodal_role.md：已按 commit 4c81772e8bdf9e37ab2b8adfd80e4308b618fa92 轻量复核，更新 MultiModalConfig / MultiModalDataParser / Renderer / SchedulerOutput / Scheduler / GPUModelRunner / M-RoPE / XD-RoPE 等源码锚点行号；同步补充 MultiModalConfig 新增 FP8 scale save 与 tensor IPC / GPU memory 字段、ECConnector 远端 encoder cache 命中路径、prompt_embeds 混合输入不覆盖预计算 embeddings、encoder cache miss 当前 RuntimeError 行为，主结论未重写。
 
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
@@ -178,12 +184,12 @@
 - llm-project\tmp_doc\documents\question\model_architectures\10_multimodal_model_architectures.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\11_weight_loading_and_name_mapping.md，否，是
 - llm-project\tmp_doc\documents\question\model_architectures\12_quant_lora_parallelism_hooks.md，否，是
-- llm-project\tmp_doc\documents\question\model_architectures\13_add_new_model_checklist.md，否，否
-- llm-project\tmp_doc\documents\question\model_architectures\model_architectures_overview.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\README.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\01_multimodal_role.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\02_multimodal_request_entry.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\03_parser_processor_mapper.md，否，否
+- llm-project\tmp_doc\documents\question\model_architectures\13_add_new_model_checklist.md，否，是
+- llm-project\tmp_doc\documents\question\model_architectures\model_architectures_overview.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\README.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\01_multimodal_role.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\02_multimodal_request_entry.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\03_parser_processor_mapper.md，否，是
 - llm-project\tmp_doc\documents\question\multimodal\04_placeholders_and_prompt_alignment.md，否，否
 - llm-project\tmp_doc\documents\question\multimodal\05_feature_spec_and_cache.md，否，否
 - llm-project\tmp_doc\documents\question\multimodal\06_encoder_budget_and_scheduler.md，否，否

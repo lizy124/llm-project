@@ -3,7 +3,7 @@
 源码位置：
 
 - `vllm/vllm/multimodal/`
-- `vllm/vllm/assets/`
+- `vllm/vllm/multimodal/media/`
 - `vllm/vllm/config/multimodal.py`
 - `vllm/vllm/v1/engine/input_processor.py`
 - `vllm/vllm/v1/engine/core.py`
