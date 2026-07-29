@@ -14,12 +14,13 @@
 
 `weight_transfer_refactor` 分支已经包含完整重构视图，后续不建议继续扩大范围。下一步应先确认整体设计，再拆成 2-3 个较小 PR 上库。
 
-当前分支已有 3 个主要 commit：
+当前分支已有 4 个主要 commit：
 
 ```text
 cae87ad1 Refactor weight transfer common helpers
 ef9630ee Share weight transfer HTTP example helpers
 178fb6ff Complete weight transfer helper refactor
+9ea1eea6 Polish weight transfer refactor helpers
 ```
 
 ## 已完成范围
@@ -73,6 +74,16 @@ vllm_ascend/distributed/weight_transfer/trainer_send.py
 
 没有重写 HCCL / NPU IPC 的核心 transport loop。HCCL broadcast 和 NPU IPC handle 逻辑仍保留在各自路径中。
 
+### 上库前 polish
+
+已补充：
+
+- 更新 `patch_weight_transfer_engine.py` 和 patch 总说明里的过时 `WeightTransferConfig.backend` 注释，匹配当前 upstream `Literal[...] | str` 行为。
+- `trainer_send.py` 对未知 `send_mode` 显式抛 `ValueError`，避免静默成功。
+- HTTP helper 统一处理 `base_url` 尾斜杠。
+- e2e helper 中带副作用的 lifecycle 探测函数重命名为 `start_weight_update_if_available`。
+- 补充对应 trainer_send UT。
+
 ## 后续 PR 拆分建议
 
 ### PR 1: 公共 control-plane helper
@@ -113,7 +124,9 @@ vllm_ascend/distributed/weight_transfer/trainer_send.py
 当前已完成：
 
 ```text
-tests/ut/distributed/weight_transfer: 38 passed
+tests/ut/distributed/weight_transfer: 39 passed
+tests/ut/worker/a2/test_worker_v1.py: 49 passed
+Combined focused UT run: 88 passed
 Python syntax check: passed for changed files
 ```
 
