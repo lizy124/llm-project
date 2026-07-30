@@ -1,6 +1,6 @@
 # AscendStore 重构前梳理
 
-本文档只梳理目录：`/home/lizhongyang/refactor/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`。
+本文档只梳理目录：`/home/lizhongyang/refactor/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`。或者 `D:\lzy\project\kv_pool\code\vllm-ascend\vllm_ascend\distributed\kv_transfer\kv_pool\ascend_store`
 
 目标：在后续重构前明确 AscendStore KV pool connector 的现有模块、职责边界、关键数据流、vLLM 接口适配点和高风险区域。本文不再展开 `kv_transfer` 目录下其它 connector。
 
