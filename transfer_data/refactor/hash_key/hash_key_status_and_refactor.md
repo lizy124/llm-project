@@ -37,10 +37,11 @@
 相关代码：
 
 - `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:73` `KeyMetadata`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:94` `PoolKey`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` `PoolKey.to_string()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:337` `ChunkedTokenDatabase._make_key_by_hash()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:638` `get_block_hashes()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:95` `PoolKey`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` `PoolKey.to_string()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:335` `ChunkedTokenDatabase._get_key_prefix()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:389` `ChunkedTokenDatabase._make_key_by_hash()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:680` `get_block_hashes()`
 
 ## 2. 当前支持的能力
 
@@ -50,17 +51,19 @@
 
 只要 producer 和 consumer 的模型 basename、PCP/DCP rank、TP/head rank、PP rank、KV group、cache family、cache role 等布局一致，并且 token prefix hash 一致，就可以通过 hash key 命中并复用 KV。
 
-普通非 layerwise 路径会通过 worker 侧 `lookup()` / `lookup_scheduler()` 检查连续命中；scheduler 侧 lookup 会展开所需 PP/TP rank key，要求对应 rank 的 key 都存在。layerwise 路径会拆成 layer key 并检查所有 layer key 是否存在。
+普通非 layerwise 路径会通过 worker 侧 `lookup()` / `lookup_scheduler()` 检查连续命中；scheduler 侧会通过 `LookupKeyClient.lookup()` 发起查询，服务端 worker 的 `lookup_scheduler()` 展开所需 PP/TP rank key，要求对应 rank 的 key 都存在。layerwise 路径会拆成 layer key 并检查所有 layer key 是否存在。
 
 能力判断：**支持同模型同布局 prefix KV 复用。**
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1883` `KVPoolWorker.lookup()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:2082` `KVPoolWorker.lookup_scheduler()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1974` `_expand_lookup_keys_by_rank()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:2115` scheduler lookup 展开 rank key
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:2185` `check_all_layers_exists()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:950` `LookupKeyClient`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:962` `LookupKeyClient.lookup()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1667` `KVPoolWorker.lookup()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1758` `_expand_lookup_keys_by_rank()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1866` `KVPoolWorker.lookup_scheduler()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1899` scheduler lookup 展开 rank key
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1969` `check_all_layers_exists()`
 
 ### 2.2 支持 PCP/DCP rank 隔离
 
@@ -82,11 +85,11 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` key 包含 `pcp_rank` / `dcp_rank`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:111` scheduler 计算 `cp_scale`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:146` worker 计算 `cp_scale`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:638` `get_block_hashes()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:649` `_LazyGroupedBlockHashList`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` key 包含 `pcp_rank` / `dcp_rank`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:109` scheduler 计算 `cp_scale`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:142` worker 计算 `cp_scale`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:680` `get_block_hashes()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:691` `_LazyGroupedBlockHashList`
 
 ### 2.3 通用 PoolKey 支持 PP rank、KV group、cache role、cache family 隔离
 
@@ -102,9 +105,9 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` `PoolKey.to_string()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:161` `LayerPoolKey.to_string()` 缺少 `pp_rank`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1062` GVA layerwise key
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` `PoolKey.to_string()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:162` `LayerPoolKey.to_string()` 缺少 `pp_rank`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:984` GVA layerwise key
 
 ### 2.4 支持多轮对话 prefix-only 复用
 
@@ -112,13 +115,17 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 
 当前 key 不包含 conversation id，也不包含 request id。只要下一轮请求的 prompt 包含完整历史，并且 token 序列前缀相同，就可以通过 prefix hash 命中已经保存过的 KV。
 
+需要注意：这里的“多轮复用”只等价于 token-prefix 级别复用，不等价于默认完整对话历史 KV 自动沉淀。真实 chat 下一轮 prompt 如果包含上一轮 assistant decode 阶段生成的 token，而这些 decode KV 默认没有保存到 pool，则不能保证完整历史命中。
+
 能力判断：**支持 token-prefix 级别的多轮复用；不支持默认 decode KV 自动沉淀复用。**
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` key 不包含 conversation id / request id
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:98` `save_decode_cache` 默认 `False`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:823` decode 保存分支
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` key 不包含 conversation id / request id
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:94` `save_decode_cache` 默认 `False`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:431` lookup 使用 prompt token 长度
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:678` decode 保存分支
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:691` decoding 且未开启 `save_decode_cache` 时返回 `None`
 
 ## 3. 当前不支持的能力
 
@@ -142,8 +149,8 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 相关代码：
 
 - `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:73` `KeyMetadata` 没有 CP size/layout 字段
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` key 只写 rank，不写 layout
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1974` lookup 只展开 rank key，不做 CP mapping
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` key 只写 rank，不写 layout
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1758` lookup 只展开 PP/TP/head rank key，不做 CP mapping
 
 ### 3.2 不支持统一 key schema
 
@@ -167,10 +174,10 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` `PoolKey.to_string()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:161` `LayerPoolKey.to_string()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1062` `_make_layerwise_gva_key()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:307` `_make_layerwise_gva_keys_for_hit_check()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` `PoolKey.to_string()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:162` `LayerPoolKey.to_string()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:984` `_make_layerwise_gva_key()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:276` `_make_layerwise_gva_keys_for_hit_check()`
 
 ### 3.3 不支持 TP/KV head mismatch 端到端主路径
 
@@ -184,15 +191,15 @@ hash_block_size = requested_hash_block_size_or_prefix_match_unit * cp_scale
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:36` `infer_tp_mismatch_info()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:52` TP mismatch 启用条件
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:202` worker 初始化 TP mismatch
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:495` 创建发送线程未传 `worker=self`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:512` 创建接收线程未传 `worker=self`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py:668` 发送线程 TP mismatch 分支依赖 `worker`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py:921` 接收线程 TP mismatch 分支依赖 `worker`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1721` `_load_kv_tp_mismatch()`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1757` `_store_kv_tp_mismatch()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:37` `infer_tp_mismatch_info()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:53` TP mismatch 启用条件
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:207` worker 初始化 TP mismatch
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:474` 创建发送线程未传 `worker=self`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:491` 创建接收线程未传 `worker=self`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py:644` 发送线程 TP mismatch 分支依赖 `worker`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py:898` 接收线程 TP mismatch 分支依赖 `worker`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1505` `_load_kv_tp_mismatch()`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1541` `_store_kv_tp_mismatch()`
 
 ### 3.4 不支持 TP mismatch + sparse / layerwise / hybrid
 
@@ -206,15 +213,16 @@ worker 初始化阶段已经明确报错：
 
 并且 TP mismatch 内部地址构造只处理 group 0，store 也只取 `block_ids_by_group[0]`。
 
-能力判断：**不支持 sparse、layerwise、hybrid、多 group TP mismatch。**
+能力判断：**不支持 sparse、layerwise、hybrid TP mismatch；TP mismatch 当前只按单 dense group 假设实现，内部 strided I/O 路径写死 group 0。**
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:212` sparse 限制
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:219` layerwise 限制
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:225` hybrid 限制
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1675` TP mismatch strided I/O 写死 group 0
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1766` TP mismatch store 只取 group 0 block ids
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:208` sparse 限制
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:215` layerwise 限制
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:221` hybrid 限制
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1446` TP mismatch strided I/O
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1458` TP mismatch strided I/O 写死 group 0
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1550` TP mismatch store 只取 group 0 block ids
 
 ### 3.5 不支持默认 decode KV 自动沉淀复用
 
@@ -234,10 +242,10 @@ worker 初始化阶段已经明确报错：
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:98` `save_decode_cache` 默认值
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:132` `discard_partial_chunks` 默认值
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:823` running cached request 保存判断
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:827` decoding 且未开启 `save_decode_cache` 时返回 `None`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:94` `save_decode_cache` 默认值
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:131` `discard_partial_chunks` 默认值
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:678` running cached request 保存判断
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:691` decoding 且未开启 `save_decode_cache` 时返回 `None`
 
 ### 3.6 不支持强模型身份隔离
 
@@ -258,9 +266,8 @@ worker 初始化阶段已经明确报错：
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:130` worker `model_name = model_config.model.split("/")[-1]`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:279` metadata 使用 basename
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:194` scheduler 使用 basename
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:124` worker `model_name = model_config.model.split("/")[-1]`
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py:180` scheduler 使用 basename
 
 ### 3.7 不支持 schema version
 
@@ -272,9 +279,9 @@ worker 初始化阶段已经明确报错：
 
 相关代码：
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` `PoolKey.to_string()` 无 schema version
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:161` `LayerPoolKey.to_string()` 无 schema version
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:1062` GVA key 无 schema version
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` `PoolKey.to_string()` 无 schema version
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:162` `LayerPoolKey.to_string()` 无 schema version
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:984` GVA key 无 schema version
 
 ### 3.8 不支持 layout signature
 
@@ -299,7 +306,7 @@ worker 初始化阶段已经明确报错：
 相关代码：
 
 - `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:73` `KeyMetadata` 没有 layout 字段
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:114` key 字符串没有 layout signature
+- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py:115` key 字符串没有 layout signature
 
 ## 4. 当前最核心的问题
 
@@ -373,6 +380,7 @@ vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/key_schema.py
 - `_make_layerwise_gva_key()`
 - `_make_layerwise_gva_keys_for_hit_check()`
 - `_make_sub_key_str()` / `_replace_key_field()`
+- `LookupKeyClient.lookup()` / `KVPoolWorker.lookup_scheduler()` 的 scheduler 查询路径
 
 目标：**所有路径都通过同一个 KeyBuilder 生成 key，不再散落手写字符串。**
 
@@ -476,7 +484,7 @@ class KVLayoutDescriptor:
 
 ### 5.7 TP mismatch 改成显式 HeadShardMap
 
-当前 TP mismatch 使用 `_replace_key_field()` 改写 `head_or_tp_rank`，把 local rank、effective rank、head shard 混在同一个字段里。
+当前 TP mismatch 使用 `_replace_key_field()` / `_make_sub_key_str()` 改写 `head_or_tp_rank`，把 local rank、effective rank、head shard 混在同一个字段里。
 
 建议改成：
 
@@ -596,7 +604,7 @@ kv_pool_wait_decode_save_on_finish = true | false
 | 多轮对话 prefix-only 复用 | token prefix hash 命中 | 支持 |
 | decode KV 自动沉淀复用 | 默认 `save_decode_cache=False` | 默认不支持 |
 | TP/KV head mismatch 端到端 | 普通线程未传 `worker=self` | 不支持 |
-| TP mismatch + sparse/layerwise/hybrid | 初始化直接报错或 NotImplemented | 不支持 |
+| TP mismatch + sparse/layerwise/hybrid | 初始化直接报错或 NotImplemented；strided I/O 路径写死 group 0 | 不支持 |
 | 强模型身份隔离 | 只用 basename | 不支持 |
 | schema version | key 无版本字段 | 不支持 |
 | layout signature | key 无 layout 字段 | 不支持 |
