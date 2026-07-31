@@ -1,11 +1,13 @@
 # PR 13160 验证记录
 
+详细步骤、启动命令、请求方式、判断标准和学习记录见：`validation_journal.md`。
+
 ## 当前状态
 
 - vllm-ascend 已切到 PR 13160 本地分支：`pr-13160`。
 - 当前 vllm-ascend commit：`3a0404d2d`。
 - PR 声明的 vLLM verified commit：`d02df748bf9efd99022f1a062597dc3cb3808485`。
-- 当前 vLLM commit：`752a3a5`。
+- 当前 vLLM commit：`d02df748bf9efd99022f1a062597dc3cb3808485`。
 
 ## Run 记录
 
@@ -38,4 +40,17 @@
 
 ## 第一轮结论
 
-待执行后填写。
+截至 2026-07-31 08:05 左右，0.6B 冒烟验证已通过：
+
+- vLLM 已切到 PR 声明的 verified commit：`d02df748bf9efd99022f1a062597dc3cb3808485`。
+- 环境检查、AscendStore import、py_compile、UT 通过：`146 passed, 14 warnings in 2.14s`。
+- baseline 服务在空闲设备 `ASCEND_RT_VISIBLE_DEVICES=8` 上启动成功，两次请求均返回 200。
+- Mooncake + KV Pool PD-Mixed 服务在同一设备上启动成功，两次请求均返回 200。
+- baseline 与 KV Pool 输出文本一致，usage 一致。
+- KV Pool 日志中看到 `AscendStoreConnector` 创建，以及 `kvpool hit tokens: 1024, need to load: 1024`、`KV pool load spec created`。
+
+需要继续的项：
+
+- `/home/data/Qwen3.5-4B` 正式模型轮次。
+- `kv_load_failure_policy=recompute` 的人工异常/回退验证。
+- 更严格的性能数据采集，当前 `05_send_requests.py` 记录的是请求总耗时，不是严格 TTFT。

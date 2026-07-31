@@ -1,0 +1,28 @@
+{
+  "case": "baseline",
+  "request_count": 2,
+  "success_count": 2,
+  "failure_count": 0,
+  "elapsed_sec": [
+    10.210297629935667,
+    1.8054288099519908
+  ],
+  "usage": [
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    },
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    }
+  ],
+  "same_text_as_first": [
+    true,
+    true
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "kv_connector": "AscendStoreConnector",
+  "kv_role": "kv_both",
+  "kv_load_failure_policy": "recompute",
+  "kv_connector_extra_config": {
+    "lookup_rpc_port": "1",
+    "backend": "mooncake"
+  }
+}

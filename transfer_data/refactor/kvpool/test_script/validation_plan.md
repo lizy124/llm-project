@@ -149,6 +149,10 @@ PR 分支声明的配套 vLLM commit：
 - `record.md`
   - 记录每次实际执行结果和结论。
 
+- `validation_journal.md`
+  - 记录每个阶段的实际执行过程，包括启动命令、请求命令、关键输出、判断标准、失败原因、处理方式和复盘要点。
+  - 后续每推进一个验证阶段，必须同步更新该文件，不能只更新 checklist。
+
 ## 6. 日志和结果保存
 
 每次验证使用独立 run 目录：
@@ -212,8 +216,10 @@ PR 分支声明的配套 vLLM commit：
 - [x] 创建请求发送和结果保存脚本：`05_send_requests.py`。
 - [x] 创建日志提取脚本：`06_grep_logs.sh`。
 - [x] 创建执行说明和结果记录模板：`README.md`、`record.md`。
-- [x] 运行第一阶段环境和导入检查：import 和 py_compile 通过，pytest 因当前 vLLM 缺 `vllm.third_party.flash_linear_attention` 阻塞。
-- [ ] 切换 `/vllm-workspace/vllm` 到 PR 声明的 verified commit：已两次尝试，分别遇到 GitHub TLS 中断和 fetch 超时；本地仍无该对象，当前仍停在 `752a3a5`。已新增 `08_sync_vllm_verified_commit.sh` 供网络恢复后重试。
-- [ ] 启动服务并执行 baseline 请求。
-- [ ] 启动 Mooncake + KV Pool 服务并执行二次命中请求。
-- [ ] 汇总第一轮验证结论。
+- [x] 运行第一阶段环境和导入检查：切到 verified vLLM commit 后，import、py_compile、AscendStore UT 均通过，`146 passed, 14 warnings in 2.14s`。
+- [x] 切换 `/vllm-workspace/vllm` 到 PR 声明的 verified commit：当前为 `d02df748bf9efd99022f1a062597dc3cb3808485`。
+- [x] 启动服务并执行 baseline 请求：使用 `/mnt/weight/Qwen3-0.6B`、`ASCEND_RT_VISIBLE_DEVICES=8`，两次请求均返回 200，输出一致。
+- [x] 启动 Mooncake + KV Pool 服务并执行二次命中请求：使用 `/mnt/weight/Qwen3-0.6B`、`ASCEND_RT_VISIBLE_DEVICES=8`，两次请求均返回 200，输出一致，日志可见 `AscendStoreConnector` 和 `kvpool hit tokens: 1024`。
+- [x] 汇总 0.6B 冒烟验证结论：详见 `record.md` 和 `validation_journal.md`。
+- [ ] 使用 `/home/data/Qwen3.5-4B` 执行第一轮正式功能验证。
+- [ ] 补充 `kv_load_failure_policy=recompute` 人工异常/回退验证。

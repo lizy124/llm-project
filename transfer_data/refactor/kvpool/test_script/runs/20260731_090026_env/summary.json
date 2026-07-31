@@ -1,0 +1,28 @@
+{
+  "case": "baseline_qwen3_8b",
+  "request_count": 2,
+  "success_count": 2,
+  "failure_count": 0,
+  "elapsed_sec": [
+    5.843755770009011,
+    2.397889809915796
+  ],
+  "usage": [
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    },
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    }
+  ],
+  "same_text_as_first": [
+    true,
+    true
+  ]
+}
