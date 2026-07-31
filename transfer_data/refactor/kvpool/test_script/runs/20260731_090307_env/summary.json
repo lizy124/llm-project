@@ -1,28 +1,20 @@
 {
-  "case": "kvpool_mixed_qwen3_8b",
-  "request_count": 2,
-  "success_count": 2,
+  "case": "kvpool_recompute_new_prefix_qwen3_8b",
+  "request_count": 1,
+  "success_count": 1,
   "failure_count": 0,
   "elapsed_sec": [
-    2.3475408400408924,
-    2.232989399926737
+    2.2373886699788272
   ],
   "usage": [
     {
-      "prompt_tokens": 1143,
-      "total_tokens": 1207,
-      "completion_tokens": 64,
-      "prompt_tokens_details": null
-    },
-    {
-      "prompt_tokens": 1143,
-      "total_tokens": 1207,
+      "prompt_tokens": 1304,
+      "total_tokens": 1368,
       "completion_tokens": 64,
       "prompt_tokens_details": null
     }
   ],
   "same_text_as_first": [
-    true,
     true
   ]
 }

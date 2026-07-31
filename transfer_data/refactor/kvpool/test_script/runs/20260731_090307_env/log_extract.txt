@@ -45,4 +45,12 @@
 182:(APIServer pid=1862484) INFO:     127.0.0.1:35896 - "GET /health HTTP/1.1" 200 OK
 185:(EngineCore pid=1862759) INFO 07-31 09:05:15 [pool_scheduler.py:474] Reqid: cmpl-a66ed70952ebf123-0-af011f63, Total tokens 1143, kvpool hit tokens: 1024, need to load: 1024
 186:(EngineCore pid=1862759) INFO 07-31 09:05:15 [pool_scheduler.py:495] KV pool load spec created req=cmpl-a66ed70952ebf123-0-af011f63 vllm_cached=0 kvpool_cached=1024 need_to_allocate=1024 load_async=False use_layerwise=False
+188:(APIServer pid=1862484) INFO 07-31 09:05:22 [loggers.py:310] Engine 000: Avg prompt throughput: 126.2 tokens/s, Avg generation throughput: 12.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 44.8%
+189:(APIServer pid=1862484) INFO 07-31 09:05:32 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 44.8%
+190:(EngineCore pid=1862759) INFO 07-31 09:06:45 [pool_scheduler.py:474] Reqid: cmpl-8a0c06e9d25eda03-0-a3d3b084, Total tokens 1143, kvpool hit tokens: 1024, need to load: 1024
+191:(EngineCore pid=1862759) INFO 07-31 09:06:45 [pool_scheduler.py:495] KV pool load spec created req=cmpl-8a0c06e9d25eda03-0-a3d3b084 vllm_cached=0 kvpool_cached=1024 need_to_allocate=1024 load_async=False use_layerwise=False
+193:(EngineCore pid=1862759) INFO 07-31 09:06:47 [pool_scheduler.py:474] Reqid: cmpl-8945a997b13888e0-0-a1955e63, Total tokens 1143, kvpool hit tokens: 1024, need to load: 1024
+194:(EngineCore pid=1862759) INFO 07-31 09:06:47 [pool_scheduler.py:495] KV pool load spec created req=cmpl-8945a997b13888e0-0-a1955e63 vllm_cached=0 kvpool_cached=1024 need_to_allocate=1024 load_async=False use_layerwise=False
+196:(APIServer pid=1862484) INFO 07-31 09:06:52 [loggers.py:310] Engine 000: Avg prompt throughput: 23.8 tokens/s, Avg generation throughput: 12.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 67.2%
+197:(APIServer pid=1862484) INFO 07-31 09:07:02 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%, External prefix cache hit rate: 67.2%
 

@@ -12,10 +12,11 @@ PR 目标是 `Simplify AscendStore KV pool Implementation and Unit Tests`，所�
 - baseline 服务验证
 - Mooncake + KV Pool PD-Mixed 验证
 
-本轮还没继续的内容：
+本轮已继续补充的内容：
 
-- `/home/data/Qwen3.5-4B` 的正式模型轮次
-- `kv_load_failure_policy=recompute` 的人工异常注入回退验证
+- `/home/data/Qwen3.5-4B` 启动可用性检查
+- `/mnt/weight/Qwen3-8B` 正式模型轮次
+- `kv_load_failure_policy=recompute` 的 miss/new-prefix 轻量回退验证
 
 ## 2. 现有脚本是怎么分工的
 
@@ -341,20 +342,69 @@ Mooncake master 日志里能看到：
 - 环境和导入检查
 - baseline 0.6B 冒烟
 - Mooncake + KV Pool 0.6B 冒烟
+- `/home/data/Qwen3.5-4B` 模型目录可用性检查
+- baseline Qwen3-8B 正式功能验证
+- Mooncake + KV Pool Qwen3-8B 正式功能验证
+- `recompute` miss/new-prefix 轻量回退验证
 - 结果日志和汇总文件都已落盘
 
 当前未完成：
 
-- `/home/data/Qwen3.5-4B` 正式模型轮次
-- `recompute` 异常回退场景
 - 更完整的性能对比
+- 更强的后端故障注入验证，例如明确制造 load failure 并观察 recompute 日志
 
 ## 9. 相关文件和结果
 
 - 计划：`validation_plan.md`
 - 当前高层记录：`record.md`
 - 环境检查 run：`runs/20260731_074619_env/`
-- baseline run：`runs/20260731_075703_env/`
-- KV Pool run：`runs/20260731_075952_env/`
+- baseline 0.6B run：`runs/20260731_075703_env/`
+- KV Pool 0.6B run：`runs/20260731_075952_env/`
+- baseline Qwen3-8B run：`runs/20260731_090026_env/`
+- KV Pool Qwen3-8B / recompute run：`runs/20260731_090307_env/`
 
+## 10. 2026-07-31 09:10 补充验证
+
+### `/home/data/Qwen3.5-4B` 启动尝试
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260731_084548_env`
+- 命令：`ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/home/data/Qwen3.5-4B PORT=8100 ./03_start_server_baseline.sh "$RUN_DIR"`
+- 结果：失败
+- 关键报错：`Invalid repository ID or local directory specified: '/home/data/Qwen3.5-4B'`，并提示需要 `config.json` 或 `params.json`
+- 结论：该目录当前不能作为 vLLM 模型目录使用，正式功能验证改用计划中的备选 `/mnt/weight/Qwen3-8B`
+
+### Qwen3-8B baseline
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260731_090026_env`
+- 命令：`ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B PORT=8100 ./03_start_server_baseline.sh "$RUN_DIR"`
+- 请求：`python3 05_send_requests.py --run-dir "$RUN_DIR" --case baseline_qwen3_8b --model /mnt/weight/Qwen3-8B --port 8100 --repeat 2`
+- 结果：通过
+- 两次请求均为 200
+- 耗时：`[5.843755770009011, 2.397889809915796]`
+- usage：两次均为 `prompt_tokens=1143`、`completion_tokens=64`、`total_tokens=1207`
+- 输出：`same_text_as_first=[true, true]`
+
+### Qwen3-8B Mooncake + KV Pool
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260731_090307_env`
+- 启动 Mooncake：`./02_start_mooncake_master.sh "$RUN_DIR"`
+- 启动服务：`ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B PORT=8100 ./04_start_server_kvpool_mixed.sh "$RUN_DIR"`
+- 请求：`python3 05_send_requests.py --run-dir "$RUN_DIR" --case kvpool_mixed_qwen3_8b --model /mnt/weight/Qwen3-8B --port 8100 --repeat 2`
+- 结果：通过
+- 两次请求均为 200
+- 耗时：`[2.3475408400408924, 2.232989399926737]`
+- usage：两次均为 `prompt_tokens=1143`、`completion_tokens=64`、`total_tokens=1207`
+- 输出：两次文本一致
+- 关键日志：`Creating v1 connector with name: AscendStoreConnector`、`kv_load_failure_policy='recompute'`、`kvpool hit tokens: 1024, need to load: 1024`、`KV pool load spec created`
+- 注意：Mooncake master 日志显示 metrics 端口 `9003` 被占用，但 RPC `50088` 有 `Master service started`，请求链路未受影响
+
+### recompute / miss 轻量回退验证
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260731_090307_env`
+- 配置证据：服务启动参数里有 `kv_load_failure_policy='recompute'`
+- 相同 prefix 追加请求：`kvpool_recompute_after_master_stop_qwen3_8b`，两次均返回 200，耗时为 `[2.2125850699376315, 2.413814039900899]`
+- 新 prefix 请求：`kvpool_recompute_new_prefix_qwen3_8b`，单次返回 200，耗时为 `2.2373886699788272`，usage 为 `prompt_tokens=1304`、`completion_tokens=64`、`total_tokens=1368`
+- 结论：miss/new-prefix 场景不会导致请求失败，符合 recompute 回退的基本预期
+- 限制：没有制造出明确的后端 load failure 日志，因此这不是强故障注入验证；后续如果要更严格，应单独设计能稳定触发 load failure 的场景
+- 注意：`05_send_requests.py` 每次运行会重写 `summary.json`，所以该 run 的完整请求序列以 `requests.jsonl` 为准
 

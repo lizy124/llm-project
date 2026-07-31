@@ -191,7 +191,7 @@ PR 分支声明的配套 vLLM commit：
 - vLLM 服务启动成功。
 - 首次请求成功返回。
 - 第二次相同 prefix 请求成功返回。
-- 日志可见 AscendStore/Mooncake 的 put/get 或 load/save 行为。
+- 日志可见 AscendStoreConnector 初始化，以及 AscendStore/Mooncake 的 hit、put/get 或 load/save 等任一关键路径证据。
 - 第二次请求没有 load failure、block 提前释放、线程异常等错误。
 - baseline 和 kvpool 输出在固定参数下无明显不一致。
 - 记录 TTFT/耗时数据，能说明是否有命中后的趋势改善。
@@ -221,5 +221,7 @@ PR 分支声明的配套 vLLM commit：
 - [x] 启动服务并执行 baseline 请求：使用 `/mnt/weight/Qwen3-0.6B`、`ASCEND_RT_VISIBLE_DEVICES=8`，两次请求均返回 200，输出一致。
 - [x] 启动 Mooncake + KV Pool 服务并执行二次命中请求：使用 `/mnt/weight/Qwen3-0.6B`、`ASCEND_RT_VISIBLE_DEVICES=8`，两次请求均返回 200，输出一致，日志可见 `AscendStoreConnector` 和 `kvpool hit tokens: 1024`。
 - [x] 汇总 0.6B 冒烟验证结论：详见 `record.md` 和 `validation_journal.md`。
-- [ ] 使用 `/home/data/Qwen3.5-4B` 执行第一轮正式功能验证。
-- [ ] 补充 `kv_load_failure_policy=recompute` 人工异常/回退验证。
+- [x] 尝试使用 `/home/data/Qwen3.5-4B` 执行第一轮正式功能验证：启动失败，该目录缺少 vLLM 可识别的 `config.json` 或 `params.json`。
+- [x] 使用备选正式模型 `/mnt/weight/Qwen3-8B` 完成第一轮正式功能验证：baseline 与 KV Pool 请求均成功，输出和 usage 一致，日志可见 `AscendStoreConnector` 与 `kvpool hit tokens: 1024`。
+- [x] 补充 `kv_load_failure_policy=recompute` miss/new-prefix 轻量回退验证：请求返回 200，未因 miss 或后端状态异常导致失败。
+- [ ] 设计更强的后端 load failure 注入场景，明确观察 recompute 日志。
