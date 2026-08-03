@@ -4,8 +4,41 @@
 
 `vllm_ascend/distributed/kv_transfer/kv_pool` 里需要区分两类东西：
 
-- `ascend_store.backend` 里的是真正的池化后端，目前 3 个：`mooncake`、`memcache`、`yuanrong`。
-- `lmcache`、`ucm`、`simple_cpu_offload`、`recompute_cpu_offload` 更偏 KVConnector / offload 方案，不是 `ascend_store.backend.backend_map` 注册的池化后端。
+- `ascend_store/backend` 保留公共后端接口和 `backend_map`，真正的池化后端实现已拆到 `ascend_store` 下的同级目录，目前 3 个：`mooncake_backend`、`memcache_backend`、`yuanrong_backend`。
+- `lmcache_ascend_connector`、`ucm_connector` 已移入 `ascend_store` 下作为同级 connector 目录；`simple_cpu_offload`、`recompute_cpu_offload` 仍在 `kv_pool` 下，属于 KVConnector / offload 方案，不是 `ascend_store.backend.backend_map` 注册的池化后端。
+- `ascend_store/store_utils` 放 AscendStore 的公共 connector、调度、worker、metadata、transfer、coordinator 逻辑。
+
+## 当前 ascend_store 结构
+
+```text
+kv_pool/ascend_store/
+  backend/
+    __init__.py
+    backend.py
+  mooncake_backend/
+    __init__.py
+    mooncake_backend.py
+  memcache_backend/
+    __init__.py
+    memcache_backend.py
+  yuanrong_backend/
+    __init__.py
+    yuanrong_backend.py
+  lmcache_ascend_connector/
+    __init__.py
+    lmcache_ascend_connector.py
+  ucm_connector/
+    __init__.py
+    ucm_connector.py
+  store_utils/
+    __init__.py
+    ascend_store_connector.py
+    config_data.py
+    coordinator.py
+    kv_transfer.py
+    pool_scheduler.py
+    pool_worker.py
+```
 
 ## 池化后端
 
@@ -13,17 +46,30 @@
 
 | backend | 实现类 | 文件 | 说明 |
 |---|---|---|---|
-| `mooncake` | `MooncakeBackend` | `ascend_store/backend/mooncake_backend.py` | AscendStore 的 Mooncake 后端 |
-| `memcache` | `MemcacheBackend` | `ascend_store/backend/memcache_backend.py` | AscendStore 的 Memcache 后端 |
-| `yuanrong` | `YuanrongBackend` | `ascend_store/backend/yuanrong_backend.py` | AscendStore 的 Yuanrong 后端 |
+| `mooncake` | `MooncakeBackend` | `ascend_store/mooncake_backend/mooncake_backend.py` | AscendStore 的 Mooncake 后端 |
+| `memcache` | `MemcacheBackend` | `ascend_store/memcache_backend/memcache_backend.py` | AscendStore 的 Memcache 后端 |
+| `yuanrong` | `YuanrongBackend` | `ascend_store/yuanrong_backend/yuanrong_backend.py` | AscendStore 的 Yuanrong 后端 |
+
+## store_utils
+
+`store_utils` 是 AscendStore 的公共实现层，不属于某个具体后端。
+
+| 文件 | 角色 |
+|---|---|
+| `store_utils/ascend_store_connector.py` | `AscendStoreConnector` 主入口，对接 vLLM KVConnector 接口 |
+| `store_utils/config_data.py` | key、metadata、request/transfer 数据结构与通用工具 |
+| `store_utils/kv_transfer.py` | KV 传输线程、layerwise 传输、失败 block 记录等逻辑 |
+| `store_utils/coordinator.py` | 外部缓存命中、hybrid cache mask 和可达性协调 |
+| `store_utils/pool_scheduler.py` | scheduler 侧状态管理、lookup、metadata 构造 |
+| `store_utils/pool_worker.py` | worker 侧 backend 初始化、KV cache 注册、load/save 执行 |
 
 ## lmcache / ucm / yuanrong 代码量
 
 | 类型 | 文件 | 行数 | 说明 |
 |---|---:|---:|---|
-| `lmcache` | `kv_pool/lmcache_ascend_connector.py` | 6 | 极薄封装：导入 `lmcache_ascend`，复用 vLLM 的 `LMCacheConnectorV1` |
-| `ucm` | `kv_pool/ucm_connector.py` | 325 | `UCMConnectorV1` 适配层，主要把 vLLM KVConnector 接口委托给外部 `ucm.integration.vllm.ucm_connector.UCMConnector` |
-| `yuanrong` | `kv_pool/ascend_store/backend/yuanrong_backend.py` | 239 | 具体后端实现：环境配置、key 规范化、buffer 注册、`exists/get/put` |
+| `lmcache` | `kv_pool/ascend_store/lmcache_ascend_connector/lmcache_ascend_connector.py` | 6 | 极薄封装：导入 `lmcache_ascend`，复用 vLLM 的 `LMCacheConnectorV1` |
+| `ucm` | `kv_pool/ascend_store/ucm_connector/ucm_connector.py` | 325 | `UCMConnectorV1` 适配层，主要把 vLLM KVConnector 接口委托给外部 `ucm.integration.vllm.ucm_connector.UCMConnector` |
+| `yuanrong` | `kv_pool/ascend_store/yuanrong_backend/yuanrong_backend.py` | 239 | 具体后端实现：环境配置、key 规范化、buffer 注册、`exists/get/put` |
 
 合计约 570 行。
 
@@ -76,7 +122,7 @@
 | `mooncake` | backend | 是 | 外部 KV pool 后端 |
 | `memcache` | backend | 是 | 外部 KV pool 后端 |
 | `yuanrong` | backend | 是 | 外部 KV pool 后端 |
-| `lmcache` | connector | 否 | LMCache connector 薄封装 |
-| `ucm` | connector | 否 | UCM connector 适配层 |
+| `lmcache_ascend_connector` | connector | 否 | LMCache connector 薄封装 |
+| `ucm_connector` | connector | 否 | UCM connector 适配层 |
 | `simple_cpu_offload` | connector/offload | 否 | 简单 CPU KV offload，Ascend worker 适配 |
 | `recompute_cpu_offload` | connector/offload | 否 | preemption/recompute 场景下的 CPU KV 暂存与恢复 |
