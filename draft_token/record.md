@@ -23,7 +23,7 @@
 如图所示，vLLM 通过分层架构将业务逻辑与底层复杂硬件拓扑解耦。为便于后续对并行机制的探讨，我们先对各层抽象做简要对齐：
 
 - Client 层（接入网关）：专注外部请求的收发，与底层计算逻辑物理隔离。
-- Core 层（调度逻辑）：持有 Scheduler 和 KVCacheManager，负责实现 Continuous Batching 和 PagedAttention。本层专职于请求级和 Token 级的逻辑调度，属于硬件无关层。
+- Core / EngineCore 层（内部调度闭环）：`EngineCore` 驱动 `Scheduler` 完成请求级与 token 级调度；`Scheduler` 内部持有 `KVCacheManager`，负责 KV block 的分配、复用、回收和 prefix cache 等状态管理。Continuous Batching 主要由这一层的调度闭环支撑；PagedAttention 在这里体现为 KV cache/block 管理机制，具体 attention 执行仍在 Worker / ModelRunner / attention backend 侧完成。
 - Executor 层（执行引擎）：核心隔离层。向上为 Core 提供统一 API，避免底层异构硬件信息污染核心调度逻辑；向下负责解析并管理跨卡、跨节点的计算调度方案。
 - Worker 层（计算实体）：对 Device（GPU）的直接建模。负责拉起计算资源、初始化分布式通信后端，并在指定硬件上执行实际计算流。
 - ModelRunner 层（模型抽象）：在 Worker 内部屏蔽各类 LLM 的网络结构差异。
