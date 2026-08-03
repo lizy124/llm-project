@@ -88,3 +88,38 @@ recompute / miss 回退验证：
 - 限制：这轮验证证明了 `kv_load_failure_policy=recompute` 配置存在且 miss/new-prefix 请求不失败；但没有制造出明确的后端 load failure 日志，因此不能算强故障注入，只能算轻量回退验证。
 
 注意：`05_send_requests.py` 每次运行会重写 `summary.json`，所以 KV Pool run 的完整请求序列以 `requests.jsonl` 为准。
+
+## 2026-08-03 补充验证：W8A8 流式 TTFT
+
+计划补充内容：
+
+- 新增 `09_send_stream_requests.py`，记录 OpenAI completions streaming 的 TTFT、总耗时、usage 和输出一致性。
+- 新增 `10_start_server_kvpool_custom.sh`，参数化 KV Pool 角色和 extra config，默认仍使用 `AscendStoreConnector`、`kv_role=kv_both`、`backend=mooncake`、`kv_load_failure_policy=recompute`。
+- 使用 `/mnt/weight/Qwen3-8B-W8A8` 执行 baseline 与 KV Pool mixed 的流式 TTFT 验证。
+- 本轮 Mooncake master 避开历史残留的 `50088`，使用新端口。
+
+执行前资源结论：
+
+- 16 个 Ascend 910 chip 空闲，无 NPU 进程。
+- `/mnt/weight/Qwen3-8B-W8A8` 可识别，大小约 `10.50 GiB`。
+- `mooncake` 和 `memcache_hybrid` 均已安装。
+
+实际结果：
+
+- baseline stream run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_034125_env`
+- KV Pool stream run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_061258_env`
+- baseline：4 次流式请求均返回 200，`failure_count=0`，`same_text_as_first=[true, true, true, true]`。
+- baseline TTFT：`[0.2651244399603456, 0.09327550022862852, 0.08729795017279685, 0.08679045992903411]`，平均 `0.13312208757270128s`。
+- baseline 总耗时：`[2.686685899971053, 2.548514940077439, 2.528445739997551, 2.512046579970047]`，平均 `2.5689232900040224s`。
+- KV Pool：4 次流式请求均返回 200，`failure_count=0`，`same_text_as_first=[true, true, true, true]`。
+- KV Pool TTFT：`[0.1890116799622774, 0.09213291993364692, 0.08811222994700074, 0.09044627984985709]`，平均 `0.11492577742319554s`。
+- KV Pool 总耗时：`[2.514595220098272, 2.4333985499106348, 2.4480531599838287, 2.452375079970807]`，平均 `2.4621055024908856s`。
+- 两组 usage 完全一致：`prompt_tokens=1143`、`completion_tokens=64`、`total_tokens=1207`。
+- KV Pool 日志关键证据：`Creating v1 connector with name: AscendStoreConnector`、`kv_load_failure_policy='recompute'`、`kvpool hit tokens: 1024, need to load: 1024`、`KV pool load spec created`、`External prefix cache hit rate: 67.2%`。
+
+执行中问题和处理：
+
+- `10_start_server_kvpool_custom.sh` 首次运行失败，原因是 JSON 生成 Python 子进程读不到未 export 的 `LOOKUP_RPC_PORT` 等变量；已修复并通过 `bash -n`。
+- 尝试启动新的 `MOONCAKE_MASTER_PORT=50089` 失败，原因是 Mooncake metrics/admin 默认端口 `9003` 被历史 `50088` master 占用；最终复用历史 `127.0.0.1:50088` master 跑通。
+
+结论：W8A8 + KV Pool mixed 的流式路径验证通过，TTFT 数据已落盘；样本数为 4，只作为功能和轻量性能证据，不作为严格性能结论。

@@ -68,6 +68,45 @@ MODEL_PATH=/home/data/Qwen3.5-4B
 - `log_extract.txt`：关键日志摘取。
 - `conclusion.md`：人工结论。
 
+## 补充验证脚本
+
+流式 TTFT 请求：
+
+```bash
+python3 09_send_stream_requests.py --run-dir ${RUN_DIR} --case baseline_stream --model /mnt/weight/Qwen3-8B-W8A8 --port 8100 --repeat 4
+```
+
+输出文件：
+
+- `stream_requests.jsonl`：每次流式请求的 TTFT、总耗时、usage、输出文本和错误信息。
+- `stream_summary.json`：TTFT/总耗时汇总、成功失败数量、输出一致性。
+
+参数化 KV Pool 启动：
+
+```bash
+MOONCAKE_MASTER_ADDRESS=127.0.0.1:50089 \
+ASCEND_RT_VISIBLE_DEVICES=8 \
+MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 \
+PORT=8100 \
+KV_ROLE=kv_both \
+KV_BACKEND=mooncake \
+./10_start_server_kvpool_custom.sh ${RUN_DIR}
+```
+
+常用可调环境变量：
+
+- `KV_ROLE`：`kv_both`、`kv_producer`、`kv_consumer`。
+- `KV_BACKEND`：默认 `mooncake`，可用于后续尝试 `memcache`。
+- `LOAD_ASYNC`、`CONSUMER_IS_TO_PUT`、`CONSUMER_IS_TO_LOAD`、`USE_LAYERWISE`、`SAVE_DECODE_CACHE`：设为 `true`/`1` 时写入 `kv_connector_extra_config`。
+- `LOOKUP_RPC_PORT`：默认 `1`。
+- `EXTRA_CONFIG_JSON`：额外 JSON 覆盖，例如 `'{"consumer_is_to_put":true}'`。
+
+脚本会保存：
+
+- `kv_transfer_config.json`：最终传给 vLLM 的 KV transfer 配置。
+- `kvpool_custom_env.txt`：本次启动的关键环境变量。
+- `server_kvpool_custom.log`：服务日志。
+
 ## 注意
 
 PR 分支声明的 vLLM verified commit 是：
@@ -75,3 +114,5 @@ PR 分支声明的 vLLM verified commit 是：
 `d02df748bf9efd99022f1a062597dc3cb3808485`
 
 正式验证前建议切 `/vllm-workspace/vllm` 到该 commit。
+
+本机曾残留一个旧的 `mooncake_master` 占用 `50088`，补充验证建议用 `MOONCAKE_MASTER_PORT=50089`、`50090` 等新端口。

@@ -408,3 +408,164 @@ Mooncake master 日志里能看到：
 - 限制：没有制造出明确的后端 load failure 日志，因此这不是强故障注入验证；后续如果要更严格，应单独设计能稳定触发 load failure 的场景
 - 注意：`05_send_requests.py` 每次运行会重写 `summary.json`，所以该 run 的完整请求序列以 `requests.jsonl` 为准
 
+## 11. 2026-08-03 补充验证计划：W8A8 流式 TTFT
+
+### 资源检查
+
+执行前检查结果：
+
+- 16 个 Ascend 910 chip 均未显示 NPU 进程占用。
+- 单 chip HBM 总量约 64GB，空闲约 61GB。
+- `/vllm-workspace/vllm-ascend` 当前分支为 `pr-13160`，commit 为 `3a0404d2d7275ed3b753d4849d1b8ecdccdeaa83`。
+- `/vllm-workspace/vllm` 当前为 detached HEAD，commit 为 `d02df748bf9efd99022f1a062597dc3cb3808485`。
+- 发现一个历史残留 `mooncake_master` 进程占用 `50088`，因此本轮补充验证改用新的 Mooncake master 端口。
+- `/mnt/weight/Qwen3-8B-W8A8` 模型目录存在，大小约 `10.50 GiB`，包含 `config.json`、`tokenizer.json`、`tokenizer_config.json`。
+- `mooncake`、`mooncake.store`、`memcache_hybrid` 均可 import。
+
+### 新增脚本
+
+新增 `09_send_stream_requests.py`：
+
+- 向 `/v1/completions` 发送 `stream=true` 请求。
+- 每次请求记录 `ttft_sec`、`total_sec`、SSE event 数、usage、输出文本和错误。
+- 明细追加到 `stream_requests.jsonl`。
+- 汇总写到 `stream_summary.json`。
+- 这补齐了之前 `05_send_requests.py` 只能记录总耗时、不能记录严格 TTFT 的缺口。
+
+新增 `10_start_server_kvpool_custom.sh`：
+
+- 参数化 `KV_ROLE`、`KV_BACKEND`、`LOOKUP_RPC_PORT`、`LOAD_ASYNC`、`CONSUMER_IS_TO_PUT`、`CONSUMER_IS_TO_LOAD`、`USE_LAYERWISE`、`SAVE_DECODE_CACHE`、`PREFILL_TP_SIZE`、`DECODE_TP_SIZE`。
+- 保存最终 `kv_transfer_config.json`。
+- 保存 `kvpool_custom_env.txt`，便于复盘每次启动的关键参数。
+- 默认仍等价于 Mooncake + `kv_both` + `kv_load_failure_policy=recompute`。
+
+### 本轮验证目标
+
+本轮只补 W8A8 模型的流式 TTFT 数据，不做大规模性能结论。
+
+必须回答：
+
+- baseline W8A8 流式请求是否稳定返回 200。
+- KV Pool W8A8 流式请求是否稳定返回 200。
+- KV Pool 日志是否仍能看到 `AscendStoreConnector`、`kv_load_failure_policy='recompute'`、hit/load/save 相关证据。
+- `stream_summary.json` 是否能提供 TTFT 和 total latency 数据。
+- baseline 与 KV Pool 输出在固定 prompt、`temperature=0` 下是否一致或无明显异常。
+
+### 计划命令
+
+baseline：
+
+```bash
+cd /home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script
+RUN_DIR=$(./00_env_snapshot.sh | awk -F= '/RUN_DIR=/{print $2}')
+ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 ./03_start_server_baseline.sh "$RUN_DIR"
+python3 09_send_stream_requests.py --run-dir "$RUN_DIR" --case baseline_qwen3_8b_w8a8_stream --model /mnt/weight/Qwen3-8B-W8A8 --port 8100 --repeat 4
+./06_grep_logs.sh "$RUN_DIR"
+./07_stop_run.sh "$RUN_DIR"
+```
+
+KV Pool：
+
+```bash
+RUN_DIR=$(./00_env_snapshot.sh | awk -F= '/RUN_DIR=/{print $2}')
+MOONCAKE_MASTER_PORT=50089 ./02_start_mooncake_master.sh "$RUN_DIR"
+MOONCAKE_MASTER_ADDRESS=127.0.0.1:50089 ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 KV_ROLE=kv_both KV_BACKEND=mooncake ./10_start_server_kvpool_custom.sh "$RUN_DIR"
+python3 09_send_stream_requests.py --run-dir "$RUN_DIR" --case kvpool_qwen3_8b_w8a8_stream --model /mnt/weight/Qwen3-8B-W8A8 --port 8100 --repeat 4
+./06_grep_logs.sh "$RUN_DIR"
+./07_stop_run.sh "$RUN_DIR"
+```
+
+### 通过标准
+
+- 两组服务健康检查 `/v1/models` 返回 200。
+- `stream_summary.json` 中 `failure_count=0`。
+- 每次请求都有非空 `ttft_sec` 和 `total_sec`。
+- 同组内 `same_text_as_first` 全为 `true`，或只存在格式上可解释的流式差异。
+- KV Pool `log_extract.txt` 可见 AscendStore/KV Pool 关键日志，且无 `traceback`、致命 `exception`、请求失败。
+
+### 实际执行记录
+
+#### baseline W8A8 stream
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_034125_env`
+- 启动命令：`ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 ./03_start_server_baseline.sh "$RUN_DIR"`
+- 服务 PID：`4094221`
+- 健康检查：`/v1/models` 在第 13 次轮询返回 200。
+- 请求命令：`python3 09_send_stream_requests.py --run-dir "$RUN_DIR" --case baseline_qwen3_8b_w8a8_stream --model /mnt/weight/Qwen3-8B-W8A8 --port 8100 --repeat 4`
+- 结果：4 次请求均返回 200，均有 usage，均有 TTFT。
+- 单次结果：
+  - 第 1 次：`ttft_sec=0.2651`，`total_sec=2.6867`，`prompt_tokens=1143`，`completion_tokens=64`，`total_tokens=1207`
+  - 第 2 次：`ttft_sec=0.0933`，`total_sec=2.5485`，usage 同上
+  - 第 3 次：`ttft_sec=0.0873`，`total_sec=2.5284`，usage 同上
+  - 第 4 次：`ttft_sec=0.0868`，`total_sec=2.5120`，usage 同上
+- 输出文件：
+  - `stream_requests.jsonl`
+  - `stream_summary.json`
+  - `log_extract.txt`
+- 停止：`./07_stop_run.sh "$RUN_DIR"` 已停止 `server_baseline: 4094221`。
+
+#### KV Pool custom 首次启动失败
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_043010_env`
+- Mooncake master 启动命令：`MOONCAKE_MASTER_PORT=50089 ./02_start_mooncake_master.sh "$RUN_DIR"`
+- KV Pool 启动命令：`MOONCAKE_MASTER_ADDRESS=127.0.0.1:50089 ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 KV_ROLE=kv_both KV_BACKEND=mooncake ./10_start_server_kvpool_custom.sh "$RUN_DIR"`
+- 失败原因：`10_start_server_kvpool_custom.sh` 中生成 JSON 的 Python 子进程读取 `LOOKUP_RPC_PORT` 时出现 `KeyError: 'LOOKUP_RPC_PORT'`。
+- 根因：脚本中 `LOOKUP_RPC_PORT`、`KV_BACKEND`、`KV_ROLE` 等是 shell 本地变量，没有 export，Python 子进程无法通过 `os.environ` 读取。
+- 处理：已将这些变量改为 `export`，并执行 `bash -n 10_start_server_kvpool_custom.sh` 通过。
+- 清理：执行 `./07_stop_run.sh "$RUN_DIR"`，pid 文件里的 Mooncake master 已不在运行，没有残留服务进程。
+
+#### KV Pool custom 第二次启动失败
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_060014_env`
+- Mooncake master 启动命令：`MOONCAKE_MASTER_PORT=50089 ./02_start_mooncake_master.sh "$RUN_DIR"`
+- KV Pool 启动命令：`MOONCAKE_MASTER_ADDRESS=127.0.0.1:50089 ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 KV_ROLE=kv_both KV_BACKEND=mooncake ./10_start_server_kvpool_custom.sh "$RUN_DIR"`
+- 健康检查结果：等待 10 分钟未返回 200。
+- 关键日志：`mooncake_master.log` 显示 `Failed to start master admin server on port 9003`，`Address already in use`，随后 task cleanup thread stopped。
+- KV Pool 服务日志根因：`RuntimeError: Initialize mooncake failed.`，API server 报 `Engine core initialization failed`。
+- 判断：Mooncake master 的 RPC 端口改到了 `50089`，但 metrics/admin 端口仍默认使用 `9003`，被历史残留的 50088 master 占用，导致新 master 启动失败。
+- 处理：执行 `./07_stop_run.sh "$RUN_DIR"`，确认该 run 没有残留 `mooncake_master` 或 `server_kvpool_custom` 进程。
+- 下一步：复用历史残留且仍在运行的 `127.0.0.1:50088` Mooncake master，不再为本轮启动新 master。
+
+#### KV Pool W8A8 stream：复用 50088 Mooncake master 后通过
+
+- run dir：`/home/lizhongyang/refactor/llm-project/transfer_data/refactor/kvpool/test_script/runs/20260803_061258_env`
+- 启动命令：`MOONCAKE_MASTER_ADDRESS=127.0.0.1:50088 ASCEND_RT_VISIBLE_DEVICES=8 MODEL_PATH=/mnt/weight/Qwen3-8B-W8A8 PORT=8100 KV_ROLE=kv_both KV_BACKEND=mooncake ./10_start_server_kvpool_custom.sh "$RUN_DIR"`
+- 服务 PID：`4187680`
+- 健康检查：`/v1/models` 在第 33 次轮询返回 200。
+- 实际 KV transfer 配置文件：`kv_transfer_config.json`
+- 实际启动参数记录：`kvpool_custom_env.txt`
+- 请求命令：`python3 09_send_stream_requests.py --run-dir "$RUN_DIR" --case kvpool_qwen3_8b_w8a8_stream --model /mnt/weight/Qwen3-8B-W8A8 --port 8100 --repeat 4`
+- 结果：4 次请求均返回 200，均有 usage，均有 TTFT。
+- 单次结果：
+  - 第 1 次：`ttft_sec=0.1890`，`total_sec=2.5146`，`prompt_tokens=1143`，`completion_tokens=64`，`total_tokens=1207`
+  - 第 2 次：`ttft_sec=0.0921`，`total_sec=2.4334`，usage 同上
+  - 第 3 次：`ttft_sec=0.0881`，`total_sec=2.4481`，usage 同上
+  - 第 4 次：`ttft_sec=0.0904`，`total_sec=2.4524`，usage 同上
+- `stream_summary.json` 汇总：
+  - `request_count=4`
+  - `success_count=4`
+  - `failure_count=0`
+  - `ttft_avg_sec=0.11492577742319554`
+  - `ttft_p50_sec=0.09213291993364692`
+  - `total_avg_sec=2.4621055024908856`
+  - `same_text_as_first=[true, true, true, true]`
+- 日志证据：
+  - `kv_transfer_config` 中 `kv_connector='AscendStoreConnector'`、`kv_role='kv_both'`、`kv_connector_extra_config={'lookup_rpc_port': '1', 'backend': 'mooncake'}`、`kv_load_failure_policy='recompute'`
+  - `Creating v1 connector with name: AscendStoreConnector`
+  - `kvpool hit tokens: 1024, need to load: 1024`
+  - `KV pool load spec created`
+  - `External prefix cache hit rate: 67.2%`
+- 停止：`./07_stop_run.sh "$RUN_DIR"` 已停止 `server_kvpool_custom: 4187680`。
+- 收尾检查：没有 vLLM server 残留，NPU 无运行进程；系统上仍保留进入本轮前就存在的历史 `mooncake_master --port 50088`。
+
+### W8A8 stream 小结
+
+- baseline run：`runs/20260803_034125_env`
+- KV Pool run：`runs/20260803_061258_env`
+- 两组流式请求均 `4/4` 成功。
+- 两组 usage 完全一致：`prompt_tokens=1143`、`completion_tokens=64`、`total_tokens=1207`。
+- 两组同组内输出完全一致。
+- baseline 平均 TTFT：`0.13312208757270128s`，平均总耗时：`2.5689232900040224s`。
+- KV Pool 平均 TTFT：`0.11492577742319554s`，平均总耗时：`2.4621055024908856s`。
+- 这轮数据证明 W8A8 + KV Pool mixed 流式路径可用，并补上真实 TTFT 记录；样本数只有 4，不作为严格性能结论。
+
