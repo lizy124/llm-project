@@ -73,7 +73,7 @@ Qwen3-VL 的 `_get_prompt_updates()` 就是典型例子：
 - image：把 `hf_processor.image_token` 替换成 `image_token_id * num_tokens`
 - video：把 `<|vision_start|><|video_pad|><|vision_end|>` 替换成按帧、时间戳、vision 边界 token 组织出来的序列
 
-位置：`qwen3_vl.py:1353` 到 `qwen3_vl.py:1433`
+位置：`qwen3_vl.py:1409` 到 `qwen3_vl.py:1496`
 
 ### 2.2 feature 级 placeholder tokens
 
@@ -298,7 +298,7 @@ Make sure _call_hf_processor and _get_mm_fields_config are consistent...
 
 processor 最终返回的是 `MultiModalInput`。
 
-定义位置：`engine.py:126`
+定义位置：`engine.py:135`
 
 关键字段：
 
@@ -324,7 +324,7 @@ mm_placeholders：每个 modality 下每个 item 的 PlaceholderRange。
 Mapping[str, Sequence[PlaceholderRange]]
 ```
 
-位置：`engine.py:120`
+位置：`engine.py:129`
 
 所以数据结构大致是：
 
@@ -457,7 +457,7 @@ num_tokens = int(grid_thw.prod()) // merge_length
 return [hf_processor.image_token_id] * num_tokens
 ```
 
-位置：`qwen3_vl.py:1370` 到 `qwen3_vl.py:1376`
+位置：`qwen3_vl.py:1426` 到 `qwen3_vl.py:1432`
 
 这里 `num_tokens` 不是写死的，而是由 image processor 输出的 grid shape 决定。
 
@@ -472,7 +472,9 @@ vision_start / vision_end token
 video_token_id 是否是实际 embedding 位置
 ```
 
-位置：`qwen3_vl.py:1378` 到 `qwen3_vl.py:1418`
+普通 video 路径用 `PromptUpdateDetails.select_token_id(..., video_token_id)` 只选择 video token 位置；启用 video pruning 时会先用 `from_seq()` 保留完整 span，再由模型 embedding 阶段细化实际替换位置。
+
+位置：`qwen3_vl.py:1434` 到 `qwen3_vl.py:1559`
 
 这解释了两个常见现象：
 
@@ -518,7 +520,7 @@ if num_embeds > self.mm_encoder_cache_size:
 
 ModelRunner 在 `_gather_mm_embeddings()` 中按本轮执行窗口裁剪 placeholder span。
 
-位置：`gpu_model_runner.py:3100` 到 `gpu_model_runner.py:3196`
+位置：`gpu_model_runner.py:3165` 到 `gpu_model_runner.py:3273`
 
 核心变量：
 
@@ -529,7 +531,7 @@ start_idx = max(num_computed_tokens - start_pos, 0)
 end_idx = min(num_computed_tokens - start_pos + num_scheduled_tokens, num_encoder_tokens)
 ```
 
-位置：`gpu_model_runner.py:3131` 到 `gpu_model_runner.py:3139`
+位置：`gpu_model_runner.py:3200` 到 `gpu_model_runner.py:3207`
 
 如果 `is_embed` 存在，还会把 token span 内的局部范围映射成 encoder output 的局部范围：
 
@@ -539,7 +541,7 @@ curr_embeds_start, curr_embeds_end = pos_info.get_embeds_indices_in_range(
 )
 ```
 
-位置：`gpu_model_runner.py:3141` 到 `gpu_model_runner.py:3143`
+位置：`gpu_model_runner.py:3209` 到 `gpu_model_runner.py:3211`
 
 这一步解决的是 chunked prefill 场景：
 
@@ -557,7 +559,7 @@ ModelRunner 只能取本 step 需要的那段 encoder embedding。
 
 `_execute_mm_encoder()` 会从本轮 `scheduled_encoder_inputs` 中取出需要编码的 media item。
 
-位置：`gpu_model_runner.py:2889` 到 `gpu_model_runner.py:3098`
+位置：`gpu_model_runner.py:2956` 到 `gpu_model_runner.py:3163`
 
 它先调用 `_batch_mm_inputs_from_scheduler()`：
 
@@ -569,7 +571,7 @@ scheduled_encoder_inputs
   → mm_lora_refs
 ```
 
-位置：`gpu_model_runner.py:2846` 到 `gpu_model_runner.py:2887`
+位置：`gpu_model_runner.py:2913` 到 `gpu_model_runner.py:2954`
 
 然后按 modality / batch 组织调用：
 
@@ -577,7 +579,7 @@ scheduled_encoder_inputs
 model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3054` 和 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:3119` 和 `gpu_model_runner.py:3150`
 
 输出会写入：
 
@@ -585,7 +587,7 @@ model.embed_multimodal(**mm_kwargs_batch)
 self.encoder_cache[mm_hash] = output
 ```
 
-位置：`gpu_model_runner.py:3092` 到 `gpu_model_runner.py:3096`
+位置：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
 ### 9.2 再按本轮 token window gather
 
@@ -608,7 +610,7 @@ get_mm_features_in_window(
 )
 ```
 
-位置：`gpu_model_runner.py:3123` 到 `gpu_model_runner.py:3128`
+位置：`gpu_model_runner.py:3187` 到 `gpu_model_runner.py:3196`
 
 只处理本轮 token window 覆盖到的 feature。
 
@@ -626,7 +628,7 @@ is_mm_embed: torch.Tensor[bool]
 is_mm_embed = torch.zeros(total_num_scheduled_tokens, dtype=torch.bool, device="cpu")
 ```
 
-位置：`gpu_model_runner.py:3105` 到 `gpu_model_runner.py:3110`
+位置：`gpu_model_runner.py:3172` 到 `gpu_model_runner.py:3178`
 
 当某个 placeholder span 落在本轮执行窗口内时，会把对应位置标成 True：
 
@@ -640,7 +642,7 @@ is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] = True
 is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] |= is_embed
 ```
 
-位置：`gpu_model_runner.py:3159` 到 `gpu_model_runner.py:3169`
+位置：`gpu_model_runner.py:3236` 到 `gpu_model_runner.py:3245`
 
 这就是 placeholder range 到实际 embedding scatter mask 的转换。
 
@@ -656,7 +658,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 )
 ```
 
-位置：`gpu_model_runner.py:3484` 到 `gpu_model_runner.py:3488`
+位置：`gpu_model_runner.py:3538` 到 `gpu_model_runner.py:3542`
 
 `SupportsMultiModal.embed_input_ids()` 的语义是：
 
@@ -665,7 +667,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 再把 multimodal_embeddings scatter 到 is_multimodal=True 的位置。
 ```
 
-位置：`interfaces.py:374` 到 `interfaces.py:409`
+位置：`interfaces.py:380` 到 `interfaces.py:415`
 
 真正覆盖位置的函数是 `_merge_multimodal_embeddings()`：
 
@@ -673,7 +675,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 inputs_embeds[is_multimodal] = mm_embeds_flat.to(dtype=input_dtype)
 ```
 
-位置：`utils.py:479` 到 `utils.py:515`
+位置：`utils.py:526` 到 `utils.py:562`
 
 如果实际 embedding 数和 mask 中 True 的数量不一致，会抛出：
 
@@ -681,7 +683,7 @@ inputs_embeds[is_multimodal] = mm_embeds_flat.to(dtype=input_dtype)
 Attempted to assign ... multimodal tokens to ... placeholders
 ```
 
-位置：`utils.py:501` 到 `utils.py:511`
+位置：`utils.py:545` 到 `utils.py:558`
 
 这个错误通常表示：
 
@@ -704,7 +706,7 @@ PlaceholderRange → _gather_mm_embeddings() → is_mm_embed → _merge_multimod
 
 `mm_req_doc_ranges` 是 attention metadata 的补充信息，主要用于 mm prefix LM 类模型中，让 attention backend 知道某些视觉 document span 的双向范围。
 
-构造位置：`gpu_model_runner.py:2306` 到 `gpu_model_runner.py:2347`
+构造位置：`gpu_model_runner.py:2352` 到 `gpu_model_runner.py:2410`
 
 逻辑是：
 
@@ -748,7 +750,7 @@ mm_hashes["prompt_embeds"]
 mm_placeholders["prompt_embeds"]
 ```
 
-位置：`hf.py:1193` 到 `hf.py:1245`
+位置：`hf.py:1278` 到 `hf.py:1329`
 
 对应的 placeholder 是：
 
@@ -756,7 +758,7 @@ mm_placeholders["prompt_embeds"]
 PlaceholderRange(offset=start, length=length, is_embed=None)
 ```
 
-位置：`hf.py:1231` 到 `hf.py:1235`
+位置：`hf.py:1315` 到 `hf.py:1319`
 
 Worker 侧对 `prompt_embeds` 有特殊处理：它不需要再跑多模态 encoder，而是在 `_execute_mm_encoder()` 里直接把 tensor 放进 encoder cache：
 
@@ -764,7 +766,7 @@ Worker 侧对 `prompt_embeds` 有特殊处理：它不需要再跑多模态 enco
 self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 ```
 
-位置：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2924`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
 之后 `_gather_mm_embeddings()` 和 `_merge_multimodal_embeddings()` 完全复用普通多模态路径。
 
@@ -819,7 +821,7 @@ ModelRunner 编码后用这个 identifier 写入 / 读取 encoder cache。
 位置：
 
 - 生成 `MultiModalFeatureSpec.identifier`：`input_processor.py:361` 到 `input_processor.py:366`
-- 从 encoder cache 读取：`gpu_model_runner.py:3149` 到 `gpu_model_runner.py:3157`
+- 从 encoder cache 读取：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3228`
 
 所以多个 image 即使 token 形式相同，也会通过 item 顺序、offset 和 hash / identifier 区分。
 
@@ -856,7 +858,7 @@ inputs_embeds：真正喂给多模态 LLM 的 embedding 序列；
 positions：仍按统一 token 序列准备。
 ```
 
-位置：`gpu_model_runner.py:3426` 到 `gpu_model_runner.py:3499`
+位置：`gpu_model_runner.py:3468` 到 `gpu_model_runner.py:3553`
 
 ---
 
@@ -893,7 +895,7 @@ model.embed_multimodal() 输出 shape；
 _get_mm_fields_config() 是否和 HF processor 输出一致。
 ```
 
-源码位置：`utils.py:501` 到 `utils.py:511`
+源码位置：`utils.py:545` 到 `utils.py:558`
 
 ### 14.3 max_model_len 不够
 

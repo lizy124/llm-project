@@ -2,15 +2,15 @@
 
 源码位置：
 
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\interfaces.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\utils.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\registry.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\multimodal\registry.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\multimodal\processing\processor.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\config\model.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\v1\worker\gpu_model_runner.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\llava.py`
-- `D:\lzy\project\kv_pool\code\vllm\vllm\model_executor\models\qwen2_vl.py`
+- `vllm/vllm/model_executor/models/interfaces.py`
+- `vllm/vllm/model_executor/models/utils.py`
+- `vllm/vllm/model_executor/models/registry.py`
+- `vllm/vllm/multimodal/registry.py`
+- `vllm/vllm/multimodal/processing/processor.py`
+- `vllm/vllm/config/model.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/model_executor/models/llava.py`
+- `vllm/vllm/model_executor/models/qwen2_vl.py`
 
 本问题关注：vLLM 如何识别一个模型是多模态模型；多模态模型类需要提供哪些接口；processor 如何把原始 image / audio / video / prompt_embeds 转成模型 kwargs 和 placeholder；`GPUModelRunner` 如何调用模型侧 encoder、缓存 multimodal embeddings、把 embeddings 合并回文本 token 位置，并继续 decoder forward。
 
@@ -110,7 +110,7 @@ encoder-decoder 模型：
   不走 prompt replacement 合并路径。
 ```
 
-对应源码：`gpu_model_runner.py:3426` 到 `gpu_model_runner.py:3568`。
+对应源码：`gpu_model_runner.py:3476` 到 `gpu_model_runner.py:3621`。
 
 ---
 
@@ -118,7 +118,7 @@ encoder-decoder 模型：
 
 ### 3.1 模型类层：`SupportsMultiModal`
 
-接口定义在 `interfaces.py:94` 开始：
+接口定义在 `interfaces.py:101` 开始：
 
 ```python
 @runtime_checkable
@@ -126,7 +126,7 @@ class SupportsMultiModal(Protocol):
     supports_multimodal: ClassVar[Literal[True]] = True
 ```
 
-位置：`interfaces.py:94` 到 `interfaces.py:105`
+位置：`interfaces.py:101` 到 `interfaces.py:110`
 
 这意味着模型类只要继承 `SupportsMultiModal`，`supports_multimodal(model_cls)` 就会返回 True。
 
@@ -137,7 +137,7 @@ def supports_multimodal(model: type[object] | object, ...) -> ...:
     return getattr(model, "supports_multimodal", False)
 ```
 
-位置：`interfaces.py:451` 到 `interfaces.py:462`
+位置：`interfaces.py:459` 到 `interfaces.py:469`
 
 同时还有几个相关 capability flag：
 
@@ -145,7 +145,7 @@ def supports_multimodal(model: type[object] | object, ...) -> ...:
 - `supports_encoder_tp_data`：是否支持 `--mm-encoder-tp-mode data`。
 - `requires_raw_input_tokens`：即使走多模态 `inputs_embeds`，模型 forward 仍需要原始 `input_ids`。
 
-位置：`interfaces.py:107` 到 `interfaces.py:123`，辅助判断在 `interfaces.py:465` 到 `interfaces.py:474`。
+位置：`interfaces.py:113` 到 `interfaces.py:128`，辅助判断在 `interfaces.py:472` 到 `interfaces.py:481`。
 
 ### 3.2 registry 层：`_ModelInfo.supports_multimodal`
 
@@ -158,7 +158,7 @@ requires_raw_input_tokens=requires_raw_input_tokens(model)
 supports_multimodal_encoder_tp_data=supports_multimodal_encoder_tp_data(model)
 ```
 
-位置：`registry.py:747` 到 `registry.py:796`
+位置：`registry.py:778` 到 `registry.py:795`
 
 对外判断多模态模型的方法是：
 
@@ -168,7 +168,7 @@ def is_multimodal_model(...):
     return model_cls.supports_multimodal
 ```
 
-位置：`registry.py:1296` 到 `registry.py:1302`
+位置：`registry.py:1323` 到 `registry.py:1329`
 
 而模型类的解析链路是：
 
@@ -188,7 +188,7 @@ HF config.architectures
   → _try_load_model_cls(...)
 ```
 
-位置：`registry.py:1174` 到 `registry.py:1278`。
+位置：`registry.py:1201` 到 `registry.py:1305`。
 
 ### 3.3 `ModelConfig` 层：只有支持多模态才初始化 `MultiModalConfig`
 
@@ -200,7 +200,7 @@ if self._model_info.supports_multimodal:
     self.multimodal_config = MultiModalConfig(**mm_config_kwargs)
 ```
 
-位置：`model.py:663` 到 `model.py:701`
+位置：`model.py:683` 到 `model.py:721`
 
 `ModelConfig.is_multimodal_model` 不是再次 inspect 模型类，而是看 `multimodal_config` 是否存在：
 
@@ -210,7 +210,7 @@ def is_multimodal_model(self) -> bool:
     return self.multimodal_config is not None
 ```
 
-位置：`model.py:1562` 到 `model.py:1564`
+位置：`model.py:1615` 到 `model.py:1617`
 
 所以这里有两个层次：
 
@@ -270,7 +270,7 @@ def get_placeholder_str(cls, modality: str, i: int) -> str | None:
     ...
 ```
 
-位置：`interfaces.py:147` 到 `interfaces.py:152`
+位置：`interfaces.py:153` 到 `interfaces.py:158`
 
 它用于告诉上层渲染 / chat utils：某种 modality 的第 i 个 item 在 prompt 中应该用什么字符串占位。
 
@@ -292,7 +292,7 @@ if modality.startswith("video"):
     return "<|vision_start|><|video_pad|><|vision_end|>"
 ```
 
-位置：`qwen2_vl.py:1279` 到 `qwen2_vl.py:1286`
+位置：`qwen2_vl.py:1263` 到 `qwen2_vl.py:1270`
 
 ### 4.2 `embed_multimodal()`：模型侧 encoder 入口
 
@@ -303,7 +303,7 @@ def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
     ...
 ```
 
-位置：`interfaces.py:154` 到 `interfaces.py:164`
+位置：`interfaces.py:160` 到 `interfaces.py:170`
 
 这是模型类最核心的多模态接口。`GPUModelRunner._execute_mm_encoder()` 最终调用的就是它：
 
@@ -311,7 +311,7 @@ def embed_multimodal(self, **kwargs: object) -> MultiModalEmbeddings:
 batch_outputs = model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3082` 到 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:3147` 到 `gpu_model_runner.py:3150`
 
 返回类型是 `MultiModalEmbeddings`：
 
@@ -327,7 +327,7 @@ MultiModalEmbeddings = list[Tensor] | Tensor | tuple[Tensor, ...]
 3. 返回顺序必须和媒体 item 在 prompt 中出现的顺序一致。
 ```
 
-位置：`interfaces.py:64` 到 `interfaces.py:71`，顺序约束见 `interfaces.py:159` 到 `interfaces.py:163`。
+位置：`interfaces.py:63` 到 `interfaces.py:70`，顺序约束见 `interfaces.py:165` 到 `interfaces.py:169`。
 
 ### 4.3 `embed_input_ids()`：文本 embedding 和多模态 embedding 的统一入口
 
@@ -353,7 +353,7 @@ def embed_input_ids(
     return _merge_multimodal_embeddings(...)
 ```
 
-位置：`interfaces.py:343` 到 `interfaces.py:409`
+位置：`interfaces.py:348` 到 `interfaces.py:413`
 
 它做两件事：
 
@@ -372,13 +372,13 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 )
 ```
 
-位置：`gpu_model_runner.py:3484` 到 `gpu_model_runner.py:3488`
+位置：`gpu_model_runner.py:3538` 到 `gpu_model_runner.py:3542`
 
 注意：`embed_input_ids()` 的默认实现依赖 `get_language_model()` 能找到底层语言模型。
 
 ### 4.4 `get_language_model()`：找到真正的文本 decoder
 
-默认实现位置：`interfaces.py:177` 到 `interfaces.py:213`。
+默认实现位置：`interfaces.py:183` 到 `interfaces.py:218`。
 
 它优先使用 `_mark_language_model()` 记录的 `_language_model_names`，找不到时 fallback 到子模块里第一个有 `embed_input_ids` 的模块：
 
@@ -405,7 +405,7 @@ with self._mark_language_model(vllm_config):
 
 位置：`llava.py:578` 到 `llava.py:583`
 
-Qwen2-VL 也是同样模式：`qwen2_vl.py:1306` 到 `qwen2_vl.py:1311`。
+Qwen2-VL 也是同样模式：`qwen2_vl.py:1289` 到 `qwen2_vl.py:1294`。
 
 ### 4.5 `_mark_tower_model()` / `_mark_language_model()`：让运行时知道哪些模块是 tower，哪些是 LLM
 
@@ -417,7 +417,7 @@ _mark_tower_model(...)
 _mark_composite_model(...)
 ```
 
-位置：`interfaces.py:215` 到 `interfaces.py:323`
+位置：`interfaces.py:221` 到 `interfaces.py:328`
 
 它们的作用不是 forward，而是初始化和运行时裁剪：
 
@@ -457,7 +457,7 @@ _mark_language_model(vllm_config)
   → language_model
 ```
 
-位置：`qwen2_vl.py:1298` 到 `qwen2_vl.py:1311`
+位置：`qwen2_vl.py:1281` 到 `qwen2_vl.py:1294`
 
 ### 4.6 `configure_mm_token_handling()`：处理 OOV 多模态 token
 
@@ -468,7 +468,7 @@ def configure_mm_token_handling(self, vocab_size: int, mm_token_ids: list[int]):
     self._has_oov_mm_tokens = any(tok_id >= vocab_size for tok_id in mm_token_ids)
 ```
 
-位置：`interfaces.py:166` 到 `interfaces.py:175`
+位置：`interfaces.py:172` 到 `interfaces.py:181`
 
 如果 placeholder token id 超出文本 vocab，`embed_input_ids()` 不能直接把这些 id 喂给 embedding table。默认实现会在 `_embed_text_input_ids()` 中把多模态位置先 mask 成 0，再取文本 embedding：
 
@@ -477,7 +477,7 @@ in_vocab_ids = input_ids.masked_fill(is_multimodal, 0)
 return embed_input_ids(in_vocab_ids)
 ```
 
-位置：`interfaces.py:355` 到 `interfaces.py:372`
+位置：`interfaces.py:360` 到 `interfaces.py:378`
 
 随后多模态 embedding 会覆盖这些位置，所以 placeholder id 本身不会影响最终输入。
 
@@ -504,7 +504,7 @@ load_weights(weights)
 
 LLaVA 的 forward 说明了关键点：prompt 中已经为图像 embedding 插入了足够的 placeholder token，因此 `positions` 和 attention metadata 与最终 embedding 序列长度一致。
 
-位置：`llava.py:668` 到 `llava.py:720`
+位置：`llava.py:666` 到 `llava.py:718`
 
 它实际 forward 给语言模型：
 
@@ -522,7 +522,7 @@ logits 仍然委托给语言模型：
 return self.language_model.compute_logits(hidden_states)
 ```
 
-位置：`llava.py:722` 到 `llava.py:726`
+位置：`llava.py:720` 到 `llava.py:724`
 
 ### 4.8 `get_mm_mapping()` / token count 接口：LoRA 和模块映射需要
 
@@ -544,7 +544,7 @@ self.model.get_mm_mapping()
 self.model.get_num_mm_connector_tokens(...)
 ```
 
-位置：`gpu_model_runner.py:2941` 到 `gpu_model_runner.py:3008`
+位置：`gpu_model_runner.py:3008` 到 `gpu_model_runner.py:3075`
 
 LLaVA 示例：
 
@@ -693,7 +693,7 @@ limit-mm-per-prompt 配置验证
 def _execute_mm_encoder(self, scheduler_output: SchedulerOutput) -> list[torch.Tensor]:
 ```
 
-位置：`gpu_model_runner.py:2889` 到 `gpu_model_runner.py:3098`
+位置：`gpu_model_runner.py:2956` 到 `gpu_model_runner.py:3163`
 
 它先从 scheduler output / request state 收集：
 
@@ -703,7 +703,7 @@ mm_kwargs
 mm_lora_refs
 ```
 
-位置：`gpu_model_runner.py:2892` 到 `gpu_model_runner.py:2897`
+位置：`gpu_model_runner.py:2959` 到 `gpu_model_runner.py:2964`
 
 特殊情况：`prompt_embeds` 是 passthrough modality，已经是模型 embedding 空间的 tensor，不需要 encoder：
 
@@ -711,7 +711,7 @@ mm_lora_refs
 self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 ```
 
-位置：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2924`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
 普通 image / audio / video 会经过分组 batching：
 
@@ -720,7 +720,7 @@ for modality, num_items, mm_kwargs_batch in group_and_batch_mm_kwargs(...):
     batch_outputs = model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3013` 到 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:2999` 到 `gpu_model_runner.py:3150`
 
 执行后会检查输出 item 数量并写入 encoder cache：
 
@@ -732,7 +732,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
     self.encoder_cache[mm_hash] = output
 ```
 
-位置：`gpu_model_runner.py:3087` 到 `gpu_model_runner.py:3096`
+位置：`gpu_model_runner.py:3152` 到 `gpu_model_runner.py:3161`
 
 ### 6.2 为什么要分组 batching
 
@@ -743,7 +743,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
 这样能保持 item 顺序，同时尽量对同一 modality 做 batching。
 ```
 
-位置：`gpu_model_runner.py:2932` 到 `gpu_model_runner.py:2938`
+位置：`gpu_model_runner.py:2999` 到 `gpu_model_runner.py:3005`
 
 原因是 `embed_multimodal()` 的返回顺序必须和 prompt 中媒体出现顺序一致；如果任意重排 encoder batch，就必须额外重排 encoder outputs。
 
@@ -755,7 +755,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
 def _gather_mm_embeddings(...) -> tuple[list[torch.Tensor], torch.Tensor]:
 ```
 
-位置：`gpu_model_runner.py:3100` 到 `gpu_model_runner.py:3196`
+位置：`gpu_model_runner.py:3165` 到 `gpu_model_runner.py:3273`
 
 它不是把整段 prompt 的所有多模态 embedding 都塞进本轮 forward，而是按当前调度窗口切片：
 
@@ -769,7 +769,7 @@ mm_feature.mm_position.length
   → encoder_output[...] 切片
 ```
 
-对应代码：`gpu_model_runner.py:3116` 到 `gpu_model_runner.py:3169`。
+对应代码：`gpu_model_runner.py:3187` 到 `gpu_model_runner.py:3246`。
 
 同时它会构造 `is_mm_embed`：
 
@@ -779,7 +779,7 @@ is_mm_embed = torch.zeros(total_num_scheduled_tokens, dtype=torch.bool, device="
 is_mm_embed[req_start_pos + start_idx : req_start_pos + end_idx] = True
 ```
 
-位置：`gpu_model_runner.py:3107` 到 `gpu_model_runner.py:3110`，以及 `gpu_model_runner.py:3159` 到 `gpu_model_runner.py:3168`
+位置：`gpu_model_runner.py:3172` 到 `gpu_model_runner.py:3178`，以及 `gpu_model_runner.py:3236` 到 `gpu_model_runner.py:3245`
 
 这个 mask 是后面 `_merge_multimodal_embeddings()` 的 scatter 位置依据。
 
@@ -800,7 +800,7 @@ if self.supports_mm_inputs and is_first_rank and not is_encoder_decoder:
     input_ids, inputs_embeds = self._prepare_mm_inputs(num_input_tokens)
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3495`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3549`
 
 `_prepare_mm_inputs()` 决定 forward 是否还传 `input_ids`：
 
@@ -813,7 +813,7 @@ else:
 inputs_embeds = self.inputs_embeds.gpu[:num_tokens]
 ```
 
-位置：`gpu_model_runner.py:3415` 到 `gpu_model_runner.py:3424`
+位置：`gpu_model_runner.py:3465` 到 `gpu_model_runner.py:3474`
 
 大多数多模态 decoder 只需要 `inputs_embeds`，所以 `input_ids=None`。少数模型声明 `requires_raw_input_tokens=True` 时，runner 会同时传 raw input ids。
 
@@ -833,7 +833,7 @@ self.model(
 
 这部分在执行文档的 `07_model_forward_and_logits.md` 中已经梳理过。这里要强调的是：多模态模型类的 `forward()` 必须能接受 `inputs_embeds`，并把它交给底层语言模型。
 
-LLaVA 示例见 `llava.py:668` 到 `llava.py:720`。
+LLaVA 示例见 `llava.py:666` 到 `llava.py:718`。
 
 ---
 
@@ -854,7 +854,7 @@ def _merge_multimodal_embeddings(
     return inputs_embeds
 ```
 
-位置：`models/utils.py:479` 到 `models/utils.py:515`
+位置：`models/utils.py:526` 到 `models/utils.py:562`
 
 它的语义是：
 
@@ -875,7 +875,7 @@ KV cache、position、attention metadata 都按插入后的 token 长度计算�
 Attempted to assign ... multimodal tokens to ... placeholders
 ```
 
-位置：`models/utils.py:498` 到 `models/utils.py:513`
+位置：`models/utils.py:545` 到 `models/utils.py:558`
 
 这类错误通常说明：
 
@@ -912,7 +912,7 @@ else:
     mm_embeds_item = encoder_output[start_idx:end_idx]
 ```
 
-位置：`gpu_model_runner.py:3153` 到 `gpu_model_runner.py:3158`
+位置：`gpu_model_runner.py:3230` 到 `gpu_model_runner.py:3235`
 
 然后对 `is_mm_embed` 做 OR：
 
@@ -920,7 +920,7 @@ else:
 is_mm_embed[...] |= is_embed
 ```
 
-位置：`gpu_model_runner.py:3161` 到 `gpu_model_runner.py:3168`
+位置：`gpu_model_runner.py:3236` 到 `gpu_model_runner.py:3245`
 
 这使得像 Qwen 系列那样包含 `<|vision_start|>` / `<|vision_end|>` 的结构可以只替换中间真正的视觉 pad token，而不是覆盖所有特殊 token。
 
@@ -1046,7 +1046,7 @@ if modality.startswith("video"):
     return "<|vision_start|><|video_pad|><|vision_end|>"
 ```
 
-位置：`qwen2_vl.py:1279` 到 `qwen2_vl.py:1286`
+位置：`qwen2_vl.py:1263` 到 `qwen2_vl.py:1270`
 
 ### 9.2 支持 encoder tensor parallel data mode
 
@@ -1056,11 +1056,11 @@ if modality.startswith("video"):
 supports_encoder_tp_data = True
 ```
 
-位置：`qwen2_vl.py:1200`
+位置：`qwen2_vl.py:1183`
 
 `ModelConfig` 会在用户配置 `mm_encoder_tp_mode="data"` 时检查这个 flag。如果模型不支持，会 fallback 到 `weights`：
 
-位置：`model.py:664` 到 `model.py:674`
+位置：`model.py:683` 到 `model.py:692`
 
 ### 9.3 image / video 输入解析
 
@@ -1071,7 +1071,7 @@ pixel_values + image_grid_thw
 image_embeds + image_grid_thw
 ```
 
-位置：`qwen2_vl.py:1317` 到 `qwen2_vl.py:1340`
+位置：`qwen2_vl.py:1300` 到 `qwen2_vl.py:1323`
 
 video 输入支持：
 
@@ -1080,7 +1080,7 @@ pixel_values_videos + video_grid_thw
 video_embeds + video_grid_thw
 ```
 
-位置：`qwen2_vl.py:1341` 到 `qwen2_vl.py:1363`
+位置：`qwen2_vl.py:1324` 到 `qwen2_vl.py:1346`
 
 `grid_thw` 决定每个 item 的输出 token 数。处理后会按每个 image / video item split：
 
@@ -1089,9 +1089,9 @@ sizes = (grid_thw.prod(-1) // merge_size // merge_size).tolist()
 return image_embeds.split(sizes)
 ```
 
-位置：`qwen2_vl.py:1383` 到 `qwen2_vl.py:1386`
+位置：`qwen2_vl.py:1366` 到 `qwen2_vl.py:1369`
 
-video 同理见 `qwen2_vl.py:1408` 到 `qwen2_vl.py:1411`。
+video 同理见 `qwen2_vl.py:1391` 到 `qwen2_vl.py:1394`。
 
 ### 9.4 `embed_multimodal()` 保持 modality 顺序
 
@@ -1103,7 +1103,7 @@ for input_key in kwargs:
     if input_key in ("pixel_values_videos", "video_embeds") ...
 ```
 
-位置：`qwen2_vl.py:1413` 到 `qwen2_vl.py:1430`
+位置：`qwen2_vl.py:1396` 到 `qwen2_vl.py:1413`
 
 然后按 `modalities` 的 key 顺序拼接 outputs：
 
@@ -1115,7 +1115,7 @@ for modality in modalities:
         multimodal_embeddings += tuple(video_embeddings)
 ```
 
-位置：`qwen2_vl.py:1432` 到 `qwen2_vl.py:1453`
+位置：`qwen2_vl.py:1415` 到 `qwen2_vl.py:1436`
 
 这是为了满足 `SupportsMultiModal.embed_multimodal()` 的顺序约束：输出 embedding 顺序必须和 prompt 中对应媒体 item 出现顺序一致。
 
@@ -1131,7 +1131,7 @@ iter_mm_grid_thw(...)
   → mrope_position_delta
 ```
 
-位置：`qwen2_vl.py:1202` 到 `qwen2_vl.py:1277`
+位置：`qwen2_vl.py:1185` 到 `qwen2_vl.py:1261`
 
 这解释了为什么多模态接口不只关心 embedding：有些模型还需要 processor / feature spec 提供 grid 信息，以便 runner 或模型计算正确的 position ids。
 
@@ -1149,7 +1149,7 @@ select_encoder_cudagraph_items(mm_kwargs, indices)
 prepare_encoder_cudagraph_capture_inputs(...)
 ```
 
-位置：`qwen2_vl.py:1455` 开始。
+位置：`qwen2_vl.py:1440` 开始。
 
 这些不是所有多模态模型必需，但当模型希望 encoder 也被 cudagraph 捕获时，需要提供这些能力。
 
@@ -1166,7 +1166,7 @@ else:
     batch_outputs = model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3073` 到 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:3139` 到 `gpu_model_runner.py:3150`
 
 ---
 

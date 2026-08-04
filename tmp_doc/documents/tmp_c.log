@@ -82,6 +82,11 @@
 - 只修正文档本身的问题，不顺手修改无关专题或无关代码。
 - 进度记录只写本次实际处理过的文件；不要为了填满专题清单而推进大批量复审。
 
+本次复审记录：
+- llm-project\tmp_doc\documents\question\multimodal\05_feature_spec_and_cache.md：已按当前源码轻量复核，修正 request/output/scheduler/worker_base/gpu_model_runner 行号漂移，并更新 _gather_mm_embeddings() encoder cache miss 的现行行为描述。
+- llm-project\tmp_doc\documents\question\multimodal\07_encoder_cache_lifecycle.md：已按当前源码轻量复核，更新 scheduler / worker / reset / EC connector 相关行号，并补充 EAGLE look-ahead 下 encoder cache miss 与释放条件的描述。
+- llm-project\tmp_doc\documents\question\multimodal\09_multimodal_model_interfaces.md：已按当前源码轻量复核，修正顶部源码路径、interfaces/registry/model_config/utils/gpu_model_runner 以及 LLaVA/Qwen2-VL 代表模型行号漂移。
+
 复审记录后任务清单：
 - llm-project\tmp_doc\documents\question\parallelism\README.md，否，是
 - llm-project\tmp_doc\documents\question\parallelism\parallelism_overview.md，否，是
@@ -169,12 +174,12 @@
 - llm-project\tmp_doc\documents\question\multimodal\01_multimodal_role.md，否，是
 - llm-project\tmp_doc\documents\question\multimodal\02_multimodal_request_entry.md，否，是
 - llm-project\tmp_doc\documents\question\multimodal\03_parser_processor_mapper.md，否，是
-- llm-project\tmp_doc\documents\question\multimodal\04_placeholders_and_prompt_alignment.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\05_feature_spec_and_cache.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\06_encoder_budget_and_scheduler.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\07_encoder_cache_lifecycle.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\08_model_runner_mm_encoder_flow.md，否，否
-- llm-project\tmp_doc\documents\question\multimodal\09_multimodal_model_interfaces.md，否，否
+- llm-project\tmp_doc\documents\question\multimodal\04_placeholders_and_prompt_alignment.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\05_feature_spec_and_cache.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\06_encoder_budget_and_scheduler.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\07_encoder_cache_lifecycle.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\08_model_runner_mm_encoder_flow.md，否，是
+- llm-project\tmp_doc\documents\question\multimodal\09_multimodal_model_interfaces.md，否，是
 - llm-project\tmp_doc\documents\question\multimodal\10_multimodal_runtime_interactions.md，否，否
 - llm-project\tmp_doc\documents\question\multimodal\multimodel_overview.md，否，否
 - llm-project\tmp_doc\documents\question\lora_and_adapters\README.md，否，否

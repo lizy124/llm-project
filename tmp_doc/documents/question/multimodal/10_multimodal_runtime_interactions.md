@@ -118,7 +118,7 @@ forward 后的 logits、pooling、sampling、stop、detokenize、RequestOutput �
 
 然后按 placeholder 位置排序，构造 `MultiModalFeatureSpec`。
 
-源码位置：`code/vllm/vllm/v1/engine/input_processor.py:332`
+源码位置：`code/vllm/vllm/v1/engine/input_processor.py:333`
 
 结构含义：
 
@@ -131,7 +131,7 @@ MultiModalFeatureSpec
   mm_hash     ：processor cache 的原始 hash；不带 LoRA 前缀
 ```
 
-对应定义：`code/vllm/vllm/multimodal/inputs.py:301`
+对应定义：`code/vllm/vllm/multimodal/inputs.py:302`
 
 一句话：
 
@@ -143,7 +143,7 @@ MultiModalFeatureSpec
 
 `Request` 初始化时保存 `mm_features`。
 
-源码位置：`code/vllm/vllm/v1/request.py:156`
+源码位置：`code/vllm/vllm/v1/request.py:171`
 
 它提供三个和后续调度强相关的属性：
 
@@ -153,7 +153,7 @@ has_encoder_inputs = num_encoder_inputs > 0
 get_num_encoder_embeds(input_id) = mm_features[input_id].mm_position.get_num_embeds()
 ```
 
-源码位置：`code/vllm/vllm/v1/request.py:258`
+源码位置：`code/vllm/vllm/v1/request.py:274`
 
 这说明 Scheduler 并不关心“这是图片还是音频”，它主要关心：
 

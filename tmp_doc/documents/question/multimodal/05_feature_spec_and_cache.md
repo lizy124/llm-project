@@ -186,7 +186,7 @@ ShmObjectStoreReceiverCache
 self.encoder_cache: dict[str, torch.Tensor] = {}
 ```
 
-位置：`gpu_model_runner.py:533` 到 `gpu_model_runner.py:534`
+位置：`gpu_model_runner.py:563` 到 `gpu_model_runner.py:564`
 
 因此 encoder cache 是两层：
 
@@ -295,7 +295,7 @@ EngineCoreRequest(..., mm_features=mm_features, ...)
 self.mm_features = mm_features or []
 ```
 
-位置：`request.py:156` 到 `request.py:158`
+位置：`request.py:171` 到 `request.py:172`
 
 然后提供几个和 encoder 调度相关的 helper：
 
@@ -312,7 +312,7 @@ def get_num_encoder_embeds(self, input_id: int) -> int:
     return self.mm_features[input_id].mm_position.get_num_embeds()
 ```
 
-位置：`request.py:258` 到 `request.py:287`
+位置：`request.py:274` 到 `request.py:302`
 
 这说明在 V1 Scheduler 视角里：
 
@@ -348,7 +348,7 @@ class NewRequestData:
     ...
 ```
 
-位置：`output.py:30` 到 `output.py:41`
+位置：`output.py:32` 到 `output.py:43`
 
 从 request 构造 `NewRequestData` 时：
 
@@ -356,7 +356,7 @@ class NewRequestData:
 mm_features=request.mm_features
 ```
 
-位置：`output.py:46` 到 `output.py:65`
+位置：`output.py:48` 到 `output.py:67`
 
 也就是说：
 
@@ -546,7 +546,7 @@ def execute_model(self, scheduler_output):
     return self.worker.execute_model(scheduler_output)
 ```
 
-位置：`worker_base.py:340` 到 `worker_base.py:345`
+位置：`worker_base.py:346` 到 `worker_base.py:351`
 
 `_apply_mm_cache()` 只处理本轮新请求：
 
@@ -555,7 +555,7 @@ for req_data in scheduler_output.scheduled_new_reqs:
     req_data.mm_features = mm_cache.get_and_update_features(req_data.mm_features)
 ```
 
-位置：`worker_base.py:330` 到 `worker_base.py:338`
+位置：`worker_base.py:336` 到 `worker_base.py:344`
 
 这点很重要：
 
@@ -719,7 +719,7 @@ Scheduler 构造 `SchedulerOutput` 时：
 free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes()
 ```
 
-位置：`scheduler.py:1057` 到 `scheduler.py:1072`
+位置：`scheduler.py:1148` 到 `scheduler.py:1157`
 
 `get_freed_mm_hashes()` 返回并清空 `freed`：
 
@@ -732,7 +732,7 @@ for mm_hash in scheduler_output.free_encoder_mm_hashes:
     self.encoder_cache.pop(mm_hash, None)
 ```
 
-位置：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+位置：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 所以删除链路是：
 
@@ -755,7 +755,7 @@ scheduled_encoder_inputs: dict[str, list[int]]
 free_encoder_mm_hashes: list[str]
 ```
 
-位置：`output.py:201` 到 `output.py:215`
+位置：`output.py:203` 到 `output.py:217`
 
 含义：
 
@@ -794,7 +794,7 @@ scheduled_encoder_inputs = {
 scheduled_encoder_inputs = scheduler_output.scheduled_encoder_inputs
 ```
 
-位置：`gpu_model_runner.py:2866`
+位置：`gpu_model_runner.py:2933`
 
 然后遍历：
 
@@ -805,7 +805,7 @@ for req_id, encoder_input_ids in scheduled_encoder_inputs.items():
         mm_feature = req_state.mm_features[mm_input_id]
 ```
 
-位置：`gpu_model_runner.py:2875` 到 `gpu_model_runner.py:2879`
+位置：`gpu_model_runner.py:2942` 到 `gpu_model_runner.py:2946`
 
 如果 `mm_feature.data is None`，会跳过：
 
@@ -814,7 +814,7 @@ if mm_feature.data is None:
     continue
 ```
 
-位置：`gpu_model_runner.py:2879` 到 `gpu_model_runner.py:2881`
+位置：`gpu_model_runner.py:2945` 到 `gpu_model_runner.py:2948`
 
 否则收集：
 
@@ -824,7 +824,7 @@ mm_kwargs.append((mm_feature.modality, mm_feature.data))
 mm_lora_refs.append((req_id, mm_feature.mm_position))
 ```
 
-位置：`gpu_model_runner.py:2883` 到 `gpu_model_runner.py:2885`
+位置：`gpu_model_runner.py:2950` 到 `gpu_model_runner.py:2952`
 
 这再次说明 ModelRunner 侧 encoder cache key 使用 `identifier`。
 
@@ -832,7 +832,7 @@ mm_lora_refs.append((req_id, mm_feature.mm_position))
 
 `_execute_mm_encoder()` 会先从 scheduler output batch 本轮 encoder inputs：
 
-位置：`gpu_model_runner.py:2889` 到 `gpu_model_runner.py:2897`
+位置：`gpu_model_runner.py:2956` 到 `gpu_model_runner.py:2964`
 
 普通多模态输入会经过：
 
@@ -840,7 +840,7 @@ mm_lora_refs.append((req_id, mm_feature.mm_position))
 model.embed_multimodal(**mm_kwargs_batch)
 ```
 
-位置：`gpu_model_runner.py:3082` 到 `gpu_model_runner.py:3085`
+位置：`gpu_model_runner.py:3147` 到 `gpu_model_runner.py:3150`
 
 执行完成后写入：
 
@@ -849,7 +849,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
     self.encoder_cache[mm_hash] = output
 ```
 
-位置：`gpu_model_runner.py:3092` 到 `gpu_model_runner.py:3096`
+位置：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
 这里变量名叫 `mm_hash`，但内容来自 `mm_feature.identifier`。
 
@@ -863,7 +863,7 @@ for mm_hash, output in zip(mm_hashes, encoder_outputs):
 self.encoder_cache[mm_hashes[i]] = pe_tensor.to(self.device)
 ```
 
-位置：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2915`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
 然后从待 encoder 的列表里过滤掉 `prompt_embeds`。
 
@@ -886,23 +886,27 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`gpu_model_runner.py:3123` 到 `gpu_model_runner.py:3128`
+位置：`gpu_model_runner.py:3191` 到 `gpu_model_runner.py:3196`
 
 然后对每个 feature：
 
 ```python
 mm_hash = mm_feature.identifier
 encoder_output = self.encoder_cache.get(mm_hash, None)
-assert encoder_output is not None, f"Encoder cache miss for {mm_hash}."
+if encoder_output is None:
+    if start_pos >= req_state.num_computed_tokens + num_scheduled_tokens:
+        continue
+    raise RuntimeError(f"Encoder cache miss for {mm_hash}.")
 ```
 
-位置：`gpu_model_runner.py:3149` 到 `gpu_model_runner.py:3151`
+位置：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3228`
 
 这说明：
 
 ```text
 无论这个 feature 的 encoder output 是本轮刚算出来的，还是之前缓存命中的，
-只要当前 token window 要消费它，GPUModelRunner.encoder_cache 里必须有对应 output。
+只要当前 token window 要实际消费它，GPUModelRunner.encoder_cache 里必须有对应 output；
+只有 drafter 的 +1 look-ahead 提前触到尚未编码的边界 feature 时，才会跳过并继续使用 token embedding。
 ```
 
 随后按 placeholder window 切片：
@@ -913,7 +917,7 @@ get_embeds_indices_in_range()：映射到 encoder output 的 embedding 区间；
 mm_embeds_item = encoder_output[...]：取出本轮需要拼入 input embedding 的部分。
 ```
 
-位置：`gpu_model_runner.py:3135` 到 `gpu_model_runner.py:3158`
+位置：`gpu_model_runner.py:3203` 到 `gpu_model_runner.py:3235`
 
 最后返回：
 
@@ -921,7 +925,7 @@ mm_embeds_item = encoder_output[...]：取出本轮需要拼入 input embedding 
 return mm_embeds, is_mm_embed
 ```
 
-位置：`gpu_model_runner.py:3196`
+位置：`gpu_model_runner.py:3273`
 
 ---
 
@@ -938,7 +942,7 @@ return mm_embeds, is_mm_embed
 6. forward 使用 inputs_embeds
 ```
 
-对应源码：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3499`
+对应源码：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3553`
 
 关键代码：
 
@@ -950,7 +954,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 )
 ```
 
-位置：`gpu_model_runner.py:3483` 到 `gpu_model_runner.py:3488`
+位置：`gpu_model_runner.py:3538` 到 `gpu_model_runner.py:3542`
 
 这说明多模态模型最终不是把 image/audio/video tensor 直接塞进 language model forward，而是先变成 embedding，再与文本 token embedding 合并为 `inputs_embeds`。
 
@@ -1191,7 +1195,7 @@ feature.data = receiver_cache.get_and_update_item(feature.data, cache_key)
 
 如果到了 `_batch_mm_inputs_from_scheduler()` 仍然是 `data is None`，ModelRunner 会跳过该 item：
 
-位置：`gpu_model_runner.py:2879` 到 `gpu_model_runner.py:2881`
+位置：`gpu_model_runner.py:2945` 到 `gpu_model_runner.py:2948`
 
 正常情况下，被调度执行 encoder 的 feature 应该能在 receiver cache 后拿到真实 processed kwargs；否则后续如果需要 embedding，会在 `_gather_mm_embeddings()` 触发 encoder cache miss。
 
@@ -1230,7 +1234,7 @@ PlaceholderRange.get_embeds_indices_in_range(start_idx, end_idx)：
 
 ```text
 inputs.py:158 到 inputs.py:177
-gpu_model_runner.py:3123 到 gpu_model_runner.py:3158
+gpu_model_runner.py:3191 到 gpu_model_runner.py:3235
 ```
 
 这也是为什么 encoder cache 容量单位是“encoder embeddings 数量”，而不是“placeholder token 总数”。`EncoderCacheManager` 注释也说明：它按 multimodal embeddings 管理，不把多模态 embedding 之间的 break/text tokens 算进 cache size。
@@ -1254,7 +1258,7 @@ with self.maybe_get_ec_connector_output(
     mm_embeds, is_mm_embed = self._gather_mm_embeddings(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3454`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3508`
 
 含义是：
 
@@ -1278,7 +1282,7 @@ self.encoder_cache_manager = (
 )
 ```
 
-位置：`scheduler.py:217` 到 `scheduler.py:225`
+位置：`scheduler.py:226` 到 `scheduler.py:230`
 
 `EncoderDecoderCacheManager` 是临时实现：
 
@@ -1298,7 +1302,7 @@ if is_encoder_decoder and scheduler_output.scheduled_encoder_inputs:
     model_kwargs.update({"encoder_outputs": encoder_outputs})
 ```
 
-位置：`gpu_model_runner.py:3552` 到 `gpu_model_runner.py:3559`
+位置：`gpu_model_runner.py:3605` 到 `gpu_model_runner.py:3612`
 
 它不是把多模态 embedding 拼回 decoder token embedding，而是把 `encoder_outputs` 作为模型 kwargs 传给 decoder。
 

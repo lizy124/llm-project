@@ -91,7 +91,7 @@ freed:
 
 ### 2.2 Worker 侧：`GPUModelRunner.encoder_cache`
 
-入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:533`
+入口：`code/vllm/vllm/v1/worker/gpu_model_runner.py:563`
 
 Worker 侧真正保存 encoder output：
 
@@ -111,9 +111,9 @@ Worker 侧会在三个地方操作它：
 
 对应源码：
 
-- 写入：`gpu_model_runner.py:3092` 到 `gpu_model_runner.py:3096`
-- 读取：`gpu_model_runner.py:3149` 到 `gpu_model_runner.py:3151`
-- 删除：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+- 写入：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
+- 读取：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3228`
+- 删除：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 ---
 
@@ -150,7 +150,7 @@ EncoderCacheManager 的容量单位是 encoder embeddings 数量，
 
 Scheduler 初始化时会先判断模型是否支持 multimodal inputs。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:199` 到 `scheduler.py:225`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:204` 到 `scheduler.py:230`
 
 核心流程：
 
@@ -184,7 +184,7 @@ embedding-only modality 不经过 encoder tower，
 但仍然需要 encoder cache 空间，因为后续会走统一的 gather / splice 路径。
 ```
 
-对应源码：`encoder_budget.py:72` 到 `encoder_budget.py:123`
+对应源码：`encoder_budget.py:60` 到 `encoder_budget.py:123`
 
 ### 4.2 `compute_mm_encoder_budget()`
 
@@ -234,7 +234,7 @@ scheduled_encoder_inputs: dict[str, list[int]] = {}
 encoder_compute_budget = self.max_num_encoder_input_tokens
 ```
 
-位置：`scheduler.py:412` 到 `scheduler.py:414`
+位置：`scheduler.py:458` 到 `scheduler.py:460`
 
 `scheduled_encoder_inputs` 的含义是：
 
@@ -244,13 +244,13 @@ req_id -> 本轮需要 worker 处理的 encoder input_id 列表
 
 它最终会进入 `SchedulerOutput.scheduled_encoder_inputs`。
 
-字段定义：`code/vllm/vllm/v1/core/sched/output.py:201` 到 `output.py:204`
+字段定义：`code/vllm/vllm/v1/core/sched/output.py:203` 到 `output.py:206`
 
 ---
 
 ## 6. `_try_schedule_encoder_inputs()` 的核心逻辑
 
-入口附近：`code/vllm/vllm/v1/core/sched/scheduler.py:1320`
+入口附近：`code/vllm/vllm/v1/core/sched/scheduler.py:1367`
 
 它做的不是直接执行 encoder，而是回答四个问题：
 
@@ -277,7 +277,7 @@ external_load_encoder_input:
   本轮不本地计算、但需要为外部加载的 encoder cache 分配逻辑引用的 input_id。
 ```
 
-位置：`scheduler.py:1432` 到 `scheduler.py:1437`
+位置：`scheduler.py:1520` 到 `scheduler.py:1525`
 
 ### 6.1 先找当前 token window 覆盖的 multimodal items
 
@@ -285,19 +285,19 @@ external_load_encoder_input:
 lo, hi = get_mm_features_in_window(...)
 ```
 
-位置：`scheduler.py:1321` 到 `scheduler.py:1325`
+位置：`scheduler.py:1409` 到 `scheduler.py:1413`
 
 也就是说，只有当前调度 token 范围会用到的 multimodal placeholder，才需要考虑 encoder output。
 
 对 encoder-decoder 模型，encoder input 统一放在起点，所以 `lo = 0`。
 
-位置：`scheduler.py:1326` 到 `scheduler.py:1328`
+位置：`scheduler.py:1414` 到 `scheduler.py:1416`
 
 ### 6.2 encoder-decoder 的跳过规则
 
 如果是 encoder-decoder，并且 `num_computed_tokens > 0`，说明 encoder input 已经在最开始处理过，后续 decoder token 不再重复调度 encoder。
 
-位置：`scheduler.py:1337` 到 `scheduler.py:1351`
+位置：`scheduler.py:1425` 到 `scheduler.py:1439`
 
 这和普通 VLM 不同：
 
@@ -315,7 +315,7 @@ if item_identifier in mm_hashes_to_schedule:
     continue
 ```
 
-位置：`scheduler.py:1353` 到 `scheduler.py:1359`
+位置：`scheduler.py:1441` 到 `scheduler.py:1449`
 
 这避免同一个 `mm_hash` 在同一 scheduler step 中被重复加入 `scheduled_encoder_inputs`。
 
@@ -326,7 +326,7 @@ if self.encoder_cache_manager.check_and_update_cache(request, i):
     continue
 ```
 
-位置：`scheduler.py:1361` 到 `scheduler.py:1364`
+位置：`scheduler.py:1449` 到 `scheduler.py:1452`
 
 `check_and_update_cache()` 的行为是：
 
@@ -352,7 +352,7 @@ Worker 不会重新执行 encoder，
 
 如果 `disable_chunked_mm_input=True`，并且当前 token budget 只够覆盖 multimodal item 的一部分，Scheduler 会把 `num_new_tokens` 回退到 item 开始前。
 
-位置：`scheduler.py:1366` 到 `scheduler.py:1381`
+位置：`scheduler.py:1454` 到 `scheduler.py:1469`
 
 这避免出现：
 
@@ -371,7 +371,7 @@ self.encoder_cache_manager.can_allocate(
 )
 ```
 
-位置：`scheduler.py:1382` 到 `scheduler.py:1384`
+位置：`scheduler.py:1470` 到 `scheduler.py:1472`
 
 `can_allocate()` 会检查两件事：
 
@@ -410,7 +410,7 @@ if self.ec_connector is not None and self.ec_connector.has_cache_item(item_ident
     continue
 ```
 
-位置：`scheduler.py:1419` 到 `scheduler.py:1425`
+位置：`scheduler.py:1507` 到 `scheduler.py:1513`
 
 这表示：
 
@@ -426,9 +426,9 @@ if self.ec_connector is not None and self.ec_connector.has_cache_item(item_ident
 
 `_try_schedule_encoder_inputs()` 只做可行性判断和返回 input_id；真正调用 `allocate()` 是在 KV slots 成功分配、请求确定被调度之后。
 
-running 请求路径：`scheduler.py:599` 到 `scheduler.py:612`
+running 请求路径：`scheduler.py:648` 到 `scheduler.py:661`
 
-waiting 请求路径：`scheduler.py:963` 到 `scheduler.py:977`
+waiting 请求路径：`scheduler.py:1036` 到 `scheduler.py:1050`
 
 典型逻辑：
 
@@ -465,7 +465,7 @@ if encoder_inputs_to_schedule:
 self.encoder_cache_manager.free(request)
 ```
 
-位置：`scheduler.py:887` 到 `scheduler.py:894`
+位置：`scheduler.py:959` 到 `scheduler.py:963`
 
 preempt running 请求时也会释放 encoder cache 引用：
 
@@ -473,7 +473,7 @@ preempt running 请求时也会释放 encoder cache 引用：
 self.encoder_cache_manager.free(request)
 ```
 
-位置：`scheduler.py:1114` 到 `scheduler.py:1116`
+位置：`scheduler.py:1200` 到 `scheduler.py:1202`
 
 ---
 
@@ -486,7 +486,7 @@ scheduled_encoder_inputs: dict[str, list[int]]
 free_encoder_mm_hashes: list[str]
 ```
 
-字段定义：`code/vllm/vllm/v1/core/sched/output.py:201` 到 `output.py:215`
+字段定义：`code/vllm/vllm/v1/core/sched/output.py:203` 到 `output.py:217`
 
 含义分别是：
 
@@ -504,7 +504,7 @@ Scheduler 构造 output 时：
 free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes()
 ```
 
-位置：`scheduler.py:1057` 到 `scheduler.py:1072`
+位置：`scheduler.py:1142` 到 `scheduler.py:1156`
 
 `get_freed_mm_hashes()` 会返回并清空 `freed`：
 
@@ -524,7 +524,7 @@ free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes()
 deferred_state_corrections_fn = self._update_states(scheduler_output)
 ```
 
-位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4080` 到 `gpu_model_runner.py:4087`
+位置：`code/vllm/vllm/v1/worker/gpu_model_runner.py:4133` 到 `gpu_model_runner.py:4139`
 
 ### 9.1 先删除 scheduler 通知释放的物理 cache
 
@@ -535,13 +535,13 @@ for mm_hash in scheduler_output.free_encoder_mm_hashes:
     self.encoder_cache.pop(mm_hash, None)
 ```
 
-位置：`gpu_model_runner.py:1158` 到 `gpu_model_runner.py:1160`
+位置：`gpu_model_runner.py:1199` 到 `gpu_model_runner.py:1201`
 
 这就是 encoder cache 的物理释放点。
 
 ### 9.2 从 `scheduled_encoder_inputs` 组装 multimodal batch
 
-入口：`gpu_model_runner.py:2850`
+入口：`gpu_model_runner.py:2913`
 
 `_batch_mm_inputs_from_scheduler()` 会遍历：
 
@@ -565,11 +565,11 @@ mm_lora_refs:
   用于 multimodal LoRA 映射的 request 和 placeholder range。
 ```
 
-位置：`gpu_model_runner.py:2866` 到 `gpu_model_runner.py:2887`
+位置：`gpu_model_runner.py:2933` 到 `gpu_model_runner.py:2954`
 
 ### 9.3 `_execute_mm_encoder()` 执行 encoder
 
-入口：`gpu_model_runner.py:2889`
+入口：`gpu_model_runner.py:2956`
 
 核心流程：
 
@@ -584,11 +584,11 @@ mm_lora_refs:
 8. 如启用 EC connector，调用 maybe_save_ec_to_connector()。
 ```
 
-prompt embeds 分支：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2924`
+prompt embeds 分支：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2991`
 
-真正 encoder 调用：`gpu_model_runner.py:3062` 到 `gpu_model_runner.py:3088`
+真正 encoder 调用：`gpu_model_runner.py:3135` 到 `gpu_model_runner.py:3150`
 
-写入 cache：`gpu_model_runner.py:3092` 到 `gpu_model_runner.py:3096`
+写入 cache：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
 ### 9.4 cache 命中时为什么 Worker 不会重新 encode
 
@@ -620,7 +620,7 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 )
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3495`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3549`
 
 `_gather_mm_embeddings()` 会：
 
@@ -637,18 +637,23 @@ inputs_embeds_scheduled = self.model.embed_input_ids(
 
 ```python
 encoder_output = self.encoder_cache.get(mm_hash, None)
-assert encoder_output is not None, f"Encoder cache miss for {mm_hash}."
+if encoder_output is None:
+    if start_pos >= req_state.num_computed_tokens + num_scheduled_tokens:
+        continue
+    raise RuntimeError(f"Encoder cache miss for {mm_hash}.")
 ```
 
-位置：`gpu_model_runner.py:3149` 到 `gpu_model_runner.py:3151`
+位置：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3228`
 
-这个 assert 体现了 Scheduler 和 Worker 的契约：
+这个检查体现了 Scheduler 和 Worker 的契约：
 
 ```text
-只要当前 token window 需要某个 mm_hash，
+只要当前 token window 真实需要某个 mm_hash，
 Scheduler 要么本轮安排它执行 encoder，
 要么之前已经保证它在 worker encoder_cache 中。
 ```
+
+EAGLE drafter 的 +1 look-ahead 可能提前扫到尚未 encode 的边界 feature；这类 `start_pos` 已经落在本轮真实 scheduled range 之后的情况会跳过，其他 cache miss 才抛 `RuntimeError`。
 
 ### 10.2 encoder-decoder 模型：传入 `encoder_outputs`
 
@@ -662,7 +667,7 @@ if is_encoder_decoder and scheduler_output.scheduled_encoder_inputs:
     model_kwargs.update({"encoder_outputs": encoder_outputs})
 ```
 
-位置：`gpu_model_runner.py:3552` 到 `gpu_model_runner.py:3559`
+位置：`gpu_model_runner.py:3605` 到 `gpu_model_runner.py:3612`
 
 也就是说：
 
@@ -677,7 +682,7 @@ encoder-decoder：encoder output 作为 encoder_outputs 传给 decoder。
 
 执行完成后，`Scheduler.update_from_output()` 会推进请求状态，并在合适时机释放 request 对 encoder input 的引用。
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1576` 到 `scheduler.py:1578`
+位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1670` 到 `scheduler.py:1672`
 
 ```python
 if request.has_encoder_inputs:
@@ -686,7 +691,7 @@ if request.has_encoder_inputs:
 
 ### 11.1 `_free_encoder_inputs()` 的释放条件
 
-入口：`scheduler.py:1866`
+入口：`scheduler.py:1972`
 
 它先取当前 request 已经引用的 encoder input ids：
 
@@ -694,7 +699,7 @@ if request.has_encoder_inputs:
 cached_encoder_input_ids = self.encoder_cache_manager.get_cached_input_ids(request)
 ```
 
-位置：`scheduler.py:1866` 到 `scheduler.py:1872`
+位置：`scheduler.py:1972` 到 `scheduler.py:1978`
 
 然后逐个判断是否可以释放引用。
 
@@ -705,18 +710,18 @@ encoder-decoder：
 Whisper 这类模型的 cross-attention KV 已经算好，可以释放 encoder input 引用。
 ```
 
-位置：`scheduler.py:1880` 到 `scheduler.py:1884`
+位置：`scheduler.py:1991` 到 `scheduler.py:1995`
 
 普通 multimodal：
 
 ```text
-当 start_pos + num_tokens <= request.num_computed_tokens - request.num_output_placeholders，
+当 start_pos + num_tokens + spec_lookahead <= request.num_computed_tokens - request.num_output_placeholders，
 说明 decoder 已经越过该 multimodal placeholder 区间，
-并且 speculative / async placeholder 回退也不会再退回这个区间，
+并且 speculative / async placeholder 回退、EAGLE drafter 的 +1 look-ahead 也不会再退回这个区间，
 就可以释放该 request 对 encoder output 的引用。
 ```
 
-位置：`scheduler.py:1885` 到 `scheduler.py:1893`
+位置：`scheduler.py:1996` 到 `scheduler.py:2003`
 
 ### 11.2 `free_encoder_input()` 做什么
 
@@ -751,7 +756,7 @@ Whisper 这类模型的 cross-attention KV 已经算好，可以释放 encoder i
 
 当请求被标记 finished 后，Scheduler 会调用 `_free_request()`。
 
-入口：`scheduler.py:2046`
+入口：`scheduler.py:2156`
 
 里面会：
 
@@ -760,7 +765,7 @@ self.encoder_cache_manager.free(request)
 self.finished_req_ids.add(request_id)
 ```
 
-位置：`scheduler.py:2046` 到 `scheduler.py:2055`
+位置：`scheduler.py:2156` 到 `scheduler.py:2175`
 
 `free(request)` 会释放这个 request 持有的所有 encoder input 引用：
 
@@ -770,7 +775,7 @@ self.finished_req_ids.add(request_id)
 
 `finish_requests()` 会把 request 状态设置为传入的 finished status，并调用 `_free_request()`。
 
-位置：`scheduler.py:1983` 到 `scheduler.py:2044`
+位置：`scheduler.py:2093` 到 `scheduler.py:2154`
 
 所以外部取消也会释放 encoder cache 引用。
 
@@ -786,7 +791,7 @@ self.finished_req_ids.add(request_id)
 5. 放回 waiting 队列。
 ```
 
-位置：`scheduler.py:1105` 到 `scheduler.py:1127`
+位置：`scheduler.py:1191` 到 `scheduler.py:1213`
 
 这意味着被抢占的请求不会继续持有 encoder cache 引用。之后如果恢复调度，需要重新通过 cache 命中或重新 encoder 来建立引用。
 
@@ -850,7 +855,7 @@ waiting 请求路径中，Scheduler 会先检查外部 encoder cache 是否已�
 self.ec_connector.ensure_cache_available(request, num_computed_tokens)
 ```
 
-位置：`scheduler.py:750` 到 `scheduler.py:760`
+位置：`scheduler.py:802` 到 `scheduler.py:812`
 
 如果外部 encoder cache 还没 ready，请求会被暂时跳过，重新放回 waiting/skipped 队列。
 
@@ -864,8 +869,8 @@ self.ec_connector.update_state_after_alloc(request, i)
 
 位置：
 
-- running 路径：`scheduler.py:603` 到 `scheduler.py:612`
-- waiting 路径：`scheduler.py:967` 到 `scheduler.py:977`
+- running 路径：`scheduler.py:652` 到 `scheduler.py:661`
+- waiting 路径：`scheduler.py:1040` 到 `scheduler.py:1050`
 
 构造 `SchedulerOutput` 后，Scheduler 会生成 connector metadata：
 
@@ -874,7 +879,7 @@ ec_meta = self.ec_connector.build_connector_meta(scheduler_output)
 scheduler_output.ec_connector_metadata = ec_meta
 ```
 
-位置：`scheduler.py:1084` 到 `scheduler.py:1089`
+位置：`scheduler.py:1170` 到 `scheduler.py:1175`
 
 ### 14.3 Worker 侧：加载 / 保存 encoder cache
 
@@ -893,7 +898,7 @@ with self.maybe_get_ec_connector_output(
     mm_embeds, is_mm_embed = self._gather_mm_embeddings(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:3447` 到 `gpu_model_runner.py:3455`
+位置：`gpu_model_runner.py:3501` 到 `gpu_model_runner.py:3508`
 
 context manager 内部会：
 
@@ -913,7 +918,7 @@ context manager 内部会：
 self.maybe_save_ec_to_connector(self.encoder_cache, mm_hash)
 ```
 
-位置：`gpu_model_runner.py:3092` 到 `gpu_model_runner.py:3096`
+位置：`gpu_model_runner.py:3157` 到 `gpu_model_runner.py:3161`
 
 `maybe_save_ec_to_connector()` 最终调用：
 
@@ -933,7 +938,7 @@ with self.maybe_get_ec_connector_output(...):
     return make_empty_encoder_model_runner_output(scheduler_output)
 ```
 
-位置：`gpu_model_runner.py:4088` 到 `gpu_model_runner.py:4094`
+位置：`gpu_model_runner.py:4141` 到 `gpu_model_runner.py:4147`
 
 这表示该角色只负责执行 / 保存 encoder cache，不继续完整 decoder forward。
 
@@ -983,7 +988,7 @@ Scheduler 侧 EncoderCacheManager 逻辑状态；
 Worker 侧 GPUModelRunner.encoder_cache 物理 tensor。
 ```
 
-入口：`code/vllm/vllm/v1/engine/core.py:687`
+入口：`code/vllm/vllm/v1/engine/core.py:696`
 
 `EngineCore.reset_encoder_cache()` 会：
 
@@ -992,7 +997,7 @@ self.scheduler.reset_encoder_cache()
 self.model_executor.reset_encoder_cache()
 ```
 
-位置：`engine/core.py:702` 到 `engine/core.py:705`
+位置：`engine/core.py:711` 到 `engine/core.py:714`
 
 如果还有请求在跑，会打 warning：
 
@@ -1000,7 +1005,7 @@ self.model_executor.reset_encoder_cache()
 Resetting the encoder cache when requests are in progress may lead to desynced internal caches.
 ```
 
-位置：`engine/core.py:694` 到 `engine/core.py:700`
+位置：`engine/core.py:705` 到 `engine/core.py:709`
 
 Scheduler 侧 reset：
 
@@ -1008,7 +1013,7 @@ Scheduler 侧 reset：
 self.encoder_cache_manager.reset()
 ```
 
-位置：`scheduler.py:2215` 到 `scheduler.py:2221`
+位置：`scheduler.py:2347` 到 `scheduler.py:2353`
 
 Worker 侧 reset：
 
@@ -1017,7 +1022,7 @@ self.encoder_cache.clear()
 self.late_interaction_runner.clear()
 ```
 
-位置：`gpu_model_runner.py:925` 到 `gpu_model_runner.py:932`
+位置：`gpu_model_runner.py:960` 到 `gpu_model_runner.py:967`
 
 Executor 只是广播控制命令：
 
@@ -1119,7 +1124,7 @@ request.mm_features[input_id].identifier
 
 在文档和代码注释里通常叫 `mm_hash`。
 
-读取位置：`encoder_cache_manager.py:109`、`gpu_model_runner.py:2883`、`gpu_model_runner.py:3149`
+读取位置：`encoder_cache_manager.py:109`、`gpu_model_runner.py:2950`、`gpu_model_runner.py:3217`
 
 ### 18.2 一个 request 可以有多个 encoder input 吗？
 
@@ -1137,7 +1142,7 @@ req_id -> list[input_id]
 {"req-1": [0, 1]}
 ```
 
-字段注释位置：`output.py:201` 到 `output.py:204`
+字段注释位置：`output.py:203` 到 `output.py:206`
 
 ### 18.3 cache 命中后 SchedulerOutput 如何表达？
 
@@ -1150,13 +1155,13 @@ Scheduler 已经通过 check_and_update_cache() 建立 request 引用；
 Worker 后续 gather 时会从已有 encoder_cache[mm_hash] 读取。
 ```
 
-如果 Worker 实际没有这个 hash，`_gather_mm_embeddings()` 会触发：
+如果 Worker 实际没有这个 hash，`_gather_mm_embeddings()` 会先允许 EAGLE drafter look-ahead 扫到尚未 encode 的边界 feature；其他情况会触发：
 
 ```python
-assert encoder_output is not None, f"Encoder cache miss for {mm_hash}."
+raise RuntimeError(f"Encoder cache miss for {mm_hash}.")
 ```
 
-位置：`gpu_model_runner.py:3149` 到 `gpu_model_runner.py:3151`
+位置：`gpu_model_runner.py:3217` 到 `gpu_model_runner.py:3228`
 
 ### 18.4 `free_encoder_mm_hashes` 表示什么？
 
@@ -1193,7 +1198,7 @@ self.num_freeable_slots = cache_size
 self.encoder_cache[mm_hash] = pe_tensor.to(self.device)
 ```
 
-位置：`gpu_model_runner.py:2899` 到 `gpu_model_runner.py:2915`
+位置：`gpu_model_runner.py:2966` 到 `gpu_model_runner.py:2982`
 
 所以它也走 `mm_hash -> encoder output` 的缓存通道。
 
@@ -1205,9 +1210,9 @@ self.encoder_cache[mm_hash] = pe_tensor.to(self.device)
 request.num_computed_tokens - request.num_output_placeholders
 ```
 
-位置：`scheduler.py:1885` 到 `scheduler.py:1893`
+位置：`scheduler.py:1996` 到 `scheduler.py:2003`
 
-原因是 speculative decoding / async scheduling 可能有占位输出 token，后续 rejection 会回退 computed token 语义。只有扣掉 placeholders 后仍然越过 multimodal placeholder 区间，才确认不会再需要该 encoder output。
+原因是 speculative decoding / async scheduling 可能有占位输出 token，后续 rejection 会回退 computed token 语义；EAGLE drafter 还会带来 +1 look-ahead。只有扣掉 placeholders 且越过 look-ahead 后仍然越过 multimodal placeholder 区间，才确认不会再需要该 encoder output。
 
 ---
 
