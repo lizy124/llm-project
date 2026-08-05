@@ -326,7 +326,7 @@ _load_adapter(lora_request)
 
 ### 3.4 模型管理层：LoRAModelManager
 
-位置：`model_manager.py:64`
+位置：`model_manager.py:71`
 
 `LoRAModelManager` 直接持有被 LoRA 化的模型，并管理 adapter slot。
 
@@ -349,7 +349,7 @@ punica_wrapper_mapping：
   不同模型部分对应的 LoRA kernel wrapper。
 ```
 
-位置：`model_manager.py:88` 到 `model_manager.py:137`
+位置：`model_manager.py:95` 到 `model_manager.py:145`
 
 它做两类核心工作。
 
@@ -363,7 +363,7 @@ new_module = replace_submodule(
 )
 ```
 
-位置：`model_manager.py:375` 到 `model_manager.py:502`
+位置：`model_manager.py:386` 到 `model_manager.py:512`
 
 第二类：把某个 LoRA adapter 的权重放进每个 LoRA layer 的 slot。
 
@@ -371,11 +371,11 @@ new_module = replace_submodule(
 module.set_lora(index, module_lora.lora_a, module_lora.lora_b)
 ```
 
-位置：`model_manager.py:285` 到 `model_manager.py:324`
+位置：`model_manager.py:296` 到 `model_manager.py:335`
 
 ### 3.5 Layer 层：BaseLayerWithLoRA / LinearWithLoRA
 
-位置：`lora/layers/base.py:16`
+位置：`vllm/lora/layers/base.py:16`
 
 `BaseLayerWithLoRA` 定义 LoRA wrapper 必须支持的操作：
 
@@ -387,7 +387,7 @@ set_mapping(punica_wrapper)
 can_replace_layer(...)
 ```
 
-位置：`lora/layers/base.py:16` 到 `lora/layers/base.py:79`
+位置：`vllm/lora/layers/base.py:16` 到 `vllm/lora/layers/base.py:78`
 
 以 Linear 为例，LoRA forward 的核心是：
 
@@ -396,7 +396,7 @@ output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
 return self._apply_lora_to_output(x, output)
 ```
 
-位置：`base_linear.py:195` 到 `base_linear.py:199`
+位置：`base_linear.py:194` 到 `base_linear.py:208`
 
 然后：
 
@@ -406,7 +406,7 @@ lora_output = self.punica_wrapper.add_lora_linear(
 )
 ```
 
-位置：`base_linear.py:206` 到 `base_linear.py:220`
+位置：`base_linear.py:215` 到 `base_linear.py:238`
 
 这说明 LoRA layer 的语义是：
 
@@ -452,7 +452,7 @@ punica_wrapper.update_metadata(
 )
 ```
 
-位置：`model_manager.py:344` 到 `model_manager.py:367`
+位置：`model_manager.py:355` 到 `model_manager.py:378`
 
 这层解决的问题是：
 
@@ -486,7 +486,7 @@ if self.lora_config:
     )
 ```
 
-位置：`gpu_model_runner.py:5167` 到 `gpu_model_runner.py:5170`
+位置：`gpu_model_runner.py:5255` 到 `gpu_model_runner.py:5258`
 
 ### 4.2 LoRA 不是完整模型热切换
 
@@ -507,7 +507,7 @@ base_layer.quant_method.apply(...)
   → punica_wrapper.add_lora_linear(...)
 ```
 
-位置：`base_linear.py:195` 到 `base_linear.py:220`
+位置：`base_linear.py:194` 到 `base_linear.py:238`
 
 所以：
 
@@ -537,7 +537,7 @@ if not isinstance(model, SupportsLoRA):
     raise ValueError(f"Model {type(model)} is not supported for LoRA.")
 ```
 
-位置：`model_manager.py:1250` 到 `model_manager.py:1274`
+位置：`model_manager.py:1231` 到 `model_manager.py:1255`
 
 这说明 LoRA 不是任意 torch module 都自动可用；模型需要暴露 vLLM 认可的 LoRA 支持接口和可替换模块。
 
@@ -569,7 +569,7 @@ WorkerLoRAManager：
   负责 worker 侧加载 checkpoint 和生命周期控制。
 ```
 
-本目录名叫 `lora_and_adapters`，但当前 vLLM 代码中没有 `code/vllm/vllm/adapter_commons/` 这个实际目录；梳理时应以 `code/vllm/vllm/lora/` 为准。
+本目录名叫 `lora_and_adapters`，但当前 vLLM 代码中没有 `vllm/vllm/adapter_commons/` 这个实际目录；梳理时应以 `vllm/vllm/lora/` 为准。
 
 ---
 
@@ -595,8 +595,8 @@ EngineArgs / CLI
 ```text
 config/lora.py:31
 lora_model_runner_mixin.py:31
-model_manager.py:64
-model_manager.py:375
+model_manager.py:71
+model_manager.py:386
 ```
 
 ### 6.2 请求进入阶段
@@ -617,7 +617,7 @@ model_manager.py:375
 lora_request=new_req_data.lora_request
 ```
 
-位置：`gpu_model_runner.py:1226` 到 `gpu_model_runner.py:1237`
+位置：`gpu_model_runner.py:1265` 到 `gpu_model_runner.py:1278`
 
 `InputBatch.add_request()` 再记录 `request_lora_mapping`。
 
@@ -634,7 +634,7 @@ if self.lora_config:
     )
 ```
 
-位置：`gpu_model_runner.py:2193` 到 `gpu_model_runner.py:2201`
+位置：`gpu_model_runner.py:2239` 到 `gpu_model_runner.py:2247`
 
 `set_active_loras()` 会：
 
@@ -650,10 +650,10 @@ if self.lora_config:
 对应源码：
 
 ```text
-gpu_input_batch.py:976 到 gpu_input_batch.py:999
+gpu_input_batch.py:979 到 gpu_input_batch.py:1002
 lora_model_runner_mixin.py:73 到 lora_model_runner_mixin.py:91
-worker_manager.py:183 到 worker_manager.py:219
-model_manager.py:285 到 model_manager.py:367
+worker_manager.py:193 到 worker_manager.py:221
+model_manager.py:296 到 model_manager.py:378
 ```
 
 ### 6.4 forward 阶段
@@ -670,7 +670,7 @@ model forward
 Linear 的典型源码：
 
 ```text
-base_linear.py:195 到 base_linear.py:220
+base_linear.py:194 到 base_linear.py:238
 ```
 
 ---
@@ -770,7 +770,7 @@ LoRA 可以和量化 base model 共存，但职责不同。
 output = self.base_layer.quant_method.apply(self.base_layer, x, bias)
 ```
 
-位置：`base_linear.py:195` 到 `base_linear.py:199`
+位置：`base_linear.py:194` 到 `base_linear.py:208`
 
 LoRA delta 再通过 LoRA 权重和 punica wrapper 叠加：
 
@@ -778,7 +778,7 @@ LoRA delta 再通过 LoRA 权重和 punica wrapper 叠加：
 self.punica_wrapper.add_lora_linear(...)
 ```
 
-位置：`base_linear.py:218` 到 `base_linear.py:220`
+位置：`base_linear.py:227` 到 `base_linear.py:229`
 
 所以边界是：
 
@@ -829,7 +829,7 @@ tower_mapping = LoRAMapping(..., type=LoRAMappingType.TOWER)
 self.lora_manager.set_active_adapters(lora_requests, tower_mapping)
 ```
 
-位置：`gpu_model_runner.py:2941` 到 `gpu_model_runner.py:2973`
+位置：`gpu_model_runner.py:3033` 到 `gpu_model_runner.py:3040`
 
 connector 也类似：
 
@@ -838,7 +838,7 @@ connector_mapping = LoRAMapping(..., type=LoRAMappingType.CONNECTOR)
 self.lora_manager.set_active_adapters(lora_requests, connector_mapping)
 ```
 
-位置：`gpu_model_runner.py:2994` 到 `gpu_model_runner.py:3008`
+位置：`gpu_model_runner.py:3061` 到 `gpu_model_runner.py:3070`
 
 所以多模态 LoRA 的角色可以理解为：
 
@@ -902,7 +902,7 @@ if isinstance(module, PPMissingLayer):
     continue
 ```
 
-位置：`model_manager.py:385` 到 `model_manager.py:387`
+位置：`model_manager.py:396` 到 `model_manager.py:398`
 
 这说明 pipeline parallel 下，每个 stage 只对本 rank 实际持有的模块注入 LoRA。
 
@@ -918,7 +918,7 @@ adapter 已经作为 `LoRAModel` 注册到 manager：
 _registered_adapters[lora_id] = LoRAModel
 ```
 
-位置：`model_manager.py:94`、`model_manager.py:333` 到 `model_manager.py:336`
+位置：`model_manager.py:95`、`model_manager.py:314` 到 `model_manager.py:319`
 
 它表示：
 
@@ -935,7 +935,7 @@ self.lora_index_to_id[index] = lora_model.id
 module.set_lora(index, module_lora.lora_a, module_lora.lora_b)
 ```
 
-位置：`model_manager.py:285` 到 `model_manager.py:324`
+位置：`model_manager.py:296` 到 `model_manager.py:335`
 
 它表示：
 
@@ -956,7 +956,7 @@ punica_wrapper.update_metadata(
 )
 ```
 
-位置：`model_manager.py:362` 到 `model_manager.py:367`
+位置：`model_manager.py:373` 到 `model_manager.py:378`
 
 它表示：
 
@@ -998,7 +998,7 @@ if len(loras_map) > self._adapter_manager.lora_slots:
     raise RuntimeError(...)
 ```
 
-位置：`worker_manager.py:258` 到 `worker_manager.py:269`
+位置：`worker_manager.py:211` 到 `worker_manager.py:229`
 
 普通 worker manager 也有类似检查：
 
@@ -1085,7 +1085,7 @@ LoRA 改变 forward 计算，因此从语义上会影响 KV 的内容；但 KV b
 
 `InputBatch.request_lora_mapping` 中，`0` 表示无 LoRA。
 
-位置：`gpu_input_batch.py:477` 到 `gpu_input_batch.py:479`
+位置：`gpu_input_batch.py:477` 到 `gpu_input_batch.py:482`
 
 LoRARequest 的 `lora_int_id` 必须大于 0，也正是为了把 0 留给 no-LoRA。
 
