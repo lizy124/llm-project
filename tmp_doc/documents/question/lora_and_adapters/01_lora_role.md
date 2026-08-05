@@ -2,18 +2,18 @@
 
 源码位置：
 
-- `code/vllm/vllm/config/lora.py`
-- `code/vllm/vllm/lora/request.py`
-- `code/vllm/vllm/lora/worker_manager.py`
-- `code/vllm/vllm/lora/model_manager.py`
-- `code/vllm/vllm/lora/lora_model.py`
-- `code/vllm/vllm/lora/lora_weights.py`
-- `code/vllm/vllm/lora/layers/`
-- `code/vllm/vllm/lora/punica_wrapper/`
-- `code/vllm/vllm/v1/worker/lora_model_runner_mixin.py`
-- `code/vllm/vllm/v1/worker/gpu_input_batch.py`
-- `code/vllm/vllm/v1/worker/gpu_model_runner.py`
-- `code/vllm/vllm/v1/worker/gpu_worker.py`
+- `vllm/vllm/config/lora.py`
+- `vllm/vllm/lora/request.py`
+- `vllm/vllm/lora/worker_manager.py`
+- `vllm/vllm/lora/model_manager.py`
+- `vllm/vllm/lora/lora_model.py`
+- `vllm/vllm/lora/lora_weights.py`
+- `vllm/vllm/lora/layers/`
+- `vllm/vllm/lora/punica_wrapper/`
+- `vllm/vllm/v1/worker/lora_model_runner_mixin.py`
+- `vllm/vllm/v1/worker/gpu_input_batch.py`
+- `vllm/vllm/v1/worker/gpu_model_runner.py`
+- `vllm/vllm/v1/worker/gpu_worker.py
 
 本问题关注：LoRA 在 vLLM 中的职责、边界，以及它和 base model、adapter 管理、batch 执行、KV cache、量化、sampling 的关系。
 
@@ -148,7 +148,7 @@ self.lora_id_to_request_ids: dict[int, set[str]] = {}
 self.lora_id_to_lora_request: dict[int, LoRARequest] = {}
 ```
 
-位置：`gpu_input_batch.py:244` 到 `gpu_input_batch.py:247`
+位置：`gpu_input_batch.py:247` 到 `gpu_input_batch.py:250`
 
 新增 request 时：
 
@@ -162,7 +162,7 @@ else:
     self.request_lora_mapping[req_index] = 0
 ```
 
-位置：`gpu_input_batch.py:468` 到 `gpu_input_batch.py:479`
+位置：`gpu_input_batch.py:471` 到 `gpu_input_batch.py:482`
 
 执行前会展开成 token 级 mapping：
 
@@ -172,7 +172,7 @@ token_lora_mapping = tuple(req_lora_mapping.repeat(num_scheduled_tokens))
 active_lora_requests = set(self.lora_id_to_lora_request.values())
 ```
 
-位置：`gpu_input_batch.py:976` 到 `gpu_input_batch.py:999`
+位置：`gpu_input_batch.py:979` 到 `gpu_input_batch.py:1002`
 
 这就是 batch mixed LoRA 的基础：
 
@@ -204,7 +204,7 @@ def pin_lora(self, lora_id: int) -> bool:
     return self.model_runner.pin_lora(lora_id)
 ```
 
-位置：`gpu_worker.py:958` 到 `gpu_worker.py:968`
+位置：`gpu_worker.py:1152` 到 `gpu_worker.py:1162`
 
 ModelRunner mixin 再转给 `lora_manager`：
 
@@ -296,7 +296,7 @@ enable_mixed_moe_lora_format: bool = False
 
 ### 3.3 Worker 管理层：WorkerLoRAManager
 
-位置：`worker_manager.py:25`
+位置：`worker_manager.py:26`
 
 `WorkerLoRAManager` 是 worker 侧 adapter 管理入口。
 
@@ -475,7 +475,7 @@ self.model = model_loader.load_model(
 )
 ```
 
-位置：`gpu_model_runner.py:5162` 到 `gpu_model_runner.py:5166`
+位置：`gpu_model_runner.py:5231` 到 `gpu_model_runner.py:5254`
 
 如果启用了 LoRA，再包装：
 
@@ -621,7 +621,7 @@ lora_request=new_req_data.lora_request
 
 `InputBatch.add_request()` 再记录 `request_lora_mapping`。
 
-位置：`gpu_input_batch.py:468` 到 `gpu_input_batch.py:479`
+位置：`gpu_input_batch.py:471` 到 `gpu_input_batch.py:482`
 
 ### 6.3 每轮执行前
 
