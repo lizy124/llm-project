@@ -1,0 +1,9 @@
+# Local Claude settings
+.claude/
+
+# Runtime logs
+mooncake_master.log
+
+# Python cache
+__pycache__/
+*.py[cod]

@@ -1,0 +1,139 @@
+INFO 08-04 06:02:30 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 08-04 06:02:30 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 08-04 06:02:30 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 08-04 06:02:30 [__init__.py:237] Platform plugin ascend is activated
+INFO 08-04 06:02:30 [platform.py:61] Breakable cudagraph is force disabled on Ascend because DeepSeek V4 PIECEWISE cudagraph is not supported yet.
+{
+  "backend_map": {
+    "memcache": {
+      "name": "MemcacheBackend",
+      "path": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.memcache_backend.memcache_backend"
+    },
+    "mooncake": {
+      "name": "MooncakeBackend",
+      "path": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.mooncake_backend.mooncake_backend"
+    },
+    "yuanrong": {
+      "name": "YuanrongBackend",
+      "path": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.yuanrong_backend.yuanrong_backend"
+    }
+  },
+  "base": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store",
+  "connector_registry": {
+    "AscendStoreConnector": {
+      "class": "AscendStoreConnector",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.ascend_store_connector"
+    },
+    "LMCacheAscendConnector": {
+      "class": "LMCacheConnectorV1",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lmcache_ascend_connector.lmcache_ascend_connector"
+    },
+    "MooncakeConnectorStoreV1": {
+      "class": "AscendStoreConnector",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.ascend_store_connector"
+    },
+    "UCMConnector": {
+      "class": "UCMConnectorV1",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ucm_connector.ucm_connector"
+    }
+  },
+  "expected_files": {
+    "backend/__init__.py": true,
+    "backend/backend.py": true,
+    "lmcache_ascend_connector/__init__.py": true,
+    "lmcache_ascend_connector/lmcache_ascend_connector.py": true,
+    "memcache_backend/__init__.py": true,
+    "memcache_backend/memcache_backend.py": true,
+    "mooncake_backend/__init__.py": true,
+    "mooncake_backend/mooncake_backend.py": true,
+    "store_utils/__init__.py": true,
+    "store_utils/ascend_store_connector.py": true,
+    "store_utils/config_data.py": true,
+    "store_utils/coordinator.py": true,
+    "store_utils/kv_transfer.py": true,
+    "store_utils/pool_scheduler.py": true,
+    "store_utils/pool_worker.py": true,
+    "ucm_connector/__init__.py": true,
+    "ucm_connector/ucm_connector.py": true,
+    "yuanrong_backend/__init__.py": true,
+    "yuanrong_backend/yuanrong_backend.py": true
+  },
+  "ok": true,
+  "old_root_files_absent": {
+    "ascend_store_connector.py": true,
+    "config_data.py": true,
+    "coordinator.py": true,
+    "kv_transfer.py": true,
+    "lmcache_ascend_connector.py": true,
+    "memcache_backend.py": true,
+    "mooncake_backend.py": true,
+    "pool_scheduler.py": true,
+    "pool_worker.py": true,
+    "ucm_connector.py": true,
+    "yuanrong_backend.py": true
+  },
+  "optional_imports": [
+    {
+      "error": "ModuleNotFoundError(\"No module named 'ucm'\")",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ucm_connector.ucm_connector",
+      "ok": false
+    },
+    {
+      "error": "ModuleNotFoundError(\"No module named 'lmcache_ascend'\")",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.lmcache_ascend_connector.lmcache_ascend_connector",
+      "ok": false
+    }
+  ],
+  "required_imports": [
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/backend.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.backend.backend",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/ascend_store_connector.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.ascend_store_connector",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/config_data.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.config_data",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/coordinator.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.coordinator",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/kv_transfer.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.kv_transfer",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/pool_scheduler.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.pool_scheduler",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/store_utils/pool_worker.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.store_utils.pool_worker",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/mooncake_backend/mooncake_backend.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.mooncake_backend.mooncake_backend",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/memcache_backend/memcache_backend.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.memcache_backend.memcache_backend",
+      "ok": true
+    },
+    {
+      "file": "/vllm-workspace/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/yuanrong_backend/yuanrong_backend.py",
+      "module": "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.yuanrong_backend.yuanrong_backend",
+      "ok": true
+    }
+  ]
+}
