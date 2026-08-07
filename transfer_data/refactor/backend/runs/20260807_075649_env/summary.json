@@ -1,0 +1,28 @@
+{
+  "case": "kvpool_both",
+  "request_count": 2,
+  "success_count": 2,
+  "failure_count": 0,
+  "elapsed_sec": [
+    1.8130287299863994,
+    1.7149197498802096
+  ],
+  "usage": [
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    },
+    {
+      "prompt_tokens": 1143,
+      "total_tokens": 1207,
+      "completion_tokens": 64,
+      "prompt_tokens_details": null
+    }
+  ],
+  "same_text_as_first": [
+    true,
+    true
+  ]
+}

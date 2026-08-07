@@ -1,0 +1,11 @@
+MODEL=/mnt/weight/Qwen3-8B-W8A8
+PORT=8100
+ASCEND_RT_VISIBLE_DEVICES=4
+MOONCAKE_CONFIG_PATH=/home/lizhongyang/refactor/llm-project/transfer_data/refactor/backend/runs/20260807_024814_env/mooncake.json
+MOONCAKE_MASTER_ADDRESS=127.0.0.1:50090
+KV_CONNECTOR=MultiConnector
+KV_ROLE=kv_producer
+KV_LOAD_FAILURE_POLICY=recompute
+LOOKUP_RPC_PORT=0
+KV_PORT=20001
+KV_TRANSFER_CONFIG={"kv_connector":"MultiConnector","kv_role":"kv_producer","kv_load_failure_policy":"recompute","kv_connector_extra_config":{"connectors":[{"kv_connector":"MooncakeConnectorV1","kv_role":"kv_producer","kv_port":"20001","kv_connector_extra_config":{"prefill":{"dp_size":1,"tp_size":1},"decode":{"dp_size":1,"tp_size":1}}},{"kv_connector":"AscendStoreConnector","kv_role":"kv_producer","kv_connector_extra_config":{"lookup_rpc_port":"0","backend":"mooncake"}}]}}

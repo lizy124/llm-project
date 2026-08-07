@@ -1,0 +1,18 @@
+{
+  "case": "baseline",
+  "request_count": 2,
+  "success_count": 0,
+  "failure_count": 2,
+  "elapsed_sec": [
+    0.0030251999851316214,
+    0.0001683398149907589
+  ],
+  "usage": [
+    null,
+    null
+  ],
+  "same_text_as_first": [
+    true,
+    true
+  ]
+}

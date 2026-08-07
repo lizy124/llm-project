@@ -1,0 +1,18 @@
+{
+  "case": "kvpool_both",
+  "request_count": 2,
+  "success_count": 0,
+  "failure_count": 2,
+  "elapsed_sec": [
+    0.002809209981933236,
+    0.00014264998026192188
+  ],
+  "usage": [
+    null,
+    null
+  ],
+  "same_text_as_first": [
+    true,
+    true
+  ]
+}
