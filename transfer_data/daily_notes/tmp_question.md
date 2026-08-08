@@ -1,0 +1,1 @@
+MLA 的 KV cache 在 TP 下是共享 latent（不按 head 切分）
