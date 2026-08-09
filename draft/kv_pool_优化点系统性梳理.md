@@ -39,6 +39,8 @@
 | config_data.py | 1 |
 | **合计** | **15 处散落读取** |
 
+> 说明：当前仓库已经存在 `tests/ut/distributed/ascend_store/` 单测目录，因此下面“测试缺口”不再表述为“没有测试”，而是“高风险路径覆盖不足”。
+
 ---
 
 ## 一、性能优化点
@@ -317,6 +319,43 @@ if current_event is not None:
 
 **严重程度**：中（GVA 复用场景 gate 是正确性需要；但非复用预取层被不必要延迟）
 
+### P17. ZMQ lookup 发送完整 block_hashes
+
+**问题**：scheduler 在调用 `LookupKeyClient.lookup()` 时，把完整的 `request.block_hashes` 传给 client，再由 worker 侧用 `hbm_hit_tokens` 跳过前缀。对于长 prompt，这会放大 IPC payload 和 msgpack 编码成本。
+
+**证据**：
+- scheduler 调用：[pool_scheduler.py:565-572](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py#L565-L572)
+- client 编码：[pool_scheduler.py:1158-1178](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py#L1158-L1178)
+- worker 侧再按 `hbm_hit_tokens` 跳过前缀：[pool_worker.py:2273-2288](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L2273-L2288)
+
+**优化方向**：只发送待查询后缀的 hashes，或发送 offset + sliced hashes，减少 IPC 和编码开销。
+
+**严重程度**：中高（长 prompt / 高频 lookup 场景更明显）
+
+### P18. lookup key 展开仍有重复字符串替换
+
+**问题**：`_expand_lookup_keys_by_rank()` 对每个 key 逐 rank 做两次字符串 replace，属于 lookup 热路径上的额外 Python 字符串复制。
+
+**证据**：
+- [pool_worker.py:2222-2229](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L2222-L2229)
+- [pool_worker.py:2211-2220](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L2211-L2220)
+
+**优化方向**：按目标 rank 直接构造 key prefix，或缓存 `(group_id, pp_rank, head_or_tp_rank, cache_family)` 的前缀，避免先生成后 replace。
+
+**严重程度**：中（在 TP/PP 较大时更明显）
+
+### P19. Mooncake get 返回值仍有 Python 化和多遍扫描成本
+
+**问题**：`MooncakeBackend.get()` 会把 C++ 返回值转成 Python list，再扫描失败码、再扫描一次把正值归零。对于大批量 get，这是稳定的 O(N) Python 成本。
+
+**证据**：
+- [mooncake_backend.py:240-256](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/mooncake_backend.py#L240-L256)
+- 对比 memcache 也存在结果扫描，但未做同样的 list 化与二次处理：[memcache_backend.py:185-198](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/memcache_backend.py#L185-L198)
+
+**优化方向**：让后端直接返回更紧凑的状态结构，或只在失败分支才展开详细码，减少 Python 层对象化和重复遍历。
+
+**严重程度**：中
+
 ---
 
 ## 二、代码结构优化点
@@ -409,6 +448,35 @@ if current_event is not None:
 
 **严重程度**：高（触发即死锁/泄漏，虽然触发概率低）
 
+### C1.1 backend put 失败未向上层传播
+
+**问题**：`mooncake_backend.py` / `memcache_backend.py` 的 `put()` 只记录失败日志，没有把失败状态显式返回给发送线程；发送线程仍可能把请求标记为完成。
+
+**证据**：
+- [mooncake_backend.py:189-221](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/mooncake_backend.py#L189-L221)
+- [memcache_backend.py:210-238](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/memcache_backend.py#L210-L238)
+- [kv_transfer.py:697-715](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py#L697-L715) 发送线程最终仍会进入完成态
+
+**影响**：写失败可能被静默吞掉，后续请求/事件仍按“成功保存”处理，影响正确性和可恢复性。
+
+**优化方向**：让 `put()` 返回明确失败结果，或由 backend/transfer thread 统一抛出可感知错误；失败时不要把请求标记为正常完成。
+
+**严重程度**：高（静默失败风险）
+
+### C1.2 ZMQ lookup server/client 缺少失效保护
+
+**问题**：`LookupKeyServer` 的循环没有异常保护，`LookupKeyClient` 的 `recv()` 也没有 timeout；server 异常退出或报文损坏时，client 可能永久阻塞。
+
+**证据**：
+- [ascend_store_connector.py:312-334](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py#L312-L334)
+- [pool_scheduler.py:1175-1178](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py#L1175-L1178)
+
+**影响**：非-layerwise lookup 路径存在“server 挂死 → client 永久等”的链路风险。
+
+**优化方向**：server loop 加异常捕获和错误响应；client 加 `poll(timeout)` / 超时重试；必要时支持重建 socket。
+
+**严重程度**：高（生产级卡死风险）
+
 ---
 
 ### C2. 多 group 加载失败的错误传播
@@ -475,15 +543,19 @@ if current_event is not None:
 
 ---
 
-### E3. 缺少单元测试
+### E3. 高风险路径测试覆盖不足
 
-**问题**：扫描未发现 test 目录，关键逻辑（PoolKey / ChunkedTokenDatabase / coordinator / 边界条件）缺测试保障。
+**问题**：`kv_pool` 不是“没有测试”，而是**已有测试，但对高风险路径的覆盖仍不均衡**。当前可见测试包括 `tests/ut/distributed/ascend_store/test_config_data.py`、`test_pool_worker.py`、`test_pool_scheduler.py`、`test_kv_transfer.py`、`test_coordinator.py` 等；但从源码复核看，异常路径、GVA 批量元数据、multi-group 失败恢复、异步 load/save 状态机仍需要补强。
 
-**证据**：kv_pool 目录下无 `test_*.py` 或 `tests/` 目录。
+**证据**：`tests/ut/distributed/ascend_store/` 下已存在相关单测文件；但对以下点的覆盖仍偏弱：
+- `KVTransferThread.run()` 异常分支与资源清理（`kv_transfer.py:496-518`）
+- GVA 元数据批量路径（`pool_worker.py:1359-1534`）
+- ZMQ lookup 的超时/异常/重连路径（`pool_scheduler.py:1146-1178`，`ascend_store_connector.py:293-340`）
+- layerwise / non-layerwise 的同步等待与失败传播（`pool_worker.py:1670-1763`）
 
-**优化方向**：优先为 `config_data.py`（key 生成、token 分块）和 `coordinator.py`（hybrid 命中）补单元测试，这两块是纯逻辑、易测试、易回归。
+**优化方向**：优先补“会卡死、会吞错、会错标完成”的高风险路径测试，而不是只补纯逻辑函数的 happy path。
 
-**严重程度**：高（重构无安全网，阻碍所有其他优化落地）
+**严重程度**：中高（已有测试基础，但关键路径缺安全网）
 
 ---
 
@@ -507,28 +579,33 @@ if current_event is not None:
 
 | 编号 | 优化点 | 维度 | 收益 | 紧迫度 | 难度 | 建议优先级 |
 |------|--------|------|------|--------|------|-----------|
-| E3 | 补单元测试 | 扩展性 | 高 | 高 | 低 | **P0 先行** |
-| C1 | 线程异常路径清理 | 正确性 | 高 | 高 | 中 | **P0** |
+| C1.1 | backend put 失败未传播 | 正确性 | 高 | 高 | 中 | **P0** |
+| C1.2 | ZMQ lookup server/client 缺少失效保护 | 正确性 | 高 | 高 | 低-中 | **P0** |
+| C1 | 传输线程异常路径清理 | 正确性 | 高 | 高 | 中 | **P0** |
 | S5 | 配置项集中 schema | 结构 | 高 | 高 | 中 | **P0** |
-| **P6** | **非-GVA prefetch=1 重叠失效** | **性能** | **高** | **高** | **低（改默认值）/ 中（改 submit 逻辑）** | **P0**（改默认值即可见效）|
-| **P7** | **非-layerwise I/O per-request 拆分** | **性能** | **高** | **中** | **中** | **P1** |
-| **P8** | **GVA 元数据 RPC per-(req,group) 拆分** | **性能** | **高** | **中** | **中** | **P1** |
-| **P9** | **.tolist() 抵消向量化收益** | **性能** | **高** | **中** | **高（需改 C++ 扩展）** | **P1** |
+| P7 | 非-layerwise I/O per-request 拆分 | 性能 | 高 | 中 | 中 | **P1** |
+| P8 | GVA 元数据 RPC per-(req,group) 拆分 | 性能 | 高 | 中 | 中 | **P1** |
+| P17 | ZMQ lookup 发送完整 block_hashes | 性能 | 高 | 中 | 低 | **P1** |
+| P9 | .tolist() 抵消向量化收益 | 性能 | 高 | 中 | 高（需改 C++ 扩展） | **P1** |
 | S1 | 巨文件拆分 | 结构 | 高 | 中 | 高 | P1 |
 | S2 | scheduler/worker 初始化去重 | 结构 | 高 | 中 | 中 | P1 |
 | P1 | MLA 读侧去重 | 性能 | 高 | 中 | 中 | P1（已有方案）|
 | P2 | Key 生成向量化 | 性能 | 高 | 中 | 中 | P1 |
-| **P11** | **from_request_tracker 全量重建** | **性能** | **中高** | **中** | **中** | **P1** |
+| P18 | lookup key 展开字符串替换 | 性能 | 中高 | 中 | 低 | **P1** |
+| P19 | Mooncake get 返回值 Python 化成本 | 性能 | 中高 | 中 | 中 | **P1** |
+| E3 | 高风险路径测试覆盖不足 | 扩展性 | 中高 | 中高 | 低 | P1 |
+| P6 | 非-GVA prefetch 默认值与 submit 逻辑 | 性能 | 高 | 中 | 低-中 | P1/P2（需实测） |
+| P11 | from_request_tracker 全量重建 | 性能 | 中高 | 中 | 中 | P1/P2 |
 | E1 | Backend 抽象拆分 | 扩展性 | 中 | 中 | 中 | P2 |
 | C2 | 多 group 失败传播 | 正确性 | 中 | 中 | 中 | P2 |
 | P3 | 嵌套循环优化 | 性能 | 中 | 低 | 中 | P2 |
 | C3 | _invalid_block_ids 锁审计 | 正确性 | 中 | 中 | 低 | P2 |
-| **P10** | **block_hash_to_str 重复转换 3 次** | **性能** | **中** | **中** | **低** | **P2** |
-| **P12** | **_handle_stored_request 双重建** | **性能** | **中** | **低** | **中** | **P2** |
-| **P13** | **非-layerwise wait_for_save 阻塞** | **性能** | **中** | **中** | **中** | **P2** |
-| **P14** | **最后一层 save 同步等待** | **性能** | **中** | **中** | **中** | **P2** |
-| **P15** | **ZMQ Lookup 无超时无批合并** | **性能** | **中** | **中** | **低（加 timeout）/ 中（批合并）** | **P2** |
-| **P16** | **gate 对非复用预取层过度同步** | **性能** | **中** | **低** | **中** | **P2** |
+| P10 | block_hash_to_str 重复转换 3 次 | 性能 | 中 | 中 | 低 | P2 |
+| P12 | _handle_stored_request 双重建 | 性能 | 中 | 低 | 中 | P2 |
+| P13 | 非-layerwise wait_for_save 阻塞 | 性能 | 中 | 中 | 中 | P2 |
+| P14 | 最后一层 save 同步等待 | 性能 | 中 | 中 | 中 | P2 |
+| P15 | ZMQ Lookup 无超时无批合并 | 性能 | 中 | 中 | 低-中 | P2 |
+| P16 | gate 对非复用预取层过度同步 | 性能 | 中 | 低 | 中 | P2 |
 | S3/S4 | to_string 去重 / DB 拆分 | 结构 | 中 | 低 | 中 | P3 |
 | P4/P5 | TP mismatch / GVA 循环优化 | 性能 | 中 | 低 | 中 | P3 |
 | C4 | 边界条件测试 | 正确性 | 低 | 低 | 低 | P3 |
@@ -536,28 +613,33 @@ if current_event is not None:
 
 ### 推进策略
 
-**第一阶段（打好地基 + 立即见效，P0）**：
-1. **E3 补测试**——为 config_data 和 coordinator 补单元测试，建立重构安全网
-2. **C1 修异常路径**——修复线程异常路径的资源泄漏/死锁风险
-3. **S5 配置集中**——定义 KVPoolConfig，为后续重构铺路
-4. **P6 改 prefetch 默认值**——最低成本高收益，非-GVA 路径默认 1 改 2+，并评估放开 `submit_count` 首层限制
+**第一阶段（先修正确性，P0）**：
+1. **C1.1 backend put 失败传播**——避免写失败被当作成功保存
+2. **C1.2 ZMQ lookup 失效保护**——给 server/client 都加异常与超时保护
+3. **C1 修异常路径**——修复线程异常路径的资源泄漏/死锁风险
+4. **S5 配置集中**——定义 KVPoolConfig，为后续重构铺路
 
-**第二阶段（性能 + 结构双推进，P1）**：
-5. **S5 落地后做 S2**——scheduler/worker 共享配置，消除重复初始化
-6. **P7 非-layerwise I/O 合并**——跨 request 累积 keys/addrs/sizes，一次 put/get（参考 GVA 路径的 batch_write_finish）
-7. **P8 GVA 元数据 RPC 合并**——收集所有 (req,group) 的 keys 一次调用
-8. **P1 MLA 读侧去重**——已有方案，先做 PoC 验证（见专项文档）
-9. **P2 Key 生成向量化**——配合 S1 拆分一起做，先抽 KeyBuilder
-10. **P9 消除 .tolist()**——让 C++ 扩展支持 buffer protocol（需跨团队协调 C++ 改动）
-11. **P11 RequestTracker 增量 buffer**——维护增量 numpy buffer，避免每步全量重建
+**第二阶段（高收益性能项，P1）**：
+5. **P7 非-layerwise I/O 合并**——跨 request 累积 keys/addrs/sizes，一次 put/get
+6. **P8 GVA 元数据 RPC 合并**——收集所有 (req,group) 的 keys 一次调用
+7. **P17 ZMQ lookup 只发后缀 hashes**——减少 IPC payload 和 msgpack 成本
+8. **P9 消除 .tolist()**——让 C++ 扩展支持 buffer protocol（需跨团队协调 C++ 改动）
+9. **P18 lookup key 展开优化**——避免字符串 replace 二次复制
+10. **P19 Mooncake get 返回值降 Python 化**——减少多遍扫描和对象化成本
+11. **P1 MLA 读侧去重**——已有方案，先做 PoC 验证（见专项文档）
+12. **P2 Key 生成向量化**——配合 S1 拆分一起做，先抽 KeyBuilder
+13. **P11 RequestTracker 增量 buffer**——维护增量 numpy buffer，避免每步全量重建
+14. **P6 非-GVA prefetch 逻辑**——先实测，再决定是否调整默认值和 submit 策略
 
-**第三阶段（深化，P2/P3）**：
-12. S1 巨文件拆分（依赖 S5/S2 先落地）
-13. P10/P12 内存拷贝优化（block_hash 缓存、双重建消除）
-14. P13/P14/P16 同步等待优化（异步化 wait_for_save、推迟最后一层等待、gate 精细化）
-15. P15 ZMQ 超时 + 批合并
-16. E1 Backend 抽象拆分
-17. 其余按需推进
+**第三阶段（结构与深化，P2/P3）**：
+15. **S1 巨文件拆分**——依赖 S5 先落地
+16. **S2 scheduler/worker 初始化去重**——在统一配置基础上消除重复初始化
+17. **E3 补高风险路径测试**——补异常、失败传播、状态机路径
+18. **P10/P12 内存拷贝优化**——block_hash 缓存、双重建消除
+19. **P13/P14/P16 同步等待优化**——异步化 wait_for_save、推迟最后一层等待、gate 精细化
+20. **P15 ZMQ 超时 + 批合并**——作为第二层保险和性能兜底
+21. **E1 Backend 抽象拆分**——为后续后端扩展铺路
+22. **其余按需推进**
 
 ### 关键依赖关系
 
@@ -575,10 +657,10 @@ if current_event is not None:
 
 | 已有文档 | 对应本文优化点 | 关系 |
 |----------|----------------|------|
-| [kv_pool_线程存取与GIL分析.md](file:///D:/lzy/project/kv_pool/llm-project/draft/kv_pool_线程存取与GIL分析.md) | P2（key 向量化）、结构梳理部分 | 已有分析是本文 P2 的基础；本文补充了更多结构/正确性/扩展性维度 |
-| [MLA_KV读取去重优化讨论.md](file:///D:/lzy/project/kv_pool/llm-project/draft/MLA_KV读取去重优化讨论.md) | P1（MLA 读侧去重） | 已有专项方案；本文作为索引纳入全局优先级 |
+| [kv_pool_线程存取与GIL分析.md](file:///D:/lzy/project/kv_pool/llm-project/draft/kv_pool_线程存取与GIL分析.md) | P2/P18/P19、结构梳理部分 | 该文档主要覆盖线程、GIL 与部分 key 热点；本文补充了更完整的性能与正确性分层 |
+| [MLA_KV读取去重优化讨论.md](file:///D:/lzy/project/kv_pool/llm-project/draft/MLA_KV读取去重优化讨论.md) | P1（MLA 读侧去重） | 已有专项方案；本文将其纳入全局优先级框架 |
 
-本文不重复已有文档的细节，而是把它们纳入一个**全局优化点清单 + 优先级框架**，方便统筹推进。
+本文不重复已有文档的细节，而是把它们纳入一个**全局优化点清单 + 优先级框架**，并补入这次复核中发现的若干高价值漏项（如 C1.1/C1.2、P17/P18/P19）。
 
 ---
 
