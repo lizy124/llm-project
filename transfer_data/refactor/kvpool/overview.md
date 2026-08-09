@@ -2,7 +2,7 @@
 
 源码范围：`code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/`
 
-这套代码实现的是 vLLM Ascend 侧的外部 KV Pool Connector：把本地 HBM 中的 KV Cache 按 token/block 粒度写入外部存储，并在后续请求命中相同 prefix 时，从外部 KV Pool 拉回 KV Cache，减少重复 prefill 计算。
+这套代码实现的是 vLLM Ascend 侧的外部 KV Pool Connector：将本地 HBM 中的 KV Cache 按 token 范围切分为 block/chunk，并以 block/chunk 作为外部 key 和实际 I/O 单位写入外部存储；token 主要用于描述缓存范围、长度以及部分 chunk 的字节切片。后续请求命中相同 prefix 时，组件会从外部 KV Pool 拉回 KV Cache，减少重复 prefill 计算。
 
 ## 1. 最外层入口：AscendStoreConnector
 
@@ -10,8 +10,8 @@
 
 - scheduler 角色创建 `KVPoolScheduler`，负责命中查询、生成传输元数据、管理请求状态。
 - worker 角色创建 `KVPoolWorker`，负责注册 KV cache 内存、实际执行 load/save。
-- 非 layerwise 且 rank 0 的 worker 会启动 `LookupKeyServer`，scheduler 侧通过 ZMQ RPC 查询外部 KV Pool 命中长度。
-- `use_layerwise=True` 时要求 piecewise graph 模式，因为 load/save 按层穿插在 forward 过程中。
+- 非 layerwise 模式下，rank 0 的 worker 会启动 `LookupKeyServer`（ZMQ REP）；scheduler 侧的 `KVPoolScheduler` 按需创建 `LookupKeyClient`（ZMQ REQ），通过 ZMQ RPC 将请求的 token 长度、block hash 等信息发送给该 Server。Server 再调用 rank 0 worker 的 `KVPoolWorker.lookup_scheduler()` 查询外部 KV Pool，并将命中的 token 数返回给 scheduler。
+- `use_layerwise=True` 时，KV 传输会在每层计算前后执行：先等待当前层的 KV load 完成，再执行该层计算，计算结束后提交该层 KV save。由于这些操作需要插入模型各层之间，使用 CUDA Graph 时必须采用 piecewise graph 模式，将整个 forward 拆成多个可在层边界处衔接传输操作的图段。这里的 piecewise 描述的是模型执行图的分段方式，不是 KV Cache 的数据切分粒度。
 
 典型调用分层：
 
