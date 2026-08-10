@@ -1,138 +1,187 @@
-# vLLM Ascend Weight Transfer 重构状态
+# vLLM Ascend Weight Transfer 重构记录
 
-这个目录记录 vllm-ascend `weight_transfer` 重构的背景、设计、历史 PR 和 upstream 演进。
+这个目录记录 vllm-ascend `weight_transfer` 的核心流程、重构设计、Ascend PR 历史和 upstream vLLM API 演进。
+
+```text
+代码仓库: D:/lzy/project/kv_pool/code/vllm-ascend
+分支: weight_transfer_refactor
+HEAD: c5ed02f00
+远端: origin/weight_transfer_refactor = c5ed02f00
+```
+
+远端原有的 5 个实验性重构提交已经被 PR1 替换，不应再把旧实验分支当作当前实现。
+
+文档更新时间：2026-08-10。
+
+## 文档索引
 
 推荐阅读顺序：
 
-1. `README.md`：当前状态、已完成内容、后续 PR 拆分。
-2. `01-weight-transfer-core-flow.md`：weight transfer 启动和同步时序。
-3. `02-refactor-design.md`：重构边界、设计方案和验收标准。
-4. `03-vllm-ascend-pr-history.md`：vllm-ascend 相关 PR 脉络。
-5. `04-upstream-vllm-timeline.md`：upstream vLLM weight_transfer 演进。
+1. `01-weight-transfer-core-flow.md`：当前 worker、trainer、control-plane 和 data-plane 流程。
+2. `02-refactor-design.md`：重构边界、版本兼容、目标结构和验收标准。
+3. `03-vllm-ascend-pr-history.md`：Ascend 侧功能引入、upstream 同步和实验提交历史。
+4. `04-upstream-vllm-timeline.md`：upstream 从 NCCL/IPC 到 Stateful Trainer Send 的演进。
+
+```text
+01  当前协议如何运行
+02  这次应该如何重构
+03  Ascend 代码为什么演进成现在这样
+04  upstream contract 为什么持续变化
+```
 
 ## 当前结论
 
-`weight_transfer_refactor` 分支已经包含完整重构视图，后续不建议继续扩大范围。下一步应先确认整体设计，再拆成 2-3 个较小 PR 上库。
+可以继续进行第二阶段重构，但必须基于当前代码和 upstream 实际能力：
 
-当前分支已有 4 个主要 commit：
+- upstream 已包含 `TrainerWeightTransferEngine`、`WeightTransferTrainerFactory` 和 `clients.py`。
+- vLLM v0.26 虽有 trainer factory 类，但尚未注册 stateful trainer backend，不能只检查类是否存在。
+- PR1 已集中 registry、compat、lazy-load 和 HTTP 示例/e2e 请求 helper。
+- lifecycle、device identity、trainer orchestration 和 packed transport 重构尚未开始。
+
+## PR1 已完成
+
+PR1 只收敛注册和 control-plane helper，没有修改 HCCL/NPU IPC transport loop。
+
+### 提交
 
 ```text
-cae87ad1 Refactor weight transfer common helpers
-ef9630ee Share weight transfer HTTP example helpers
-178fb6ff Complete weight transfer helper refactor
-9ea1eea6 Polish weight transfer refactor helpers
+84b09f3e2 refactor(weight-transfer): centralize registration and HTTP helpers
+c5ed02f00 fix(weight-transfer): detect stateful trainer capability
 ```
 
-## 已完成范围
+### 注册与兼容
 
-### 公共 control-plane helper
-
-已抽出：
-
-- `registry.py`：集中注册 `hccl`、`npu_ipc`，并维护 upstream-compatible alias `nccl`、`ipc`。
-- `lifecycle.py`：封装 checkpoint-format layerwise reload 和 direct weight copy lifecycle。
-- `device_mapping.py`：集中 NPU IPC host/device/chip UUID 生成逻辑。
-- `examples/rl/weight_transfer_http_utils.py`：封装 RL 示例里的公共 HTTP endpoint 调用。
-
-### E2E 测试 helper
-
-已新增：
+新增：
 
 ```text
+vllm_ascend/distributed/weight_transfer/compat.py
+vllm_ascend/distributed/weight_transfer/registry.py
+```
+
+当前映射：
+
+```text
+hccl    -> HCCLWeightTransferEngine
+npu_ipc -> NPUIPCWeightTransferEngine
+nccl    -> hccl
+ipc     -> npu_ipc
+```
+
+约束：
+
+- engine loader 保持 lazy import。
+- plugin register 和 platform patch 使用同一个幂等入口。
+- `nccl`/`ipc` alias 由统一 registry 替换。
+- 只有 upstream trainer registry 已存在 `ipc` 时，才注册 Ascend `npu_ipc` trainer engine。
+- 注册阶段不 import Ray、`torch_npu`，也不初始化通信资源。
+
+### HTTP 示例与 e2e helper
+
+新增：
+
+```text
+examples/rl/weight_transfer_http_utils.py
 tests/e2e/pull_request/weight_transfer_utils.py
 ```
 
-职责：
+已清理两个 RL HTTP 示例和两个 HCCL/NPU IPC e2e。helper 只负责 URL、HTTP 请求、timeout、状态码检查和 background POST 异常传播；backend payload、IPC 序列化和 data-plane 保持原位。
 
-- 启动或协调 weight transfer e2e 测试里的 vLLM server。
-- 封装 pause/init/start/update/finish/resume 调用。
-- 封装 before/after generation 行为断言。
-- backend-specific 配置仍保留在各自测试中。
+### UT
 
-### Trainer-side send orchestration
-
-已新增：
+新增：
 
 ```text
-vllm_ascend/distributed/weight_transfer/trainer_send.py
+tests/ut/distributed/weight_transfer/test_compat.py
+tests/ut/distributed/weight_transfer/test_registry.py
+tests/ut/distributed/weight_transfer/test_http_utils.py
 ```
 
-职责：
+覆盖 alias/幂等注册、lazy loader、trainer capability，以及 HTTP URL、payload、timeout 和错误传播。
 
-- 遍历 model parameters。
-- 构造 names、dtype names、shapes 和 packed metadata。
-- 编排 direct send、HTTP send、packed send。
-- backend-specific 发送行为仍委托给 HCCL / NPU IPC engine。
+## PR1 验证状态
 
-### Packed tensor helper
-
-当前只完成低风险公共 helper 抽取：
-
-- packed tensor metadata。
-- buffer size 计算。
-- unpack 公共逻辑。
-
-没有重写 HCCL / NPU IPC 的核心 transport loop。HCCL broadcast 和 NPU IPC handle 逻辑仍保留在各自路径中。
-
-### 上库前 polish
-
-已补充：
-
-- 更新 `patch_weight_transfer_engine.py` 和 patch 总说明里的过时 `WeightTransferConfig.backend` 注释，匹配当前 upstream `Literal[...] | str` 行为。
-- `trainer_send.py` 对未知 `send_mode` 显式抛 `ValueError`，避免静默成功。
-- HTTP helper 统一处理 `base_url` 尾斜杠。
-- e2e helper 中带副作用的 lifecycle 探测函数重命名为 `start_weight_update_if_available`。
-- 补充对应 trainer_send UT。
-
-## 后续 PR 拆分建议
-
-### PR 1: 公共 control-plane helper
-
-范围：
-
-- backend registry / alias registration
-- lifecycle policy
-- NPU IPC device mapping
-- HTTP example helper
-- 对应 UT
-
-目的：建立共享 control-plane 边界，不触碰高风险 data-plane transfer 内部逻辑。
-
-### PR 2: 测试和 E2E helper 清理
-
-范围：
-
-- e2e weight transfer helper
-- e2e callsite cleanup
-- HCCL 和 NPU IPC 测试共享 lifecycle/assertion helper
-
-目的：减少测试 orchestration 重复，让不同 backend 的行为更容易比较。
-
-### PR 3: 核心 data-plane 清理
-
-范围：
-
-- trainer-side send orchestration helper
-- packed tensor common helper
-- HCCL 和 NPU IPC backend-specific cleanup
-- 聚焦的 UT / e2e 覆盖
-
-目的：区分公共协议编排和 Ascend-specific transport 实现。
-
-## 验证状态
-
-当前已完成：
+已完成：
 
 ```text
-tests/ut/distributed/weight_transfer: 39 passed
-tests/ut/worker/a2/test_worker_v1.py: 49 passed
-Combined focused UT run: 88 passed
-Python syntax check: passed for changed files
+Python AST parse: passed
+Python compileall: passed
+git diff --check: passed
+registry stub smoke test: passed
+HTTP helper stub smoke test: passed
 ```
 
-正式拆 PR / 上库前建议补充：
+当前执行环境没有安装 `pytest`、`ruff`、`torch` 和 `requests`，因此尚未执行真实 vLLM import、UT、lint 或 Ascend e2e。旧 README 中的“39 passed / 88 passed”不属于当前 PR1，不能继续引用。
 
-- Ascend/CANN 环境下的 worker UT。
-- HCCL 和 NPU IPC e2e 测试。
+完整环境应执行：
 
-当前本地限制：非 Ascend 环境中，部分 worker 测试会在 import 阶段因为缺少 `acl` 失败。只要失败没有发生在新重构逻辑内部，应视为环境限制，而不是本次重构行为失败。
+```text
+pytest -q tests/ut/distributed/weight_transfer
+ruff check vllm_ascend/distributed/weight_transfer examples/rl tests/ut/distributed/weight_transfer
+pytest tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py
+pytest tests/e2e/pull_request/two_card/test_hccl_weight_transfer.py
+```
+
+## PR2 计划
+
+PR2 处理高风险的 worker/trainer 编排和 data-plane 边界，必须单独 review。
+
+### Compatibility adapter
+
+- 对齐 `TrainerWeightTransferEngine` 与 legacy static trainer API。
+- 按 trainer registry capability 判断，不依赖单一版本号。
+- 复用 upstream `clients.py`，不复制通用 Ray/HTTP client。
+
+### Lifecycle
+
+- 明确 `init/start/update/finish/shutdown` 合法顺序。
+- 保留 backend-specific layerwise reload/no-op 行为。
+- 处理失败、cleanup、draft target 和 weight version。
+
+### Device identity
+
+- 分离 logical/physical NPU mapping 与 host/device IPC identity。
+- 覆盖 `ASCEND_RT_VISIBLE_DEVICES`、多网卡、容器和非法映射。
+
+### Trainer sender
+
+- 公共层只负责 metadata 和 lifecycle 编排。
+- HCCL 保留 communicator/broadcast。
+- NPU IPC 保留 handle 创建、汇聚、序列化和 rebuild。
+- legacy/static 与 stateful API 复用相同 wire contract。
+
+### Packed contract
+
+- 固定 names、shapes、dtypes、tensor_sizes 和 chunk ordering。
+- 覆盖空输入、尾块、超大 tensor 和 producer/consumer 不一致。
+- 不无理由修改现有 packed wire format。
+
+## 非目标
+
+- 不 fork upstream `base.py`、`factory.py` 或 `clients.py`。
+- 不合并 HCCL 与 NPU IPC engine。
+- 不修改 upstream HTTP schema 或 IPC pickle/base64 协议。
+- 不新增跨主机 NPU IPC。
+- 不在结构重构中顺带优化通信性能。
+
+## 开始 PR2 前
+
+- [ ] 在完整环境运行 PR1 UT 和 lint。
+- [ ] 保存 HCCL/NPU IPC 当前 e2e 基线。
+- [ ] 确认 v0.25、v0.26、v0.27 和 current main trainer capability。
+- [ ] 重新核对 upstream `base.py`、`factory.py`、`clients.py` 和 backend engines。
+- [ ] 保持 PR2 不包含无关模块改动。
+
+每个重构提交都必须回答：
+
+1. 这是 upstream contract，还是 Ascend transport 差异？
+2. 是否改变 HTTP/Ray/callable 或 packed wire 行为？
+3. 无 NPU 环境能否通过纯 Python/mock 验证？
+
+```text
+upstream API       -> compat / adapter / registry
+control-plane      -> upstream clients + thin example helper
+lifecycle          -> lifecycle policy + backend hooks
+HCCL transport     -> hccl engine/sender
+NPU IPC transport  -> npu_ipc engine/sender
+packed protocol    -> explicit contract and joint tests
+```
