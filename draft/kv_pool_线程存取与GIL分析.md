@@ -12,14 +12,16 @@
 
 | 子目录 | 定位 | 复杂度 |
 |---|---|---|
-| `ascend_store` | 核心：P/D 分离式外部 KV 池（producer 存 / consumer 取） | 最高 |
+| `ascend_store` | 核心：外部共享 KV 池（producer 存 / consumer 按 key 取，解耦可复用） | 最高 |
 | `recompute_cpu_offload` | 抢占重算场景的 CPU KV 保存 | 中 |
 | `simple_cpu_offload` | 上游 SimpleCPUOffload 的 NPU 适配 | 低 |
 | `ucm_connector` | 外部 UCM 连接器的转发壳 | 低 |
 
 ### 1.1 ascend_store —— 主连接器
 
-实现 **Prefill/Decode 分离部署**：Prefill 节点（`kv_producer`）算完 KV 写入外部池，Decode 节点（`kv_consumer`）直接从池里取，避免重算。
+实现 **KV 池化部署**：Prefill 节点（`kv_producer`）算完 KV 写入外部共享 store，Decode 节点（`kv_consumer`）按 key 从 store 取回，避免重算。
+
+> ⚠️ 与 `kv_p2p/` 的点对点（P2P）PD 分离直传不同：ascend_store 显式忽略 P/D 握手元数据（`set_xfer_handshake_metadata_pp_aware` 直接 `pass`，`ascend_store_connector.py:128`，注释"handles PP via pool keys"），靠 `PoolKey` 把多维并行信息编码进 key，通过外部 store 解耦 producer/consumer——这是**池化语义**（按 key 存取、可共享复用），而非两端直连传输。`kv_role` 的 `kv_producer`/`kv_consumer`/`kv_both` 只是池化部署里的角色划分，不等于 P2P 直传。
 
 **入口与 Scheduler/Worker 拆分**
 
@@ -46,7 +48,7 @@ Key 由 `PoolKey.to_string()`（`metadata.py:114`）生成，把多维并行信�
 - `cache_family`：compress 感知（DSV4 压缩比 `c1/c4/...`），决定 key 粒度
 - `chunk_hash`：token 块的 hash
 
-layerwise 模式下还有 `LayerPoolKey`（`metadata.py:140`），多加 `@layer_id:{n}`。
+layerwise 模式下还有 `LayerPoolKey`（`metadata.py:141`，`:140` 是 `@dataclass` 装饰器），多加 `@layer_id:{n}`，同时**省略 `@pp_rank`**（layerwise 下 PP 维度由 layer 顺序保证，不复用 `PoolKey` 的 pp 字段）。
 
 `ChunkedTokenDatabase`（`metadata.py:255`）是中央抽象：把 token 区间映射成 key，并把 key 映射到注册进来的 KV cache buffer 地址（`prepare_value` / `prepare_value_layer`）。
 
@@ -79,10 +81,10 @@ layerwise 模式下还有 `LayerPoolKey`（`metadata.py:140`），多加 `@layer
     - `KVCacheStoreLayerRecvingThread`（`kv_transfer.py:1472`）
 
 GVA 路径最复杂，涉及：
-- worker 侧 `batch_alloc`（`pool_worker.py:1193`）分配每 rank GVA（scheduler 只查存在性）
-- load 前 `batch_add_lease`（`pool_worker.py:1359`）拿读租约（TTL 5min），失败重试 + invalid block 上报
-- save 完成后 `batch_write_finish` 发布新 key
-- 最后一个 layer 传完 `batch_remove_lease` 释放租约
+- worker 侧 `batch_alloc`（调用点 `pool_worker.py:1278`，所在方法 `_alloc_gvas_for_save` 在 `:1193`）分配每 rank GVA（scheduler 只查存在性）
+- load 前 `batch_add_lease`（调用点 `pool_worker.py:1466`，所在方法 `_prepare_load_gvas` 在 `:1359`）拿读租约（TTL 5min，`LAYERWISE_READ_LEASE_TTL_MS`），失败重试 + invalid block 上报
+- save 完成后 `batch_write_finish`（`kv_transfer.py:1447`）发布新 key
+- 最后一个 layer 传完 `batch_remove_lease`（`kv_transfer.py:1643`）释放租约
 
 **Layerwise 缓存布局（layer 复用）**
 
@@ -101,13 +103,14 @@ GVA 路径最复杂，涉及：
 
 **端到端流程**
 
-- **Scheduler 侧命中检查**（`get_num_new_matched_tokens`，`pool_scheduler.py:518`）：
+- **Scheduler 侧命中检查**（`get_num_new_matched_tokens`，`pool_scheduler.py:518`），分三条路径：
   1. consumer（非 `consumer_is_to_load`）直接返回 0
-  2. GVA layerwise → `_get_layerwise_gva_hit_tokens`（查 `batch_get_key_info` 的 GVA 有效性）
-  3. 否则 → `LookupKeyClient`（`pool_scheduler.py:1146`）通过 ZMQ RPC 问 worker 的 `LookupKeyServer`，worker 调 `lookup_scheduler`（`pool_worker.py:2330`）展开所有 TP/PP rank 的 key 查最长连续命中
-  4. 生成 `LoadSpec`（`metadata.py:690`）
+  2. GVA layerwise → `_get_layerwise_gva_hit_tokens`（`pool_scheduler.py:548`，查 `batch_get_key_info` 的 GVA 有效性）
+  3. key layerwise（非 GVA）→ `_get_store_lookup_hit_tokens`（`pool_scheduler.py:559`，直接查 `store_scheduler.batch_is_exist`）
+  4. 非 layerwise → `LookupKeyClient`（`pool_scheduler.py:1146`）通过 ZMQ RPC 问 worker 的 `LookupKeyServer`，worker 调 `lookup_scheduler`（`pool_worker.py:2330`）展开所有 TP/PP rank 的 key 查最长连续命中
+  5. 生成 `LoadSpec`（`metadata.py:691`，`:690` 是 `@dataclass` 装饰器）
 
-- **Scheduler 侧 build_connector_meta**（`pool_scheduler.py:949`）：为每个调度的请求生成 `ReqMeta`（`metadata.py:856`），区分新请求 / 抢占恢复 / 运行中缓存 / 异步加载四类处理。
+- **Scheduler 侧 build_connector_meta**（`pool_scheduler.py:949`）：为每个调度的请求生成 `ReqMeta`（`metadata.py:857`，`:856` 是 `@dataclass` 装饰器），区分新请求 / 抢占恢复 / 运行中缓存 / 异步加载四类处理。
 
 - **Worker 侧 load**（`start_load_kv`，`pool_worker.py:867`）：
   - layerwise → `process_layer_data`（`pool_worker.py:1645`）
@@ -126,7 +129,7 @@ GVA 路径最复杂，涉及：
 
 ### 1.2 其余三个连接器
 
-- **recompute_cpu_offload**：`RecomputeCPUOffloadConnectorV1`（`recompute_cpu_offload_connector.py:43`），用于抢占重算场景。请求被抢占时把 KV 卸到 CPU，恢复时再装回。默认 8GB CPU 容量。新增 API：`update_state_before_preempt` / `has_pending_transfers` / `has_preempted_request` / `reset_cache`。
+- **recompute_cpu_offload**：`RecomputeCPUOffloadConnectorV1`（`recompute_cpu_offload_connector.py:43`），用于抢占重算场景。请求被抢占时把 KV 卸到 CPU，恢复时再装回。默认 8GB CPU 容量（`DEFAULT_CPU_CAPACITY_BYTES`）。新增 API：`bind_gpu_block_pool`（`:158`）/ `update_state_before_preempt` / `has_pending_transfers` / `has_preempted_request`（源码显式标注"New API only"）；`reset_cache` 是覆盖上游 base 已有的 no-op 实现，非新增。
 - **simple_cpu_offload**：`AscendSimpleCPUOffloadConnector`（`simple_cpu_offload_connector.py:24`），继承上游 `SimpleCPUOffloadConnector`，只把 CUDA worker 换成 NPU 原生 `SimpleCPUOffloadNPUWorker`（用 `aclrtMemcpyBatchAsync` + `torch.npu` stream/event）。单节点本地 CPU offload。
 - **ucm_connector**：`UCMConnectorV1`（`ucm_connector/connector.py:37`），纯转发壳，委托给外部 `ucm.integration.vllm.UCMConnector`。用 `_get_ucm_delegate_for` 分发，未声明的保留 hook fall through 到内部 `inner_connector`。
 
@@ -161,7 +164,7 @@ GVA 路径最复杂，涉及：
 - **投递**：主线程 `add_request(task)` → `request_queue`
 - **等待**：`threading.Event`（`layer_save_finished_events` / `layer_load_finished_events`）+ `torch.npu.Event`（`sync_save_events`，GPU 流同步）
 - **完成上报**：`finished_requests` 集合 + `stored_requests` 引用计数
-- **GVA layerwise 额外有** `AttentionComputeStartGate`（`attention_fence.py:27`）：传输线程等计算流到 attention 边界才开工
+- **layerwise 额外有** `AttentionComputeStartGate`（`attention_fence.py:27`）：key 层与 GVA 层的 recv 线程都经它等计算流到 attention 边界才开工（非 GVA 专属，key 层 recv 同样调 `attention_start_gate.wait`，`kv_transfer.py:1250`）
 
 ### 2.3 ⚠️ 例外：非 layerwise 同步 load
 
@@ -181,7 +184,8 @@ ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
 
 - **save 全部走线程**（非 layerwise / key layerwise / GVA layerwise 都是 `add_request` + event 等待）
 - **layerwise load 全部走线程**（含 GVA lease/批拷贝）
-- **非 layerwise load**：`load_async=True` 走 `KVCacheStoreRecvingThread`；`load_async=False` 在主线程同步调 `m_store.get`（tp_mismatch 的 `_load_kv_tp_mismatch`（`pool_worker.py:1969`）也是同理）
+- **非 layerwise load**：`load_async=True` 走 `KVCacheStoreRecvingThread`；`load_async=False` 在主线程同步调 `m_store.get`
+  > 注：tp_mismatch 的 `_load_kv_tp_mismatch`（`pool_worker.py:1969`）**不是**同步主线程路径——它只在 `load_async=True` 的 RecvingThread 中被调用（`kv_transfer.py:936`）。`load_async=False` 的同步路径直接调 `m_store.get`，不走该函数。
 
 ---
 
@@ -189,26 +193,26 @@ ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
 
 ### 3.1 前置事实：后端扩展与 GIL
 
-mooncake/memcache/yuanrong 都是外部 C++ pybind11 扩展（`m_store.put/get/batch_copy`）。RDMA/DMA 类存储扩展按惯例会释放 GIL（用 `py::call_guard<py::gil_scoped_release>()` 或函数内显式 release），否则跨节点传输会卡死整个 Python 进程。
+mooncake/memcache/yuanrong 都是外部 C 扩展（mooncake 可见 pybind11 痕迹，`mooncake_backend.py:38`；memcache/yuanrong 分别来自 `memcache_hybrid`/`yr.datasystem` 的外部 import，是否 pybind11 未在本层确认），`m_store.put/get/exists` 是 Backend 的 Python 包装、内部再调底层 C 扩展，`batch_copy` 多一层间接走 `m_store.store.batch_copy`。RDMA/DMA 类存储扩展**按惯例应释放 GIL**（否则跨节点传输会卡死整个 Python 进程），但本 Python 代码层未见 `Py_BEGIN_ALLOW_THREADS`/`release_gil` 等证据，是否释放需查对应 C 扩展源码确认。
 
 传输线程的工作分两类，GIL 影响完全不同：
 
 | 工作 | 是否受 GIL | 代码位置 |
 |---|---|---|
-| `m_store.put/get/batch_copy/exists`（RDMA/DMA I/O） | ❌ 不受（C++ 扩展释放 GIL） | `pool_worker.py:971`、`kv_transfer.py:477` |
+| `m_store.put/get/exists`、`m_store.store.batch_copy`（RDMA/DMA I/O） | ❌ 理论上不受（C 扩展应释放 GIL，待 C 源码核实） | `pool_worker.py:971`、`kv_transfer.py:477`（注意是 `m_store.store.batch_copy`，多一层 `.store`） |
 | key 字符串生成（`PoolKey.to_string` 拼接 + 生成器循环） | ✅ 受 | `metadata.py:114`、`metadata.py:555` |
-| `_handle_stored_request` 里 for 循环构建 addrs/sizes | ✅ 受 | `kv_transfer.py:799-855` |
-| `LayerBatchBuilder`（numpy 向量化） | ❌ 不受（numpy 释放 GIL） | `kv_transfer.py:101` |
+| `_handle_stored_request` 里 for 循环构建 addrs/sizes | ✅ 受 | `kv_transfer.py:846-855`（函数在 `:717`，`:799` 是另一段构建 starts/ends/keys 的循环，非 addrs/sizes） |
+| `LayerBatchBuilder._build_transfer_arrays`（numpy 向量化） | ❌ 理论上不受（numpy 多数算子释放 GIL，视算子/配置） | `kv_transfer.py:101`（类定义在 `:40`） |
 
-**所以 GIL 真正卡的是 Python 层的 key 生成和循环，不是 I/O 本身。** 而每进程只有 1 个 send 线程 + 1 个 recv 线程（`pool_worker.py:329`），争抢不激烈。这个多线程的**目的是"I/O 与 forward 计算重叠"，不是"CPU 多核并行"** —— 而 forward 计算（NPU kernel）也释放 GIL，正好让传输线程拿 GIL 做 key 构建，是个配合关系。
+**所以 GIL 真正卡的是 Python 层的 key 生成和循环，不是 I/O 本身。** 而每进程只有 1 个 send 线程 + 1 个 recv 线程（`pool_worker.py:328-329`，`328` 是 `kv_send_thread`、`329` 是 `kv_recv_thread`；"只起一个"由 `_start_kv_transfer_threads` 的各分支二选一保证，`:453`），争抢不激烈。这个多线程的**目的是"I/O 与 forward 计算重叠"，不是"CPU 多核并行"** —— 而 forward 计算（NPU kernel）也释放 GIL，正好让传输线程拿 GIL 做 key 构建，是个配合关系。
 
 ### 3.2 改 IPC 能不能解决？能，但不划算
 
 **改 IPC 的真实代价**
 
-1. **NPU KV cache buffer 跨进程共享是硬骨头**。`register_buffer` 注册的是设备内存 `data_ptr`（`pool_worker.py:793`），`torch.Tensor.share_memory` 只对 CPU tensor 生效。新进程要么重新 mmap NPU 显存（需平台支持跨进程 NPU 句柄），要么走 H2D 中转——后者直接抹平收益。
+1. **NPU KV cache buffer 跨进程共享是硬骨头**。`register_buffer` 注册的是设备内存 `data_ptr`（`pool_worker.py:793` 取 `cache.data_ptr()`，实际 `register_buffer` 调用在 `pool_worker.py:864`），`torch.Tensor.share_memory` 只对 CPU tensor 生效。新进程要么重新 mmap NPU 显存（需平台支持跨进程 NPU 句柄），要么走 H2D 中转——后者直接抹平收益。
 
-2. **mooncake/memcache store 是按进程初始化的**。新进程要重新 `store.setup()` + `register_buffer`（`mooncake_backend.py:93`），等于多一份内存池贡献和多一次 metadata server 注册。
+2. **mooncake/memcache store 是按进程初始化的**。新进程要重新 `store.setup()`（`mooncake_backend.py:93` 的 `_setup_store`，实际 setup 在 `:124`/`:137`）+ `register_buffer`（`pool_worker.py:864`），等于多一份内存池贡献和多一次 metadata server 注册。
 
 3. **序列化 + 往返开销**。keys（字符串列表）、addrs（`list[list[int]]`）、sizes 每次都要打包过管道；完成事件还得反向 IPC 一次。而当前 `queue.Queue.put` 是微秒级。
 
@@ -216,7 +220,7 @@ mooncake/memcache/yuanrong 都是外部 C++ pybind11 扩展（`m_store.put/get/b
 
 **项目里已有 IPC 的先例，但目的不同**
 
-`LookupKeyServer/Client`（`ascend_store_connector.py:293`）用 ZMQ `ipc://` 做 scheduler↔worker 通信。但这是**跨角色**通信（scheduler 进程没持有 store，借 worker 的 store 查命中），不是为了绕开 GIL——scheduler 本来就不做 I/O。
+`LookupKeyServer`（`ascend_store_connector.py:293`）/ `LookupKeyClient`（`pool_scheduler.py:1146`）用 ZMQ `ipc://`（`pool_scheduler.py:1199`）做 scheduler↔worker 通信。但这是**跨角色**通信（scheduler 进程没持有 store，借 worker 的 store 查命中），不是为了绕开 GIL——scheduler 本来就不做 I/O。
 
 ### 3.3 更现实的优化方向
 
@@ -232,9 +236,9 @@ mooncake/memcache/yuanrong 都是外部 C++ pybind11 扩展（`m_store.put/get/b
 
 ### 3.4 结论
 
-- **GIL 在这里有影响但有限**：I/O 主体（RDMA/DMA）在 C++ 扩展里释放 GIL，卡 GIL 的是 Python 层 key 生成与循环；每进程仅 1-2 个传输线程，争抢不激烈；设计目的是 I/O 与计算重叠，不是 CPU 多核并行。
+- **GIL 在这里有影响但有限**：I/O 主体（RDMA/DMA）在 C 扩展里按惯例应释放 GIL（本层未见证据，待 C 源码核实），卡 GIL 的是 Python 层 key 生成与循环；每进程仅 1-2 个传输线程，争抢不激烈；设计目的是 I/O 与计算重叠，不是 CPU 多核并行。
 - **改 IPC 技术上可行但收益不抵代价**：NPU buffer 跨进程共享 + store 重初始化 + 序列化开销，且 mooncake 本身已是跨进程存储。
-- **推荐路径**：先把 key 生成向量化、确认 C++ 扩展释放 GIL、减少线程内 Python 循环，性价比远高于改 IPC。
+- **推荐路径**：先把 key 生成向量化、确认 C 扩展释放 GIL、减少线程内 Python 循环，性价比远高于改 IPC。
 
 ---
 

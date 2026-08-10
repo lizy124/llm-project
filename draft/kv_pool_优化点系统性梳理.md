@@ -109,7 +109,7 @@ for block_hash in block_hashes:              # 第1层
 
 **证据**：
 - 写侧：[pool_worker.py:2005-2035](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L2005-L2035) `_store_kv_tp_mismatch` 先 lookup 再 put
-- 读侧：[pool_worker.py:1936-1991](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1936-L1991) `_build_tp_mismatch_keys_and_addrs` 双重循环
+- 读侧：[pool_worker.py:1936-1967](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1936-L1967) `_build_tp_mismatch_keys_and_addrs` 双重循环（函数到 `:1967` return 结束）
 - 对比非 mismatch 路径也有类似模式：[kv_transfer.py:717-818](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py#L717-L818) `_handle_stored_request`
 
 **优化方向**：
@@ -220,15 +220,15 @@ res = self.m_store.store.batch_copy(
 
 ### P10. `block_hash_to_str` 对同一 hash 重复转换 3 次【已核实】
 
-**问题**：`_alloc_gvas_for_save` 和 `_prepare_load_gvas` 里，同一个 `group_block_hashes[block_idx]` 在 candidate_keys 列表推导、while 循环、for 循环里被 `block_hash_to_str`（`.hex()`）转换 3 次，产生三个内容相同的临时 str。
+**问题**：`_alloc_gvas_for_save`（save 侧）里，同一个 `group_block_hashes[block_idx]` 在 candidate_keys 列表推导、while 循环、for 循环里被 `block_hash_to_str`（`.hex()`）转换 3 次，产生三个内容相同的临时 str。`_prepare_load_gvas`（load 侧）key 构造模式相同但只转换 1 次，无此冗余。
 
 **证据**：
-- [pool_worker.py:1243-1268](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1243-L1268)（save 侧 3 次转换）
-- [pool_worker.py:1422-1425](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1422-L1425)（load 侧同样模式）
+- [pool_worker.py:1243-1268](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1243-L1268)（save 侧 3 次转换：列表推导 + while + for）
+- [pool_worker.py:1422-1425](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1422-L1425)（load 侧仅 1 次转换，非同样冗余）
 
-**优化方向**：在函数入口处一次性把所需范围的 `group_block_hashes` 转成 `list[str]`，后续循环复用。
+**优化方向**：在 `_alloc_gvas_for_save` 入口处一次性把所需范围的 `group_block_hashes` 转成 `list[str]`，后续循环复用。
 
-**严重程度**：中（长 prompt 下 block 数大，3 倍冗余 hex 转换 + f-string）
+**严重程度**：中（长 prompt 下 save 侧 block 数大，3 倍冗余 hex 转换 + f-string）
 
 ---
 
@@ -251,7 +251,7 @@ block_ids_by_group_np=[np.asarray(ids, dtype=np.int64) for ids in tracker.alloca
 
 ### P12. `_handle_stored_request` 双重建 + 三遍遍历【已核实】
 
-**问题**：非-layerwise 写侧先 append 构造 5 个列表（starts/ends/keys/block_hashes/key_block_ids），`lookup` 后再用 5 个列表推导按 `missing_indices` 过滤重建 5 个新列表，旧列表丢弃。随后又遍历一次构造 `addrs`/`sizes`。等于对同一数据遍历三次 + 10 次部分拷贝。
+**问题**：非-layerwise 写侧对同一 block 数据遍历三遍：①append 构造 5 个列表（starts/ends/keys/block_hashes/key_block_ids）；②`lookup` 后用 5 个列表推导按 `missing_indices` 过滤重建 5 个新列表、旧列表丢弃；③再遍历一次构造 `addrs`/`sizes`。合计 10 次部分拷贝（5 原列表 + 5 重建列表）。
 
 **证据**：[kv_transfer.py:766-890](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py#L766-L890)
 
@@ -309,7 +309,7 @@ if current_event is not None:
 **问题**：layerwise 预取层（`layer_id != current_layer`）的 load task 一律携带 `attention_start_gate`，recv 线程在 `_handle_request` 里 `gate.wait()` → `event.synchronize()` 阻塞直到计算流到达 attention 边界。但对**非 buffer 复用**的预取层（`prefetch_layer_map` 无该层），不存在共享 buffer 数据竞争，gate 是多余的——load 可以立即开始。
 
 **证据**：
-- gate 附着：[pool_worker.py:1670-1672](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1670-L1672) 对所有 `layer_id != current_layer` 一律加 gate
+- gate 附着：[pool_worker.py:1670-1672](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1670-L1672) 对有 `load_tasks` 且 `layer_id != current_layer` 的层加 gate（条件 `if self.layer_load_tasks[layer_id] and layer_id != self.current_layer`）
 - gate wait：[kv_transfer.py:1597-1599](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py#L1597-L1599)
 - gate 实现：[memcache_comm_fence.py:53-61](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/memcache_comm_fence.py#L53-L61) `event.synchronize()` 硬阻塞
 
@@ -394,11 +394,11 @@ if current_event is not None:
 
 ### S3. `to_string` 重复实现
 
-**问题**：`PoolKey.to_string()` 和 `LayerPoolKey.to_string()` 是两段几乎相同的 f-string，只是后者多 `@layer_id`。
+**问题**：`PoolKey.to_string()` 和 `LayerPoolKey.to_string()` 是两段高度相似的 f-string，但差异不止 `@layer_id`：`LayerPoolKey.to_string()` 相对 `PoolKey.to_string()` **多了 `@layer_id` 且省略了 `@pp_rank`**（layerwise 下 PP 维度由 layer 顺序保证）。直接"复用父类前缀 + 追加 layer_id"行不通——父类前缀含 pp_rank。
 
 **证据**：[config_data.py:114-124](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py#L114-L124) 和 [config_data.py:161-171](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py#L161-L171)
 
-**优化方向**：`LayerPoolKey.to_string()` 复用父类前缀 + 追加 layer_id；或整体重构为统一 key builder（配合 P2）。
+**优化方向**：抽公共 key builder 时需显式处理 pp_rank 的有/无（PoolKey 含、LayerPoolKey 不含），不能简单继承前缀；或整体重构为统一 key builder（配合 P2）。注意 `__hash__` 同样受影响（`PoolKey.__hash__` 含 pp_rank，`LayerPoolKey.__hash__` 不含）。
 
 **严重程度**：低（但会增加 P2 向量化改造的维护成本）
 
@@ -523,7 +523,7 @@ if current_event is not None:
 
 **问题**：`Backend` 基类定义了 `batch_alloc / batch_add_lease / batch_remove_lease / batch_get_key_info / batch_write_finish`，这些是 memcache GVA 专属概念，但放在基类里默认抛 `NotImplementedError`，污染了抽象。
 
-**证据**：[backend.py:32-48](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/backend.py#L32-L48)
+**证据**：[backend.py:35-48](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/backend/backend.py#L35-L48)（五个 `batch_*` 接口默认抛 `NotImplementedError`；`:32-33` 的 `batch_is_exist` 透传 `exists()` 不抛异常，不计入）
 
 **优化方向**：拆分为 `Backend`（最小接口：put/get/exists/register_buffer）+ `GVABackend`（继承，增加 lease/alloc 接口）。worker 侧用 `isinstance` 或能力查询判断是否走 GVA 路径。
 
@@ -675,7 +675,7 @@ if current_event is not None:
 | _generate_store_query_keys 嵌套循环 | pool_scheduler.py:[247-283](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py#L247-L283) |
 | process_token_key_strings 迭代器 | config_data.py:[526-600](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/config_data.py#L526-L600) |
 | _handle_stored_request 写侧循环 | kv_transfer.py:[717-818](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py#L717-L818) |
-| _build_tp_mismatch_keys_and_addrs | pool_worker.py:[1936-1991](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1936-L1991) |
+| _build_tp_mismatch_keys_and_addrs | pool_worker.py:[1936-1967](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1936-L1967) |
 | _store_kv_tp_mismatch 重复 lookup | pool_worker.py:[2005-2035](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L2005-L2035) |
 | _refresh_allocated_gvas | pool_worker.py:[1176-1191](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1176-L1191) |
 | GVA 分配循环 | pool_worker.py:[1264-1293](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1264-L1293) |
