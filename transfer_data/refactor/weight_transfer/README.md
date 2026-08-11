@@ -191,3 +191,93 @@ HCCL transport     -> hccl engine/sender
 NPU IPC transport  -> npu_ipc engine/sender
 packed protocol    -> explicit contract and joint tests
 ```
+
+## 后续 UT 补充遗留
+
+评审反馈：weight_transfer 代码本身已足够简洁，不需要加抽象层重构；应增加 UT 和使用用例。
+因此 PR #13049 已回退 `compat.py`/`registry.py` 抽象层，只保留 HTTP/e2e helper 抽取和 UT。
+后续 UT 补充分到后续 PR，按优先级排列如下（均可在 CPU 环境运行，无需 NPU 硬件）。
+
+### 优先级 2: `hccl_engine.py`（当前覆盖率 0%）
+
+源文件：`vllm_ascend/distributed/weight_transfer/hccl_engine.py`（340 行）
+
+| 测试名 | 覆盖点 |
+|---|---|
+| `test_hccl_init_info_post_init_valid` | `HCCLWeightTransferUpdateInfo.__post_init__` 三 list 长度一致 |
+| `test_hccl_init_info_post_init_mismatched_dtype` | `__post_init__` dtype_names 长度不一致 raise ValueError |
+| `test_hccl_init_info_post_init_mismatched_shapes` | `__post_init__` shapes 长度不一致 raise ValueError |
+| `test_hccl_receive_weights_packed` | `receive_weights` packed 路径，mock `packed_broadcast_consumer` |
+| `test_hccl_receive_weights_unpacked` | `receive_weights` unpacked 路径，mock `group.broadcast` + `model.load_weights` |
+| `test_hccl_receive_weights_not_initialized` | `receive_weights` 未初始化时 raise RuntimeError |
+| `test_hccl_trainer_send_weights_packed` | `trainer_send_weights` packed 路径，mock `packed_broadcast_producer` |
+| `test_hccl_trainer_send_weights_dict_args` | dict 入参自动转 `HCCLTrainerSendWeightsArgs` |
+| `test_hccl_trainer_send_weights_default_post_iter_func` | post_iter_func=None 时取 x[1] |
+| `test_hccl_shutdown_clears_group` | `shutdown` group 被置 None |
+
+预期覆盖率：0% → ~70%
+
+### 优先级 3: `npu_ipc_engine.py`（当前覆盖率 ~15%）
+
+源文件：`vllm_ascend/distributed/weight_transfer/npu_ipc_engine.py`（777 行）
+现有 UT：`test_npu_ipc_engine.py`（4 个 test，覆盖 init/receive_unpacked/start/finish）
+
+| 测试名 | 覆盖点 |
+|---|---|
+| `test_npu_generate_uuid_identity_mapping` | 无 `ASCEND_RT_VISIBLE_DEVICES`，logical=physical |
+| `test_npu_generate_uuid_visible_devices_mapping` | `ASCEND_RT_VISIBLE_DEVICES=2,3`，logical 0→physical 2 |
+| `test_npu_generate_uuid_cached` | `@lru_cache(1)` 幂等 |
+| `test_get_ip_fallback_to_hostname` | socket 异常时 fallback |
+| `test_receive_weights_packed` | `receive_weights` packed 路径，mock `packed_npu_ipc_consumer` |
+| `test_receive_weights_missing_uuid` | `receive_weights` unpacked 路径 UUID 不匹配 raise ValueError |
+| `test_parse_update_info_pickled_path` | `parse_update_info` `ipc_handles_pickled` 字段反序列化 |
+| `test_parse_update_info_both_fields_raises` | 同时传 `ipc_handles` + `ipc_handles_pickled` raise |
+| `test_parse_update_info_insecure_disabled` | `VLLM_ALLOW_INSECURE_SERIALIZATION=0` raise |
+| `test_trainer_send_weights_packed` | `trainer_send_weights` packed，mock `_send_packed` |
+| `test_trainer_send_weights_unpacked` | `trainer_send_weights` unpacked，mock `_send_unpacked` |
+| `test_is_rank_zero_no_distributed` | `_is_rank_zero` 未初始化时返回 True |
+| `test_all_gather_and_merge_handles_no_distributed` | `_all_gather_and_merge_handles` 未初始化时直接返回 |
+| `test_do_send_http_transport` | `_do_send` http 路径，mock requests.post，验证 base64+pickle |
+| `test_do_send_callable_send_mode` | `_do_send` callable 路径直接调用 |
+
+预期覆盖率：~15% → ~60%
+
+### 优先级 4: `__init__.py`（当前覆盖率 0%）
+
+源文件：`vllm_ascend/distributed/weight_transfer/__init__.py`（47 行）
+
+| 测试名 | 覆盖点 |
+|---|---|
+| `test_register_engine_registers_hccl` | mock factory，验证 hccl 注册 |
+| `test_register_engine_registers_npu_ipc` | mock factory，验证 npu_ipc 注册 |
+| `test_register_engine_v026_skips_trainer` | v0.26.0 时不注册 trainer |
+| `test_register_engine_post_v026_registers_trainer` | 非 v0.26.0 时注册 trainer |
+
+预期覆盖率：0% → ~95%（防 alias 回归）
+
+### 优先级 5: `examples/rl/weight_transfer_http_utils.py`（当前覆盖率 ~50%）
+
+源文件：`examples/rl/weight_transfer_http_utils.py`（84 行）
+现有 UT：`test_http_utils.py`（3 个 test，覆盖 post_endpoint/start_weight_update/get_world_size）
+
+| 测试名 | 覆盖点 |
+|---|---|
+| `test_pause_calls_post` | `pause` 验证 `/pause` 调用 |
+| `test_resume_calls_post` | `resume` 验证 `/resume` 调用 |
+| `test_init_weight_transfer_calls_post` | `init_weight_transfer` 验证 `/init_weight_transfer` 调用 |
+| `test_update_weights_calls_post` | `update_weights` 验证 `/update_weights` 调用 |
+| `test_finish_weight_update_calls_post` | `finish_weight_update` 验证 `/finish_weight_update` 调用 |
+| `test_post_endpoint_raises_on_http_error` | `post_weight_transfer_endpoint` raise_for_status 抛异常时传播 |
+
+预期覆盖率：~50% → ~95%
+
+### 总览
+
+| 文件 | 现有覆盖率 | 补完后预期 | 新增 UT 数 |
+|---|---|---|---|
+| `packed_tensor.py` | ✅ 已完成（18 个 UT） | ~85% | 0（已完成） |
+| `hccl_engine.py` | 0% | ~70% | 10 |
+| `npu_ipc_engine.py` | ~15% | ~60% | 15 |
+| `__init__.py` | 0% | ~95% | 4 |
+| `weight_transfer_http_utils.py` | ~50% | ~95% | 6 |
+| **合计** | — | — | **35** |
