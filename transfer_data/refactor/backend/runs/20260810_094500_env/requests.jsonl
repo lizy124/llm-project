@@ -1,0 +1,4 @@
+{"case": "static_checks", "status": "passed", "details": ["git diff --check", "compileall", "diff stat 13 files / +540 -234"]}
+{"case": "unit_tests", "status": "passed", "details": ["test_compat", "test_registry", "test_http_utils", "16 weight_transfer UTs"]}
+{"case": "e2e_one_card_npu_ipc", "status": "passed", "model": "/mnt/weight/Qwen3-0.6B", "visible_devices": "6,7", "physical_card": 6, "note": "used local model path because HF fetch unavailable"}
+{"case": "e2e_two_card_hccl", "status": "passed", "model": "/mnt/weight/Qwen3-0.6B", "visible_devices": "6,7", "server_physical_card": 6, "trainer_logical_device": 1, "note": "initial logical device 7 failed, reran with logical 1"}

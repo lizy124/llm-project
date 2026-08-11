@@ -1,0 +1,18 @@
+{
+  "branch": "pr-13049",
+  "head": "c5ed02f00",
+  "base": "ac19e1e647785be51d22a87f336ba03c02357e18",
+  "static_checks": "passed",
+  "unit_tests": "passed",
+  "ut_results": {
+    "test_compat_test_registry_test_http_utils": "10 passed",
+    "weight_transfer_ut": "16 passed"
+  },
+  "one_card_npu_ipc": "passed",
+  "two_card_hccl": "passed",
+  "notes": [
+    "one-card used /mnt/weight/Qwen3-0.6B with physical card 6",
+    "two-card used /mnt/weight/Qwen3-0.6B with server card 6 and trainer logical device 1 under ASCEND_RT_VISIBLE_DEVICES=6,7",
+    "one-card required local model path because online HF fetch was unavailable"
+  ]
+}
