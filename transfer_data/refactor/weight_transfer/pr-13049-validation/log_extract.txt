@@ -1,0 +1,17 @@
+# PR 13049 validation extract
+
+## Passed
+
+- static checks
+- weight_transfer UT
+- one-card NPU IPC e2e
+- two-card HCCL e2e
+
+## Environment notes
+
+- The local model path `/mnt/weight/Qwen3-0.6B` was used because online Hugging Face fetch was unavailable.
+- The final two-card HCCL run used physical server card 6 and trainer logical device 1 under `ASCEND_RT_VISIBLE_DEVICES=6,7`.
+
+## Outcome
+
+PR 13049 validated successfully on the current Ascend server.

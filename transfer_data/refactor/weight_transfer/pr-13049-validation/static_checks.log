@@ -1,0 +1,26 @@
+# static checks
+2026-08-10T10:02:53+00:00
+$ git status --short --branch
+## pr-13049
+$ git log --oneline origin/main..HEAD
+c5ed02f00 fix(weight-transfer): detect stateful trainer capability
+84b09f3e2 refactor(weight-transfer): centralize registration and HTTP helpers
+$ git diff --shortstat origin/main...HEAD
+ 13 files changed, 540 insertions(+), 234 deletions(-)
+$ git diff --name-only origin/main...HEAD
+examples/rl/rlhf_http_hccl.py
+examples/rl/rlhf_http_npu_ipc.py
+examples/rl/weight_transfer_http_utils.py
+tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py
+tests/e2e/pull_request/two_card/test_hccl_weight_transfer.py
+tests/e2e/pull_request/weight_transfer_utils.py
+tests/ut/distributed/weight_transfer/test_compat.py
+tests/ut/distributed/weight_transfer/test_http_utils.py
+tests/ut/distributed/weight_transfer/test_registry.py
+vllm_ascend/distributed/weight_transfer/__init__.py
+vllm_ascend/distributed/weight_transfer/compat.py
+vllm_ascend/distributed/weight_transfer/registry.py
+vllm_ascend/patch/platform/patch_weight_transfer_engine.py
+$ git diff --check origin/main...HEAD
+$ python -m compileall -q selected paths
+STATIC_CHECKS_PASSED

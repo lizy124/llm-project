@@ -21,12 +21,18 @@ HEAD: c5ed02f00
 2. `02-refactor-design.md`：重构边界、版本兼容、目标结构和验收标准。
 3. `03-vllm-ascend-pr-history.md`：Ascend 侧功能引入、upstream 同步和实验提交历史。
 4. `04-upstream-vllm-timeline.md`：upstream 从 NCCL/IPC 到 Stateful Trainer Send 的演进。
+5. `05-pr-13049-validation-plan.md`：PR 13049 的真实改动范围、验证层级和验收模板。
+6. `06-pr-13049-validation-record.md`：PR 13049 在当前 Ascend 服务器上的实际验证结果。
+7. `pr-13049-validation/`：PR 13049 的过程目录，包含脚本、环境和结果摘要。
 
 ```text
 01  当前协议如何运行
 02  这次应该如何重构
 03  Ascend 代码为什么演进成现在这样
 04  upstream contract 为什么持续变化
+05  PR 13049 应该如何验证
+06  PR 13049 实际验证结果
+07  PR 13049 过程目录
 ```
 
 ## 当前结论

@@ -1,0 +1,28 @@
+{
+  "pr": 13049,
+  "branch": "pr-13049",
+  "head": "c5ed02f00",
+  "base": "ac19e1e647785be51d22a87f336ba03c02357e18",
+  "diff": {
+    "files": 13,
+    "insertions": 540,
+    "deletions": 234
+  },
+  "results": {
+    "static_checks": "passed",
+    "unit_tests": "passed",
+    "one_card_npu_ipc": "passed",
+    "two_card_hccl": "passed"
+  },
+  "npu": {
+    "one_card": 6,
+    "two_card_server": 6,
+    "two_card_trainer": 1,
+    "visible_devices": "6,7"
+  },
+  "model": "/mnt/weight/Qwen3-0.6B",
+  "notes": [
+    "offline HF fetch was unavailable, so the local model path was used",
+    "the trainer was first pointed at invalid logical device 7 and then rerun successfully with logical device 1"
+  ]
+}

@@ -1,0 +1,233 @@
+INFO 08-10 10:12:19 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 08-10 10:12:19 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 08-10 10:12:19 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 08-10 10:12:19 [__init__.py:237] Platform plugin ascend is activated
+INFO 08-10 10:12:19 [platform.py:61] Breakable cudagraph is force disabled on Ascend because DeepSeek V4 PIECEWISE cudagraph is not supported yet.
+[2026-08-10 10:12:22] [INFO] get env TORCHINDUCTOR_CACHE_DIR = /tmp/torchinductor_root
+[2026-08-10 10:12:24] [INFO] Patched Eagle3LlamaForCausalLM and Eagle3DeepseekV2ForCausalLM __init__ to use get_total_num_hidden_layers() for target_layer_num.
+[2026-08-10 10:12:24] [INFO] get env LANG = en_US.UTF-8
+WARNING 08-10 10:12:24 [interface.py:1139] Current platform npu does not have '_pytestfixturefunction' attribute.
+[2026-08-10 10:12:24] [INFO] Starting server with command: vllm serve Qwen/Qwen3-0.6B --enforce-eager --load-format dummy --weight-transfer-config {"backend": "ipc"} --max-model-len 1024 --gpu-memory-utilization 0.5 --port 48713 --trust-remote-code
+INFO 08-10 10:12:29 [__init__.py:52] Available plugins for group vllm.platform_plugins:
+INFO 08-10 10:12:29 [__init__.py:54] - ascend -> vllm_ascend:register
+INFO 08-10 10:12:29 [__init__.py:57] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 08-10 10:12:29 [__init__.py:237] Platform plugin ascend is activated
+INFO 08-10 10:12:29 [platform.py:61] Breakable cudagraph is force disabled on Ascend because DeepSeek V4 PIECEWISE cudagraph is not supported yet.
+2026-08-10 10:12:36,735 - 120784 - ServiceProfiler - INFO - VLLM_USE_V1 not set, auto-detected via vLLM 0.26.0+empty: default 1
+INFO 08-10 10:12:37 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 08-10 10:12:37 [__init__.py:112] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345] 
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345]        █     █     █▄   ▄█
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.26.0
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345]   █▄█▀ █     █     █     █  model   Qwen/Qwen3-0.6B
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:345] 
+(APIServer pid=120784) INFO 08-10 10:12:37 [api_utils.py:273] non-default args: {'model_tag': 'Qwen/Qwen3-0.6B', 'port': 48713, 'trust_remote_code': True, 'max_model_len': 1024, 'enforce_eager': True, 'load_format': 'dummy', 'gpu_memory_utilization': 0.5, 'weight_transfer_config': WeightTransferConfig(backend='ipc')}
+(APIServer pid=120784) WARNING 08-10 10:12:37 [envs.py:2096] Unknown vLLM environment variable detected: VLLM_ASCEND_ENABLE_NZ
+(APIServer pid=120784) '[Errno 101] Network is unreachable' thrown while requesting HEAD https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/config.json
+(APIServer pid=120784) Retrying in 1s [Retry 1/5].
+(APIServer pid=120784) Traceback (most recent call last):
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/configuration_utils.py", line 776, in _get_config_dict
+(APIServer pid=120784)     resolved_config_file = cached_file(
+(APIServer pid=120784)                            ^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/utils/hub.py", line 293, in cached_file
+(APIServer pid=120784)     file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/utils/hub.py", line 527, in cached_files
+(APIServer pid=120784)     raise e
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/utils/hub.py", line 437, in cached_files
+(APIServer pid=120784)     hf_hub_download(
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+(APIServer pid=120784)     return fn(*args, **kwargs)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1019, in hf_hub_download
+(APIServer pid=120784)     return _hf_hub_download_to_cache_dir(
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1148, in _hf_hub_download_to_cache_dir
+(APIServer pid=120784)     _get_metadata_or_catch_error(
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1713, in _get_metadata_or_catch_error
+(APIServer pid=120784)     metadata = get_hf_file_metadata(
+(APIServer pid=120784)                ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 88, in _inner_fn
+(APIServer pid=120784)     return fn(*args, **kwargs)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/file_download.py", line 1621, in get_hf_file_metadata
+(APIServer pid=120784)     response = _httpx_follow_relative_redirects_with_backoff(
+(APIServer pid=120784)                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 719, in _httpx_follow_relative_redirects_with_backoff
+(APIServer pid=120784)     response = http_backoff(
+(APIServer pid=120784)                ^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 596, in http_backoff
+(APIServer pid=120784)     return next(
+(APIServer pid=120784)            ^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/huggingface_hub/utils/_http.py", line 504, in _http_backoff_base
+(APIServer pid=120784)     response = client.request(method=method, url=url, **kwargs)
+(APIServer pid=120784)                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/httpx/_client.py", line 825, in request
+(APIServer pid=120784)     return self.send(request, auth=auth, follow_redirects=follow_redirects)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/httpx/_client.py", line 901, in send
+(APIServer pid=120784)     raise RuntimeError("Cannot send a request, as the client has been closed.")
+(APIServer pid=120784) RuntimeError: Cannot send a request, as the client has been closed.
+(APIServer pid=120784) 
+(APIServer pid=120784) During handling of the above exception, another exception occurred:
+(APIServer pid=120784) 
+(APIServer pid=120784) Traceback (most recent call last):
+(APIServer pid=120784)   File "/usr/local/python3.12.13/bin/vllm", line 6, in <module>
+(APIServer pid=120784)     sys.exit(main())
+(APIServer pid=120784)              ^^^^^^
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/cli/main.py", line 95, in main
+(APIServer pid=120784)     args.dispatch_function(args)
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/cli/serve.py", line 148, in cmd
+(APIServer pid=120784)     uvloop.run(run_server(args))
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/uvloop/__init__.py", line 96, in run
+(APIServer pid=120784)     return __asyncio.run(
+(APIServer pid=120784)            ^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/asyncio/runners.py", line 195, in run
+(APIServer pid=120784)     return runner.run(main)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/asyncio/runners.py", line 118, in run
+(APIServer pid=120784)     return self._loop.run_until_complete(task)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/uvloop/__init__.py", line 48, in wrapper
+(APIServer pid=120784)     return await main
+(APIServer pid=120784)            ^^^^^^^^^^
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/openai/api_server.py", line 759, in run_server
+(APIServer pid=120784)     await run_server_worker(listen_address, sock, args, **uvicorn_kwargs)
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/openai/api_server.py", line 773, in run_server_worker
+(APIServer pid=120784)     async with build_async_engine_client(
+(APIServer pid=120784)                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/contextlib.py", line 210, in __aenter__
+(APIServer pid=120784)     return await anext(self.gen)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/openai/api_server.py", line 139, in build_async_engine_client
+(APIServer pid=120784)     async with build_async_engine_client_from_engine_args(
+(APIServer pid=120784)                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/contextlib.py", line 210, in __aenter__
+(APIServer pid=120784)     return await anext(self.gen)
+(APIServer pid=120784)            ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/entrypoints/openai/api_server.py", line 163, in build_async_engine_client_from_engine_args
+(APIServer pid=120784)     vllm_config = engine_args.create_engine_config(usage_context=usage_context)
+(APIServer pid=120784)                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/engine/arg_utils.py", line 1870, in create_engine_config
+(APIServer pid=120784)     maybe_override_with_speculators(
+(APIServer pid=120784)   File "/vllm-workspace/vllm/vllm/transformers_utils/config.py", line 659, in maybe_override_with_speculators
+(APIServer pid=120784)     config_dict, _ = PretrainedConfig.get_config_dict(
+(APIServer pid=120784)                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/configuration_utils.py", line 721, in get_config_dict
+(APIServer pid=120784)     config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+(APIServer pid=120784)                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=120784)   File "/usr/local/python3.12.13/lib/python3.12/site-packages/transformers/configuration_utils.py", line 798, in _get_config_dict
+(APIServer pid=120784)     raise OSError(
+(APIServer pid=120784) OSError: Can't load the configuration of 'Qwen/Qwen3-0.6B'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure 'Qwen/Qwen3-0.6B' is the correct path to a directory containing a config.json file
+(APIServer pid=120784) [ERROR] 2026-08-10-10:13:39 (PID:120784, Device:-1, RankID:-1) ERR99999 UNKNOWN applicaiton exception
+F[INFO] Model cache cleared
+
+=================================== FAILURES ===================================
+_____________ test_npu_ipc_weight_transfer_updates_server_weights ______________
+
+    @pytest.mark.skipif(
+        torch.npu.device_count() < 1,
+        reason="NPU IPC weight transfer e2e test requires at least 1 NPU.",
+    )
+    def test_npu_ipc_weight_transfer_updates_server_weights():
+        from vllm.utils.network_utils import get_open_port
+    
+        port = get_open_port()
+        server_args = [
+            "--enforce-eager",
+            "--load-format",
+            "dummy",
+            "--weight-transfer-config",
+            '{"backend": "ipc"}',
+            "--max-model-len",
+            "1024",
+            # IPC co-locates the trainer on the same NPU, so leave room for it.
+            "--gpu-memory-utilization",
+            "0.5",
+            "--port",
+            str(port),
+            "--trust-remote-code",
+        ]
+        # VLLM_SERVER_DEV_MODE registers the dev endpoints; insecure serialization
+        # lets the server unpickle the IPC handles sent over HTTP. Pin the server to
+        # physical NPU 0 so its IPC UUID matches the trainer below.
+        env_dict = {
+            "VLLM_SERVER_DEV_MODE": "1",
+            "VLLM_ALLOW_INSECURE_SERIALIZATION": "1",
+            "ASCEND_RT_VISIBLE_DEVICES": str(INFERENCE_DEVICE_INDEX),
+            "VLLM_ASCEND_ENABLE_NZ": "0",
+        }
+    
+>       with RemoteOpenAIServer(
+            MODEL_NAME,
+            vllm_serve_args=server_args,
+            server_host="127.0.0.1",
+            server_port=port,
+            env_dict=env_dict,
+            auto_port=False,
+        ) as server:
+
+tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/conftest.py:337: in __init__
+    self._wait_for_multiple_servers([(self.host, self.url_for("health"))], timeout=max_wait_seconds)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.e2e.conftest.RemoteOpenAIServer object at 0xfffee2a86c60>
+targets = [('127.0.0.1', 'http://127.0.0.1:48713/health')], timeout = 2800
+log_interval = 30.0, always_check_nodes = False
+
+    def _wait_for_multiple_servers(
+        self, targets, timeout: float, log_interval: float = 30.0, always_check_nodes: bool = False
+    ):
+        """
+        targets: List[(node_ip, url)]
+        log_interval
+        """
+        start = time.time()
+        client = requests
+    
+        ready = {node_ip: False for node_ip, _ in targets}
+    
+        last_log_time = 0.0
+    
+        while True:
+            now = time.time()
+            all_ready = True
+            should_log = (now - last_log_time) >= log_interval
+    
+            for node_ip, url in targets:
+                if ready[node_ip] and not always_check_nodes:
+                    continue
+    
+                try:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        ready[node_ip] = True
+                        logger.info("[READY] Node %s: %s is ready.", node_ip, url)
+                except RequestException:
+                    all_ready = False
+                    if should_log:
+                        logger.debug("[WAIT] %s: connection failed", url)
+    
+                    # check unexpected exit
+                    result = self._poll()
+                    if result is not None and result != 0:
+                        self._terminate_server()
+>                       raise RuntimeError(f"Server at {node_ip} exited unexpectedly.") from None
+E                       RuntimeError: Server at 127.0.0.1 exited unexpectedly.
+
+tests/e2e/conftest.py:430: RuntimeError
+------------------------------ Captured log call -------------------------------
+INFO     tests.e2e.conftest:conftest.py:278 Starting server with command: vllm serve Qwen/Qwen3-0.6B --enforce-eager --load-format dummy --weight-transfer-config {"backend": "ipc"} --max-model-len 1024 --gpu-memory-utilization 0.5 --port 48713 --trust-remote-code
+=============================== warnings summary ===============================
+../../usr/local/python3.12.13/lib/python3.12/site-packages/torch/jit/_script.py:362: 14 warnings
+  /usr/local/python3.12.13/lib/python3.12/site-packages/torch/jit/_script.py:362: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py::test_npu_ipc_weight_transfer_updates_server_weights
+1 failed, 14 warnings in 83.53s (0:01:23)
