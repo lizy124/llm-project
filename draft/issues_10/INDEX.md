@@ -5,8 +5,8 @@
 > 目标仓库：`vllm-project/vllm-ascend`，代码路径 `vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`
 > 验收人：@赵鹏博
 > 关联任务池：[#9079 [Contribution] vLLM-Ascend 外部开发者任务池](https://github.com/vllm-project/vllm-ascend/issues/9079)
-> 发布日期：2026-08-11
-> 说明：本文档列出全部 34 个候选 issue，后续从中挑选 10 个正式提交。
+> 发布日期：2026-08-11（2026-08-12 新增 kv-35）
+> 说明：本文档列出全部 35 个候选 issue，后续从中挑选 10 个正式提交。
 
 ## 通用约定（所有 issue 共享）
 
@@ -77,6 +77,14 @@
 | kv-33 | [issue_kv-33_E3_high_risk_test_coverage.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-33_E3_high_risk_test_coverage.md) | [Ext] 高风险路径测试覆盖补强 | 中高 | P1 |
 | kv-34 | [issue_kv-34_E4_connector_no_base.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-34_E4_connector_no_base.md) | [Ext] Connector 公共基类评估 | 低 | P3 |
 
+### 架构维度（Arch，1 个）★ 重点
+
+| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
+|------|------|------|----------|-----------|
+| kv-35 | [issue_kv-35_P0_transfer_ipc_gil_release.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-35_P0_transfer_ipc_gil_release.md) | [Arch/Perf] 传输路径改 IPC：消除 GIL 瓶颈，实现真并行传输 | 高 | **P0（重点）** |
+
+> kv-35 是本次新增的重点 issue，方向锁定为改 IPC（不接受"不划算"作为放弃理由，代价转为设计中需攻克的难点）。依据 [kv_pool_线程存取与GIL分析.md](file:///D:/lzy/project/kv_pool/llm-project/draft/kv_pool_线程存取与GIL分析.md) 第三、四章。分三阶段推进：设计验证 → 原型对比 → 全路径落地。
+
 ## 依赖关系（挑选时注意）
 
 - kv-24（S5 配置集中）是 kv-21（S2 初始化去重）的前置
@@ -85,8 +93,13 @@
 - kv-09（消除 .tolist()）依赖 C++ 扩展支持 buffer protocol，需跨团队协调
 - kv-06（prefetch 默认值）独立，可立即见效
 - kv-07 与 kv-08 模式相同，可同步推进
+- **kv-35（改 IPC）依赖 kv-24（配置 schema）**：IPC 相关配置需纳入 `KVPoolConfig`
+- **kv-35 协同 kv-25/kv-26/kv-27**：子进程异常清理与失败传播复用其机制
+- kv-35 与 kv-02/kv-09 不冲突：IPC 化后 Python 层优化在子进程内依然有益
 
 ## 建议挑选思路
 
 若希望覆盖"高收益 + 风险可控"，可优先从以下挑选 10 个：
-kv-25 / kv-26 / kv-27（正确性 P0 三连）、kv-24（配置 schema）、kv-07 / kv-08（I/O 合并双连）、kv-06（prefetch 重磅）、kv-17（ZMQ payload）、kv-01（MLA 去重）、kv-33（测试补强）。
+**kv-35（改 IPC，重点）**、kv-25 / kv-26 / kv-27（正确性 P0 三连）、kv-24（配置 schema）、kv-07 / kv-08（I/O 合并双连）、kv-06（prefetch 重磅）、kv-17（ZMQ payload）、kv-33（测试补强）。
+
+> kv-35 因改造范围大、分三阶段，建议单独排期，阶段 1 设计文档可与上述其他 issue 并行推进。

@@ -12,11 +12,19 @@ https://github.com/vllm-project/vllm-ascend/pull/13049
 
 ```text
 /vllm-workspace/vllm-ascend
-branch: pr-13049
-HEAD: c5ed02f00 fix(weight-transfer): detect stateful trainer capability
+branch: pr-13049-new
+HEAD: fb9c84529 style: apply ruff fixes to test_packed_tensor
+base: origin/main
 ```
 
-本 PR 的实际改动范围是一个完整的 weight_transfer helper/registry/e2e helper 回合：
+PR 元数据（GitHub 显示）：
+
+```text
+7 commits, 8 files changed, +825 / -161
+title: [Test] Extract weight transfer HTTP/e2e helpers and add unit tests
+```
+
+实际改动文件（8 个）：
 
 ```text
 examples/rl/rlhf_http_hccl.py
@@ -25,48 +33,57 @@ examples/rl/weight_transfer_http_utils.py
 tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py
 tests/e2e/pull_request/two_card/test_hccl_weight_transfer.py
 tests/e2e/pull_request/weight_transfer_utils.py
-tests/ut/distributed/weight_transfer/test_compat.py
 tests/ut/distributed/weight_transfer/test_http_utils.py
-tests/ut/distributed/weight_transfer/test_registry.py
-vllm_ascend/distributed/weight_transfer/__init__.py
-vllm_ascend/distributed/weight_transfer/compat.py
-vllm_ascend/distributed/weight_transfer/registry.py
-vllm_ascend/patch/platform/patch_weight_transfer_engine.py
+tests/ut/distributed/weight_transfer/test_packed_tensor.py
 ```
 
-PR diff 统计为 `13 files changed, 540 insertions(+), 234 deletions(-)`。它的核心目标不只是修正 stateful trainer API 的能力探测，还把 registry、HTTP helper、e2e helper 和 patch 入口一起收敛：不能只判断 upstream 是否存在 `WeightTransferTrainerFactory` 类，还必须确认 upstream trainer registry 已经注册 `ipc` backend。vLLM v0.26 可能有 factory 类但没有 stateful trainer backend，此时仍应走 legacy static trainer API。
+PR 范围经过一次重大调整：评审反馈 weight_transfer 本身已足够简洁，不需要加抽象层重构。因此早期提交引入的 `compat.py` / `registry.py` / `test_compat.py` / `test_registry.py` 已在 commit `cffe2a455` 回退，`vllm_ascend/distributed/weight_transfer/__init__.py` 恢复原版（33 行，直接调用 `WeightTransferEngineFactory.register_engine()`）。
 
-## 2. 风险边界
+最终 PR 只保留两类改动：
 
-这次 PR 主要重构的是 registration、HTTP helper、e2e helper 和 trainer capability 探测，因此验证重点是“helper 结构重排后行为不变”。
+1. **HTTP/e2e helper 抽取**：把两个 example 脚本和两个 e2e 测试中重复的 HTTP 调用和 `BackgroundPost` 抽到公共 utils。
+2. **UT 补充**：新增 `test_http_utils.py`（3 个 UT）和 `test_packed_tensor.py`（18 个 UT，CPU-only）。
 
-本 PR 不应改变：
-
-- HCCL worker transport。
-- NPU IPC worker transport。
-- packed tensor wire contract。
-- HTTP/Ray/callable payload schema。
-- `nccl -> hccl`、`ipc -> npu_ipc` 的 worker-side alias 行为。
-- import lazy-load 边界。
-- e2e 用例的参数语义和断言。
-
-重点风险有两个：
-
-1. trainer API 误判。
-2. helper 抽取后 HTTP/e2e payload 或 endpoint 参数发生回归。
+## 2. Commit 历史
 
 ```text
-v0.25: 无 WeightTransferTrainerFactory -> legacy
-v0.26: 有 WeightTransferTrainerFactory，但无 ipc trainer backend -> legacy
-v0.27: 有 WeightTransferTrainerFactory，且有 ipc trainer backend -> stateful
-main:  有 WeightTransferTrainerFactory，且有 ipc/nccl trainer backend -> stateful
+fb9c84529 style: apply ruff fixes to test_packed_tensor
+7ba2ad8a3 test(weight-transfer): add UT for packed_tensor module
+cffe2a455 revert(weight-transfer): drop compat/registry abstraction layer
+a2e996889 fix(weight-transfer): gate aliases by platform and fix example imports
+472dcc07d style: apply ruff fixes to weight transfer changes
+a4cf967ce fix(weight-transfer): detect stateful trainer capability
+0aa63ffb4 refactor(weight-transfer): centralize registration and HTTP helpers
 ```
 
-如果 v0.26 被误判为 stateful，Ascend 注册 `npu_ipc` trainer engine 后可能暴露一个 upstream 无法驱动的调用路径。
+历史说明：commit 1-4 引入 compat/registry 抽象层，commit 5 回退，commit 6-7 补 UT。最终 diff 干净（无 compat/registry 残留），但历史有"加了又删"的 5 个中间 commit。若评审要求干净历史，合并前可 squash 成单个 commit。
 
-## 3. 第一层：本地静态检查
+## 3. 风险边界
 
-在 `/vllm-workspace/vllm-ascend` 执行：
+本 PR 不改变 weight transfer 的核心行为：
+
+- HCCL worker transport 不变。
+- NPU IPC worker transport 不变。
+- packed tensor wire contract 不变。
+- HTTP/Ray/callable payload schema 不变。
+- `__init__.py` 注册逻辑不变（原版 `vllm_version_is("0.26.0")` 判断保留）。
+
+风险点集中在 helper 抽取后的行为等价性：
+
+1. **HTTP helper**：URL 拼接、timeout、status 检查、异常传播是否与原 inline 实现一致。
+2. **e2e helper**：`BackgroundPost` 的线程语义、异常捕获是否与原 inline 实现一致。
+3. **example 导入**：按文档 `python rlhf_http_*.py` 运行是否能正常导入。
+4. **`client` 变量覆盖**：`rlhf_http_npu_ipc.py` 中 OpenAI client 是否被 `HTTPVLLMWeightSyncClient` 覆盖。
+
+## 4. review.md 三条评审意见处置
+
+| # | 评审意见 | 处置 | 状态 |
+|---|---|---|---|
+| 1 | `nccl`/`ipc` alias 无条件覆盖 upstream registry | 回退 compat/registry 后自动消失（原版 `__init__.py` 不注册 alias） | ✅ 自动解决 |
+| 2 | 示例按文档 `python rlhf_http_*.py` 运行导入失败 | 保留的 helper 用同目录导入 `from weight_transfer_http_utils import ...` | ✅ 已修复 |
+| 3 | `rlhf_http_npu_ipc.py` 中 `client` 被 `HTTPVLLMWeightSyncClient` 覆盖 | 保留的 example 改名为 `weight_sync_client` | ✅ 已修复 |
+
+## 5. 第一层：本地静态检查
 
 ```bash
 git status --short --branch
@@ -75,196 +92,131 @@ git diff --stat origin/main...HEAD
 git diff --name-only origin/main...HEAD
 git diff --check origin/main...HEAD
 python -m compileall -q \
-  vllm_ascend/distributed/weight_transfer \
-  vllm_ascend/patch/platform/patch_weight_transfer_engine.py \
   examples/rl/rlhf_http_hccl.py \
   examples/rl/rlhf_http_npu_ipc.py \
   examples/rl/weight_transfer_http_utils.py \
   tests/e2e/pull_request/weight_transfer_utils.py \
-  tests/ut/distributed/weight_transfer
+  tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py \
+  tests/e2e/pull_request/two_card/test_hccl_weight_transfer.py \
+  tests/ut/distributed/weight_transfer/test_http_utils.py \
+  tests/ut/distributed/weight_transfer/test_packed_tensor.py
 ```
 
-预期结果：
+预期：
 
-- 当前分支是 `pr-13049`。
-- `origin/main..HEAD` 包含 `84b09f3e2` 和 `c5ed02f00` 两个 PR 提交。
-- diff 统计为 `13 files changed, 540 insertions(+), 234 deletions(-)`。
-- 文件范围只包含上文列出的 13 个文件。
+- 分支为 `pr-13049-new`，HEAD 为 `fb9c84529`。
+- `origin/main..HEAD` 包含 7 个 commit。
+- diff 统计为 `8 files changed, 825 insertions(+), 161 deletions(-)`。
+- 文件范围只包含上文列出的 8 个文件。
 - `git diff --check` 无 whitespace error。
 - compileall 通过。
 
-## 4. 第二层：纯 Python UT
+## 6. 第二层：纯 Python UT
 
-优先执行 PR 新增的三组 UT：
+本 PR 新增两组 UT，全部可在 CPU 环境运行，无需 NPU 硬件。
 
 ```bash
 python -m pytest -q \
-  tests/ut/distributed/weight_transfer/test_compat.py \
-  tests/ut/distributed/weight_transfer/test_registry.py \
-  tests/ut/distributed/weight_transfer/test_http_utils.py
+  tests/ut/distributed/weight_transfer/test_http_utils.py \
+  tests/ut/distributed/weight_transfer/test_packed_tensor.py
 ```
 
-然后执行完整 weight_transfer UT 目录：
+### 6.1 test_http_utils.py（3 个 UT）
+
+| 测试 | 覆盖点 |
+|---|---|
+| `test_post_weight_transfer_endpoint_*` | URL 拼接、payload 传递、timeout、response 处理 |
+| `test_start_weight_update_*` | `/start_weight_update` endpoint 调用 |
+| `test_get_world_size_*` | `/get_world_size` 返回值解析 |
+
+### 6.2 test_packed_tensor.py（18 个 UT）
+
+通过 stub `torch.npu.Stream` / `group.broadcast` / `rebuild_npu_tensor` 实现 CPU-only 测试。
+
+| 函数 | UT 数 | 覆盖点 |
+|---|---|---|
+| `packed_broadcast_producer` | 6 | 单 tensor、多 tensor、超 buffer 切分、空迭代器、num_buffers 轮转、src 传递 |
+| `packed_broadcast_consumer` | 6 | 单 tensor、多 tensor、空迭代器、src 传递、多 dtype |
+| `packed_npu_ipc_producer` | 5 | 单 chunk、空迭代器、超 buffer 切分、单 tensor 超 buffer 报错、dtype 名称提取 |
+| `packed_npu_ipc_consumer` | 5 | roundtrip、UUID 不匹配报错、device_index 覆盖、clone 独立 storage、content_size 截断 |
+
+### 6.3 完整 weight_transfer UT 目录回归
 
 ```bash
 python -m pytest -q tests/ut/distributed/weight_transfer
 ```
 
-必须覆盖以下断言：
+确认回退 compat/registry 后，原有 `test_npu_ipc_engine.py`（4 个 UT）仍能通过。
 
-- `get_trainer_factory()` 返回 `None` 时，`uses_legacy_trainer_api()` 为 `True`。
-- trainer factory 存在但 `_registry` 为空时，`supports_stateful_trainer_api()` 为 `False`。
-- trainer factory 的 `_registry` 包含 `ipc` 时，`supports_stateful_trainer_api()` 为 `True`。
-- registry 注册 `hccl`、`npu_ipc` native backend。
-- registry 将 upstream `nccl`、`ipc` alias 替换为 Ascend lazy loader。
-- registry 注册函数只在 stateful trainer API 可用时注册 Ascend `npu_ipc` trainer engine。
-- 重复注册保持幂等。
-- HTTP helper 正确拼接 URL、传递 timeout、检查 HTTP status，并传播 background POST 异常。
-- e2e helper 不改变 backend-specific payload 构造。
+## 7. 第三层：人工 diff 审查
 
-## 5. 第三层：人工 diff 审查
-
-按职责逐组审查 13 个文件：
+按文件组逐项确认 helper 抽取未引入回归：
 
 | 文件组 | 审查重点 |
 |---|---|
-| `compat.py` / `test_compat.py` | trainer capability 使用 registry entry 判断，而不是只看 factory 类存在 |
-| `registry.py` / `test_registry.py` | native backend、alias replacement、trainer registry、幂等和 lazy loader |
-| `__init__.py` / `patch_weight_transfer_engine.py` | 两个入口都只触发统一 registry，不再分散写 upstream registry |
-| `weight_transfer_http_utils.py` / `test_http_utils.py` | HTTP URL、timeout、status 检查、异常传播，不编码 backend payload |
-| `rlhf_http_hccl.py` / `rlhf_http_npu_ipc.py` | 示例只复用 helper，不改变 HCCL/NPU IPC payload 和 lifecycle 顺序 |
-| `weight_transfer_utils.py` / e2e tests | e2e 公共请求 helper 不吞异常，不改变原测试语义 |
+| `weight_transfer_http_utils.py` / `test_http_utils.py` | URL 拼接、timeout、status 检查、异常传播，不编码 backend payload |
+| `rlhf_http_hccl.py` / `rlhf_http_npu_ipc.py` | 只复用 helper，不改变 HCCL/NPU IPC payload 和 lifecycle 顺序；同目录导入正确；`client` / `weight_sync_client` 命名正确 |
+| `weight_transfer_utils.py` / e2e tests | `BackgroundPost` 线程语义、异常捕获与原 inline 实现一致；e2e 断言不变 |
+| `test_packed_tensor.py` | mock 范围只覆盖 NPU 原语，不掩盖被测逻辑；断言验证数据正确性 |
 
-审查时不要只看新增 helper 是否“更干净”，要逐项确认旧示例和旧 e2e 中的 backend-specific 参数仍由调用方持有。
+## 8. 第四层：Ascend e2e 回归
 
-## 6. 第四层：import 和 lazy-load smoke test
-
-确认兼容模块和注册模块不会提前 import transport 依赖：
-
-```bash
-python - <<'PY'
-import sys
-
-from vllm_ascend.distributed.weight_transfer import compat
-from vllm_ascend.distributed.weight_transfer.registry import (
-    register_ascend_weight_transfer_engines,
-)
-
-register_ascend_weight_transfer_engines()
-
-print("factory:", compat.get_trainer_factory())
-print("supports_stateful:", compat.supports_stateful_trainer_api())
-print("uses_legacy:", compat.uses_legacy_trainer_api())
-
-for name in ["ray", "torch_npu"]:
-    print(name, name in sys.modules)
-PY
-```
-
-预期结果：
-
-- 脚本可以正常退出。
-- `ray` 不应因 registry/compat 顶层路径被提前 import。
-- `torch_npu` 不应因 registry/compat 顶层路径被提前 import。
-- `supports_stateful` 的结果应与当前安装的 upstream vLLM trainer registry 一致。
-
-## 7. 第四层：版本矩阵验证
-
-这个 PR 的关键价值需要跨 upstream vLLM 版本确认。推荐使用独立 venv 或临时工作区，不要在主验证目录里直接来回覆盖当前环境。
-
-| upstream vLLM | 期望结果 | 必测点 |
-|---|---|---|
-| `releases/v0.25.0` | legacy | factory 不存在时不报错 |
-| `releases/v0.26.0` | legacy | factory 存在但无 `ipc` 时不启用 stateful |
-| `releases/v0.27.0` | stateful | `ipc` 注册后启用 stateful |
-| `main` | stateful | `ipc`/`nccl` 注册后启用 stateful |
-
-每个环境执行：
-
-```bash
-python -m pytest -q tests/ut/distributed/weight_transfer/test_compat.py
-python - <<'PY'
-from vllm_ascend.distributed.weight_transfer import compat
-print("factory:", compat.get_trainer_factory())
-print("supports_stateful:", compat.supports_stateful_trainer_api())
-print("uses_legacy:", compat.uses_legacy_trainer_api())
-PY
-```
-
-判定标准：
-
-- v0.25/v0.26 输出 `supports_stateful: False` 和 `uses_legacy: True`。
-- v0.27/main 输出 `supports_stateful: True` 和 `uses_legacy: False`。
-- 任一版本 import `compat.py` 不应因为不存在 newer trainer API 而失败。
-
-## 8. 第五层：Ascend e2e 回归
-
-本 PR 没有改 HCCL/NPU IPC data-plane，因此 e2e 不是最小合入门槛，但在完整 Ascend 环境中建议跑一遍核心路径，确认 trainer API 分流没有破坏现有用例。
+本 PR 没有改 HCCL/NPU IPC data-plane，但 helper 抽取后建议跑一遍核心路径，确认 HTTP 调用语义未破坏。
 
 ```bash
 python -m pytest -q tests/e2e/pull_request/one_card/test_npu_ipc_weight_transfer.py
 python -m pytest -q tests/e2e/pull_request/two_card/test_hccl_weight_transfer.py
 ```
 
-预期结果：
+环境前置：
 
-- NPU IPC one-card weight transfer 通过。
-- HCCL two-card weight transfer 通过。
-- 如果环境缺少 NPU、CANN、torch_npu、pytest 或 requests，应记录为环境阻塞，而不是 PR 行为失败。
+- 模型路径覆盖为本地 `/mnt/weight/Qwen3-0.6B`（避免 HuggingFace 外网访问）。
+- NPU 8 卡 Ascend910 在线。
+- `vllm` 0.26.0、`torch_npu`、`requests`、`pytest` 已安装。
 
-## 9. 遗留项
+预期：
 
-当前已经完成的验证覆盖了 helper、UT 和两条 e2e 主路径，但还有一项额外降风险验证没有做：
+- NPU IPC one-card：baseline → init → pause → start → update → finish → resume → 更新后 completions 全流程通过。
+- HCCL two-card：server/trainer rendezvous → 310 tensors packed broadcast → 全流程通过。
 
-- `examples/rl/rlhf_http_hccl.py` 还没有作为 CLI 脚本单独跑一次。
-- `examples/rl/rlhf_http_npu_ipc.py` 还没有作为 CLI 脚本单独跑一次。
-
-后续补做时建议：
-
-- 使用本地 `/mnt/weight/Qwen3-0.6B`，避免依赖外网。
-- 保持离线环境或模型本地缓存可用。
-- 把两条脚本验证作为 post-merge 或下一轮收尾 smoke。
-
-这项目前不是合入阻塞项，但它仍然是值得补齐的最后一层入口验证。
-
-## 10. Review 检查清单
-
-合入前至少确认：
-
-- `supports_stateful_trainer_api()` 使用 upstream `ipc` trainer registry entry 作为 capability signal。
-- v0.26 的“factory 存在但 backend 未注册”场景已有 UT。
-- `uses_legacy_trainer_api()` 只是 `supports_stateful_trainer_api()` 的反向结果，不引入第二套判断。
-- `compat.py` 不顶层 import Ray、torch_npu、HCCL 或 NPU IPC engine。
-- `registry.py` 对 trainer engine 的注册仍由 `supports_stateful_trainer_api()` 保护。
-- 没有顺带修改 transport loop、packed payload 或 HTTP schema。
-
-## 11. 验收结论模板
+## 9. 验收结论模板
 
 完成验证后记录：
 
 ```text
 PR: #13049
-branch: pr-13049
-HEAD: c5ed02f00
+branch: pr-13049-new
+HEAD: fb9c84529
 
 static checks:
   git diff --check: <passed/failed>
   compileall: <passed/failed>
 
 unit tests:
-  test_compat.py: <passed/failed>
-  weight_transfer UT: <passed/failed/skipped + reason>
-
-version matrix:
-  v0.25.0: <legacy/stateful/result>
-  v0.26.0: <legacy/stateful/result>
-  v0.27.0: <legacy/stateful/result>
-  main: <legacy/stateful/result>
+  test_http_utils.py: <passed/failed + count>
+  test_packed_tensor.py: <passed/failed + count>
+  weight_transfer UT full: <passed/failed + count>
 
 Ascend e2e:
   npu_ipc one-card: <passed/failed/skipped + reason>
   hccl two-card: <passed/failed/skipped + reason>
 
+review.md disposition:
+  #1 alias override: auto-resolved by revert
+  #2 example import: fixed by same-directory import
+  #3 client shadowing: fixed by weight_sync_client rename
+
 final decision:
   <pass/fail/blocker>
 ```
+
+## 10. 不再需要的验证项（相对旧计划）
+
+旧版计划中的以下层级已不再适用，因为 compat/registry 抽象层已回退：
+
+- ❌ 第四层：import 和 lazy-load smoke test（compat/registry 已不存在）
+- ❌ 版本矩阵验证（v0.25 / v0.26 / v0.27 / main 四套 venv）
+- ❌ `test_compat.py` / `test_registry.py` UT
+- ❌ trainer API capability 探测验证
+
+验证范围从旧版的 6 层缩减为 4 层，复杂度显著降低。
