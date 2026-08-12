@@ -1,86 +1,86 @@
-# AscendStore KV Transfer Subprocess Refactor - Detailed Design
+# AscendStore KV 传输子进程重构 - 详细设计
 
-## 1. Design Goals
+## 1. 设计目标
 
-The goal is to move AscendStore KV transfer execution from worker-process daemon threads into an independent transfer subprocess, while preserving existing behavior for all transfer modes.
+目标是将 AscendStore KV 传输执行从 worker 进程内 daemon 线程迁移到独立传输子进程，同时保持所有传输模式的现有行为。
 
-The subprocess should own the Python-heavy transfer hot paths:
+子进程应拥有 Python-heavy 的传输热路径：
 
-- Key construction.
-- Address and size list construction.
-- Layerwise task scheduling.
-- Backend `put`, `get`, `batch_copy`, `batch_write_finish`, and `batch_remove_lease` submission when backend/runtime capabilities allow it.
+- Key 构建。
+- Address 和 size list 构建。
+- Layerwise task scheduling。
+- 在 backend/runtime 能力允许时，提交后端 `put`、`get`、`batch_copy`、`batch_write_finish` 和 `batch_remove_lease`。
 
-The worker process should keep connector-facing orchestration:
+worker 进程应保留 connector-facing orchestration：
 
-- Build high-level request metadata.
-- Maintain scheduler-facing request lifecycle state.
-- Submit transfer commands.
-- Wait for completion or failure.
-- Handle restart or fallback.
+- 构建高层 request metadata。
+- 维护 scheduler-facing request lifecycle state。
+- 提交 transfer command。
+- 等待 completion 或 failure。
+- 处理 restart 或 fallback。
 
-Required properties:
+必需属性：
 
-- Functional equivalence for non-layerwise, key layerwise, and GVA layerwise modes.
-- No precision regression for greedy or non-greedy generation.
-- Transfer subprocess crash must not crash the worker Python process.
-- Restart or downgrade to in-process thread mode must be supported.
-- Performance measurement must distinguish GIL relief from IPC overhead.
+- 非 layerwise、key layerwise 和 GVA layerwise 模式功能等价。
+- greedy 或 non-greedy generation 无精度回归。
+- 传输子进程 crash 不能导致 worker Python 进程 crash。
+- 必须支持 restart 或 downgrade 到进程内线程模式。
+- 性能测量必须区分 GIL relief 和 IPC overhead。
 
-The design must treat cross-process KV buffer sharing and NPU stream/event ordering as first-class requirements, because they are part of the original task and test acceptance surface.
+设计必须把跨进程 KV buffer 共享和 NPU stream/event ordering 当作一等要求，因为它们属于原题和测试验收面。
 
-## 2. Non-Goals
+## 2. 非目标
 
-This refactor should not change:
+本次重构不应改变：
 
-- KV key string format.
-- Block hash semantics.
-- Scheduler protocol.
-- Backend storage semantics.
-- Model execution behavior.
-- Cache-hit or failed-block semantics.
-- Layerwise visible ordering.
-- GVA allocation, publication, or lease semantics.
+- KV key string format。
+- Block hash semantics。
+- Scheduler protocol。
+- Backend storage semantics。
+- Model execution behavior。
+- Cache-hit 或 failed-block semantics。
+- Layerwise visible ordering。
+- GVA allocation、publication 或 lease semantics。
 
-The existing in-process thread implementation must not be deleted in the first version. It becomes the fallback engine and the reference behavior for equivalence tests.
+第一版不能删除现有进程内线程实现。它应成为 fallback engine 和等价性测试的 reference behavior。
 
-## 3. Code-Backed Constraints
+## 3. 代码约束依据
 
-### 3.1 Existing Objects Are Not IPC Payloads
+### 3.1 现有对象不是 IPC Payload
 
-`ReqMeta`, `LayerTransferTask`, and `LayerLoadTask` are process-local execution objects, not wire objects.
+`ReqMeta`、`LayerTransferTask` 和 `LayerLoadTask` 是进程本地执行对象，不是 wire object。
 
-Relevant fields include:
+相关字段包括：
 
-- `ReqMeta.current_event: torch.npu.Event | None`.
-- Numpy arrays for block ids, GVA data, and load GVA data.
-- Generated save/load keys.
-- Partial GVA state.
-- `LayerBlockRange.request`, which embeds a full `ReqMeta`.
-- `LayerLoadTask.attention_start_gate`, which is process-local synchronization.
+- `ReqMeta.current_event: torch.npu.Event | None`。
+- 用于 block id、GVA data 和 load GVA data 的 numpy array。
+- 已生成的 save/load key。
+- Partial GVA state。
+- `LayerBlockRange.request`，其中嵌入完整 `ReqMeta`。
+- `LayerLoadTask.attention_start_gate`，这是进程本地同步对象。
 
-Therefore subprocess mode must use dedicated payload dataclasses and field-level conversion.
+因此 subprocess mode 必须使用专门的 payload dataclass，并进行字段级转换。
 
-### 3.2 NPU Event Semantics Are Correctness-Critical
+### 3.2 NPU Event 语义对正确性很关键
 
-Current behavior depends on NPU event synchronization:
+当前行为依赖 NPU event synchronization：
 
-- Non-layerwise save records `current_event` in the worker and synchronizes it in the send thread before backend `put`.
-- Layerwise save records `sync_save_events[layer_id]` before submitting layer save.
-- GVA load waits for previous save-layer CPU completion and then synchronizes `sync_save_events[wait_for_save]` before reusing HBM buffers.
-- Layerwise prefetch load may wait for `AttentionComputeStartGate`.
+- 非 layerwise save 在 worker 中记录 `current_event`，send 线程在 backend `put` 前同步它。
+- Layerwise save 在提交 layer save 前记录 `sync_save_events[layer_id]`。
+- GVA load 会等待前一个 save-layer CPU completion，然后同步 `sync_save_events[wait_for_save]`，再复用 HBM buffer。
+- Layerwise prefetch load 可能等待 `AttentionComputeStartGate`。
 
-IPC completion messages are not automatically equivalent to NPU stream fences. The design must provide a fence strategy per mode.
+IPC completion message 不会自动等价于 NPU stream fence。设计必须为每种模式提供 fence strategy。
 
-### 3.3 GVA/Memcache Has a Hard Cross-Process Constraint
+### 3.3 GVA/Memcache 存在硬性跨进程约束
 
-GVA layerwise is currently selected for memcache backend. The current scheduler code states that memcache requires `batch_alloc` and `batch_copy` to run in the same process because the `gvaBlobTracker` consulted by `batch_copy` is per-process.
+GVA layerwise 当前会为 memcache backend 启用。当前 scheduler 代码说明 memcache 要求 `batch_alloc` 和 `batch_copy` 在同一进程执行，因为 `batch_copy` 查询的 `gvaBlobTracker` 是 per-process。
 
-This means GVA subprocess support is gated by backend capability. A design that blindly moves GVA `batch_copy` to a child process is not valid unless the child also owns compatible GVA allocation/tracking for the same worker buffers, or the backend exposes supported cross-process import/export semantics.
+这意味着 GVA subprocess 支持受 backend capability gating 约束。如果 child 被设计为执行 GVA `batch_copy`，就必须由 child 拥有兼容的 GVA allocation/tracking，且这些状态对应同一个 worker buffer；或者 backend 暴露受支持的跨进程 import/export 语义。否则，盲目把 GVA `batch_copy` 移到 child process 不是有效设计。
 
-## 4. Proposed Architecture
+## 4. 架构方案
 
-Introduce a transfer engine abstraction under the AscendStore KV pool implementation.
+在 AscendStore KV pool 实现下引入 transfer engine abstraction。
 
 ```
 AscendStoreConnector
@@ -107,9 +107,9 @@ TransferEngine interface
 
 ### 4.1 TransferEngine Interface
 
-The worker should not directly manage `KVTransferThread` instances after phase 1. It should call a transfer engine with methods matching the existing worker lifecycle and scheduler-facing semantics.
+phase 1 后，worker 不应直接管理 `KVTransferThread` 实例。它应调用 transfer engine，且方法要匹配现有 worker lifecycle 和 scheduler-facing 语义。
 
-Suggested interface shape:
+建议接口形态：
 
 ```python
 class TransferEngine(Protocol):
@@ -132,116 +132,116 @@ class TransferEngine(Protocol):
     def raise_if_failed(self) -> None: ...
 ```
 
-Important differences from a simplified interface:
+它与简化接口的重要区别：
 
-- `get_finished()` must receive the same context currently used by `KVPoolWorker.get_finished()`: `finished_req_ids`, `preempted_req_ids`, `delayed_free_req_ids`, and `loading_req_ids`.
-- `wait_for_current_layer_load()` should model the existing `current_layer` state machine, not the connector's unused `layer_name` argument.
-- Failed blocks, KV events, and completed event ids are engine outputs and must remain scheduler-visible.
+- `get_finished()` 必须接收当前 `KVPoolWorker.get_finished()` 使用的同等上下文：`finished_req_ids`、`preempted_req_ids`、`delayed_free_req_ids` 和 `loading_req_ids`。
+- `wait_for_current_layer_load()` 应建模现有 `current_layer` 状态机，而不是 connector 中未使用的 `layer_name` 参数。
+- Failed block、KV event 和 completed event id 是 engine output，必须继续对 scheduler 可见。
 
 ### 4.2 ThreadTransferEngine
 
-`ThreadTransferEngine` wraps the existing behavior:
+`ThreadTransferEngine` 包装现有行为：
 
-- It creates the same mode-specific send/recv thread classes.
-- It keeps using `queue.Queue`, `threading.Event`, and `torch.npu.Event` internally.
-- It exposes the `TransferEngine` interface to `KVPoolWorker`.
+- 创建相同的 mode-specific send/recv thread class。
+- 内部继续使用 `queue.Queue`、`threading.Event` 和 `torch.npu.Event`。
+- 向 `KVPoolWorker` 暴露 `TransferEngine` interface。
 
-This engine is required for:
+该 engine 必须存在，用于：
 
-- Fallback.
-- Equivalence testing.
-- Phased migration without changing default behavior.
+- Fallback。
+- Equivalence testing。
+- 在不改变默认行为的前提下分阶段迁移。
 
 ### 4.3 SubprocessTransferEngine
 
-`SubprocessTransferEngine` owns:
+`SubprocessTransferEngine` 负责：
 
-- Child process startup.
-- IPC channel creation.
-- Command serialization.
-- Result handling.
-- Heartbeat/liveness checks.
-- Backend and event-fence capability detection.
-- Restart/fallback policy.
-- Conversion between worker calls and transfer commands.
+- Child process startup。
+- IPC channel creation。
+- Command serialization。
+- Result handling。
+- Heartbeat/liveness check。
+- Backend 和 event-fence capability detection。
+- Restart/fallback policy。
+- Worker call 与 transfer command 之间的转换。
 
-It should not implement mode-specific transfer logic directly. It dispatches commands to an executor inside the child process.
+它不应直接实现 mode-specific transfer logic，而是把 command dispatch 给 child process 内部的 executor。
 
 ### 4.4 Transfer Subprocess
 
-The child process initializes:
+child process 初始化：
 
-- Backend instance.
-- Device context.
-- Imported or child-registered KV buffer descriptors.
-- Mode-specific executor.
-- Child-local key/token caches.
-- Request/result loop.
+- Backend instance。
+- Device context。
+- Imported 或 child-registered KV buffer descriptor。
+- Mode-specific executor。
+- Child-local key/token cache。
+- Request/result loop。
 
-The child process must not import or call worker forward logic. It should only operate on transfer metadata and backend buffers.
+child process 不能 import 或调用 worker forward logic。它只应操作 transfer metadata 和 backend buffer。
 
-## 5. Configuration and Capability Gating
+## 5. 配置与能力门控
 
-Add a conservative configuration switch.
+增加保守的配置开关。
 
-Suggested engine mode values:
+建议 engine mode 值：
 
-- `thread`: force current thread engine.
-- `subprocess`: require subprocess for eligible modes; raise if unsupported unless fallback policy allows downgrade.
-- `auto`: try subprocess for supported backend/mode combinations and fallback to thread mode on unsupported setup.
+- `thread`：强制当前线程 engine。
+- `subprocess`：对 eligible mode 要求使用 subprocess；unsupported 时根据 fallback policy 决定 raise 或 downgrade。
+- `auto`：对支持的 backend/mode 组合尝试 subprocess，不支持则 fallback 到 thread mode。
 
-Suggested fallback policy values:
+建议 fallback policy 值：
 
-- `disabled`: subprocess failure raises to worker.
-- `restart`: restart child process within retry limits, without thread fallback.
-- `thread_fallback`: downgrade to thread engine after subprocess failure.
-- `auto`: restart once when safe, then downgrade.
+- `disabled`：subprocess failure 直接向 worker 抛错。
+- `restart`：在 retry limit 内 restart child process，不进行 thread fallback。
+- `thread_fallback`：subprocess failure 后 downgrade 到 thread engine。
+- `auto`：安全时 restart 一次，然后 downgrade。
 
-Suggested limits:
+建议限制：
 
-- `max_restart_attempts`: default 1.
-- `heartbeat_interval_ms`.
-- `ipc_timeout_ms`.
-- `startup_timeout_ms`.
+- `max_restart_attempts`：默认 1。
+- `heartbeat_interval_ms`。
+- `ipc_timeout_ms`。
+- `startup_timeout_ms`。
 
-Initial rollout should default to `thread`. `auto` should be enabled only after capability checks and equivalence/performance tests pass for a backend/mode pair.
+初始 rollout 应默认 `thread`。只有当某个 backend/mode 组合通过 capability check、equivalence test 和 performance test 后，才启用 `auto`。
 
 ### 5.1 Capability Matrix
 
-Subprocess mode must be selected per backend and transfer mode.
+必须按 backend 和 transfer mode 选择 subprocess mode。
 
-Required capabilities:
+所需能力：
 
 | Mode | Required capability |
 | --- | --- |
-| Non-layerwise save | Child can access KV buffers; child can honor save fence before backend `put`. |
-| Non-layerwise load | Child can access KV buffers; failed-block reporting can round-trip. |
-| Key layerwise save | Child can access KV buffers; child can honor per-layer save fence. |
-| Key layerwise load | Child can access KV buffers; child can preserve save-before-load and attention-start gating. |
-| GVA layerwise save | Child can own/import GVA allocation/tracker state; `batch_alloc`, `batch_copy`, and `batch_write_finish` are safe in child. |
-| GVA layerwise load | Child can own/import GVA/lease state; `batch_copy` and final `batch_remove_lease` cleanup are safe in child. |
+| Non-layerwise save | Child 能访问 KV buffer；child 能在 backend `put` 前遵守 save fence。 |
+| Non-layerwise load | Child 能访问 KV buffer；failed-block reporting 能 round-trip。 |
+| Key layerwise save | Child 能访问 KV buffer；child 能遵守 per-layer save fence。 |
+| Key layerwise load | Child 能访问 KV buffer；child 能保持 save-before-load 和 attention-start gating。 |
+| GVA layerwise save | Child 能拥有/import GVA allocation/tracker state；`batch_alloc`、`batch_copy` 和 `batch_write_finish` 在 child 中安全。 |
+| GVA layerwise load | Child 能拥有/import GVA/lease state；`batch_copy` 和 final `batch_remove_lease` cleanup 在 child 中安全。 |
 
-If a capability is missing, the engine must choose thread mode for that backend/mode and log one clear warning.
+如果缺失某项能力，engine 必须为该 backend/mode 选择 thread mode，并输出一条清晰 warning。
 
-## 6. IPC Protocol
+## 6. IPC 协议
 
 ### 6.1 Transport
 
-Use a local multiprocessing transport suitable for Python control messages.
+使用适合 Python control message 的本地 multiprocessing transport。
 
-Acceptable first prototype options:
+第一版原型可接受选项：
 
-- `multiprocessing.Queue` for separate command and result queues.
-- `multiprocessing.Pipe` for simple bidirectional command/result exchange.
-- `multiprocessing.connection` if authenticated local sockets are preferred later.
+- `multiprocessing.Queue`，分别用于 command queue 和 result queue。
+- `multiprocessing.Pipe`，用于简单双向 command/result exchange。
+- 如果后续偏好 authenticated local socket，可使用 `multiprocessing.connection`。
 
-For the first implementation, command/result queues are easiest to test. Large arrays and KV buffers must not be sent through these queues unless explicitly measured and accepted for prototype scope.
+第一版使用 command/result queue 最容易测试。除非已明确测量并接受为原型范围，否则大型 array 和 KV buffer 不能通过这些 queue 发送。
 
-The implementation must define the process start method explicitly and verify it with Ascend/NPU runtime initialization. A child entrypoint should live in an importable module so spawn-based startup can work.
+实现必须显式定义 process start method，并验证它与 Ascend/NPU runtime initialization 兼容。child entrypoint 应放在可 import 的 module 中，以支持 spawn-based startup。
 
 ### 6.2 Message Envelope
 
-All IPC messages should use a versioned envelope.
+所有 IPC message 都应使用 versioned envelope。
 
 ```python
 @dataclass
@@ -252,7 +252,7 @@ class TransferMessage:
     payload: object
 ```
 
-All responses must include the originating `message_id`.
+所有 response 必须包含原始 `message_id`。
 
 ```python
 @dataclass
@@ -264,7 +264,7 @@ class TransferResult:
     error: TransferError | None
 ```
 
-Status values:
+Status values：
 
 - `ok`
 - `accepted`
@@ -278,206 +278,206 @@ Status values:
 
 #### HELLO
 
-Purpose:
+目的：
 
-- Negotiate protocol version and child runtime information.
+- 协商 protocol version 和 child runtime information。
 
-Result:
+结果：
 
-- Protocol version, child pid, supported command set.
+- Protocol version、child pid、supported command set。
 
 #### PROBE_CAPABILITIES
 
-Purpose:
+目的：
 
-- Determine whether the selected backend/mode can run in subprocess mode.
+- 判断选定 backend/mode 是否能运行 subprocess mode。
 
-Payload:
+Payload：
 
-- Backend name and configuration.
-- Transfer mode.
-- Device identity.
-- Required capability list.
+- Backend name 和 configuration。
+- Transfer mode。
+- Device identity。
+- Required capability list。
 
-Result:
+结果：
 
-- Capability result per required item.
-- Unsupported reason if any.
+- 每个 required item 的 capability result。
+- 如 unsupported，返回原因。
 
 #### REGISTER
 
-Purpose:
+目的：
 
-- Initialize backend and register/import KV cache buffers in the subprocess.
+- 在 subprocess 中初始化 backend 并 register/import KV cache buffer。
 
-Payload:
+Payload：
 
-- Backend name and configuration.
-- Worker rank / TP rank / PP rank / PCP rank / DCP rank / device identity.
-- Transfer mode.
-- KV cache group metadata.
-- Buffer descriptors or child-registration information.
-- Layerwise layout information.
+- Backend name 和 configuration。
+- Worker rank / TP rank / PP rank / PCP rank / DCP rank / device identity。
+- Transfer mode。
+- KV cache group metadata。
+- Buffer descriptor 或 child-registration information。
+- Layerwise layout information。
 
-Result:
+结果：
 
-- Backend ready.
-- Buffer registration/import result.
-- Unsupported process sharing reason if registration cannot work.
+- Backend ready。
+- Buffer registration/import result。
+- 如果 registration 无法工作，返回 unsupported process sharing reason。
 
 #### START
 
-Purpose:
+目的：
 
-- Tell child process to enter ready state after registration.
+- Registration 后通知 child process 进入 ready state。
 
-Result:
+结果：
 
-- Ready ack.
+- Ready ack。
 
 #### START_LOAD
 
-Purpose:
+目的：
 
-- Submit a load step for non-layerwise or layerwise mode.
+- 为非 layerwise 或 layerwise mode 提交一个 load step。
 
-Payload:
+Payload：
 
-- `StartLoadPayload` with request payloads and current layerwise scheduling context.
+- 包含 request payload 和当前 layerwise scheduling context 的 `StartLoadPayload`。
 
-Result:
+结果：
 
-- Accepted ack, not necessarily load-complete.
+- Accepted ack，不一定表示 load-complete。
 
 #### WAIT_CURRENT_LAYER_LOAD
 
-Purpose:
+目的：
 
-- Preserve current worker-facing `wait_for_layer_load()` semantics.
+- 保持当前 worker-facing `wait_for_layer_load()` 语义。
 
-Payload:
+Payload：
 
-- Current layer index.
-- Prefetch/dependency state.
-- Wait-for-save layer if any.
-- Attention-start fence descriptor if required.
+- Current layer index。
+- Prefetch/dependency state。
+- Wait-for-save layer if any。
+- 需要时的 attention-start fence descriptor。
 
-Result:
+结果：
 
-- Current layer load completed.
-- Failed block ids if any.
-- Error if layer failed.
+- Current layer load completed。
+- Failed block ids if any。
+- Layer failed 时返回 error。
 
 #### SAVE_CURRENT_LAYER
 
-Purpose:
+目的：
 
-- Submit one layer save batch and preserve current `save_kv_layer()` behavior.
+- 提交一个 layer save batch，并保持当前 `save_kv_layer()` 行为。
 
-Payload:
+Payload：
 
-- Current layer index.
-- Layer transfer task payloads.
-- Save fence descriptor.
-- Final-layer behavior flags.
+- Current layer index。
+- Layer transfer task payload。
+- Save fence descriptor。
+- Final-layer behavior flag。
 
-Result:
+结果：
 
-- Accepted or completed according to current semantics.
-- Finished request ids if final-layer completion occurred.
+- 根据当前语义返回 accepted 或 completed。
+- 如果 final-layer completion 发生，返回 finished request id。
 
 #### SUBMIT_SAVE_BATCH
 
-Purpose:
+目的：
 
-- Submit non-layerwise save requests.
+- 提交非 layerwise save request。
 
-Payload:
+Payload：
 
-- Stored request payloads.
-- Save fence descriptor.
-- Request ids.
+- Stored request payload。
+- Save fence descriptor。
+- Request id。
 
-Result:
+结果：
 
-- Accepted ack.
+- Accepted ack。
 
 #### WAIT_SAVE_BATCH
 
-Purpose:
+目的：
 
-- Preserve current blocking non-layerwise save behavior.
+- 保持当前 blocking non-layerwise save 行为。
 
-Result:
+结果：
 
-- Save complete.
-- KV events produced.
-- Completed event ids.
-- Finished request ids.
+- Save complete。
+- 产生的 KV event。
+- Completed event id。
+- Finished request id。
 
 #### GET_FINISHED
 
-Purpose:
+目的：
 
-- Return finished sending/receiving request ids with current scheduler filtering semantics.
+- 按当前 scheduler filtering 语义返回 finished sending/receiving request id。
 
-Payload:
+Payload：
 
-- Finished request ids known by scheduler.
-- Preempted request ids.
-- Delayed-free request ids.
-- Loading request ids.
-- Layerwise flag.
-- Load-async flag.
+- Scheduler 已知 finished request id。
+- Preempted request id。
+- Delayed-free request id。
+- Loading request id。
+- Layerwise flag。
+- Load-async flag。
 
-Result:
+结果：
 
-- Tuple-equivalent payload for saved and loaded completions.
+- 与当前 tuple 等价的 saved/loaded completion payload。
 
 #### GET_FAILED_BLOCKS
 
-Purpose:
+目的：
 
-- Return and clear failed load block ids.
+- 返回并清空 failed load block id。
 
-Result:
+结果：
 
-- Failed block id set.
+- Failed block id set。
 
 #### TAKE_EVENTS
 
-Purpose:
+目的：
 
-- Return and clear KV cache events and completed worker events.
+- 返回并清空 KV cache event 和 completed worker event。
 
-Result:
+结果：
 
-- Serialized KV events.
-- Completed event ids.
+- Serialized KV event。
+- Completed event id。
 
 #### HEARTBEAT
 
-Purpose:
+目的：
 
-- Liveness check.
+- Liveness check。
 
-Result:
+结果：
 
-- Current child status, active command id, transfer mode, backend status.
+- 当前 child status、active command id、transfer mode、backend status。
 
 #### SHUTDOWN
 
-Purpose:
+目的：
 
-- Graceful subprocess exit.
+- Graceful subprocess exit。
 
-Result:
+结果：
 
-- Shutdown ack.
+- Shutdown ack。
 
 ### 6.4 Error Payload
 
-Errors should be structured.
+error 应结构化。
 
 ```python
 @dataclass
@@ -493,13 +493,13 @@ class TransferError:
     traceback: str | None
 ```
 
-Worker logs should include command, request id, layer id, backend/mode, and fallback decision.
+worker log 应包含 command、request id、layer id、backend/mode 和 fallback decision。
 
-## 7. Payload Design
+## 7. Payload 设计
 
 ### 7.1 Request Payload
 
-Do not send full `ReqMeta`. Use a field-level payload.
+不要发送完整 `ReqMeta`，应使用字段级 payload。
 
 ```python
 @dataclass
@@ -529,7 +529,7 @@ class ReqMetaPayload:
     partial_load_gva_per_group: list[int]
 ```
 
-Large numpy arrays should not be added to this payload by default. They should use shared memory descriptors or child-local reconstruction if needed.
+默认不应把大型 numpy array 加入该 payload。需要时应使用 shared memory descriptor 或 child-local reconstruction。
 
 ### 7.2 LoadSpec Payload
 
@@ -545,7 +545,7 @@ class LoadSpecPayload:
 
 ### 7.3 Layer Transfer Payload
 
-Do not send `LayerBlockRange` with embedded request references.
+不要发送带 embedded request reference 的 `LayerBlockRange`。
 
 ```python
 @dataclass
@@ -566,7 +566,7 @@ class LayerTransferTaskPayload:
     cached_process_tokens_ref: str | None
 ```
 
-`cached_process_tokens` should be built and cached inside the child process when subprocess mode is active, rather than serialized from worker to child.
+subprocess mode 激活时，`cached_process_tokens` 应在 child process 内构建和缓存，而不是从 worker 序列化到 child。
 
 ### 7.4 Layer Load Payload
 
@@ -579,29 +579,29 @@ class LayerLoadTaskPayload:
     attention_start_fence: FenceDescriptor | None
 ```
 
-### 7.5 Runtime-Only Field Replacements
+### 7.5 Runtime-Only Field 替代
 
 | Runtime field | Replacement |
 | --- | --- |
-| `queue.Queue` | IPC command queue/result queue. |
-| `threading.Event` load/save completion | Message id plus child result; worker-side condition/event if needed. |
-| `torch.npu.Event` | `FenceDescriptor`, or worker pre-synchronization when no cross-process fence exists. |
-| `AttentionComputeStartGate` | Explicit gate command/fence descriptor, or worker-held gate before child submit. |
-| Backend instance | Child-local backend instance. |
-| Worker task list references | Immutable payload snapshot per command. |
+| `queue.Queue` | IPC command queue/result queue。 |
+| `threading.Event` load/save completion | Message id 加 child result；必要时 worker 侧 condition/event。 |
+| `torch.npu.Event` | `FenceDescriptor`，或没有 cross-process fence 时 worker pre-synchronization。 |
+| `AttentionComputeStartGate` | 显式 gate command/fence descriptor，或 child submit 前由 worker 持有 gate。 |
+| Backend instance | Child-local backend instance。 |
+| Worker task list references | 每个 command 的 immutable payload snapshot。 |
 
-## 8. Cross-Process Buffer and Fence Design
+## 8. 跨进程 Buffer 与 Fence 设计
 
 ### 8.1 KV Cache Buffers
 
-The design must avoid copying KV cache tensors through IPC.
+设计必须避免通过 IPC 复制 KV cache tensor。
 
-Preferred strategy:
+首选策略：
 
-1. Worker computes KV cache memory regions as today.
-2. Worker creates `BufferDescriptor` values for each region.
-3. Child imports/registers those descriptors with its backend.
-4. Child uses descriptors and cache layout metadata to build addresses and submit I/O.
+1. worker 按当前方式计算 KV cache memory region。
+2. worker 为每个 region 创建 `BufferDescriptor`。
+3. child 用自己的 backend import/register 这些 descriptor。
+4. child 使用 descriptor 和 cache layout metadata 构建 address 并提交 I/O。
 
 ```python
 @dataclass
@@ -615,24 +615,24 @@ class BufferDescriptor:
     cache_role: str
 ```
 
-If a backend accepts raw virtual addresses only inside the registering process, raw `base_addr` is not a valid subprocess descriptor. Capability probing must detect this and force thread fallback.
+如果 backend 只接受注册进程内有效的 raw virtual address，那么 raw `base_addr` 不是有效 subprocess descriptor。Capability probing 必须检测这种情况并强制 thread fallback。
 
 ### 8.2 NPU Fence Strategy
 
-Use one of the following strategies per backend/mode, in this order of preference:
+按 backend/mode 使用以下策略之一，优先级从高到低：
 
-1. Cross-process NPU event/fence handle.
-   - Worker records an event and sends a `FenceDescriptor` to the child.
-   - Child waits on the fence before backend I/O.
-   - This best preserves current asynchronous behavior.
+1. Cross-process NPU event/fence handle。
+   - worker 记录 event，并把 `FenceDescriptor` 发送给 child。
+   - child 在 backend I/O 前等待该 fence。
+   - 这最接近现有异步行为。
 
-2. Worker pre-synchronization before IPC.
-   - Worker records and synchronizes the NPU event before sending a command.
-   - Child can safely submit backend I/O.
-   - Correctness is simpler, but performance benefit may shrink and must be measured.
+2. Worker pre-synchronization before IPC。
+   - worker 记录并同步 NPU event，然后发送 command。
+   - child 可以安全提交 backend I/O。
+   - 正确性更简单，但性能收益可能缩小，必须测量。
 
-3. Thread fallback.
-   - If neither cross-process fence nor acceptable pre-sync behavior is supported, keep that mode on `ThreadTransferEngine`.
+3. Thread fallback。
+   - 如果既没有 cross-process fence，也无法接受 pre-sync 行为，则该模式保留在 `ThreadTransferEngine`。
 
 ```python
 @dataclass
@@ -646,25 +646,25 @@ class FenceDescriptor:
 
 ### 8.3 GVA/Memcache Strategy
 
-GVA subprocess support requires one of these supported designs:
+GVA subprocess 支持需要以下受支持设计之一：
 
-1. Child-owned GVA path.
-   - Child performs `batch_alloc`, owns child-local GVA tracker state, performs `batch_copy`, calls `batch_write_finish`, and releases leases.
-   - Worker sends only keys, sizes, request/layer metadata, and KV buffer descriptors.
-   - Worker no longer owns `_allocated_gvas` for subprocess mode, or it mirrors child state only for observability.
+1. Child-owned GVA path。
+   - child 执行 `batch_alloc`，拥有 child-local GVA tracker state，执行 `batch_copy`，调用 `batch_write_finish`，并释放 lease。
+   - worker 只发送 key、size、request/layer metadata 和 KV buffer descriptor。
+   - subprocess mode 下 worker 不再拥有 `_allocated_gvas`，或只为 observability 安全镜像 child state。
 
-2. Backend-supported tracker import/export.
-   - Worker can export allocation/tracker descriptors.
-   - Child imports them and can safely call `batch_copy`.
+2. Backend-supported tracker import/export。
+   - worker 可以 export allocation/tracker descriptor。
+   - child import 后可以安全调用 `batch_copy`。
 
-3. Thread fallback.
-   - If memcache keeps `gvaBlobTracker` strictly per-process with no child-owned full path, GVA layerwise must remain on thread engine.
+3. Thread fallback。
+   - 如果 memcache 的 `gvaBlobTracker` 严格是 per-process，且没有 child-owned full path，GVA layerwise 必须保留在线程 engine。
 
-The implementation must not claim GVA subprocess support until one of the first two paths is proven by prototype and test.
+实现不能在前两种路径被原型和测试证明之前宣称支持 GVA subprocess。
 
-## 9. Executor Design Inside Subprocess
+## 9. 子进程内 Executor 设计
 
-The subprocess dispatches to a mode-specific executor behind a shared interface.
+subprocess 通过 shared interface dispatch 到 mode-specific executor。
 
 ```python
 class TransferExecutor(Protocol):
@@ -681,542 +681,542 @@ class TransferExecutor(Protocol):
     def shutdown(self) -> None: ...
 ```
 
-Concrete executors:
+具体 executor：
 
-- `NonLayerwiseTransferExecutor`.
-- `KeyLayerwiseTransferExecutor`.
-- `GVALayerwiseTransferExecutor`, enabled only when GVA capability probe passes.
+- `NonLayerwiseTransferExecutor`。
+- `KeyLayerwiseTransferExecutor`。
+- `GVALayerwiseTransferExecutor`，仅在 GVA capability probe 通过后启用。
 
-Current transfer thread logic should be extracted into reusable helper functions where possible. Avoid subclassing `threading.Thread` logic directly in the child; extract pure transfer routines for key/address/size construction and backend calls.
+当前 transfer thread 逻辑应尽量抽取成可复用 helper function。不要在 child 中直接 subclass `threading.Thread` 逻辑；应抽取纯 transfer routine，用于 key/address/size 构建和 backend call。
 
-## 10. Mode-Specific Design
+## 10. 按模式设计
 
 ### 10.1 Non-Layerwise Executor
 
-Responsibilities:
+职责：
 
-- Receive save/load payloads.
-- Build key strings in subprocess.
-- Build addrs and sizes in subprocess.
-- Preserve TP-rank ordering/rotation.
-- Preserve store mask, skip range, and skip-null-block logic.
-- Call backend `exists`, `put`, and `get`.
-- Return KV events, completed event ids, finished request ids, and failed block ids.
+- 接收 save/load payload。
+- 在 subprocess 中构建 key string。
+- 在 subprocess 中构建 addr 和 size。
+- 保持 TP-rank ordering/rotation。
+- 保持 store mask、skip range 和 skip-null-block logic。
+- 调用 backend `exists`、`put` 和 `get`。
+- 返回 KV event、completed event id、finished request id 和 failed block id。
 
-Important equivalence requirements:
+重要等价性要求：
 
-- Preserve key string format.
-- Preserve TP-rank ordering/rotation.
-- Preserve store mask and skip range logic.
-- Preserve failed block recording behavior.
-- Cover synchronous and async load paths. If only async load is moved, synchronous non-layerwise load remains a GIL-sharing path.
+- 保持 key string format。
+- 保持 TP-rank ordering/rotation。
+- 保持 store mask 和 skip range logic。
+- 保持 failed block recording behavior。
+- 覆盖 synchronous 和 async load path。如果只迁移 async load，同步非 layerwise load 仍是共享 GIL 的路径。
 
 ### 10.2 Key Layerwise Executor
 
-Responsibilities:
+职责：
 
-- Maintain cached process tokens in subprocess.
-- Build layer-specific keys in subprocess.
-- Preserve per-layer save/load ordering.
-- Honor save fences before backend `put`.
-- Preserve `consumer_is_to_put` wait behavior.
-- Return per-layer completion.
+- 在 subprocess 中维护 cached process token。
+- 在 subprocess 中构建 layer-specific key。
+- 保持 per-layer save/load ordering。
+- 在 backend `put` 前遵守 save fence。
+- 保持 `consumer_is_to_put` wait behavior。
+- 返回 per-layer completion。
 
-Important equivalence requirements:
+重要等价性要求：
 
-- Preserve `LayerPoolKey` formatting.
-- Preserve layer index mapping.
-- Preserve current visible behavior of `wait_for_layer_load()` and `save_kv_layer()`.
-- Preserve final-layer finished request behavior.
+- 保持 `LayerPoolKey` formatting。
+- 保持 layer index mapping。
+- 保持 `wait_for_layer_load()` 和 `save_kv_layer()` 当前可见行为。
+- 保持 final-layer finished request behavior。
 
 ### 10.3 GVA Layerwise Executor
 
-Responsibilities when capability probe passes:
+capability probe 通过后承担以下职责：
 
-- Own or import GVA allocation/tracker state safely.
-- Build shared block data in subprocess or import worker-built descriptors.
-- Build GVA/address/size arrays.
-- Honor save/load fences.
-- Call batch copy with correct direction.
-- Call `batch_write_finish` for save.
-- Call `batch_remove_lease` on final load layer.
-- Handle cleanup on partial failure.
+- 安全拥有或 import GVA allocation/tracker state。
+- 在 subprocess 中构建 shared block data，或 import worker-built descriptor。
+- 构建 GVA/address/size array。
+- 遵守 save/load fence。
+- 按正确 direction 调用 batch copy。
+- save 时调用 `batch_write_finish`。
+- final load layer 调用 `batch_remove_lease`。
+- 处理 partial failure cleanup。
 
-Important equivalence requirements:
+重要等价性要求：
 
-- Preserve batch copy limits.
-- Preserve H2D stagger behavior.
-- Preserve lease release semantics.
-- Preserve final-layer cleanup.
-- Preserve non-idempotent `batch_alloc` behavior.
+- 保持 batch copy limits。
+- 保持 H2D stagger behavior。
+- 保持 lease release semantics。
+- 保持 final-layer cleanup。
+- 保持非幂等 `batch_alloc` 行为。
 
-If capability probe fails, this executor must not be enabled. The engine must fall back to thread mode and report the unsupported reason.
+如果 capability probe 失败，不能启用该 executor。engine 必须 fallback 到 thread mode 并报告 unsupported reason。
 
-## 11. Worker-Side Lifecycle
+## 11. Worker 侧生命周期
 
 ### 11.1 Startup
 
-Worker flow after refactor:
+重构后 worker 流程：
 
-1. `KVPoolWorker.register_kv_caches()` prepares local metadata and memory regions as today.
-2. Worker constructs selected `TransferEngine`.
-3. Engine starts subprocess if configured.
-4. Engine sends `HELLO` and `PROBE_CAPABILITIES`.
-5. If supported, engine sends `REGISTER` with backend, layout, buffer descriptors, and mode configuration.
-6. Child initializes backend and imports/registers buffers.
-7. Child sends ready ack.
-8. Worker continues normal operation.
+1. `KVPoolWorker.register_kv_caches()` 按当前方式准备 local metadata 和 memory region。
+2. worker 构建选定的 `TransferEngine`。
+3. 如果配置要求，engine 启动 subprocess。
+4. engine 发送 `HELLO` 和 `PROBE_CAPABILITIES`。
+5. 如果支持，engine 发送 `REGISTER`，携带 backend、layout、buffer descriptor 和 mode configuration。
+6. child 初始化 backend 并 import/register buffer。
+7. child 发送 ready ack。
+8. worker 继续正常运行。
 
-If startup fails:
+如果 startup 失败：
 
-- In `thread` mode: raise as current behavior would.
-- In `subprocess` mode with no fallback: raise structured error.
-- In `auto` or fallback-enabled mode: log one warning and start `ThreadTransferEngine`.
+- `thread` mode：按当前行为 raise。
+- `subprocess` mode 且无 fallback：raise structured error。
+- `auto` 或 fallback-enabled mode：log 一条 warning 并启动 `ThreadTransferEngine`。
 
 ### 11.2 Normal Operation
 
-Worker-facing methods remain close to existing behavior:
+worker-facing method 尽量接近现有行为：
 
-- `start_load_kv()` builds request payloads and submits load command.
-- `wait_for_layer_load()` uses current-layer state and blocks until the engine reports completion.
-- `save_kv_layer()` records or creates required fence state and submits layer save.
-- `wait_for_save()` submits non-layerwise save and waits for completion.
-- `get_finished()` passes scheduler filtering context to the engine.
-- `get_block_ids_with_load_errors()` returns child-reported failed blocks.
-- KV events are collected from engine output.
+- `start_load_kv()` 构建 request payload 并提交 load command。
+- `wait_for_layer_load()` 使用 current-layer state，并阻塞直到 engine 报告 completion。
+- `save_kv_layer()` 记录或创建所需 fence state，并提交 layer save。
+- `wait_for_save()` 提交非 layerwise save 并等待 completion。
+- `get_finished()` 把 scheduler filtering context 传给 engine。
+- `get_block_ids_with_load_errors()` 返回 child-reported failed block。
+- KV event 从 engine output 收集。
 
-The worker should not directly access child internal queues, child events, or child executor state.
+worker 不应直接访问 child internal queue、child event 或 child executor state。
 
 ### 11.3 Shutdown
 
-Shutdown must be idempotent:
+shutdown 必须幂等：
 
-1. Send `SHUTDOWN` if subprocess is running.
-2. Wait for `shutdown_ack` until timeout.
-3. If timeout, terminate child process.
-4. Clean local IPC handles.
-5. If downgraded, shut down thread engine normally.
+1. subprocess running 时发送 `SHUTDOWN`。
+2. 在 timeout 前等待 `shutdown_ack`。
+3. timeout 时 terminate child process。
+4. 清理 local IPC handle。
+5. 如果已经 downgraded，正常 shut down thread engine。
 
-## 12. Crash Recovery and Fallback
+## 12. Crash Recovery 和 Fallback
 
 ### 12.1 Crash Detection
 
-Detect child failure by:
+通过以下方式检测 child failure：
 
-- Process exit code.
-- IPC EOF / broken pipe.
-- Heartbeat timeout.
-- Command timeout.
+- Process exit code。
+- IPC EOF / broken pipe。
+- Heartbeat timeout。
+- Command timeout。
 
-The manager should mark the engine unhealthy immediately after detection.
+manager 检测后应立即标记 engine unhealthy。
 
 ### 12.2 Command Replay Policy
 
-Commands must be classified by replay safety.
+必须按 replay safety 给 command 分类。
 
-Replay-safe or usually safe:
+Replay-safe 或通常安全：
 
-- `HELLO`.
-- `PROBE_CAPABILITIES`.
-- `REGISTER` before transfer begins, if backend registration is idempotent.
-- `HEARTBEAT`.
-- Read-only metadata queries.
+- `HELLO`。
+- `PROBE_CAPABILITIES`。
+- transfer 开始前的 `REGISTER`，前提是 backend registration 幂等。
+- `HEARTBEAT`。
+- Read-only metadata query。
 
-Replay-unsafe unless backend confirms otherwise:
+除非 backend 证明，否则 replay-unsafe：
 
-- `SUBMIT_SAVE_BATCH` after backend `put` may have started.
-- `SAVE_CURRENT_LAYER` after backend `put`, `batch_copy`, or `batch_write_finish` may have started.
-- GVA `batch_alloc` because current worker state treats it as non-idempotent.
-- GVA `batch_write_finish`.
-- Final-layer `batch_remove_lease`.
+- backend `put` 可能已经开始后的 `SUBMIT_SAVE_BATCH`。
+- backend `put`、`batch_copy` 或 `batch_write_finish` 可能已经开始后的 `SAVE_CURRENT_LAYER`。
+- GVA `batch_alloc`，因为当前 worker state 把它视为非幂等。
+- GVA `batch_write_finish`。
+- Final-layer `batch_remove_lease`。
 
-Default policy:
+默认策略：
 
-- Do not blindly replay non-idempotent writes.
-- Fail the current in-flight transfer when its commit state is unknown.
-- Downgrade to thread mode for future transfers if fallback is enabled.
+- 不盲目 replay 非幂等 write。
+- commit state 未知时 fail 当前 in-flight transfer。
+- 如果 fallback enabled，未来 transfer downgrade 到 thread mode。
 
 ### 12.3 Restart Policy
 
-Restart is allowed when:
+满足以下条件时允许 restart：
 
-- Child died while idle.
-- Child died before a command was accepted.
-- The active command is replay-safe.
-- Backend/buffer registration can be repeated.
-- Restart attempts remain under configured limit.
+- Child idle 时死亡。
+- Child 在 command accepted 前死亡。
+- Active command 是 replay-safe。
+- Backend/buffer registration 可以重复。
+- Restart attempt 仍在配置 limit 内。
 
-Restart flow:
+Restart 流程：
 
-1. Stop or reap old process.
-2. Start new process.
-3. Re-run `HELLO`, `PROBE_CAPABILITIES`, and `REGISTER`.
-4. Rebuild subprocess-local caches as empty.
-5. Resume accepting new requests.
-6. Fail or retry the in-flight request according to command replay safety.
+1. Stop 或 reap old process。
+2. Start new process。
+3. 重新执行 `HELLO`、`PROBE_CAPABILITIES` 和 `REGISTER`。
+4. 把 subprocess-local cache 重建为空。
+5. 恢复接收新 request。
+6. 根据 command replay safety 决定 fail 或 retry in-flight request。
 
 ### 12.4 Downgrade Policy
 
-Downgrade to thread mode when:
+以下情况 downgrade 到 thread mode：
 
-- Subprocess startup fails.
-- Buffer sharing is unsupported.
-- NPU fence semantics are unsupported for the selected mode.
-- GVA tracker/import support is unsupported.
-- Restart limit is exceeded.
-- IPC protocol failure is fatal.
-- Backend cannot initialize in the child process.
+- Subprocess startup 失败。
+- Buffer sharing unsupported。
+- 选定模式不支持 NPU fence semantics。
+- GVA tracker/import support unsupported。
+- Restart limit exceeded。
+- IPC protocol failure fatal。
+- Backend 无法在 child process 中初始化。
 
-Downgrade flow:
+Downgrade 流程：
 
-1. Mark subprocess engine disabled for the current backend/mode.
-2. Shut down any child resources.
-3. Create `ThreadTransferEngine` using existing registered worker state.
-4. Start existing thread-mode transfer workers.
-5. Continue future requests through thread mode.
+1. 为当前 backend/mode 标记 subprocess engine disabled。
+2. Shut down child resources。
+3. 用现有已注册 worker state 创建 `ThreadTransferEngine`。
+4. 启动现有 thread-mode transfer worker。
+5. 后续 request 继续走 thread mode。
 
-Downgrade should emit one clear warning, not repeated noisy logs on every request.
+downgrade 应输出一条清晰 warning，而不是每个 request 反复刷日志。
 
 ### 12.5 In-Flight Requests
 
-In-flight request handling must be conservative:
+in-flight request handling 必须保守：
 
-- If a load was in-flight and child died, treat load as failed and record failed blocks where possible.
-- If a save was in-flight and idempotency is uncertain, do not assume it succeeded.
-- If backend can confirm committed keys, use backend state to complete or skip retry.
-- Otherwise fail the transfer task and continue fallback for future tasks.
-- For GVA leases, run best-effort cleanup only through documented backend-safe APIs.
+- 如果 load in-flight 时 child 死亡，把 load 视为 failed，并尽可能记录 failed block。
+- 如果 save in-flight 且幂等性不确定，不要假设它成功。
+- 如果 backend 能确认 committed key，用 backend state 完成或跳过 retry。
+- 否则 fail transfer task，并让后续 task 走 fallback。
+- 对 GVA lease，只通过 documented backend-safe API 做 best-effort cleanup。
 
-## 13. Precision Preservation
+## 13. 精度保持
 
-Precision preservation depends on equivalent transfer ordering, not merely successful backend calls.
+精度保持依赖等价的 transfer ordering，而不只是 backend call 成功。
 
-Guardrails:
+Guardrails：
 
-- Keep key format unchanged.
-- Keep block id and hash mapping unchanged.
-- Keep TP-rank ordering unchanged.
-- Keep layer load wait semantics unchanged.
-- Keep attention-start gating unchanged.
-- Keep NPU save/load fence semantics unchanged.
-- Keep failed-load behavior unchanged.
-- Keep final-layer lease release unchanged.
-- Keep scheduler-visible finished request reporting unchanged.
+- 保持 key format 不变。
+- 保持 block id 和 hash mapping 不变。
+- 保持 TP-rank ordering 不变。
+- 保持 layer load wait semantics 不变。
+- 保持 attention-start gating 不变。
+- 保持 NPU save/load fence semantics 不变。
+- 保持 failed-load behavior 不变。
+- 保持 final-layer lease release 不变。
+- 保持 scheduler-visible finished request reporting 不变。
 
-Regression tests should compare outputs for:
+Regression test 应比较：
 
-- Greedy generation.
-- Non-greedy generation with fixed seed.
-- Cache hit path.
-- Cache miss / partial miss path.
-- Each of the three transfer modes.
+- Greedy generation。
+- 固定 seed 的 non-greedy generation。
+- Cache hit path。
+- Cache miss / partial miss path。
+- 三种 transfer mode。
 
-## 14. Observability
+## 14. 可观测性
 
-Add metrics and logs that answer whether subprocess mode is helping and whether fallback is happening.
+增加指标和日志，用于回答 subprocess mode 是否有帮助以及是否发生 fallback。
 
-Suggested counters/timers:
+建议 counter/timer：
 
-- `kv_transfer_engine_mode`.
-- `kv_transfer_backend_mode_supported`.
-- `kv_transfer_subprocess_start_total`.
-- `kv_transfer_subprocess_restart_total`.
-- `kv_transfer_subprocess_fallback_total`.
-- `kv_transfer_ipc_request_total`.
-- `kv_transfer_ipc_error_total`.
-- `kv_transfer_ipc_roundtrip_ms`.
-- `kv_transfer_ipc_payload_bytes`.
-- `kv_transfer_ipc_serialize_ms`.
-- `kv_transfer_ipc_deserialize_ms`.
-- `kv_transfer_key_build_ms`.
-- `kv_transfer_addr_size_build_ms`.
-- `kv_transfer_backend_put_ms`.
-- `kv_transfer_backend_get_ms`.
-- `kv_transfer_backend_batch_copy_ms`.
-- `kv_transfer_fence_wait_ms`.
+- `kv_transfer_engine_mode`。
+- `kv_transfer_backend_mode_supported`。
+- `kv_transfer_subprocess_start_total`。
+- `kv_transfer_subprocess_restart_total`。
+- `kv_transfer_subprocess_fallback_total`。
+- `kv_transfer_ipc_request_total`。
+- `kv_transfer_ipc_error_total`。
+- `kv_transfer_ipc_roundtrip_ms`。
+- `kv_transfer_ipc_payload_bytes`。
+- `kv_transfer_ipc_serialize_ms`。
+- `kv_transfer_ipc_deserialize_ms`。
+- `kv_transfer_key_build_ms`。
+- `kv_transfer_addr_size_build_ms`。
+- `kv_transfer_backend_put_ms`。
+- `kv_transfer_backend_get_ms`。
+- `kv_transfer_backend_batch_copy_ms`。
+- `kv_transfer_fence_wait_ms`。
 
-Logs should include:
+日志应包含：
 
-- Engine selected.
-- Subprocess pid.
-- Backend registration success/failure.
-- Capability probe results.
-- Restart reason.
-- Downgrade reason.
-- Fatal command failure with command id and request id.
+- Engine selected。
+- Subprocess pid。
+- Backend registration success/failure。
+- Capability probe results。
+- Restart reason。
+- Downgrade reason。
+- 带 command id 和 request id 的 fatal command failure。
 
-## 15. Test Plan
+## 15. 测试计划
 
-### 15.1 Unit Tests
+### 15.1 单元测试
 
-Add tests for `TransferProcessManager`:
+为 `TransferProcessManager` 添加测试：
 
-- Starts subprocess and receives ready ack.
-- Sends shutdown and exits cleanly.
-- Detects child process exit.
-- Detects IPC disconnect.
-- Converts child exception into structured error.
-- Restarts within configured limit for replay-safe command.
-- Refuses replay for non-replayable command.
-- Downgrades after restart limit.
+- 启动 subprocess 并收到 ready ack。
+- 发送 shutdown 并 clean exit。
+- 检测 child process exit。
+- 检测 IPC disconnect。
+- 把 child exception 转成 structured error。
+- 对 replay-safe command 在配置 limit 内 restart。
+- 对 non-replayable command 拒绝 replay。
+- Restart limit 后 downgrade。
 
-Add tests for payload conversion:
+为 payload conversion 添加测试：
 
-- `ReqMeta` to `ReqMetaPayload`.
-- `LayerTransferTask` to `LayerTransferTaskPayload`.
-- `LayerLoadTask` to `LayerLoadTaskPayload`.
-- Runtime-only fields are excluded.
-- Required fields are preserved.
-- Large numpy arrays use descriptor path or are rejected when unsupported.
+- `ReqMeta` 到 `ReqMetaPayload`。
+- `LayerTransferTask` 到 `LayerTransferTaskPayload`。
+- `LayerLoadTask` 到 `LayerLoadTaskPayload`。
+- Runtime-only field 被排除。
+- Required field 被保留。
+- 大型 numpy array 使用 descriptor path，或 unsupported 时被拒绝。
 
-Add tests for `SubprocessTransferEngine`:
+为 `SubprocessTransferEngine` 添加测试：
 
-- Register/start lifecycle.
-- Submit load command.
-- Submit save command.
-- Wait save command.
-- Wait current layer load command.
-- Get finished command with preempted/delayed/loading filtering.
-- Failed block propagation.
-- KV event propagation.
-- Fallback to `ThreadTransferEngine` on startup failure.
-- Fallback on unsupported capability result.
+- Register/start lifecycle。
+- Submit load command。
+- Submit save command。
+- Wait save command。
+- Wait current layer load command。
+- 带 preempted/delayed/loading filtering 的 get finished command。
+- Failed block propagation。
+- KV event propagation。
+- Startup failure 时 fallback 到 `ThreadTransferEngine`。
+- Unsupported capability result 时 fallback。
 
-Add executor tests with mocked backend:
+用 mocked backend 添加 executor 测试：
 
-- Non-layerwise executor calls backend `put/get` with expected keys/addrs/sizes.
-- Key layerwise executor preserves layer key format.
-- GVA layerwise executor is disabled when capability probe fails.
-- GVA layerwise executor calls batch copy, write finish, and final lease release when capability probe passes.
-- Backend exception returns recoverable/fatal/non-replayable status as configured.
+- Non-layerwise executor 使用预期 keys/addrs/sizes 调用 backend `put/get`。
+- Key layerwise executor 保持 layer key format。
+- Capability probe 失败时禁用 GVA layerwise executor。
+- Capability probe 通过时，GVA layerwise executor 调用 batch copy、write finish 和 final lease release。
+- Backend exception 按配置返回 recoverable/fatal/non-replayable status。
 
-### 15.2 Integration Tests
+### 15.2 集成测试
 
-Where device/backend test infrastructure is available:
+有 device/backend 测试基础设施时：
 
-- Run one request through non-layerwise save/load.
-- Run one request through key layerwise save/load.
-- Run one request through GVA layerwise save/load only when capability probe passes.
-- Kill transfer subprocess during idle and verify restart.
-- Kill transfer subprocess during request and verify worker survives.
-- Force buffer registration failure and verify thread fallback.
-- Force IPC disconnect and verify structured failure/fallback.
-- Verify cross-process buffer sharing with real backend registration/import path.
-- Verify NPU fence strategy preserves ordering.
+- 一个 request 走 non-layerwise save/load。
+- 一个 request 走 key layerwise save/load。
+- 仅在 capability probe 通过时，一个 request 走 GVA layerwise save/load。
+- idle 时 kill transfer subprocess 并验证 restart。
+- request 中 kill transfer subprocess 并验证 worker survives。
+- 强制 buffer registration failure 并验证 thread fallback。
+- 强制 IPC disconnect 并验证 structured failure/fallback。
+- 使用真实 backend registration/import path 验证 cross-process buffer sharing。
+- 验证 NPU fence strategy 保持 ordering。
 
-### 15.3 Precision Tests
+### 15.3 精度测试
 
-Use deterministic workloads:
+使用 deterministic workload：
 
-- Greedy decode baseline vs subprocess mode.
-- Non-greedy fixed-seed baseline vs subprocess mode.
-- Partial KV load failure path.
-- Multi-layer transfer path.
-- GVA path when capability probe passes.
+- Greedy decode baseline vs subprocess mode。
+- Non-greedy fixed-seed baseline vs subprocess mode。
+- Partial KV load failure path。
+- Multi-layer transfer path。
+- Capability probe 通过时的 GVA path。
 
-Expected result:
+预期结果：
 
-- Token outputs match baseline for deterministic tests.
-- Cache hit/miss reporting matches baseline.
-- Finished request reporting matches baseline.
+- Deterministic test 的 token output 与 baseline 匹配。
+- Cache hit/miss reporting 与 baseline 匹配。
+- Finished request reporting 与 baseline 匹配。
 
-### 15.4 Performance Tests
+### 15.4 性能测试
 
-Run before/after comparisons under the same configuration:
+在相同配置下做 before/after 对比：
 
-- Existing thread mode.
-- Subprocess mode.
-- Subprocess mode with forced fallback excluded from steady-state metrics.
-- Worker pre-sync fence strategy, if used.
-- Cross-process fence strategy, if supported.
+- 现有 thread mode。
+- Subprocess mode。
+- 从 steady-state metric 中排除 forced fallback 的 subprocess mode。
+- 如果使用 worker pre-sync fence strategy，也单独测量。
+- 如果支持 cross-process fence strategy，也单独测量。
 
-Collect:
+收集：
 
-- Throughput.
-- P50/P95/P99 latency.
-- Worker CPU profile.
-- Transfer process CPU profile.
-- Key-building CPU share.
-- Address/size construction time.
-- IPC overhead.
-- Backend operation time.
-- Fence wait time.
+- Throughput。
+- P50/P95/P99 latency。
+- Worker CPU profile。
+- Transfer process CPU profile。
+- Key-building CPU share。
+- Address/size construction time。
+- IPC overhead。
+- Backend operation time。
+- Fence wait time。
 
-## 16. Implementation Plan
+## 16. 实施计划
 
 ### Phase 0: Feasibility Spikes
 
-- Probe backend buffer sharing/import support in child process.
-- Probe NPU event/fence strategy.
-- Probe memcache GVA child-owned allocation/copy path.
-- Document supported backend/mode matrix.
+- 探测 child process 中 backend buffer sharing/import 支持。
+- 探测 NPU event/fence strategy。
+- 探测 memcache GVA child-owned allocation/copy path。
+- 记录 supported backend/mode matrix。
 
-Exit criteria:
+退出标准：
 
-- Clear capability matrix.
-- Unsupported modes fall back deterministically.
-- No claim of GVA subprocess support unless proven.
+- 明确 capability matrix。
+- Unsupported mode 可以确定性 fallback。
+- 未证明前不宣称 GVA subprocess support。
 
-### Phase 1: Introduce TransferEngine Boundary
+### Phase 1: 引入 TransferEngine 边界
 
-- Add `TransferEngine` interface.
-- Move current thread startup logic into `ThreadTransferEngine`.
-- Make `KVPoolWorker` call engine methods instead of directly owning mode-specific transfer threads.
-- Preserve current behavior.
-- Add tests proving thread engine preserves existing behavior.
+- 添加 `TransferEngine` interface。
+- 将当前 thread startup logic 移入 `ThreadTransferEngine`。
+- 让 `KVPoolWorker` 调用 engine method，而不是直接拥有 mode-specific transfer thread。
+- 保持当前行为。
+- 添加测试证明 thread engine 保持现有行为。
 
-This phase should be low risk because default behavior remains thread mode.
+该阶段风险较低，因为默认行为仍是 thread mode。
 
-### Phase 2: Add IPC Types and Process Manager
+### Phase 2: 添加 IPC 类型和 Process Manager
 
-- Add versioned command/result dataclasses.
-- Add payload conversion helpers.
-- Add `TransferProcessManager`.
-- Add child process main loop.
-- Add mock executor for lifecycle tests.
-- Test startup, shutdown, exception, timeout, disconnect, restart, and non-replayable failure handling.
+- 添加 versioned command/result dataclass。
+- 添加 payload conversion helper。
+- 添加 `TransferProcessManager`。
+- 添加 child process main loop。
+- 添加用于 lifecycle test 的 mock executor。
+- 测试 startup、shutdown、exception、timeout、disconnect、restart 和 non-replayable failure handling。
 
-This phase proves process isolation before moving real transfer logic.
+该阶段先证明 process isolation，再迁移真实 transfer logic。
 
-### Phase 3: Add Subprocess Engine With Mocked Backend
+### Phase 3: 使用 Mocked Backend 添加 Subprocess Engine
 
-- Implement `SubprocessTransferEngine`.
-- Wire it into `KVPoolWorker` behind config.
-- Support probe/register/start/shutdown and simple commands.
-- Add fallback to thread engine.
-- Keep subprocess mode off by default.
+- 实现 `SubprocessTransferEngine`。
+- 在 config 后面接入 `KVPoolWorker`。
+- 支持 probe/register/start/shutdown 和简单 command。
+- 添加 fallback 到 thread engine。
+- 默认保持 subprocess mode off。
 
-This phase validates worker integration.
+该阶段验证 worker integration。
 
-### Phase 4: Migrate Non-Layerwise Executor
+### Phase 4: 迁移 Non-Layerwise Executor
 
-- Move non-layerwise key/address/size construction into subprocess executor.
-- Cover both async load and synchronous load behavior.
-- Reuse existing helper functions where possible.
-- Preserve backend calls and result handling.
-- Add equivalence tests against thread engine.
-- Add IPC payload size metrics.
+- 将非 layerwise key/address/size construction 移入 subprocess executor。
+- 覆盖 async load 和 synchronous load 行为。
+- 尽可能复用现有 helper function。
+- 保持 backend call 和 result handling。
+- 添加与 thread engine 的 equivalence test。
+- 添加 IPC payload size metric。
 
-### Phase 5: Migrate Key Layerwise Executor
+### Phase 5: 迁移 Key Layerwise Executor
 
-- Move layer key construction into subprocess.
-- Maintain subprocess-local cached process tokens.
-- Preserve layer wait behavior and attention gating strategy.
-- Add per-layer completion results.
-- Add equivalence tests.
+- 将 layer key construction 移入 subprocess。
+- 维护 subprocess-local cached process token。
+- 保持 layer wait behavior 和 attention gating strategy。
+- 添加 per-layer completion result。
+- 添加 equivalence test。
 
-### Phase 6: Migrate GVA Layerwise Executor When Capability Allows
+### Phase 6: Capability 允许时迁移 GVA Layerwise Executor
 
-- Enable only if Phase 0 proves child-owned or imported GVA tracker support.
-- Move GVA/address/size construction into subprocess.
-- Implement child-owned GVA allocation or supported import path.
-- Preserve batch copy, write finish, and lease release behavior.
-- Add cleanup behavior for partial failures.
-- Add equivalence tests.
+- 仅当 Phase 0 证明 child-owned 或 imported GVA tracker support 后启用。
+- 将 GVA/address/size construction 移入 subprocess。
+- 实现 child-owned GVA allocation 或受支持 import path。
+- 保持 batch copy、write finish 和 lease release behavior。
+- 添加 partial failure cleanup behavior。
+- 添加 equivalence test。
 
-If capability is not available, keep GVA on thread fallback and document this as a known limitation against the original scope.
+如果 capability 不可用，GVA 保持 thread fallback，并把它记录为相对原始范围的 known limitation。
 
-### Phase 7: Performance Prototype and Report
+### Phase 7: Performance Prototype 和 Report
 
-- Run baseline thread mode.
-- Run subprocess mode for each supported mode/backend.
-- Measure key-building CPU share and IPC overhead.
-- Measure fence strategy overhead.
-- Document regressions and bottlenecks.
-- Decide whether additional shared-memory optimization is required before default enablement.
+- 运行 baseline thread mode。
+- 对每个 supported mode/backend 运行 subprocess mode。
+- 测量 key-building CPU share 和 IPC overhead。
+- 测量 fence strategy overhead。
+- 记录 regression 和 bottleneck。
+- 决定 default enablement 前是否需要额外 shared-memory optimization。
 
 ### Phase 8: Rollout
 
-- Start with opt-in subprocess mode.
-- Enable `auto` mode for backend/mode combinations that pass tests.
-- Keep thread fallback available.
-- Do not remove thread engine until production stability is proven.
+- 从 opt-in subprocess mode 开始。
+- 对通过测试的 backend/mode 组合启用 `auto` mode。
+- 保留 thread fallback。
+- 在 production stability 被证明前不要删除 thread engine。
 
-## 17. Prototype Comparison Report Template
+## 17. 原型对比报告模板
 
-The prototype report should include:
+原型报告应包含：
 
-- Test environment.
-- Model and workload.
-- Backend.
-- Transfer mode.
-- Backend/mode capability result.
-- Buffer sharing strategy.
-- NPU fence strategy.
-- Batch size and sequence length.
-- Thread-mode throughput and latency.
-- Subprocess-mode throughput and latency.
-- Worker CPU share before/after.
-- Transfer child CPU share.
-- Key-building CPU share before/after.
-- Address/size construction time before/after.
-- IPC round-trip latency.
-- IPC payload size distribution.
-- Serialization/deserialization time.
-- Backend operation timings.
-- Fence wait timing.
-- Crash/restart behavior.
-- Fallback behavior.
-- Known limitations.
+- Test environment。
+- Model and workload。
+- Backend。
+- Transfer mode。
+- Backend/mode capability result。
+- Buffer sharing strategy。
+- NPU fence strategy。
+- Batch size and sequence length。
+- Thread-mode throughput and latency。
+- Subprocess-mode throughput and latency。
+- Worker CPU share before/after。
+- Transfer child CPU share。
+- Key-building CPU share before/after。
+- Address/size construction time before/after。
+- IPC round-trip latency。
+- IPC payload size distribution。
+- Serialization/deserialization time。
+- Backend operation timings。
+- Fence wait timing。
+- Crash/restart behavior。
+- Fallback behavior。
+- Known limitations。
 
-Decision section:
+Decision section：
 
-- Keep subprocess disabled.
-- Enable for one mode/backend.
-- Enable auto mode with fallback.
-- Require further shared-memory optimization.
-- Require backend work before GVA can be supported.
+- Keep subprocess disabled。
+- Enable for one mode/backend。
+- Enable auto mode with fallback。
+- Require further shared-memory optimization。
+- Require backend work before GVA can be supported。
 
-## 18. Compatibility Strategy
+## 18. 兼容性策略
 
-Compatibility should be maintained by construction:
+兼容性应通过构造保证：
 
-- Thread engine remains the reference.
-- Subprocess mode uses the same metadata conversion and helper functions where possible.
-- Key format does not change.
-- Backend calls preserve existing argument ordering.
-- Worker-facing connector methods keep the same semantics.
-- Existing tests continue to pass.
-- Unsupported capability results select thread fallback rather than partial subprocess behavior.
+- Thread engine 保留为 reference。
+- Subprocess mode 尽可能使用相同 metadata conversion 和 helper function。
+- Key format 不改变。
+- Backend call 保持现有 argument ordering。
+- Worker-facing connector method 保持相同语义。
+- Existing tests continue to pass。
+- Unsupported capability result 选择 thread fallback，而不是部分 subprocess 行为。
 
-Any behavior change should be explicitly isolated and covered by tests.
+任何行为变化都应显式隔离，并用测试覆盖。
 
-## 19. Open Technical Questions
+## 19. 开放技术问题
 
-These must be resolved during Phase 0 or before enabling subprocess for the affected mode:
+这些问题必须在 Phase 0 或启用受影响模式前解决：
 
-- Can each backend import/register KV buffers from a child process safely?
-- Are existing backend handles process-shareable, or must the child register independently?
-- Can `torch.npu.Event` semantics be represented safely through cross-process fence handles?
-- If not, is worker pre-synchronization acceptable for correctness and performance?
-- Can memcache GVA `batch_alloc` and `batch_copy` both run in the child while operating on worker-owned KV buffers?
-- Can memcache export/import the GVA tracker state, or is it strictly process-local?
-- Which metadata arrays are large enough to require shared memory immediately?
-- Which transfer operations are safe to replay after subprocess crash?
-- How should partial GVA lease cleanup be handled after child death?
+- 每个 backend 能否在 child process 中安全 import/register KV buffer？
+- 现有 backend handle 是否 process-shareable，还是必须由 child independent register？
+- `torch.npu.Event` 语义能否通过 cross-process fence handle 安全表示？
+- 如果不能，worker pre-synchronization 在正确性和性能上是否可接受？
+- memcache GVA 的 `batch_alloc` 和 `batch_copy` 能否都在 child 中针对 worker-owned KV buffer 运行？
+- memcache 能否 export/import GVA tracker state，还是它严格 process-local？
+- 哪些 metadata array 大到需要立即使用 shared memory？
+- 子进程 crash 后哪些 transfer operation 可以安全 replay？
+- Child death 后 partial GVA lease cleanup 应如何处理？
 
-## 20. Recommended First PR Shape
+## 20. 推荐首个 PR 形态
 
-The first PR should avoid changing all transfer logic at once.
+首个 PR 应避免一次性改动所有 transfer logic。
 
-Recommended contents:
+推荐内容：
 
-- Add `TransferEngine` abstraction.
-- Add `ThreadTransferEngine` wrapper around current logic.
-- Add subprocess IPC dataclasses and process manager.
-- Add capability probe skeleton.
-- Add subprocess engine behind disabled config.
-- Add lifecycle tests.
-- Add fallback tests.
-- Add non-replayable command classification tests.
-- No default behavior change.
+- 添加 `TransferEngine` abstraction。
+- 添加包装当前逻辑的 `ThreadTransferEngine`。
+- 添加 subprocess IPC dataclass 和 process manager。
+- 添加 capability probe skeleton。
+- 添加 disabled config 后面的 subprocess engine。
+- 添加 lifecycle test。
+- 添加 fallback test。
+- 添加 non-replayable command classification test。
+- 不改变默认行为。
 
-This creates the safe extension point needed for later mode-by-mode migration.
+这会创建后续按 mode 迁移所需的安全扩展点。
 
-## 21. Final Design Summary
+## 21. 最终设计总结
 
-The refactor should turn AscendStore transfer into a pluggable engine system. The existing thread implementation becomes the compatibility and fallback engine. The new subprocess implementation owns transfer execution through a child process and explicit IPC protocol when backend and runtime capabilities allow it.
+重构应把 AscendStore transfer 变成 pluggable engine system。现有线程实现成为 compatibility 和 fallback engine。新的 subprocess implementation 在 backend 和 runtime capability 允许时，通过 child process 和显式 IPC protocol 拥有 transfer execution。
 
-The worker process remains responsible for high-level orchestration and scheduler-visible lifecycle state. The child process owns GIL-heavy work: key construction, address/size scheduling, layerwise transfer execution, and backend I/O submission.
+worker 进程继续负责高层 orchestration 和 scheduler-visible lifecycle state。child process 拥有 GIL-heavy 工作：key construction、address/size scheduling、layerwise transfer execution 和 backend I/O submission。
 
-The design must not treat GVA/memcache cross-process behavior or NPU event ordering as minor implementation details. Those are core correctness constraints. Subprocess mode should be enabled only for backend/mode pairs that pass capability probing, equivalence tests, and performance validation. Unsupported pairs must fall back cleanly to the existing thread engine.
+设计不能把 GVA/memcache 跨进程行为或 NPU event ordering 当作次要实现细节。它们是核心正确性约束。Subprocess mode 只应为通过 capability probing、equivalence test 和 performance validation 的 backend/mode 组合启用。Unsupported 组合必须干净 fallback 到现有 thread engine。
