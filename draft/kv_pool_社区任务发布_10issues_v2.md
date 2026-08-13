@@ -4,7 +4,6 @@
 > 代码路径：`vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`
 > 关联任务池：[#9079 [Contribution] vLLM-Ascend 外部开发者任务池](https://github.com/vllm-project/vllm-ascend/issues/9079)
 > 验收人：@赵鹏博
-> 参考格式：vllm-ascend issue #13745 / #13746 / #13747
 > 发布日期：2026-08-12
 
 ## 通用约定

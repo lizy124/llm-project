@@ -1,6 +1,6 @@
 docker run -dit -u root \
--p 0.0.0.0:8111:22 \
---name refactor_811 \
+-p 0.0.0.0:8121:22 \
+--name refactor_812 \
 -e ASCEND_RUNTIME_OPTIONS=NODRV \
 --privileged=true \
 -v /usr/local/Ascend/firmware/:/usr/local/Ascend/firmware \
