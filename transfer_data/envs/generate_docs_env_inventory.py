@@ -35,7 +35,7 @@ for rel in files:
                 refs[var][mechanism].append(f"{rel}:{line_no(text, match.start())}")
     for match in mention_rx.finditer(text):
         var = match.group(1) or match.group(2)
-        refs[var]["文 prose mention"].append(f"{rel}:{line_no(text, match.start())}")
+        refs[var]["正文明确提及"].append(f"{rel}:{line_no(text, match.start())}")
 
 def classify(var, mechanisms, rels):
     if var.startswith("VLLM_ASCEND_") or var in {"DYNAMIC_EPLB", "MSMONITOR_USE_DAEMON"}:
@@ -58,7 +58,7 @@ def classify(var, mechanisms, rels):
         return "模型与评测示例变量"
     return "文档中的其他环境变量"
 
-explicit_mechanisms = {"export", "inline assignment", "docker -e/--env", "Python environment API", "文 prose mention"}
+explicit_mechanisms = {"export", "inline assignment", "docker -e/--env", "Python environment API", "正文明确提及"}
 records = []
 for var in sorted(refs):
     mechanisms = sorted(refs[var])
