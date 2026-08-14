@@ -5,8 +5,8 @@
 - 识别到含服务启动或推理命令的文档：**90**
 - 启动/推理相关章节：**305**
 - 文档启动链路中观察到的唯一变量：**72**
-- 当前源码可用变量：**70**
-- 文档遗留、当前源码不支持：**2**
+- 当前源码可用变量：**69**
+- 文档遗留、当前源码不支持：**3**
 
 > 本文不是 `docs/source` 环境变量全集。只有与 `vllm serve`、API server、服务脚本、分布式启动、离线推理或推理客户端处于同一启动流程的环境变量才进入主表。镜像名、模型路径、端口占位等 Shell 辅助变量被排除。
 
@@ -16,22 +16,22 @@
 |---|---:|---:|
 | vLLM Ascend 产品配置 | 6 | 8.3% |
 | Ascend/CANN/HCCL 与 NPU 运行时 | 20 | 27.8% |
-| 分布式启动与并行环境 | 11 | 15.3% |
+| 分布式启动与并行环境 | 10 | 13.9% |
 | KV Transfer、PD 分离与存储后端 | 2 | 2.8% |
 | 上游 vLLM/PyTorch/模型生态 | 21 | 29.2% |
 | 系统运行环境 | 4 | 5.6% |
 | 其他服务运行变量 | 6 | 8.3% |
-| 文档遗留/当前源码不支持 | 2 | 2.8% |
+| 文档遗留/当前源码不支持 | 3 | 4.2% |
 | **合计** | **72** | **100.0%** |
 
 ## 必要性统计
 
 | 必要性 | 数量 | 解释 |
 |---|---:|---|
-| 场景必需 | 15 | 在对应多节点、Ray、DP、Mooncake/RFork/Netloader 等场景中缺失会导致启动链路不完整。 |
+| 场景必需 | 14 | 在对应多节点、Ray、DP、Mooncake/RFork/Netloader 等场景中缺失会导致启动链路不完整。 |
 | 场景配置 | 9 | 用于选择设备、模型来源、外部库路径或特定部署资源；是否需要取决于环境。 |
 | 可选调优/调试 | 46 | 通常存在默认行为，主要改变性能、超时、内存、日志或特性开关。 |
-| 不应使用 | 2 | 文档仍出现，但当前代码没有注册或消费；设置后不会启用文档描述的功能。 |
+| 不应使用 | 3 | 文档仍出现，但当前代码没有注册或消费；设置后不会启用文档描述的功能。 |
 
 ## 设置方式统计
 
@@ -52,6 +52,7 @@
 |---|---|---|
 | `VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE` | **文档遗留，当前源码不支持** | 曾用于 v0.9.1 sampler TopK/TopP patch；提交 830332ebf（2025-07-09，Clean up v0.9.1 code）已从 envs.py、patch 和测试删除。当前 GLM4.x 文档为遗留配置。 |
 | `VLLM_ASCEND_EXTERNAL_DP_LB_ENABLED` | **文档遗留，当前源码不支持** | 仅存在于提交 e3636c7eb（2025-08-05，明确标注 0.9.1 only）的兼容实现；该提交不是当前 main 的祖先，当前源码没有注册或读取该变量。large_scale_ep.md 为旧文档迁移残留。 |
+| `VLLM_DP_SIZE_LOCAL` | **文档遗留，当前源码不支持** | 与 VLLM_ASCEND_EXTERNAL_DP_LB_ENABLED 一同由提交 e3636c7eb（2025-08-05，明确标注 0.9.1 only）加入，用于旧版 external DP 的本机 DP size；当前 main 的上游 vLLM 与 vLLM Ascend 源码均未注册或读取。large_scale_ep.md 中的设置属于旧兼容实现残留。 |
 
 ## 必要性说明
 
@@ -101,7 +102,7 @@
 | `HCCL_TRANSFER_TIMEOUT` | 可选调优/调试 | export | Decoder node 1: data_parallel_start_rank=2, server_role_args="--headless"; GLM-5.2 > 5 Deployment > 5.1 Context Below 1M > 5.1.1 Atlas 800 A3 > 5.1.1.1 Single-Node Deployment; Node 1: data_parallel_start_rank=2, server_role_args="--headless"; Prefiller node 1: data_parallel_start_rank=2, server_role_args="--headless"; The value of node0_ip must be consistent with the value of local_ip set in node0 (master node); The value of node0_ip must be consistent with the value of local_ip set in node0 (master node) > 5.1.1.3 Prefill-Decode Disaggregation | `docs/source/tutorials/models/GLM5.2.md:1263; docs/source/tutorials/models/GLM5.2.md:1329; docs/source/tutorials/models/GLM5.2.md:136; docs/source/tutorials/models/GLM5.2.md:1395; docs/source/tutorials/models/GLM5.2.md:1468; docs/source/tutorials/models/GLM5.2.md:213; docs/source/tutorials/models/GLM5.2.md:267; docs/source/tutorials/models/GLM5.2.md:452` |
 | `TASK_QUEUE_ENABLE` | 可选调优/调试 | Python os.environ, export | AIV > 5.3 Multi-Node PD Separation Deployment; Decoder node 1: data_parallel_start_rank=2, server_role_args="--headless"; DeepSeek-OCR-2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-Node Online Deployment; DeepSeek-V3.2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.3 Prefill-Decode Disaggregation; DeepSeek-V4-Flash > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-Node Online Deployment; DeepSeek-V4-Flash > 5 Online Service Deployment {: #5-online-service-deployment } > 5.2 Multi-Node PD Separation Deployment > 5.2.1 A3 Series PD Separation Deployment | `docs/source/tutorials/features/dynamic_chunked_pipeline_parallel.md:75; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:277; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:332; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:387; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:442; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:500; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:555; docs/source/tutorials/features/pd_disaggregation_mooncake_multi_node.md:610` |
 
-### 分布式启动与并行环境（11）
+### 分布式启动与并行环境（10）
 
 | 变量 | 必要性 | 设置方式 | 相关场景（示例） | 文档位置（示例） |
 |---|---|---|---|---|
@@ -115,7 +116,6 @@
 | `VLLM_DP_RANK` | 场景必需 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:122; docs/source/user_guide/feature_guide/large_scale_ep.md:186` |
 | `VLLM_DP_RANK_LOCAL` | 场景必需 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:121; docs/source/user_guide/feature_guide/large_scale_ep.md:185` |
 | `VLLM_DP_SIZE` | 场景必需 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:118; docs/source/user_guide/feature_guide/large_scale_ep.md:182` |
-| `VLLM_DP_SIZE_LOCAL` | 场景必需 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:123; docs/source/user_guide/feature_guide/large_scale_ep.md:187` |
 
 ### KV Transfer、PD 分离与存储后端（2）
 
@@ -170,12 +170,13 @@
 | `TIKTOKEN_ENCODINGS_BASE` | 场景配置 | export | To reduce memory fragmentation and avoid out of memory | `docs/source/tutorials/models/gpt-oss-120b.md:110` |
 | `USE_MODELSCOPE_HUB` | 场景配置 | export | Update the vllm-ascend image > 2. Run GSM8K using the vLLM server (curl) and then run lm-eval for accuracy testing | `docs/source/developer_guide/evaluation/using_lm_eval.md:116` |
 
-### 文档遗留/当前源码不支持（2）
+### 文档遗留/当前源码不支持（3）
 
 | 变量 | 必要性 | 设置方式 | 相关场景（示例） | 文档位置（示例） |
 |---|---|---|---|---|
 | `VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE` | 不应使用 | export | GLM-4.5/4.6/4.7 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-node Deployment; GLM-4.5/4.6/4.7 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.2 Multi-node Deployment; GLM-4.5/4.6/4.7 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.3 Prefill-Decode Disaggregation | `docs/source/tutorials/models/GLM4.x.md:134; docs/source/tutorials/models/GLM4.x.md:184; docs/source/tutorials/models/GLM4.x.md:234; docs/source/tutorials/models/GLM4.x.md:394; docs/source/tutorials/models/GLM4.x.md:457; docs/source/tutorials/models/GLM4.x.md:523; docs/source/tutorials/models/GLM4.x.md:592` |
 | `VLLM_ASCEND_EXTERNAL_DP_LB_ENABLED` | 不应使用 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:132; docs/source/user_guide/feature_guide/large_scale_ep.md:196` |
+| `VLLM_DP_SIZE_LOCAL` | 不应使用 | export | Distributed DP Server With Large-Scale Expert Parallelism > Large-Scale EP model deployment > Generate script with configurations | `docs/source/user_guide/feature_guide/large_scale_ep.md:123; docs/source/user_guide/feature_guide/large_scale_ep.md:187` |
 
 ## 已排除的启动脚本辅助变量
 

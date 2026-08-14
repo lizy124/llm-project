@@ -44,6 +44,11 @@ STALE_DOC_VARS = {
         "仅存在于提交 e3636c7eb（2025-08-05，明确标注 0.9.1 only）的兼容实现；该提交不是当前 main 的祖先，"
         "当前源码没有注册或读取该变量。large_scale_ep.md 为旧文档迁移残留。"
     ),
+    "VLLM_DP_SIZE_LOCAL": (
+        "与 VLLM_ASCEND_EXTERNAL_DP_LB_ENABLED 一同由提交 e3636c7eb（2025-08-05，明确标注 0.9.1 only）"
+        "加入，用于旧版 external DP 的本机 DP size；当前 main 的上游 vLLM 与 vLLM Ascend 源码均未注册或读取。"
+        "large_scale_ep.md 中的设置属于旧兼容实现残留。"
+    ),
 }
 
 
