@@ -62,6 +62,82 @@ RUNTIME_CONFIG_SUPPLEMENTS = {
     ),
 }
 
+ENV_DESCRIPTIONS = {
+    "ACL_OP_INIT_MODE": "控制 ACL 算子的初始化方式，通常用于调整算子加载和执行行为。",
+    "ASCEND_A3_ENABLE": "启用面向 Atlas A3 硬件的运行路径或相关优化。",
+    "ASCEND_AGGREGATE_ENABLE": "控制 Ascend 通信传输中的聚合能力。",
+    "ASCEND_CONNECT_TIMEOUT": "设置 Ascend 一侧通信建立连接的超时时间。",
+    "ASCEND_ENABLE_USE_FABRIC_MEM": "允许通信或 KV 传输使用 Fabric Memory。",
+    "ASCEND_LAUNCH_BLOCKING": "强制 Ascend 算子同步执行，主要用于定位异步报错。",
+    "ASCEND_RT_VISIBLE_DEVICES": "指定当前进程可见的 Ascend NPU 设备。",
+    "ASCEND_TRANSFER_TIMEOUT": "设置 Ascend 数据传输操作的超时时间。",
+    "ASCEND_TRANSPORT_PRINT": "控制 Ascend Transport 层的日志输出。",
+    "CPU_AFFINITY_CONF": "配置进程或线程的 CPU 亲和性，减少调度抖动。",
+    "DYNAMIC_EPLB": "启用动态专家并行负载均衡（EPLB）。",
+    "GLOO_SOCKET_IFNAME": "指定 Gloo 分布式通信使用的网卡。",
+    "HCCL_BUFFSIZE": "设置 HCCL 通信缓冲区大小。",
+    "HCCL_CONNECT_TIMEOUT": "设置 HCCL 建立通信连接的超时时间。",
+    "HCCL_EXEC_TIMEOUT": "设置 HCCL 集合通信任务的执行超时时间。",
+    "HCCL_IF_IP": "指定 HCCL 通信使用的本机 IP 地址。",
+    "HCCL_INTRA_PCIE_ENABLE": "控制节点内 HCCL 是否使用 PCIe 通信链路。",
+    "HCCL_INTRA_ROCE_ENABLE": "控制节点内 HCCL 是否使用 RoCE 通信链路。",
+    "HCCL_OP_EXPANSION_MODE": "控制 HCCL 通信算子的展开或执行模式。",
+    "HCCL_RDMA_TIMEOUT": "设置 HCCL RDMA 通信的超时时间。",
+    "HCCL_SOCKET_IFNAME": "指定 HCCL Socket 通信使用的网卡。",
+    "HCCL_TRANSFER_TIMEOUT": "设置 HCCL 数据传输的超时时间。",
+    "HF_DATASETS_CACHE": "指定 Hugging Face Datasets 的本地缓存目录。",
+    "HF_ENDPOINT": "指定 Hugging Face Hub 的访问端点或镜像站。",
+    "HF_HOME": "指定 Hugging Face 模型、数据集等内容的缓存根目录。",
+    "LD_LIBRARY_PATH": "指定运行时搜索动态链接库的目录。",
+    "LD_PRELOAD": "在进程启动时优先加载指定动态库。",
+    "MMC_LOCAL_CONFIG_PATH": "指定 MMC 本地配置文件路径。",
+    "MOONCAKE_CONFIG_PATH": "指定 Mooncake KV Transfer 的配置文件路径。",
+    "NETLOADER_CONFIG": "向 Netloader 模型加载器传递源端地址和设备等配置。",
+    "NPU_MEMORY_FRACTION": "限制或调整进程可使用的 NPU 显存比例。",
+    "OMP_NUM_THREADS": "设置 OpenMP 并行区域使用的线程数。",
+    "OMP_PROC_BIND": "控制 OpenMP 线程是否绑定到固定 CPU 核。",
+    "PYTHONHASHSEED": "固定 Python 哈希随机种子，提高多进程行为的可复现性。",
+    "PYTHONPATH": "向 Python 模块搜索路径中添加目录。",
+    "PYTORCH_NPU_ALLOC_CONF": "配置 PyTorch NPU 显存分配器及内存管理策略。",
+    "RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES": "阻止 Ray 自动改写 Ascend NPU 可见设备列表。",
+    "RFORK_CONFIG": "向 RFork 模型加载器传递共享权重或实例启动配置。",
+    "TASK_QUEUE_ENABLE": "控制 Ascend 任务队列机制，用于调整算子下发方式。",
+    "TIKTOKEN_ENCODINGS_BASE": "指定 tiktoken 编码文件的本地目录或下载地址。",
+    "TOKENIZERS_PARALLELISM": "控制 Hugging Face Tokenizers 是否启用内部并行。",
+    "TP_SOCKET_IFNAME": "指定张量并行 Socket 通信使用的网卡。",
+    "USE_MODELSCOPE_HUB": "让相关评测或模型工具从 ModelScope Hub 获取资源。",
+    "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "允许配置超过模型声明值的最大上下文长度。",
+    "VLLM_ASCEND_BALANCE_SCHEDULING": "启用均衡调度；迁移期变量，推荐使用 scheduler_config.enable_balance_scheduling。",
+    "VLLM_ASCEND_ENABLE_FLASHCOMM1": "启用 FlashComm1 通信优化；迁移期变量，推荐使用 enable_flashcomm1。",
+    "VLLM_ASCEND_ENABLE_FUSED_MC2": "控制 Fused MC2 融合通信计算路径；推荐使用 enable_fused_mc2。",
+    "VLLM_ASCEND_ENABLE_MLAPO": "启用 MLAPO 优化；迁移期变量，推荐使用 enable_mlapo。",
+    "VLLM_ASCEND_ENABLE_NZ": "控制权重 NZ 格式转换策略；迁移期变量，推荐使用 weight_nz_mode。",
+    "VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE": "旧版 TopK/TopP 采样优化开关；当前源码已删除，不应使用。",
+    "VLLM_ASCEND_EXTERNAL_DP_LB_ENABLED": "旧版 external DP 负载均衡开关；仅用于 0.9.1 兼容实现，当前不支持。",
+    "VLLM_ASCEND_FUSION_OP_TRANSPOSE_KV_CACHE_BY_BLOCK": "启用按块转置 KV Cache 的融合算子；推荐使用 enable_transpose_kv_cache_by_block。",
+    "VLLM_BATCH_INVARIANT": "启用批次不变性相关行为，减少批次组成对结果的影响。",
+    "VLLM_DP_MASTER_IP": "指定数据并行协调节点的 IP 地址。",
+    "VLLM_DP_MASTER_PORT": "指定数据并行协调节点的监听端口。",
+    "VLLM_DP_RANK": "指定当前进程在全局数据并行组中的 rank。",
+    "VLLM_DP_RANK_LOCAL": "指定当前进程在本机数据并行组中的 local rank。",
+    "VLLM_DP_SIZE": "指定全局数据并行实例总数。",
+    "VLLM_DP_SIZE_LOCAL": "旧版 external DP 的本机并行实例数；仅用于 0.9.1 兼容实现，当前不支持。",
+    "VLLM_ENGINE_READY_TIMEOUT_S": "设置等待 vLLM 引擎完成初始化的超时时间。",
+    "VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS": "设置 worker 执行一次模型计算的超时时间。",
+    "VLLM_HOST_IP": "指定当前 vLLM 实例对其他节点可达的主机 IP。",
+    "VLLM_MOONCAKE_ABORT_REQUEST_TIMEOUT": "设置 Mooncake 中止或清理请求的等待超时时间。",
+    "VLLM_PP_LAYER_PARTITION": "自定义流水线并行各 stage 的模型层划分。",
+    "VLLM_PREFIX_CACHE_RETENTION_INTERVAL": "设置前缀缓存保留或周期性清理的时间间隔。",
+    "VLLM_RPC_TIMEOUT": "设置 vLLM 进程间 RPC 调用的超时时间。",
+    "VLLM_SERVER_DEV_MODE": "启用服务端开发模式，开放调试或开发用途的接口。",
+    "VLLM_SLEEP_WHEN_IDLE": "让空闲 worker 进入休眠，以减少资源占用或传输干扰。",
+    "VLLM_TORCH_PROFILER_WITH_STACK": "控制 PyTorch Profiler 是否记录调用栈。",
+    "VLLM_USE_MODELSCOPE": "让 vLLM 优先通过 ModelScope 下载或加载模型。",
+    "VLLM_USE_V1": "控制是否使用 vLLM V1 引擎。",
+    "VLLM_USE_V2_MODEL_RUNNER": "控制是否使用上游 vLLM Model Runner V2。",
+    "VLLM_WORKER_MULTIPROC_METHOD": "指定 vLLM worker 多进程的启动方式，如 spawn。",
+}
+
 
 def split_sections(text):
     headings = [(m.start(), len(m.group(1)), m.group(2).strip()) for m in re.finditer(r"(?m)^(#{1,6})\s+(.+)$", text)]
@@ -238,15 +314,15 @@ lines += [
     "",
     "## 分类明细",
     "",
-    "`相关场景` 来自变量附近的文档标题；每个变量最多展示 6 个场景和 8 个位置。",
+    "`说明` 简要描述变量的作用、归属或当前兼容状态；每个变量最多展示 8 个文档位置。",
 ]
 for category in categories:
     subset = [record for record in records if record["category"] == category]
-    lines += ["", f"### {category}（{len(subset)}）", "", "| 变量 | 必要性 | 设置方式 | 相关场景（示例） | 文档位置（示例） |", "|---|---|---|---|---|"]
+    lines += ["", f"### {category}（{len(subset)}）", "", "| 变量 | 必要性 | 设置方式 | 说明 | 文档位置（示例） |", "|---|---|---|---|---|"]
     for record in subset:
-        scenario = "; ".join(record["scenarios"][:6]).replace("|", "\\|")
+        description = ENV_DESCRIPTIONS[record["name"]].replace("|", "\\|")
         locations = "; ".join(record["locations"][:8])
-        lines.append(f"| `{record['name']}` | {record['necessity']} | {', '.join(record['mechanisms'])} | {scenario} | `{locations}` |")
+        lines.append(f"| `{record['name']}` | {record['necessity']} | {', '.join(record['mechanisms'])} | {description} | `{locations}` |")
 
 lines += ["", "## 已排除的启动脚本辅助变量", "", "这些名称出现在启动流程附近，但主要用于拼接镜像、模型路径、容器名、请求长度或端口，不是服务进程的配置接口。", "", "| 辅助变量 | 文档位置（示例） |", "|---|---|"]
 for name in sorted(excluded):
