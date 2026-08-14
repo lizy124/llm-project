@@ -3,6 +3,7 @@
 - 扫描目录：`D:/lzy/project/kv_pool/code/vllm-ascend/docs/source/tutorials/models`
 - 文档文件数：**43**
 - 明确环境变量语义的唯一名称：**58**
+- 当前源码可用变量：**57**；文档遗留变量：**1**
 - 统计范围：模型教程中的 `export`、行内进程赋值、Docker `-e/--env`、Python 环境 API，以及正文明确说明为环境变量的名称。
 - `IMAGE`、`MODEL_PATH`、`TAG` 等已导出的命令辅助变量会保留，但单独分类，不视为产品配置；`nic_name` 等未导出的 Shell 局部变量不纳入。
 
@@ -10,7 +11,8 @@
 
 | 分类 | 变量数 | 占比 |
 |---|---:|---:|
-| vLLM Ascend 产品配置 | 6 | 10.3% |
+| vLLM Ascend 产品配置 | 5 | 8.6% |
+| 文档遗留/当前源码不支持 | 1 | 1.7% |
 | Ascend/CANN/HCCL 与 NPU 运行时 | 17 | 29.3% |
 | 分布式通信与并行运行环境 | 4 | 6.9% |
 | KV Transfer 与外部存储 | 1 | 1.7% |
@@ -20,6 +22,12 @@
 | 模型/评测专用变量 | 0 | 0.0% |
 | 其他文档环境变量 | 7 | 12.1% |
 | **合计** | **58** | **100.0%** |
+
+## 源码与文档不一致项
+
+| 变量 | 状态 | 说明 |
+|---|---|---|
+| `VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE` | **文档遗留，当前源码不支持** | 830332ebf（2025-07-09，Clean up v0.9.1 code）已从当前 envs.py、sampler patch 和测试删除。 |
 
 ## 使用形式统计
 
@@ -38,15 +46,15 @@
 | 文档 | 环境变量数 |
 |---|---:|
 | `GLM5.2.md` | 37 |
-| `DeepSeek-V4-Pro.md` | 24 |
 | `DeepSeek-V3.2.md` | 24 |
+| `DeepSeek-V4-Pro.md` | 24 |
 | `GLM5.md` | 23 |
 | `Qwen3.5-397B-A17B.md` | 23 |
 | `DeepSeek-V3.1.md` | 22 |
 | `GLM4.x.md` | 21 |
-| `Kimi-K2.5.md` | 21 |
 | `Kimi-K2.6.md` | 21 |
 | `MiniMax-M2.md` | 21 |
+| `Kimi-K2.5.md` | 21 |
 | `MiniMax-M3.md` | 18 |
 | `DeepSeek-V4-Flash.md` | 18 |
 | `Qwen3.5-27B-Qwen3.6-27B.md` | 16 |
@@ -56,13 +64,13 @@
 | `InternVL3.5.md` | 12 |
 | `gpt-oss-120b.md` | 11 |
 | `Qwen3.6-35B-A3B.md` | 10 |
-| `Qwen3-VL-30B-A3B-Instruct.md` | 10 |
+| `Mixtral-8x7B-Instruct-v0.1.md` | 10 |
 
 ## 分类明细
 
 位置使用 `docs/source/tutorials/models` 下的相对路径和行号；每个变量最多展示 8 个代表位置。
 
-### vLLM Ascend 产品配置（6）
+### vLLM Ascend 产品配置（5）
 
 | 变量 | 使用形式 | 出现文档数 | 文档位置（示例） |
 |---|---|---:|---|
@@ -71,6 +79,11 @@
 | `VLLM_ASCEND_ENABLE_FUSED_MC2` | export, inline assignment | 8 | `docs/source/tutorials/models/DeepSeek-V4-Pro.md:596; docs/source/tutorials/models/DeepSeek-V4-Pro.md:667; docs/source/tutorials/models/GLM4.x.md:524; docs/source/tutorials/models/GLM4.x.md:593; docs/source/tutorials/models/GLM5.2.md:144; docs/source/tutorials/models/GLM5.2.md:221; docs/source/tutorials/models/GLM5.2.md:275; docs/source/tutorials/models/GLM5.2.md:446` |
 | `VLLM_ASCEND_ENABLE_MLAPO` | export | 6 | `docs/source/tutorials/models/DeepSeek-V3.2.md:134; docs/source/tutorials/models/DeepSeek-V3.2.md:187; docs/source/tutorials/models/DeepSeek-V3.2.md:234; docs/source/tutorials/models/DeepSeek-V3.2.md:285; docs/source/tutorials/models/DeepSeek-V3.2.md:336; docs/source/tutorials/models/GLM5.2.md:1075; docs/source/tutorials/models/GLM5.md:1065; docs/source/tutorials/models/GLM5.md:1134` |
 | `VLLM_ASCEND_ENABLE_NZ` | export | 2 | `docs/source/tutorials/models/DeepSeekOCR2.md:127; docs/source/tutorials/models/GLM5.2.md:1258; docs/source/tutorials/models/GLM5.2.md:1324; docs/source/tutorials/models/GLM5.2.md:1390; docs/source/tutorials/models/GLM5.2.md:1463` |
+
+### 文档遗留/当前源码不支持（1）
+
+| 变量 | 使用形式 | 出现文档数 | 文档位置（示例） |
+|---|---|---:|---|
 | `VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE` | export, inline assignment | 1 | `docs/source/tutorials/models/GLM4.x.md:134; docs/source/tutorials/models/GLM4.x.md:184; docs/source/tutorials/models/GLM4.x.md:234; docs/source/tutorials/models/GLM4.x.md:394; docs/source/tutorials/models/GLM4.x.md:457; docs/source/tutorials/models/GLM4.x.md:523; docs/source/tutorials/models/GLM4.x.md:592` |
 
 ### Ascend/CANN/HCCL 与 NPU 运行时（17）

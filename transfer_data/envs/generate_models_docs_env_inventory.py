@@ -5,6 +5,8 @@ from collections import Counter, defaultdict
 
 ROOT = pathlib.Path(r"D:\lzy\project\kv_pool\code\vllm-ascend")
 OUT = pathlib.Path(r"D:\lzy\project\kv_pool\llm-project\transfer_data\envs\vllm-ascend-tutorial-models-environment-variables.md")
+STALE_DOC_VARS = {"VLLM_ASCEND_ENABLE_TOPK_OPTIMIZE"}
+STALE_NOTE = "830332ebf（2025-07-09，Clean up v0.9.1 code）已从当前 envs.py、sampler patch 和测试删除。"
 files = subprocess.check_output(["git", "ls-files", "docs/source/tutorials/models"], cwd=ROOT, text=True, encoding="utf-8").splitlines()
 
 patterns = [
@@ -50,6 +52,8 @@ for name in sorted(refs):
     records.append({"name": name, "mechanisms": mechanisms, "locations": sorted({x for xs in refs[name].values() for x in xs}), "documents": documents[name]})
 
 def classify(name):
+    if name in STALE_DOC_VARS:
+        return "文档遗留/当前源码不支持"
     if name.startswith("VLLM_ASCEND_") or name in {"DYNAMIC_EPLB", "MSMONITOR_USE_DAEMON"}:
         return "vLLM Ascend 产品配置"
     if name.startswith(("ASCEND_", "HCCL_", "LCCL_", "ATB_", "TASK_QUEUE_", "CPU_AFFINITY_")):
@@ -71,7 +75,7 @@ def classify(name):
 for record in records:
     record["category"] = classify(record["name"])
 
-categories = ["vLLM Ascend 产品配置", "Ascend/CANN/HCCL 与 NPU 运行时", "分布式通信与并行运行环境", "KV Transfer 与外部存储", "上游 vLLM/PyTorch/模型生态", "系统与通用运行环境", "文档示例辅助变量", "模型/评测专用变量", "其他文档环境变量"]
+categories = ["vLLM Ascend 产品配置", "文档遗留/当前源码不支持", "Ascend/CANN/HCCL 与 NPU 运行时", "分布式通信与并行运行环境", "KV Transfer 与外部存储", "上游 vLLM/PyTorch/模型生态", "系统与通用运行环境", "文档示例辅助变量", "模型/评测专用变量", "其他文档环境变量"]
 count = Counter(r["category"] for r in records)
 mechanism_count = Counter(m for r in records for m in r["mechanisms"])
 doc_count = Counter(doc for r in records for doc in r["documents"])
@@ -81,6 +85,7 @@ lines = [
     f"- 扫描目录：`D:/lzy/project/kv_pool/code/vllm-ascend/docs/source/tutorials/models`",
     f"- 文档文件数：**{len(files)}**",
     f"- 明确环境变量语义的唯一名称：**{len(records)}**",
+    f"- 当前源码可用变量：**{len(records) - len(STALE_DOC_VARS)}**；文档遗留变量：**{len(STALE_DOC_VARS)}**",
     "- 统计范围：模型教程中的 `export`、行内进程赋值、Docker `-e/--env`、Python 环境 API，以及正文明确说明为环境变量的名称。",
     "- `IMAGE`、`MODEL_PATH`、`TAG` 等已导出的命令辅助变量会保留，但单独分类，不视为产品配置；`nic_name` 等未导出的 Shell 局部变量不纳入。",
     "",
@@ -92,6 +97,9 @@ lines = [
 for category in categories:
     lines.append(f"| {category} | {count[category]} | {count[category] / len(records) * 100:.1f}% |")
 lines.append(f"| **合计** | **{len(records)}** | **100.0%** |")
+lines += ["", "## 源码与文档不一致项", "", "| 变量 | 状态 | 说明 |", "|---|---|---|"]
+for name in sorted(STALE_DOC_VARS):
+    lines.append(f"| `{name}` | **文档遗留，当前源码不支持** | {STALE_NOTE} |")
 lines += ["", "## 使用形式统计", "", "同一变量可出现多种使用形式，统计存在交集。", "", "| 使用形式 | 变量数 |", "|---|---:|"]
 for mech, n in mechanism_count.most_common():
     lines.append(f"| {mech} | {n} |")
