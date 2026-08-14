@@ -8,7 +8,7 @@ OUT = pathlib.Path(r"D:\lzy\project\kv_pool\llm-project\transfer_data\envs\vllm-
 files = subprocess.check_output(["git", "ls-files", "docs/source"], cwd=ROOT, text=True, encoding="utf-8").splitlines()
 
 patterns = [
-    ("export", re.compile(r"(?m)(?:^|[;&|]\s*)export\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    ("export", re.compile(r"(?m)^[ \t]*export\s+([A-Za-z_][A-Za-z0-9_]*)")),
     ("inline assignment", re.compile(r"(?m)(?:^|[;&|\s])([A-Z][A-Z0-9_]*)=(?:\"[^\n\"]*\"|'[^\n']*'|[^\s\\;]+)\s+(?=(?:python|python3|pytest|torchrun|vllm|docker|kubectl|make|bash|sh)\b)")),
     ("docker -e/--env", re.compile(r"(?:--env(?:=|\s+)|(?:^|\s)-e\s+)([A-Z][A-Z0-9_]*)")),
     ("shell variable reference", re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}|\$([A-Z][A-Z0-9_]*)")),

@@ -8,7 +8,8 @@ OUT = pathlib.Path(r"D:\lzy\project\kv_pool\llm-project\transfer_data\envs\vllm-
 files = subprocess.check_output(["git", "ls-files", "docs/source/tutorials/models"], cwd=ROOT, text=True, encoding="utf-8").splitlines()
 
 patterns = [
-    ("export", re.compile(r"(?m)(?:^|[;&|]\s*)export\s+([A-Za-z_][A-Za-z0-9_]*)")),
+    # Allow indented exports inside Markdown code fences; do not match commented lines.
+    ("export", re.compile(r"(?m)^[ \t]*export\s+([A-Za-z_][A-Za-z0-9_]*)")),
     ("inline assignment", re.compile(r"(?m)(?:^|[;&|\s])([A-Z][A-Z0-9_]*)=(?:\"[^\n\"]*\"|'[^\n']*'|[^\s\\;]+)\s+(?=(?:python|python3|pytest|torchrun|vllm|docker|kubectl|make|bash|sh|pip)\b)")),
     ("docker -e/--env", re.compile(r"(?:--env(?:=|\s+)|(?:^|\s)-e\s+)([A-Z][A-Z0-9_]*)")),
     ("Python environment API", re.compile(r"(?:os\.environ(?:\.get)?\s*\[?\s*|getenv\s*\(\s*)[\"']([A-Z][A-Z0-9_]*)[\"']")),
@@ -81,7 +82,7 @@ lines = [
     f"- 文档文件数：**{len(files)}**",
     f"- 明确环境变量语义的唯一名称：**{len(records)}**",
     "- 统计范围：模型教程中的 `export`、行内进程赋值、Docker `-e/--env`、Python 环境 API，以及正文明确说明为环境变量的名称。",
-    "- `IMAGE`、`MODEL_PATH`、`TAG`、`nic_name` 等命令辅助变量会保留，但单独分类，不视为产品配置。",
+    "- `IMAGE`、`MODEL_PATH`、`TAG` 等已导出的命令辅助变量会保留，但单独分类，不视为产品配置；`nic_name` 等未导出的 Shell 局部变量不纳入。",
     "",
     "## 分类统计",
     "",
