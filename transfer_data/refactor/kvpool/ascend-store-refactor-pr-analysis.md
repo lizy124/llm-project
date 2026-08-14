@@ -9,12 +9,26 @@
 | 提交数 | 2 |
 | 基线 | `upstream/main`(三点 diff) |
 
+### 这个 PR 在做什么
+
+本 PR 对 AscendStore KV pool 模块做一次**实现简化与测试瘦身**,核心是三件事:
+
+1. **职责下沉与去重**:把原本散落在 `KVPoolWorker` / `KVPoolScheduler` / `AscendStoreCoordinator` 中的 cache family / block size 推算逻辑,统一下沉为 `metadata.py` 中的模块级纯函数(6 个),消除三处重复实现,并使这些逻辑可独立单测。同时用上游标准函数 `cdiv` 替换手写的 `_num_chunks`。
+
+2. **GVA 分配职责迁移(行为变更)**:把 GVA(global virtual address)的预分配从 `KVPoolScheduler` 移除,改由 `KVPoolWorker` 侧的 per-rank `batch_alloc` 承接。配套删除 scheduler 上 `_allocate_gva_if_needed` 调用、`block_keys` / `last_block_key` / `_unfinished_request_ids` 等不再需要的字段与传递路径。**这是本 PR 唯一的运行时行为变更,非纯文本重构。**
+
+3. **冗余代码清理**:删除线程子类中与基类等价的 `add_request` / `dec_stored_request` 覆盖、未使用的 thread 构造参数(`put_step` / `my_key_index` / `num_ranks_per_layer`)、`MemcacheBackend.init_store` 等无调用点的方法、connector 层冗余字段、`ReqMeta` 上未使用的 `starts` / `ends` / `sizes_per_chunk` / `kv_cache_families_by_group` 等字段。
+
+4. **测试重构**:引入公共 mock 基础设施(`_mock_deps.py`)与工厂函数(`make_config` / `make_worker` / `start_patch`),合并细碎数据类测试,针对新提取纯函数新增聚焦单测,测试代码净减约 1,637 行。
+
+一句话:**在不改变对外接口的前提下,通过职责下沉、GVA 迁移与冗余清理,让 AscendStore KV pool 实现更内聚、测试更轻量。**
+
 ### 提交列表
 
 1. `11bc84f32` `[Refactor] Simplify AscendStore KV pool Implementation and Unit Tests`
-   - 主体重构提交,Co-Authored-By: Claude
+   - 主体重构提交,完成上述 1–4 项变更,Co-Authored-By: Claude
 2. `c6f72551f` `refactor: port AscendStore KV pool simplification`
-   - 将重构 rebase 到 `upstream/main`,保留 upstream 的 layerwise / multi-buffer 契约,合并已 review 的测试简化与 Python 3.10 补丁清理
+   - 将上述重构 rebase 到最新 `upstream/main` 之上,在 rebase 过程中保留 upstream 新引入的 layerwise 与 multi-buffer 契约,并合并已 review 的测试简化与 Python 3.10 补丁清理,使 PR 可基于当前主干合入。**此提交本身不引入新功能,只做 rebase 适配。**
 
 ### 按文件变更统计(numstat)
 
