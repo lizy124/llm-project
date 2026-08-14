@@ -466,8 +466,7 @@ layerwise 预取层（`layer_id != current_layer`）的 load task 一律携带 `
 
 ### 验收标准
 
-#### 1. 功能正确性
-
+#### 1. 功能正
 * 所有 `_invalid_block_ids` 读写均在锁保护内（或通过不可变快照返回）
 * 并发场景下 `get_block_ids_with_load_errors` 返回一致结果
 
