@@ -4,25 +4,25 @@
 - 扫描文档文件：**143**
 - 识别到含服务启动或推理命令的文档：**90**
 - 启动/推理相关章节：**305**
-- 文档启动链路中观察到的唯一变量：**72**
-- 当前源码可用变量：**69**
+- 服务启动、推理及运行时配置主表变量：**73**
+- 当前源码可用变量：**70**
 - 文档遗留、当前源码不支持：**3**
 
-> 本文不是 `docs/source` 环境变量全集。只有与 `vllm serve`、API server、服务脚本、分布式启动、离线推理或推理客户端处于同一启动流程的环境变量才进入主表。镜像名、模型路径、端口占位等 Shell 辅助变量被排除。
+> 本文不是 `docs/source` 环境变量全集。主表以 `vllm serve`、API server、服务脚本、分布式启动、离线推理或推理客户端启动链路为主，并补充 additional config 中直接影响服务运行时的迁移变量。镜像名、模型路径、端口占位等 Shell 辅助变量被排除。
 
 ## 分类统计
 
 | 分类 | 数量 | 占比 |
 |---|---:|---:|
-| vLLM Ascend 产品配置 | 6 | 8.3% |
-| Ascend/CANN/HCCL 与 NPU 运行时 | 20 | 27.8% |
-| 分布式启动与并行环境 | 10 | 13.9% |
-| KV Transfer、PD 分离与存储后端 | 2 | 2.8% |
-| 上游 vLLM/PyTorch/模型生态 | 21 | 29.2% |
-| 系统运行环境 | 4 | 5.6% |
-| 其他服务运行变量 | 6 | 8.3% |
-| 文档遗留/当前源码不支持 | 3 | 4.2% |
-| **合计** | **72** | **100.0%** |
+| vLLM Ascend 产品配置 | 7 | 9.6% |
+| Ascend/CANN/HCCL 与 NPU 运行时 | 20 | 27.4% |
+| 分布式启动与并行环境 | 10 | 13.7% |
+| KV Transfer、PD 分离与存储后端 | 2 | 2.7% |
+| 上游 vLLM/PyTorch/模型生态 | 21 | 28.8% |
+| 系统运行环境 | 4 | 5.5% |
+| 其他服务运行变量 | 6 | 8.2% |
+| 文档遗留/当前源码不支持 | 3 | 4.1% |
+| **合计** | **73** | **100.0%** |
 
 ## 必要性统计
 
@@ -30,7 +30,7 @@
 |---|---:|---|
 | 场景必需 | 14 | 在对应多节点、Ray、DP、Mooncake/RFork/Netloader 等场景中缺失会导致启动链路不完整。 |
 | 场景配置 | 9 | 用于选择设备、模型来源、外部库路径或特定部署资源；是否需要取决于环境。 |
-| 可选调优/调试 | 46 | 通常存在默认行为，主要改变性能、超时、内存、日志或特性开关。 |
+| 可选调优/调试 | 47 | 通常存在默认行为，主要改变性能、超时、内存、日志或特性开关。 |
 | 不应使用 | 3 | 文档仍出现，但当前代码没有注册或消费；设置后不会启用文档描述的功能。 |
 
 ## 设置方式统计
@@ -43,6 +43,7 @@
 | Python os.environ | 11 |
 | Docker -e/--env | 2 |
 | 行内进程赋值 | 2 |
+| 源码 os.getenv | 1 |
 
 ## 源码与文档不一致项
 
@@ -66,7 +67,7 @@
 
 `相关场景` 来自变量附近的文档标题；每个变量最多展示 6 个场景和 8 个位置。
 
-### vLLM Ascend 产品配置（6）
+### vLLM Ascend 产品配置（7）
 
 | 变量 | 必要性 | 设置方式 | 相关场景（示例） | 文档位置（示例） |
 |---|---|---|---|---|
@@ -76,6 +77,7 @@
 | `VLLM_ASCEND_ENABLE_FUSED_MC2` | 可选调优/调试 | export | DeepSeek-V4-Pro > 5 Online Service Deployment {: #5-online-service-deployment } > 5.2 Multi-Node PD Separation Deployment > 5.2.1 A3 Series PD Separation Deployment; Dynamic Chunked Pipeline Parallel (DeepSeek-V3.1) > Deployment > Startup Script; GLM-4.5/4.6/4.7 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.3 Prefill-Decode Disaggregation; GLM-5.2 > 5 Deployment > 5.1 Context Below 1M > 5.1.1 Atlas 800 A3 > 5.1.1.1 Single-Node Deployment; MiniMax-M2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.2 Multi-Node PD Separation Deployment; Note: If you are running bridge network with docker, please expose available ports for multiple nodes communication in advance > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-Node Online Deployment | `docs/source/tutorials/features/dynamic_chunked_pipeline_parallel.md:79; docs/source/tutorials/models/DeepSeek-V4-Pro.md:596; docs/source/tutorials/models/DeepSeek-V4-Pro.md:667; docs/source/tutorials/models/GLM4.x.md:524; docs/source/tutorials/models/GLM4.x.md:593; docs/source/tutorials/models/GLM5.2.md:144; docs/source/tutorials/models/GLM5.2.md:221; docs/source/tutorials/models/GLM5.2.md:275` |
 | `VLLM_ASCEND_ENABLE_MLAPO` | 可选调优/调试 | export | DeepSeek-V3.2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-node Deployment; DeepSeek-V3.2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.2 Multi-node Deployment; GLM-5/GLM-5.1 > 5 Online Service Deployment > 5.1 Single-Node Online Deployment; Kimi-K2.6 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-Node Online Deployment; Note: If you are running bridge network with docker, please expose available ports for multiple nodes communication in advance. > Deployment > Single-node Deployment; The value of node0_ip must be consistent with the value of local_ip set in node0 (master node) | `docs/source/tutorials/models/DeepSeek-V3.2.md:134; docs/source/tutorials/models/DeepSeek-V3.2.md:187; docs/source/tutorials/models/DeepSeek-V3.2.md:234; docs/source/tutorials/models/DeepSeek-V3.2.md:285; docs/source/tutorials/models/DeepSeek-V3.2.md:336; docs/source/tutorials/models/GLM5.2.md:1075; docs/source/tutorials/models/GLM5.md:1065; docs/source/tutorials/models/GLM5.md:1134` |
 | `VLLM_ASCEND_ENABLE_NZ` | 可选调优/调试 | Python os.environ, export | Decoder node 1: data_parallel_start_rank=2, server_role_args="--headless"; DeepSeek-OCR-2 > 5 Online Service Deployment {: #5-online-service-deployment } > 5.1 Single-Node Online Deployment; Node 1: data_parallel_start_rank=2, server_role_args="--headless"; Prefiller node 1: data_parallel_start_rank=2, server_role_args="--headless"; Reload or update model weights here. > Usage; The value of node0_ip must be consistent with the value of local_ip set in node0 (master node) > 5.2 1M Context Deployment > 5.2.1 Single-Node 1M Deployment | `docs/source/tutorials/models/DeepSeekOCR2.md:127; docs/source/tutorials/models/GLM5.2.md:1258; docs/source/tutorials/models/GLM5.2.md:1324; docs/source/tutorials/models/GLM5.2.md:1390; docs/source/tutorials/models/GLM5.2.md:1463; docs/source/user_guide/feature_guide/sleep_mode.md:135; docs/source/user_guide/feature_guide/sleep_mode.md:98` |
+| `VLLM_ASCEND_FUSION_OP_TRANSPOSE_KV_CACHE_BY_BLOCK` | 可选调优/调试 | 源码 os.getenv | Additional Configuration > Environment Variable Migration > 推荐使用 enable_transpose_kv_cache_by_block | `docs/source/user_guide/configuration/additional_config.md:25` |
 
 ### Ascend/CANN/HCCL 与 NPU 运行时（20）
 

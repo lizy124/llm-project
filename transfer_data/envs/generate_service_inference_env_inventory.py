@@ -51,6 +51,17 @@ STALE_DOC_VARS = {
     ),
 }
 
+# Runtime product settings documented in additional_config.md. These are
+# included even when the migration-period environment variable is not exported
+# next to a launch command.
+RUNTIME_CONFIG_SUPPLEMENTS = {
+    "VLLM_ASCEND_FUSION_OP_TRANSPOSE_KV_CACHE_BY_BLOCK": (
+        "源码 os.getenv",
+        ["docs/source/user_guide/configuration/additional_config.md:25"],
+        ["Additional Configuration > Environment Variable Migration > 推荐使用 enable_transpose_kv_cache_by_block"],
+    ),
+}
+
 
 def split_sections(text):
     headings = [(m.start(), len(m.group(1)), m.group(2).strip()) for m in re.finditer(r"(?m)^(#{1,6})\s+(.+)$", text)]
@@ -156,6 +167,18 @@ for name in sorted(refs):
     locations = sorted({loc for values in refs[name].values() for loc in values})
     records.append({"name": name, "category": classify(name), "necessity": necessity(name), "mechanisms": mechanisms, "locations": locations, "scenarios": sorted(scenarios[name])})
 
+for name, (mechanism, locations, scenario_titles) in RUNTIME_CONFIG_SUPPLEMENTS.items():
+    if name not in refs:
+        records.append({
+            "name": name,
+            "category": classify(name),
+            "necessity": necessity(name),
+            "mechanisms": [mechanism],
+            "locations": locations,
+            "scenarios": scenario_titles,
+        })
+records.sort(key=lambda record: record["name"])
+
 categories = [
     "vLLM Ascend 产品配置", "Ascend/CANN/HCCL 与 NPU 运行时", "分布式启动与并行环境",
     "KV Transfer、PD 分离与存储后端", "上游 vLLM/PyTorch/模型生态", "系统运行环境", "其他服务运行变量",
@@ -172,11 +195,11 @@ lines = [
     f"- 扫描文档文件：**{len(all_files)}**",
     f"- 识别到含服务启动或推理命令的文档：**{len(launch_docs)}**",
     f"- 启动/推理相关章节：**{launch_sections}**",
-    f"- 文档启动链路中观察到的唯一变量：**{len(records)}**",
+    f"- 服务启动、推理及运行时配置主表变量：**{len(records)}**",
     f"- 当前源码可用变量：**{len(records) - len(STALE_DOC_VARS)}**",
     f"- 文档遗留、当前源码不支持：**{len(STALE_DOC_VARS)}**",
     "",
-    "> 本文不是 `docs/source` 环境变量全集。只有与 `vllm serve`、API server、服务脚本、分布式启动、离线推理或推理客户端处于同一启动流程的环境变量才进入主表。镜像名、模型路径、端口占位等 Shell 辅助变量被排除。",
+    "> 本文不是 `docs/source` 环境变量全集。主表以 `vllm serve`、API server、服务脚本、分布式启动、离线推理或推理客户端启动链路为主，并补充 additional config 中直接影响服务运行时的迁移变量。镜像名、模型路径、端口占位等 Shell 辅助变量被排除。",
     "",
     "## 分类统计",
     "",
