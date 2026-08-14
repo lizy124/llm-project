@@ -1,0 +1,55 @@
+transfer_data/refactor/kvpool/ascend-store-refactor-pr-analysis.md
+  s_175edf3dc1f6b8::t_5ee62d2f3ffe07 1-295
+transfer_data/envs/vllm-ascend-service-inference-environment-variables-table.md
+  s_55fd090a1b9fd0::t_5e2529e7e3faee 1-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "4fcc0d563c5dec6e19b3f559d6cc6a3f1dc39915",
+  "prompts": {},
+  "sessions": {
+    "s_175edf3dc1f6b8": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7eb7731bc36f6a179e150c",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a7ebb1e1bc36f6a179e15cb",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "session_id": "6a7eb7731bc36f6a179e150c",
+        "source_scene": "agent",
+        "external_session_id": "6a7eb7731bc36f6a179e150c",
+        "tool_type": "builtin",
+        "dedupe_key": "6a7eb7731bc36f6a179e150c:6a7ebb1e1bc36f6a179e15cb:afterEdit:8e6292d7",
+        "edit_kind": "file_edit",
+        "tool_use_id": "6a7ebb1e1bc36f6a179e15cb",
+        "tool_id": "icube:applyChatSnapshotPatch"
+      }
+    },
+    "s_55fd090a1b9fd0": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7ebb871bc36f6a179e15cf",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "session_id": "6a7ebb871bc36f6a179e15cf",
+        "operation_id": "6a7ebc601bc36f6a179e15e3",
+        "tool_use_id": "6a7ebc601bc36f6a179e15e3",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a7ebb871bc36f6a179e15cf",
+        "tool_type": "builtin",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "dedupe_key": "6a7ebb871bc36f6a179e15cf:6a7ebc601bc36f6a179e15e3:afterEdit:bbab50f6"
+      }
+    }
+  }
+}
