@@ -1,141 +1,154 @@
-# issues_10 任务价值排序
+# issues_10：面向 AscendStore 池化能力的价值排序
 
-> 排序基线：vllm-ascend `main@d5e9816065ede613327d93908f87fee9f5c47128`
+> 代码基线：vllm-ascend `main@d5e9816065ede613327d93908f87fee9f5c47128`
 >
 > 排序日期：2026-08-16
 >
-> 代码证据与逐项真实性审计见 [CODE_AUDIT.md](CODE_AUDIT.md)。
+> 代码真实性与逐项证据见 [CODE_AUDIT.md](CODE_AUDIT.md)。
 
-## 1. 排序原则
+## 1. 这里所说的“价值”
 
-本排序评价的是“现在投入开发资源是否值得”，不是按 issue 编号，也不只看标题中的 P0/P1/P2。
+本排序只回答一个问题：**该任务对提升 vllm-ascend AscendStore KV 池化能力本身有多大意义？**
 
-排序依次考虑：
+它不等同于事故严重度，也不等同于短期修复排期。评价重点是：
 
-1. **用户结果风险**：错误输出或错误 KV 状态优先于可恢复失败；永久阻塞优先于性能和代码整洁。
-2. **证据确定性**：当前代码可以闭合证明的缺陷，优先于尚未经过目标机器验证的性能假设。
-3. **影响范围**：影响多 backend、多请求模式或公共生命周期的任务优先于窄配置任务。
-4. **依赖和杠杆价值**：能为后续任务提供失败契约、配置入口或状态传播基础的任务适当前移。
-5. **投入产出和实施风险**：收益相近时，优先边界清楚、容易回归验证的任务；协议改造、collective 和外部 lease 语义会降低当前排序。
+1. 是否补齐池化数据面或控制面的核心能力，而不只是修一处局部代码。
+2. 是否覆盖更多 backend、模型类型、同步/异步模式和 load/save 路径。
+3. 是否让池化从“可以运行”走向“结果可信、故障可控、可以规模化”。
+4. 是否为其他池化优化提供必要契约或基础设施。
+5. 性能收益是否具有足够大的理论上限，以及能否在目标机器上验证。
 
-性能任务的排序是“先做 Phase 0 验证”的价值排序，不代表已经批准完整实现。机器数据不支持时，应以 No-Go 报告收口。
+因此，正确性任务仍可能排在前面，但原因不是它属于 P0，而是缺少它会让某类池化能力本身不可信。反过来，纯重构即使代码上成立，如果不改善当前池化能力，也会排在后面。
 
-## 2. 最终排序
+## 2. 池化价值总排序
 
-| 排名 | 任务 | 价值层级 | 为什么排在这里 | 当前建议 |
-|---:|---|---|---|---|
-| 1 | [kv-28 hybrid KV load failure](issue_kv-28_C2_multi_group_failure.md) | S：必须优先 | 存在残缺 multi-group KV 被当作加载完成并进入 forward 的风险，直接触及模型输出正确性 | 立即做近期 fail-fast；再设计 request-level 失败通道 |
-| 2 | [kv-27 ZMQ lookup recovery](issue_kv-27_C1-2_zmq_lookup_failover.md) | S：必须优先 | client 无 timeout，server 异常可导致永久等待；故障链由代码完整证明 | 立即修复 timeout、typed reply 和 socket 重建 |
-| 3 | [kv-25 transfer fatal protocol](issue_kv-25_C1_transfer_thread_exception.md) | S：必须优先 | startup 可无界等待，运行期缺少统一 queue/request/resource 终止协议；还是 kv-28 async 传播的基础 | 先做故障矩阵，再统一 startup/fatal/cleanup 状态机 |
-| 4 | [kv-26 Backend.put result](issue_kv-26_C1-1_backend_put_failure.md) | A：高价值 | 三种 backend 的失败信息在 wrapper 边界丢失，可能发布虚假 `BlockStored`，且阻碍后续安全 batching | 先核对真实 backend 返回语义，再统一 per-key 结果 |
-| 5 | [kv-24 typed config parser](issue_kv-24_S5_config_schema.md) | A：基础治理 | 26 处配置读取分散在多个角色，统一入口能降低默认值/类型漂移，并承接 timeout 等可靠性参数 | 复用现有 layerwise parser/helper，渐进式收敛；不阻塞 kv-27 |
-| 6 | [kv-01 MLA TP read dedup](issue_kv-01_P01_MLA_read_dedup.md) | B：条件性高价值 | MLA TP 内重复查询相同 key 的调用形态明确，理论节省可随 TP 放大；但 broadcast 成本和 hang 风险未知 | 先测独立 `get` 与 broadcast 成本，达到 Go 条件再做 PoC |
-| 7 | [kv-07 non-layerwise batching](issue_kv-07_P07_non_layerwise_io_merge.md) | B：条件性价值 | 覆盖同步 load、async load 和 save，潜在范围较广；但真实 step 内可合并 request 数尚未证明，状态回填复杂 | 先 profile 三条路径；优先实现有数据支持的单一路径，并复用 kv-26 |
-| 8 | [kv-08 GVA metadata RPC aggregation](issue_kv-08_P08_gva_meta_rpc_merge.md) | B：条件性价值 | request/group 内多次 metadata RPC 的代码形态存在，但仅覆盖 MemCache GVA layerwise，且 lease 语义依赖外部契约 | 先验证 RPC 占比和 lease 语义，只聚合被证明安全的操作 |
-| 9 | [kv-17 offset-aware lookup](issue_kv-17_P17_zmq_lookup_full_hashes.md) | B：低优先条件项 | 全量 hashes 确实被发送，但编码/IPC 是否为 TTFT 瓶颈未知；改 wire protocol 的兼容成本较高 | 先测 payload、编解码、IPC 和 TTFT；没有显著收益则不改协议 |
-| 10 | [kv-31 backend capability model](issue_kv-31_E1_backend_abstraction_split.md) | C：可延后 | 基类混入 GVA 方法是真实设计问题，但当前固定 backend 路由已避免用户可达错误组合，没有直接生产故障 | 等新增 backend/GVA 扩展需求或相关代码重构时顺带完成 |
+| 排名 | 任务 | 对池化的核心意义 | 价值判断 |
+|---:|---|---|---|
+| 1 | [kv-28 hybrid KV load failure](issue_kv-28_C2_multi_group_failure.md) | 建立 multi-group/hybrid 池化的原子加载边界，禁止残缺 KV 被消费 | 核心能力，必须具备 |
+| 2 | [kv-25 transfer fatal protocol](issue_kv-25_C1_transfer_thread_exception.md) | 建立池化传输线程统一的启动、失败、取消和资源清理生命周期 | 核心基础设施 |
+| 3 | [kv-26 Backend.put result](issue_kv-26_C1-1_backend_put_failure.md) | 让池化写入结果、KV event 和 backend 状态真实可知，并支撑安全批处理 | 核心后端契约 |
+| 4 | [kv-27 ZMQ lookup recovery](issue_kv-27_C1-2_zmq_lookup_failover.md) | 让 scheduler-worker 池化 lookup 控制面从永久阻塞变为可恢复服务 | 核心控制面可靠性 |
+| 5 | [kv-07 non-layerwise batching](issue_kv-07_P07_non_layerwise_io_merge.md) | 系统性降低普通池化 load/save 的 backend 调用次数，覆盖面最广的性能候选 | 高潜力数据面优化，先验证 |
+| 6 | [kv-01 MLA TP read dedup](issue_kv-01_P01_MLA_read_dedup.md) | 降低 MLA TP 内对共享池的重复读取和后端带宽放大 | 高潜力场景优化，先验证 |
+| 7 | [kv-08 GVA metadata RPC aggregation](issue_kv-08_P08_gva_meta_rpc_merge.md) | 提升 MemCache GVA layerwise 模式的元数据扩展能力 | 中等价值的窄模式优化，先验证 |
+| 8 | [kv-24 typed config parser](issue_kv-24_S5_config_schema.md) | 统一池化配置语义，降低多角色默认值和类型漂移 | 支撑性工程价值 |
+| 9 | [kv-17 offset-aware lookup](issue_kv-17_P17_zmq_lookup_full_hashes.md) | 减少长上下文 lookup 的 hash 编码和 IPC payload | 局部性能价值，证据不足 |
+| 10 | [kv-31 backend capability model](issue_kv-31_E1_backend_abstraction_split.md) | 为未来新增 GVA backend 提供更清晰的类型边界 | 未来扩展价值，当前可延后 |
 
-## 3. 逐项排序理由
+最终顺序：
 
-### 1. kv-28：最高价值，先阻断错误计算
+`kv-28 → kv-25 → kv-26 → kv-27 → kv-07 → kv-01 → kv-08 → kv-24 → kv-17 → kv-31`
 
-同步 non-layerwise multi-group load 部分失败时只记录日志，async 路径还会调用正常 finished。相比可见的异常或 cache miss，使用残缺 KV 继续计算具有更高风险，因为它可能产生无法立即识别的错误输出。
+## 3. 为什么这样排
 
-该任务应拆成两步：先用最小 fail-fast 保证任何 group 未确认成功时不进入 forward；再推动 request-level failed IDs，使失败只终止受影响请求。即使目标机器暂时不能稳定复现错误 token，也不能否定代码中缺少阻断信号这一事实。
+### 1. kv-28：决定 hybrid 池化是否可信
 
-### 2. kv-27：消除永久阻塞
+池化最基本的不变量是：一次声明成功的 KV load 必须得到可完整消费的 KV。当前 multi-group non-layerwise 路径中，某些 key/group 失败后只记录日志，async 路径还会正常 finished。
 
-同步 REQ 在 `recv` 上没有 timeout，而 server handler 没有逐请求异常保护。一个坏报文或 handler 异常即可让 server 不回复，client 随后永久等待。这是明确、易触发且影响请求/engine 可用性的 P0 风险。
+这不是普通错误处理优化，而是在补齐 hybrid 池化的事务边界：要么相关 groups 全部可用，要么 request 明确失败。没有该边界，hybrid 模型即使性能再高，也不能称为可靠的池化能力。因此它对池化本身的价值最高。
 
-它排在 kv-28 之后，是因为 kv-28 可能静默影响模型结果；kv-27 通常表现为显式卡住。两项都应进入第一批，实际开发可以并行。timeout 数值必须按目标机器正常延迟分布确定，但不能以“尚未确定数值”为理由推迟建立有界等待。
+### 2. kv-25：池化传输执行层的生命周期基础
 
-### 3. kv-25：公共失败协议，影响面广
+AscendStore 的 load/save 依赖多个后台 transfer thread。当前 startup、fatal、queue accounting、等待方唤醒和 lease/event cleanup 没有统一协议。
 
-`set_device` 在异常捕获和 ready signal 之前，creator 又无界等待；运行期 fatal 也没有统一的 queue accounting、后续任务拒绝和子类资源清理协议。它不仅修复自身 hang/资源状态，还决定 kv-28 async failure 等路径如何可靠通知等待方。
+它的价值不只在修复一个 hang，而是给同步、异步、layerwise、GVA 等路径建立共同的失败生命周期。后续做 batching、异步加载和 request-level failure 时，都需要依赖这个基础，所以战略价值高于单点的 ZMQ timeout。
 
-该任务复杂度高于 kv-27，必须先按子类建立故障矩阵，避免重复清理已有 `finally` 覆盖的资源。因此排第三，而不是与两个边界更明确的 P0 任务争抢第一落点。
+### 3. kv-26：池化后端必须能说明“到底存成了什么”
 
-### 4. kv-26：修复虚假成功并为 batching 建立契约
+三个 backend 的普通 `put` 当前都没有向 sender 返回可信的 per-key 结果，sender 因而可能发布虚假 `BlockStored`。一个池系统如果不知道哪些对象真正可用，就无法提供可信 event、健康状态、失败指标，也无法安全合并多个 request 的写入。
 
-Mooncake、MemCache、Yuanrong 普通 `put` 当前都不把逐 key 结果交给 sender；sender 无条件发布已构造的 stored events。它影响 KV event 准确性、故障可观测性，并让 kv-07 无法安全回填批量结果。
+该任务会形成 `AVAILABLE/FAILED/UNKNOWN` 之类的统一结果契约，直接支撑 kv-07 batching 和后续 backend health/circuit breaker。它是池化后端抽象的实际语义补全，不只是可观测性美化。
 
-保存失败一般在未来表现为 cache miss，不像 kv-28 那样直接消费残缺 KV，所以排在前三个正确性/可用性任务之后。开发前必须验证实际 backend 的重复对象、部分失败和无逐 key 返回语义；无法确认的结果应为 `UNKNOWN`，不能伪造成功。
+### 4. kv-27：池化 lookup 控制面必须可恢复
 
-### 5. kv-24：确定性较高的基础治理
+池化命中查询位于 scheduler 与 worker 之间。当前同步 REQ 无 timeout，server 单次异常可能让 client 永久等待。修复后，lookup 才具有 bounded latency、typed error 和恢复能力。
 
-配置读取散布在 connector、scheduler、worker、metadata 和 layout，统一 schema 能减少角色间类型、默认值和兼容规则漂移，也给 kv-27 timeout 等新字段提供稳定入口。其价值是广泛而长期的，且不依赖性能猜测。
+它是当前必须修的 P0，但从池化架构价值看，它主要补强一条明确的控制面 RPC；覆盖面和后续杠杆略低于 transfer lifecycle 与 backend result contract，所以在本价值排序中列第四。这不代表短期修复排期必须晚于 kv-25/kv-26。
 
-它不是当前用户可见 P0，也不能自动解决 scheduler/worker 初始化重复，因此放在可靠性任务之后。实现应复用已有 `_parse_int_config` 和 direct/MultiConnector helper；kv-27 可以先使用局部校验默认值，不能等待本任务。
+### 5. kv-07：最有系统意义的性能候选
 
-### 6. kv-01：证据较强的性能 PoC
+kv-07 同时涉及同步 load、async load 和普通 save，并覆盖 Mooncake、MemCache、Yuanrong 的 non-layerwise 路径。若生产 workload 中单 step 经常有多个 requests，它可以减少 backend 固定调用开销，改善吞吐和 TTFT，是 4 个性能任务中覆盖面最广的一个。
 
-MLA 下同一 TP 组会生成相同后端 key 集，而每个 rank 都调用 `get`，重复调用事实比其余性能候选更确定，并可能随 TP=2/4/8 放大。
+它没有进入前四，是因为实际可合并度尚未由机器数据证明，而且安全实现依赖 kv-25 的取消/fatal 语义和 kv-26 的 per-item 结果。应先 profile 三条路径，只实现数据证明有价值的路径。
 
-它仍然只是第六：leader+broadcast 会引入 collective、stream/event 和全 rank 错误一致性，可能比独立 backend 读取更慢，处理不当还会 hang。先做机器基线；只有 backend 读取成本显著且 broadcast 有净收益时才实现/启用。
+### 6. kv-01：对 MLA 池化后端压力有直接价值
 
-### 7. kv-07：覆盖面广，但 workload 机会未知
+MLA 下，同一 TP 组的 ranks 会查询相同 key 集，每个 rank 又各自调用 backend `get`。如果 backend 没有在更低层有效合并，请求量和带宽压力可能随 TP 放大。
 
-三个 non-layerwise 路径都存在 per-request backend 调用，若单 step 内经常有多个 request，batching 可能同时减少调用次数和参数重建。但代码不能证明生产 workload 中大多数 step 的 batch size 大于 1，async 微批还可能增加尾延迟。
+这是非常直接的池化流量优化，尤其对 MLA 长上下文模型有意义。但它只覆盖 MLA、non-layerwise、同步读取，并需要引入 collective broadcast 和全 rank 错误一致性，因此整体价值低于跨路径的 kv-07。目标机器若证明读取成本随 TP 明显放大，可将它提升到第五。
 
-它排在 kv-01 之后，是因为实际可合并度尚未证明，且依赖健全的 per-item result/cancel/fatal 语义。完成 kv-26 后，优先选择 profile 证明最有价值的一条路径，不要求同步 load、async load、save 一次性全部重写。
+### 7. kv-08：提升 GVA layerwise 的元数据规模能力
 
-### 8. kv-08：窄场景中的潜在收益
+GVA prepare 接收一批 requests，却仍在 request/group 循环中调用 metadata API。聚合后可能减少 MemCache RPC、allocation 查询和 lease 操作的固定成本。
 
-GVA 准备入口接收一批 requests，却在 request/group 循环内调用 metadata API，RPC 聚合机会真实。但它只影响 MemCache GVA layerwise 路径，覆盖面比 kv-01/kv-07 窄；`batch_alloc` 非幂等，lease 是否可去重还必须由实际 MemCache 版本确认。
+它确实优化池化，但只适用于 MemCache GVA layerwise，且 `batch_alloc` 非幂等、lease 语义由外部服务版本决定。覆盖范围和实施确定性都低于 kv-07/kv-01，所以排第七。若真实环境显示 metadata RPC 是 layerwise TTFT 主项，可以上调。
 
-如果 Phase 0 显示 metadata RPC 是 layerwise TTFT 的主要组成，可将其提升到第六或第七；若 RPC 占比低或 lease 契约不明确，应保持当前实现。
+### 8. kv-24：提高池化可运维性，不直接提升数据面
 
-### 9. kv-17：事实成立，但改协议性价比最低
+统一 typed config 能减少 scheduler、worker、connector 和 layout 的默认值/类型漂移，也能给 lookup timeout 等新参数提供稳定入口。它对长期维护和配置安全有明确价值。
 
-client 发送完整 hash 列表是确定事实，suffix 方案也确实需要 absolute offset 才能保持 grouped-hash 语义。不过任务需要 wire protocol 版本化、兼容、坏 offset 校验以及 hybrid/non-hybrid 双路径改造。
+但它既不直接减少数据搬运/RPC，也不修复当前已确认的池化结果错误。现有代码还有局部 typed parser 可复用，因此更适合作为支撑性治理，排在核心能力和高潜力性能候选之后。
 
-在没有数据证明 `.hex()`、msgpack 和 IPC 是 lookup/TTFT 瓶颈前，这种协议复杂度不值得优先承担。只有长上下文、高 HBM 前缀命中场景显示明确端到端收益时才应上调。
+### 9. kv-17：优化的是报文局部开销，不是池化主链路
 
-### 10. kv-31：合理，但当前最不紧迫
+完整 hashes 的编码和 ZMQ 发送确实可以缩减，但它只优化 lookup payload。为了正确发送 suffix，还需要 absolute offset、版本兼容、错误校验以及 hybrid/non-hybrid 语义适配。
 
-将 GVA/lease 方法从最小 `Backend` 中拆出，有助于未来增加 backend 和做类型窄化。但当前代码用 `backend_name == "memcache"` 选择 GVA 路径，固定的三个 backend 中没有用户可直接配置出的错误组合。
+在没有数据证明 `.hex()`、msgpack 和 IPC 是 lookup/TTFT 主要开销前，这项改造对整个池化系统的杠杆较小。更合适的形态是先做 benchmark；数据不显著时不应进入完整协议开发。
 
-因此它是维护性和未来扩展保护，不应抢占正确性、可用性或已验证性能工作的资源。最合适的时机是新增 backend、显式 GVA mode 或相关模块重构时一起完成。
+### 10. kv-31：当前更多是代码架构价值
 
-## 4. 建议实施批次
+拆分 `Backend` 与 `GVABackend` capability 可以让未来新增 backend 更清晰。但当前代码已经通过 `backend_name == "memcache"` 选择 GVA 路径，固定 backend 组合下没有可达的错误配置。
 
-### 第一批：立即处理
+它对当前池化性能、正确性和可用性都没有直接改善。若近期没有新增 GVA backend 的计划，不值得单独占用一个高优先级任务；可在新增 backend 或相关模块重构时合并完成。
 
-1. `kv-28`：先提交最小 fail-fast，阻止残缺 KV 进入 forward。
-2. `kv-27`：建立 timeout、typed response 和 socket 恢复。
-3. `kv-25`：补齐 startup/fatal/cleanup 状态机。
+## 4. 哪些真正值得独立投入
 
-第一批可以并行，但 failure signal、event 和等待方语义需要共同评审，避免三个任务定义互相冲突的失败状态。
+### 核心池化任务：建议保留并投入
 
-### 第二批：补齐基础契约
+- `kv-28`：hybrid load 原子性和失败传播。
+- `kv-25`：transfer 生命周期与资源所有权。
+- `kv-26`：backend 写入结果与 event 真实性。
+- `kv-27`：lookup 控制面恢复。
+- `kv-07`：普通池化数据面的系统性 batching，先做 Phase 0。
 
-4. `kv-26`：统一 backend save 结果和 event 语义。
-5. `kv-24`：统一配置解析，但不阻塞前四项修复。
+这 5 项分别覆盖 hybrid 正确性、执行层、后端契约、控制面和数据面效率，合在一起对池化系统最有整体意义。
 
-### 第三批：只先做 Phase 0
+### 重要场景优化：由部署形态决定
 
-6. `kv-01`
-7. `kv-07`
-8. `kv-08`
-9. `kv-17`
+- `kv-01`：部署以 MLA + TP + non-layerwise 为主时价值较高。
+- `kv-08`：部署以 MemCache GVA layerwise 为主时价值较高。
 
-四项先并行收集基线数据，再按目标环境实际收益重新排序。Phase 0 后只推进达到各自 Go 条件的任务；排名不是继续投入的承诺。
+二者不是普适任务，但在对应生产配置中可能高于 kv-07，必须由目标环境决定。
 
-### 第四批：随扩展需求实施
+### 支撑性任务：可以做，但不应抢核心资源
 
-10. `kv-31`
+- `kv-24`：配置治理。
 
-## 5. 动态调整规则
+### 独立立项价值较弱
 
-以下证据出现时，可以调整第 6 至第 9 名的顺序：
+- `kv-17`：先 benchmark；没有明确 TTFT 收益则不开发协议。
+- `kv-31`：没有近期 backend 扩展时，建议合并到未来重构，不单独推进。
 
-- `kv-01`：重复 backend `get` 耗时随 TP 明显放大，且 broadcast 后端到端收益稳定，可上调。
-- `kv-07`：生产 step 中 batch size 经常大于 1，backend 固定调用开销显著，可上调；若多数为 1，则 No-Go。
-- `kv-08`：metadata RPC 占 GVA 准备或 TTFT 的比例显著，且 lease 契约允许安全聚合，可上调。
-- `kv-17`：长上下文下 payload 编解码/IPC 是 lookup 延迟主要组成，并有可测 TTFT 收益，可上调。
+所以，严格回答“这 10 个是否都同样有价值”：**不是**。前 5 个对池化系统有明显的独立价值；`kv-01`、`kv-08` 是部署相关价值；`kv-24` 是支撑价值；`kv-17`、`kv-31` 当前独立投入价值最低。
 
-没有上述机器数据时，保持当前排序。任何性能任务都不能越过尚未关闭的 `kv-28`、`kv-27` 和 `kv-25` 去争夺同一批核心开发资源。
+## 5. 价值排序与实施排期的区别
 
-## 6. 一句话结论
+价值排序不意味着必须严格串行。按当前风险，实际实施仍建议：
 
-最值得先做的是 `kv-28 → kv-27 → kv-25 → kv-26`：它们处理已经由代码证明的正确性、永久阻塞、线程失控和虚假保存成功。随后做 `kv-24` 的基础治理；4 个性能任务只先做 Phase 0，并按机器数据决定是否继续；`kv-31` 最适合随未来 backend 扩展一起完成。
+1. 先处理 `kv-28` 和 `kv-27`，立即关闭错误计算与永久阻塞。
+2. 推进 `kv-25`、`kv-26`，建立 transfer 和 backend 契约。
+3. 完成 `kv-07`、`kv-01`、`kv-08` 的 Phase 0，按数据决定后续投入。
+4. `kv-24` 可与新增配置需求一起渐进落地。
+5. `kv-17`、`kv-31` 在 benchmark 或扩展需求出现前保持候选状态。
+
+这里 `kv-27` 的实施排期早于它在架构价值中的第四名，是因为当前永久阻塞风险紧迫；这正是“修复优先级”和“池化战略价值”需要分开的原因。
+
+## 6. 最终结论
+
+从优化 vllm-ascend 池化能力的意义看，最重要的不是把 10 个任务按类别排队，而是先补齐四个池化核心边界：hybrid load 原子性、transfer 生命周期、backend 写入结果、lookup 可恢复性；然后用 kv-07 优化通用数据面。
+
+若资源有限，只优先保留 5 个任务，建议是：
+
+`kv-28、kv-25、kv-26、kv-27、kv-07`
+
+如果主要服务 MLA 模型，再加入 `kv-01`；如果主要使用 MemCache GVA layerwise，再加入 `kv-08`。`kv-17` 和 `kv-31` 当前不应与这些核心任务争夺同等资源。

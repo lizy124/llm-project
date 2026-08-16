@@ -7,7 +7,7 @@
 > 验收人：@赵鹏博
 > 关联任务池：[#9079 [Contribution] vLLM-Ascend 外部开发者任务池](https://github.com/vllm-project/vllm-ascend/issues/9079)
 > 发布日期：2026-08-11
-> 说明：原有 35 个候选 issue；经源码审核、任务合并和二次优先级筛选，最终形成以下 10 个发布候选。历史筛选记录见 [check.md](check.md)，当前代码严格复核见 [CODE_AUDIT.md](CODE_AUDIT.md)，开发价值与实施顺序见 [VALUE_RANKING.md](VALUE_RANKING.md)。
+> 说明：原有 35 个候选 issue；经源码审核、任务合并和二次优先级筛选，最终形成以下 10 个发布候选。历史筛选记录见 [check.md](check.md)，当前代码严格复核见 [CODE_AUDIT.md](CODE_AUDIT.md)，开发价值与实施顺序见 [VALUE_RANKING.md](VALUE_RANKING.md)，最终优选任务见 [TOP5.md](TOP5.md)。
 
 ## 最终筛选规则
 
@@ -55,7 +55,9 @@
 | kv-24 | [AscendStore typed config parser](issue_kv-24_S5_config_schema.md) | 在复用现有 layerwise parser/helper 的基础上统一 connector-owned extra config | P2 |
 | kv-31 | [backend capability model](issue_kv-31_E1_backend_abstraction_split.md) | 清理 Backend/GVA 类型边界；定位为未来扩展保护，不声称当前已有可达错误配置 | P3 |
 
-## 建议顺序
+## 风险修复排期
+
+> 本节按当前故障紧迫度安排实施，不等同于任务对池化能力的战略价值；池化价值排序见 [VALUE_RANKING.md](VALUE_RANKING.md)。
 
 1. `kv-28`：阻止残缺 KV 进入 forward
 2. `kv-27`：消除 lookup 永久阻塞
