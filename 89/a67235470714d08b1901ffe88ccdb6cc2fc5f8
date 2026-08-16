@@ -1,0 +1,23 @@
+draft/issues_10/INDEX.md
+  s_3bc52d45abe6b3::t_b70973f296b169 9,26,31-32,36,38,47,57,81-82
+draft/issues_10_backup/INDEX.md
+  s_3bc52d45abe6b3::t_a233c2bd6fe32f 1-105
+draft/issues_10_backup/issue_kv-35_P0_transfer_ipc_gil_release.md
+  s_3bc52d45abe6b3::t_5b9eae09a5eca7 1-103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "89a67235470714d08b1901ffe88ccdb6cc2fc5f8",
+  "prompts": {},
+  "sessions": {
+    "s_3bc52d45abe6b3": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7b09c53e86964ec3f57d89",
+        "model": "glm-5.2__dev"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>"
+    }
+  }
+}
