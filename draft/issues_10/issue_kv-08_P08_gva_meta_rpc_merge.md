@@ -9,9 +9,17 @@
 
 full-block key 不包含 request ID，相同前缀请求可能共享 key；`batch_alloc` 非幂等，lease 还可能具有引用计数或状态机语义。聚合前必须先明确去重和回填规则，不能直接把所有 key 拼成一次调用。
 
+静态代码只能确认 RPC 位于 request/group 循环内，不能确认真实 MemCache 服务中的 RPC 延迟、lease 引用计数或重复 add/remove 语义。
+
+## 开发前置验证（Phase 0）
+
+1. 在真实 MemCache 环境记录一次 `process_layer_data` 中各 metadata API 的调用次数、item 数、耗时、重复 key 比例，以及该阶段占 TTFT 的比例。
+2. 通过 MemCache 版本契约或隔离实验确认 `batch_alloc` 重复 key 返回、`batch_add_lease`/`batch_remove_lease` 的引用计数和重复调用语义，并把版本信息与实验结果写入报告。
+3. 先定义 Go/No-Go 阈值。若 metadata RPC 占比很低、请求间可聚合项很少，或 lease 语义无法安全确认，可只提交验证报告并保持当前实现；不得以猜测的 lease 语义做去重。
+
 ## 任务
 
-采用两阶段实现：
+Phase 0 达到 Go 条件后，采用两阶段实现：
 
 1. 为当前 `process_layer_data` 批次构造 descriptor，记录 request/group、full/partial key、alloc size、block index 和回填位置。
 2. 对 `batch_is_exist`/`batch_get_key_info` 等只读查询按后端允许的规则去重，并把结果映射回全部使用位置。
@@ -34,7 +42,7 @@ full-block key 不包含 request ID，相同前缀请求可能共享 key；`batc
 - 分别覆盖高重复 key 和低重复 key workload
 
 ### 3. 交付件
-- PR + 设计说明 + 性能数据 + 单测
+- Phase 0 的 MemCache 契约/实验与性能报告；达到 Go 条件时再交付 PR + 设计说明 + 性能数据 + 单测
 
 ## 证据
 

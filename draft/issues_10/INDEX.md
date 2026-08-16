@@ -1,84 +1,69 @@
 # kv_pool 优化点 → 社区 Issue 草稿索引
 
-> 来源：[kv_pool_优化点系统性梳理.md](file:///D:/lzy/project/kv_pool/llm-project/draft/kv_pool_优化点系统性梳理.md)
+> 来源：原始 35 项候选及源码审核记录；历史草稿保存在相邻 `issues_10_backup` 目录
 > 参考格式：vllm-ascend issue #13745 / #13746 / #13747（测试任务型 issue）
 > 目标仓库：`vllm-project/vllm-ascend`，代码路径 `vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`
+> 审核基线：main @ `d5e9816065ede613327d93908f87fee9f5c47128`
 > 验收人：@赵鹏博
 > 关联任务池：[#9079 [Contribution] vLLM-Ascend 外部开发者任务池](https://github.com/vllm-project/vllm-ascend/issues/9079)
-> 发布日期：2026-08-11（2026-08-12 新增 kv-35）
-> 说明：原有 35 个候选 issue；经源码审核直接删除 13 个，并将 3 个附属任务合入主任务，当前保留 19 个候选。详细结论见 `check.md`。
+> 发布日期：2026-08-11
+> 说明：原有 35 个候选 issue；经源码审核、任务合并和二次优先级筛选，最终形成以下 10 个发布候选。历史筛选记录见 [check.md](check.md)，当前代码严格复核见 [CODE_AUDIT.md](CODE_AUDIT.md)，开发价值与实施顺序见 [VALUE_RANKING.md](VALUE_RANKING.md)。
 
-## 通用约定（所有 issue 共享）
+## 最终筛选规则
 
-- **代码基线**：vllm-ascend 最新 `main`
-- **硬件**：Ascend NPU（提交时注明型号 + 卡数 + TP/CP 配置）
-- **验收人**：@赵鹏博
-- **关联任务池**：#9079
-- **交付件通用要求**：
-  - PR + 设计说明（改动动机 / 方案 / 风险）
-  - 补充或更新 `tests/ut/distributed/ascend_store/` 下对应单测
-  - 性能类 issue 需附改动前后对比数据（吞吐 / 延迟 / 调用次数）
-  - 发现新问题需提 follow-up issue 并回链本 issue
-- **回归红线**：现有单测全绿；精度与功能不退化（greedy / non-greedy 输出一致）
+- 只保留能由当前源码和调用链证明的问题；性能收益仍需硬件数据验证。
+- P0/P1 优先覆盖可能导致永久等待、残缺 KV 进入 forward 或 transfer 状态失控的问题。
+- 将可随主任务完成的局部优化并入对应 issue：kv-10 → kv-08，kv-12 → kv-07，kv-21 的 rank-invariant 派生部分 → kv-24。
+- 审核认为“可修改后发布”但本轮未入选的 kv-29，仅有预防性低优先级价值；不占用最终 10 个名额。
+- kv-35 不再预设 IPC 解法；只有 profile 证明 Python/GIL 是关键瓶颈后，才另立 benchmark/RFC。
+
+## 通用约定
+
+- **代码基线**：提交前需在最新 main 复核证据位置和行为
+- **硬件**：Ascend NPU（提交时注明型号、卡数、TP/CP 和 backend）
+- **交付件**：PR + 设计说明 + 对应单测
+- **性能任务**：先完成 Phase 0 基线和 Go/No-Go 判断；必须附调用次数、局部耗时和端到端 TTFT/吞吐数据，不预设收益。数据不支持改动时，以验证报告和 No-Go 结论收口，不强行修改热路径
+- **正确性任务**：必须注入失败并验证状态传播、资源清理及其他请求隔离
+- **外部契约**：MemCache lease、backend 返回码、ZMQ timeout 等无法由本仓库静态证明的语义，必须注明实际版本并通过官方契约或隔离实验确认
+- **事实边界**：区分“代码可证明的调用/控制流”“机器上观察到的行为”和“待验证假设”，不得把可能收益或未来扩展风险写成已发生故障
+- **回归红线**：现有单测全绿；greedy / non-greedy 输出一致；等待路径无永久挂起
 
 ## 候选清单
 
-### 性能维度（Perf，7 个）
+### 正确性与可靠性（4 个）
 
-| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
-|------|------|------|----------|-----------|
-| kv-01 | [issue_kv-01_P01_MLA_read_dedup.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-01_P01_MLA_read_dedup.md) | [Perf] MLA 读侧去重：rank0 取 + TP broadcast | 高 | P1（已有方案） |
-| kv-07 | [issue_kv-07_P07_non_layerwise_io_merge.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-07_P07_non_layerwise_io_merge.md) | [Perf] 单次 connector step 内批处理 non-layerwise backend 调用 | 中 | P2 |
-| kv-08 | [issue_kv-08_P08_gva_meta_rpc_merge.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-08_P08_gva_meta_rpc_merge.md) | [Perf] 单次 process_layer_data 批次内聚合 GVA 元数据 RPC | 中高 | P2 |
-| kv-13 | [issue_kv-13_P13_non_layerwise_wait_for_save.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-13_P13_non_layerwise_wait_for_save.md) | [Perf] 非-layerwise `wait_for_save` 异步化 | 中 | P2 |
-| kv-14 | [issue_kv-14_P14_last_layer_save_sync.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-14_P14_last_layer_save_sync.md) | [Perf] layerwise 最后一层 save 同步等待推迟 | 中 | P2 |
-| kv-15 | [issue_kv-15_P15_zmq_lookup_no_timeout.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-15_P15_zmq_lookup_no_timeout.md) | [Perf] ZMQ Lookup RPC 超时与批合并 | 中 | P2 |
-| kv-17 | [issue_kv-17_P17_zmq_lookup_full_hashes.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-17_P17_zmq_lookup_full_hashes.md) | [Perf] offset-aware ZMQ lookup 协议 | 中 | P2 |
+| 编号 | 文件 | 审核后任务边界 | 优先级 |
+|------|------|----------------|--------|
+| kv-28 | [hybrid KV load failure](issue_kv-28_C2_multi_group_failure.md) | hybrid KV load 失败不得使用残缺 KV 进入 forward，并建立 request-level 失败传播 | P0 |
+| kv-27 | [ZMQ lookup recovery](issue_kv-27_C1-2_zmq_lookup_failover.md) | 完整处理 REQ/REP timeout、error reply、协议校验和 socket 重建 | P0 |
+| kv-25 | [transfer thread fatal protocol](issue_kv-25_C1_transfer_thread_exception.md) | 建立 transfer thread 终止式失败协议及幂等资源清理 | P1 |
+| kv-26 | [Backend.put result contract](issue_kv-26_C1-1_backend_put_failure.md) | 先核对三种 backend 实际返回语义，再统一 AVAILABLE/FAILED/UNKNOWN 结果与 KV event | P2 |
 
-### 结构维度（Refactor，4 个）
+### 性能（4 个）
 
-| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
-|------|------|------|----------|-----------|
-| kv-20 | [issue_kv-20_S1_giant_file_split.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-20_S1_giant_file_split.md) | [Refactor] 巨文件拆分（pool_worker/kv_transfer/config_data/scheduler） | 高 | P1 |
-| kv-21 | [issue_kv-21_S2_scheduler_worker_init_dup.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-21_S2_scheduler_worker_init_dup.md) | [Refactor] scheduler/worker 初始化逻辑去重 | 高 | P1 |
-| kv-23 | [issue_kv-23_S4_chunked_token_db_split.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-23_S4_chunked_token_db_split.md) | [Refactor] `ChunkedTokenDatabase` 职责拆分 | 中 | P3 |
-| kv-24 | [issue_kv-24_S5_config_schema.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-24_S5_config_schema.md) | [Refactor] 配置项集中 schema（KVPoolConfig） | 高 | P0 |
+| 编号 | 文件 | 审核后任务边界 | 优先级 |
+|------|------|----------------|--------|
+| kv-01 | [MLA TP read dedup PoC](issue_kv-01_P01_MLA_read_dedup.md) | 先验证重复读取成本，再决定是否实现 non-layerwise leader get + TP broadcast PoC | P2 |
+| kv-07 | [non-layerwise backend batching](issue_kv-07_P07_non_layerwise_io_merge.md) | 先验证各路径 batch 机会，再按路径批处理并保留逐 request/block 语义 | P2 |
+| kv-08 | [GVA metadata RPC aggregation](issue_kv-08_P08_gva_meta_rpc_merge.md) | 先验证 RPC 占比和 MemCache lease 语义，再聚合安全的 metadata 操作 | P2 |
+| kv-17 | [offset-aware lookup protocol](issue_kv-17_P17_zmq_lookup_full_hashes.md) | 先验证 payload/TTFT 占比，再决定是否引入 offset-aware suffix 协议 | P2 |
 
-### 正确性维度（Correctness，5 个）
+### 配置与接口（2 个）
 
-| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
-|------|------|------|----------|-----------|
-| kv-25 | [issue_kv-25_C1_transfer_thread_exception.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-25_C1_transfer_thread_exception.md) | [Correctness] 传输线程异常路径资源清理 | 高 | P0 |
-| kv-26 | [issue_kv-26_C1-1_backend_put_failure.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-26_C1-1_backend_put_failure.md) | [Correctness] backend put 失败向上层传播 | 高 | P0 |
-| kv-27 | [issue_kv-27_C1-2_zmq_lookup_failover.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-27_C1-2_zmq_lookup_failover.md) | [Correctness] ZMQ lookup server/client 失效保护 | 高 | P0 |
-| kv-28 | [issue_kv-28_C2_multi_group_failure.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-28_C2_multi_group_failure.md) | [Correctness] 多 group 加载失败错误传播策略 | 中 | P2 |
-| kv-29 | [issue_kv-29_C3_invalid_block_ids_lock.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-29_C3_invalid_block_ids_lock.md) | [Correctness] `_invalid_block_ids` 锁保护范围审计 | 中 | P2 |
+| 编号 | 文件 | 审核后任务边界 | 优先级 |
+|------|------|----------------|--------|
+| kv-24 | [AscendStore typed config parser](issue_kv-24_S5_config_schema.md) | 在复用现有 layerwise parser/helper 的基础上统一 connector-owned extra config | P2 |
+| kv-31 | [backend capability model](issue_kv-31_E1_backend_abstraction_split.md) | 清理 Backend/GVA 类型边界；定位为未来扩展保护，不声称当前已有可达错误配置 | P3 |
 
-### 扩展性维度（Ext，2 个）
+## 建议顺序
 
-| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
-|------|------|------|----------|-----------|
-| kv-31 | [issue_kv-31_E1_backend_abstraction_split.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-31_E1_backend_abstraction_split.md) | [Ext] Backend 抽象基类拆分（Backend / GVABackend） | 中 | P2 |
-| kv-33 | [issue_kv-33_E3_high_risk_test_coverage.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-33_E3_high_risk_test_coverage.md) | [Ext] 高风险路径测试覆盖补强 | 中高 | P1 |
-
-### 架构维度（Arch，1 个）★ 重点
-
-| 编号 | 文件 | 标题 | 严重程度 | 建议优先级 |
-|------|------|------|----------|-----------|
-| kv-35 | [issue_kv-35_P0_transfer_ipc_gil_release.md](file:///D:/lzy/project/kv_pool/llm-project/draft/issues_10/issue_kv-35_P0_transfer_ipc_gil_release.md) | [Arch/Perf] 传输路径改 IPC：消除 GIL 瓶颈，实现真并行传输 | 高 | **P0（重点）** |
-
-> kv-35 是本次新增的重点 issue，方向锁定为改 IPC（不接受"不划算"作为放弃理由，代价转为设计中需攻克的难点）。依据 [kv_pool_线程存取与GIL分析.md](file:///D:/lzy/project/kv_pool/llm-project/draft/kv_pool_线程存取与GIL分析.md) 第三、四章。分三阶段推进：设计验证 → 原型对比 → 全路径落地。
-
-## 依赖关系（挑选时注意）
-
-- kv-24（S5 配置集中）是 kv-21（S2 初始化去重）的前置
-- kv-07 与 kv-08 模式相同，可同步推进
-- **kv-35（改 IPC）依赖 kv-24（配置 schema）**：IPC 相关配置需纳入 `KVPoolConfig`
-- **kv-35 协同 kv-25/kv-26/kv-27**：子进程异常清理与失败传播复用其机制
-
-## 建议挑选思路
-
-若希望覆盖"高收益 + 风险可控"，可优先评估以下保留项：
-**kv-35（改 IPC，重点）**、kv-25 / kv-26 / kv-27（正确性 P0 三连）、kv-24（配置 schema）、kv-07 / kv-08（I/O 合并双连）、kv-17（ZMQ payload）、kv-33（测试补强）。
-
-> kv-35 因改造范围大、分三阶段，建议单独排期，阶段 1 设计文档可与上述其他 issue 并行推进。
+1. `kv-28`：阻止残缺 KV 进入 forward
+2. `kv-27`：消除 lookup 永久阻塞
+3. `kv-25`：建立 thread fatal 与清理协议
+4. `kv-26`：统一 save 失败结果和事件语义
+5. `kv-24`：集中配置解析，为 timeout 等参数提供稳定入口
+6. `kv-01`：MLA non-layerwise 去重 PoC
+7. `kv-07`：non-layerwise backend batching
+8. `kv-08`：GVA metadata RPC aggregation
+9. `kv-17`：offset-aware lookup payload
+10. `kv-31`：backend capability 类型边界
