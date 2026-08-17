@@ -10,7 +10,7 @@ related:
   - kv-connector-registration.md
   - ascend-store-connector-adapter.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # register_connector(name, module_path, class_name) 三个参数的含义是什么？
@@ -70,7 +70,7 @@ class_name  = "AscendStoreConnector"
 
 当前项目关注 vllm-ascend 的 AscendStoreConnector。该连接器需要能被 vLLM 通过注册表识别和加载，因此注册参数决定了配置名称如何映射到具体 Python 实现。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 

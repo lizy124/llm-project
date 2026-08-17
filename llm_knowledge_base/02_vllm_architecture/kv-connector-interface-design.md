@@ -11,7 +11,7 @@ related:
   - ascend-store-connector-role-split.md
   - ascend-store-connector-adapter.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # 为什么 vLLM 要求一个连接器接口同时实现 Scheduler 和 Worker 方法？
@@ -68,7 +68,7 @@ vLLM 采用统一 connector 接口后，用户只需要配置一个连接器名�
 
 AscendStoreConnector 正是这种接口设计下的实现。它对外满足 vLLM 的统一连接器接口，对内再分发给 KVPoolScheduler 或 KVPoolWorker。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 

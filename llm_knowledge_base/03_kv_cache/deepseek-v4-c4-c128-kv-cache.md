@@ -12,8 +12,8 @@ related:
   - hybrid-kv-cache.md
   - ../06_scheduler/kvpool-scheduler-vs-vllm-scheduler.md
 source:
-  - tmp_doc/documents/question/question.md
-  - tmp_doc/documents/pool/03_Scheduler端_调度决策.md
+  - research_workspace/documents/question/question.md
+  - research_workspace/documents/pool/03_Scheduler端_调度决策.md
 ---
 
 # DeepSeek V4 里的 c4 / c128 到底是什么意思？
@@ -98,7 +98,7 @@ c128:  1 个 cache block 对应 128 × 128 = 16384 tokens
 
 KV Pool 需要根据不同 KV cache group 的 cache family 推导保存、加载和传输粒度。对于 c128 这类压缩 group，一个 cache block 对应的原始 token 范围更大，因此会影响 `cache_transfer_granularity`。
 
-相关说明见 `tmp_doc/documents/pool/03_Scheduler端_调度决策.md`。
+相关说明见 `research_workspace/documents/pool/03_Scheduler端_调度决策.md`。
 
 ## 相关问题
 

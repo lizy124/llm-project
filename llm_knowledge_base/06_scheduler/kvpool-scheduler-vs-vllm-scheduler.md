@@ -11,8 +11,8 @@ related:
   - ../02_vllm_architecture/ascend-store-connector-role-split.md
   - ../04_kv_pool/README.md
 source:
-  - tmp_doc/documents/question/question.md
-  - tmp_doc/documents/pool/03_Scheduler端_调度决策.md
+  - research_workspace/documents/question/question.md
+  - research_workspace/documents/pool/03_Scheduler端_调度决策.md
 ---
 
 # Scheduler 端的调度是池化调度吗？它和 vLLM 调度是什么关系？
@@ -64,7 +64,7 @@ Worker 端执行 load/save
 
 ## 和当前项目的关系
 
-`tmp_doc/documents/pool/03_Scheduler端_调度决策.md` 讲的是 KV Pool Scheduler 侧逻辑。它描述的是外部 KV 池的查找、分配辅助和元数据构建，而不是 vLLM Scheduler 的完整调度算法。
+`research_workspace/documents/pool/03_Scheduler端_调度决策.md` 讲的是 KV Pool Scheduler 侧逻辑。它描述的是外部 KV 池的查找、分配辅助和元数据构建，而不是 vLLM Scheduler 的完整调度算法。
 
 ## 相关问题
 

@@ -11,7 +11,7 @@ related:
   - ascend-store-connector-adapter.md
   - kv-connector-interface-design.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # 为什么一个类 AscendStoreConnector 同时用于 Scheduler 和 Worker？
@@ -63,7 +63,7 @@ AscendStoreConnector
 
 当前项目中的 KV Pool 逻辑本身分为 Scheduler 侧和 Worker 侧：Scheduler 负责查找、分配辅助决策和元数据构建；Worker 负责实际加载、保存和查询外部 KV 池。AscendStoreConnector 用同一个配置入口把这两侧连接起来。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 

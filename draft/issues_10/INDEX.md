@@ -1,6 +1,6 @@
 # kv_pool 优化点 → 社区 Issue 草稿索引
 
-> 来源：原始 35 项候选及源码审核记录；历史草稿保存在相邻 `issues_10_backup` 目录
+> 来源：原始 35 项候选及源码审核记录；历史草稿可从 Git 历史追溯
 > 参考格式：vllm-ascend issue #13745 / #13746 / #13747（测试任务型 issue）
 > 目标仓库：`vllm-project/vllm-ascend`，代码路径 `vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store`
 > 审核基线：main @ `d5e9816065ede613327d93908f87fee9f5c47128`

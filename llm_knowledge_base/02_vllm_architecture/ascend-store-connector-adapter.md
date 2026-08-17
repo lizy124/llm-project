@@ -11,7 +11,7 @@ related:
   - ascend-store-connector-role-split.md
   - kv-connector-interface-design.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # 既然有 KVPoolScheduler 和 KVPoolWorker，为什么还需要 AscendStoreConnector？
@@ -60,7 +60,7 @@ KVPoolScheduler / KVPoolWorker：真正干活的内部电路
 
 当前项目分析的 Ascend KV Pool 需要接入 vLLM 的 KV connector 体系。`AscendStoreConnector` 是对外入口，`KVPoolScheduler` 和 `KVPoolWorker` 是内部实现分工。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 

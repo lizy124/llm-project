@@ -10,7 +10,7 @@ related:
   - deepseek-v4-c4-c128-kv-cache.md
   - ../06_scheduler/kvpool-scheduler-vs-vllm-scheduler.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # hybrid KV cache 是什么？它是一种 KV cache 吗？
@@ -78,7 +78,7 @@ KV group 2: c128  cache
 
 KV Pool 在处理外部 KV Cache 保存和加载时，需要知道当前是否是 hybrid KV cache。因为不同 group 的 block size、cache family 和传输粒度可能不同，会影响 lookup、load、save 和 metadata 构建。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 

@@ -10,7 +10,7 @@ related:
   - register-connector-parameters.md
   - ascend-store-connector-adapter.md
 source:
-  - tmp_doc/documents/question/question.md
+  - research_workspace/documents/question/question.md
 ---
 
 # 为什么需要 KV 连接器注册机制？
@@ -54,7 +54,7 @@ vLLM 上游：定义接口、注册表、加载流程
 
 当前项目分析的是 vllm-ascend 中 KV Pool / AscendStoreConnector 相关逻辑。AscendStoreConnector 作为下游实现，需要通过连接器注册机制接入 vLLM 的 KV transfer 框架。
 
-原始问题来自 `tmp_doc/documents/question/question.md`。
+原始问题来自 `research_workspace/documents/question/question.md`。
 
 ## 相关问题
 
