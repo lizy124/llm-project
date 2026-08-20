@@ -303,3 +303,58 @@ PR #13160 在 `c6f72551f` 上跑过相同的 smoke（results/20260818_024247）�
 - 服务器：`/home/lizhongyang/tmp/`
 
 脚本命名规范：`p0_*.sh`（阶段 0）至 `p5_*.sh`（阶段 5），每个脚本独立可执行。
+
+---
+
+## 六、独立严格复核补充
+
+### 6.1 复核结论
+
+本次复核结论为：**拆分策略有效，第一部分风险确实降低，但当前验证证据仍不足以支持无条件合入。建议结论为 `Needs changes` 或“有条件通过”，而不是直接宣称验证充分。**
+
+第一部分已经将 backend 生命周期、MLA 判定、scheduler 的 `exists` 调用入口以及 Memcache backend 初始化等高风险改动留在第二部分，降低了第一部分的模型特性耦合和评审范围。两部分叠加后与修复后的 `ascend-store-refactor` 文件树一致，这证明拆分没有改变最终代码树。
+
+但是，第一部分仍然改动 scheduler/worker 的 cache layout 计算、layerwise save/load block range、传输线程基类入口以及多个 metadata 和 request 状态对象。它不是纯粹的无行为变化清理，准确表述应为：
+
+> 仓库内受支持执行路径没有预期行为变化。
+
+不应表述为“没有任何行为或接口变化”。
+
+### 6.2 主要审核发现
+
+1. **验证报告与当前 PR HEAD 不一致。**
+
+   本地当前 `ascend-store-refactor-1` HEAD 为 `bf4ba195b`，而本报告前文以 `2ef35ee6c` 为 PR HEAD。当前分支相对 `main` 的实际统计为 `+973/-2922`，且包含后续测试删除和格式提交；前文记录的 `3 commits`、`+1029/-2942` 对应旧 HEAD。旧结果可以作为历史证据，但不能直接视为当前 HEAD 的完整验证报告。
+
+2. **现有 smoke 没有机器断言 KV 真正命中。**
+
+   `test.sh` 主要检查 HTTP 响应非空、服务日志中的宽泛关键词和错误字符串。它没有强制断言 backend 执行了 `put/get/exists`、第二次请求的命中 token 数大于零，或请求没有因 load 失败而走 recompute。当前配置还允许 `kv_load_failure_policy=recompute`，因此“请求成功”不能单独证明 KV save/load 通路正确。
+
+3. **真实环境覆盖仍集中在少数场景。**
+
+   已有证据覆盖 Qwen3-32B 的 Mooncake non-layerwise，以及报告中记录的 Memcache layerwise PDMix。hybrid、多 cache group、compress/cache family、Mamba、TP mismatch、PD 分离和 layerwise partial block 等路径主要依赖 mock UT，尚缺少相应真实环境验证或明确的支持范围声明。
+
+4. **第一部分包含可观察的内部接口变化。**
+
+   多个构造参数、属性、方法和 transfer-thread override 被删除或改变。仓库内调用点已同步，当前支持路径未发现遗漏，但 out-of-tree 调用者、反射和混合版本场景仍可能观察到差异。因此不能宣称 API 完全兼容。
+
+5. **静态检查和代码结构证据是充分的，但不能替代运行时验证。**
+
+   当前工作区已复核通过 `compileall`、`ruff check`、`git diff --check`，并确认第一/第二部分的祖先关系和最终 tree 等价性。这些结果支持拆分正确和代码可构建，但不覆盖真实 backend、NPU buffer 注册、异步线程完成/退出和数据正确性。
+
+### 6.3 合入前必须补充
+
+在第一部分正式合入前，建议完成以下事项：
+
+1. 将验证报告和结果更新到当前 PR HEAD，并记录精确 commit、脚本版本和结果 artifact。
+2. 将 Qwen3-32B Memcache layerwise 的启动/测试脚本和结果纳入可复现的验证范围，或提供固定路径和校验信息。
+3. 修改 smoke 为机器可判定的 KV 验证：明确检查 `put/get/exists`、命中 token 数、重复前缀的实际命中状态，并区分 recompute fallback 与真正 load 成功。
+4. 至少补充一个 hybrid/compressed/cache-family 真实场景；若第一部分明确不覆盖这些场景，应在 PR 描述中写明边界。
+5. 检查传输线程的完成、退出和后台异常，保留 save/load 的日志和数据正确性证据。
+6. 在 PR 描述中明确内部 API 清理，不再使用“所有接口和行为完全等价”的表述。
+
+### 6.4 最终判断
+
+**风险降低：是。** 第二部分的高风险 backend/MLA/执行入口已经被有效隔离，第一部分更适合独立评审。
+
+**验证是否充分：目前不是。** 第一部分的静态检查、单元测试和已有 Qwen3 smoke 足以说明“基本可运行且拆分逻辑成立”，但不足以证明所有受支持 KV Pool save/load 路径无回归，也不足以支撑无条件合入。完成本节补充项后，才可以将第一部分升级为“可独立合入”。
