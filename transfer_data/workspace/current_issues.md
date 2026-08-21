@@ -1,6 +1,6 @@
 # 池化与 PD 分离：用例覆盖分析与缺口
 
-> **概念区分参考：** [pd_vs_pool_concept.md](back_up/pd_vs_pool_concept.md) / 官方设计文档 [KV_Cache_Pool_Guide.md](../docs/source/developer_guide/Design_Documents/KV_Cache_Pool_Guide.md) / [disaggregated_prefill.md](../docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)
+> **概念区分参考：** [pd_vs_pool_concept.md](backup/pd_vs_pool_concept.md) / 官方设计文档 [KV_Cache_Pool_Guide.md](../../../code/vllm-ascend/docs/source/developer_guide/Design_Documents/KV_Cache_Pool_Guide.md) / [disaggregated_prefill.md](../../../code/vllm-ascend/docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)
 
 ## 核心区别
 
@@ -30,7 +30,7 @@
 | `LMCacheAscendConnector` | `LMCacheAscendConnector` | LMCache 后端 | `kv_both` | `lmcache_ascend` 库 |
 | `UCMConnector` | `UCMConnector` | UCM | `kv_both` | `ucm` 库 + UCM 服务 |
 
-> **`AscendStoreConnector` 还支持 Layerwise 模式**（`use_layerwise: true`），以逐层方式 save/load KV cache，减少首 token 延迟。当前仅支持 Memcache 后端。详见 [layerwise_kv_pool.md](../docs/source/user_guide/feature_guide/layerwise_kv_pool.md)。
+> **`AscendStoreConnector` 还支持 Layerwise 模式**（`use_layerwise: true`），以逐层方式 save/load KV cache，减少首 token 延迟。当前仅支持 Memcache 后端。详见 [layerwise_kv_pool.md](../../../code/vllm-ascend/docs/source/user_guide/feature_guide/layerwise_kv_pool.md)。
 
 ### 1.1 pull_request 测试
 
@@ -96,7 +96,7 @@
 | `MooncakeLayerwiseConnector` | **Push**（P 节点推送） | P 节点逐层算完 KV 后立即推送给 D 节点，D 节点逐层接收后开始 decode |
 | `MooncakeHybridConnector` | Pull + 混合 | 继承 V1，处理 MLA/Full Attention 混合模型（如 DeepSeek-V4） |
 
-> **PD 分离架构：** 全局 Proxy 接收外部请求，将 prefill 转发到 P 节点，decode 转发到 D 节点，KV cache 通过 P2P 在 P/D 节点间交换。详见 [disaggregated_prefill.md](../docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)。
+> **PD 分离架构：** 全局 Proxy 接收外部请求，将 prefill 转发到 P 节点，decode 转发到 D 节点，KV cache 通过 P2P 在 P/D 节点间交换。详见 [disaggregated_prefill.md](../../../code/vllm-ascend/docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)。
 
 ### 2.1 pull_request 测试
 

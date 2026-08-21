@@ -1,6 +1,6 @@
 # 待补充用例
 
-> 详细覆盖率分析见 [current_issues.md](current_issues.md)，概念区分见 [pd_vs_pool_concept.md](back_up/pd_vs_pool_concept.md)。
+> 详细覆盖率分析见 [current_issues.md](current_issues.md)，概念区分见 [pd_vs_pool_concept.md](backup/pd_vs_pool_concept.md)。
 
 ---
 

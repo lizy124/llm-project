@@ -1,6 +1,6 @@
 # PD 分离与池化：概念与代码层面的区分
 
-> **参考文档：** 官方设计文档 [KV_Cache_Pool_Guide.md](../docs/source/developer_guide/Design_Documents/KV_Cache_Pool_Guide.md) / [disaggregated_prefill.md](../docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)
+> **参考文档：** 官方设计文档 [KV_Cache_Pool_Guide.md](../../../../code/vllm-ascend/docs/source/developer_guide/Design_Documents/KV_Cache_Pool_Guide.md) / [disaggregated_prefill.md](../../../../code/vllm-ascend/docs/source/developer_guide/Design_Documents/disaggregated_prefill.md)
 
 ## 零、先搞清楚：Mooncake 是什么
 

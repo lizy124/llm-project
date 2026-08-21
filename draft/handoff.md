@@ -235,7 +235,7 @@ hit_tokens=0
 相关说明文档：
 
 ```text
-/home/lizhongyang/llm-project/draft/zmq_lookup_protocol_compatibility.md
+/home/lizhongyang/llm-project/draft/issues_14145/zmq_lookup_protocol_compatibility.md
 ```
 
 这份文档里有些表述偏重“混版本风险”，后续最好按上面的澄清修一下，避免把内部 IPC 风险写成普通外部 RPC 兼容风险。
@@ -379,13 +379,13 @@ lookup ZMQ 是 vLLM 内部 IPC 通道，标准部署中 scheduler/worker 同版�
 主要交接文档：
 
 ```text
-/home/lizhongyang/llm-project/draft/issue_14145_zmq_lookup_payload_omit_handoff.md
+/home/lizhongyang/llm-project/draft/issues_14145/issue_14145_zmq_lookup_payload_omit_handoff.md
 ```
 
 兼容性说明文档：
 
 ```text
-/home/lizhongyang/llm-project/draft/zmq_lookup_protocol_compatibility.md
+/home/lizhongyang/llm-project/draft/issues_14145/zmq_lookup_protocol_compatibility.md
 ```
 
 当前用户要求的新交接文档：

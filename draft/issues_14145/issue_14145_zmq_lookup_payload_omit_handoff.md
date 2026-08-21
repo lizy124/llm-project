@@ -128,7 +128,7 @@ vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/coordinator.py
 
 ### 4. 已推翻 strict_review.md 的一个 P1
 
-`draft/issue_14145_zmq_lookup_payload_omit_strict_review.md` 中曾认为：
+`draft/issues_14145/issue_14145_zmq_lookup_payload_omit_strict_review.md` 中曾认为：
 
 ```text
 fallback SUFFIX 路径会丢失 HBM 前缀命中，首个 suffix miss 返回 0
@@ -493,7 +493,7 @@ python -m vllm.entrypoints.openai.api_server \
 已有报告：
 
 ```text
-/home/lizhongyang/llm-project/draft/issue_14145_zmq_lookup_payload_omit_container_validation.md
+/home/lizhongyang/llm-project/draft/issues_14145/issue_14145_zmq_lookup_payload_omit_container_validation.md
 ```
 
 需要后续更新：

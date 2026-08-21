@@ -9,8 +9,10 @@
 - [process_data.md](process_data.md) - 关键过程数据、性能数值和 e2e 结果
 - [key_logs.md](key_logs.md) - 关键日志摘录
 - [analysis_conclusion.md](analysis_conclusion.md) - 结果分析和最终结论
-- [benchmark_zmq_lookup_payload.py](benchmark_zmq_lookup_payload.py) - 协议级对比脚本
-- [e2e_ascend_store_suffix_lookup_probe.py](e2e_ascend_store_suffix_lookup_probe.py) - 端到端探针脚本
+- `benchmark_zmq_lookup_payload.py` - 协议级对比脚本（位于外部验证工作树）
+- `e2e_ascend_store_suffix_lookup_probe.py` - 端到端探针脚本（位于外部验证工作树）
+
+脚本不随本目录提交；具体工作树位置和启动命令见 [launch_scripts.md](launch_scripts.md)。
 
 ## 一句话结论
 

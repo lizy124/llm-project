@@ -534,7 +534,7 @@ Issue 要求 16K/64K prompt 的：
 
 知识库中已有：
 
-    draft/issue_14145_zmq_lookup_payload_omit_strict_review.md
+    draft/issues_14145/issue_14145_zmq_lookup_payload_omit_strict_review.md
 
 该报告对当时审查的 4 个提交给出 REQUEST CHANGES，重点指出 wire 兼容、性能交付件、协议测试和提交规范等问题。阅读当前源代码时应注意：lookup_scheduler() 当前已经包含“空 key 保留 HBM 命中”和在 group_hits 中插入 HBM 边界的逻辑，说明代码在审查过程中有演进。无论如何，静态代码和 mock 单测都不能替代真实端到端验证。
 

@@ -6,7 +6,7 @@
 
 重点要求：回答每个问题时，必须优先参考 `llm-project/research_workspace/documents/question` 中已经梳理好的文档，并结合 vLLM 代码仓源码证据，例如 `D:/lzy/project/kv_pool/code/vllm`。
 
-目录要求：答案集合统一放在 `llm-project/research_workspace/documents/overview/answer_set`，问题集合统一放在 `D:/lzy/project/kv_pool/llm-project/research_workspace/documents/overview/question_set`，后续问题和答案全部按规范整理到这两个文件夹里。
+目录要求：答案集合统一放在 `llm-project/research_workspace/documents/overview/answer_set`，问题集合统一放在 `llm-project/research_workspace/documents/overview/question_set`，后续问题和答案全部按规范整理到这两个文件夹里。
 
 ---
 
@@ -24,7 +24,7 @@
 ```text
 research_workspace/documents/overview/
   llm_inference_question_set.md          # 问题集索引
-  answers/                               # 每个问题的详细答案
+  answer_set/                            # 每个问题的详细答案
     001-vllm-core-positioning.md
     002-vllm-request-lifecycle.md
     003-enginecore-step-flow.md
@@ -33,7 +33,7 @@ research_workspace/documents/overview/
 如果某个模块问题很多，可以继续按模块拆分：
 
 ```text
-answers/
+answer_set/
   engine/
   engine_core/
   scheduler/
@@ -57,7 +57,7 @@ answers/
 - [ ] Q001：vLLM 的核心定位是什么？它主要解决 LLM serving 中哪些问题？
   - 模块：vLLM 总览
   - 优先级：P0
-  - 答案：[001-vllm-core-positioning.md](answers/001-vllm-core-positioning.md)
+  - 答案：[001-vllm-core-positioning.md](answer_set/001-vllm-core-positioning.md)
   - 来源：llm_inference_question_driven_learning_path.md:303
 ```
 

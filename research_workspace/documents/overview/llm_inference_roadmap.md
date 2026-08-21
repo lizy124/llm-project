@@ -395,7 +395,7 @@
 
 参考资料：
 
-- `research_workspace/structure_analysis/vllm_distributed_communication/00_README.md`
+- `research_workspace/structure_analysis/vllm_distributed_communication/README.md`
 - `research_workspace/structure_analysis/vllm_distributed_communication/02_parallel_config_and_topology.md`
 - `research_workspace/structure_analysis/vllm_distributed_communication/04_process_groups_and_collectives.md`
 - `research_workspace/structure_analysis/vllm_distributed_communication/05_runtime_parallel_flows.md`
@@ -906,7 +906,7 @@
 7. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/04_Attention层核心实现.md`
 8. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/08_CUDA_csrc_kernel调用链与调试地图.md`
 9. `research_workspace/structure_analysis/vllm_native_acceleration_layer/04_CUDA核心算子_Attention与KVCache.md`
-10. `research_workspace/structure_analysis/vllm_distributed_communication/00_README.md`
+10. `research_workspace/structure_analysis/vllm_distributed_communication/README.md`
 
 ### KV Pool / PD 分离主线
 

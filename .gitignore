@@ -7,3 +7,14 @@ mooncake_master.log
 # Python cache
 __pycache__/
 *.py[cod]
+
+# Generated validation output
+transfer_data/**/results/
+transfer_data/**/runs/
+transfer_data/**/*.log
+transfer_data/**/*.pid
+transfer_data/**/latest
+
+# Local scratch files
+*.tmp
+*.swp

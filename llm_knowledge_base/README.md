@@ -17,16 +17,15 @@ llm_knowledge_base/
 ├── README.md
 ├── _index.md
 ├── _taxonomy.md
-├── 01_llm_foundation/
 ├── 02_vllm_architecture/
 ├── 03_kv_cache/
 ├── 04_kv_pool/
-├── 05_parallelism/
 ├── 06_scheduler/
-├── 07_ascend/
-├── 08_code_reading/
 └── 99_inbox/
 ```
+
+`01_llm_foundation/`、`05_parallelism/`、`07_ascend/` 和 `08_code_reading/`
+目前只有分类规划，待有足够条目时再创建，避免维护空目录。
 
 ## 记录规则
 
