@@ -11,7 +11,6 @@ This scenario verifies that a single vLLM service can act as both Prefill and De
 - Scenario rules: `/home/lizhongyang/llm-project/transfer_data/refactor/kvpool/pr_13160/README.md`
 - Qwen3 Dense official deployment doc: `/home/lizhongyang/docs/source/tutorials/models/Qwen3-Dense.md`
 - KV Pool official deployment doc: `/home/lizhongyang/docs/source/user_guide/feature_guide/kv_pool.md`
-- Reference-only external validation note: `/home/lizhongyang/llm-project/transfer_data/refactor/kvpool/tmp/test.md`
 
 ## Model
 

@@ -26,7 +26,7 @@ https://github.com/ChenZhuo888/vllm-ascend/tree/test/zmq-lookup-payload-omit
 关键结论：
 
 1. 这 4 个提交的核心代码路径在当前容器中可以通过现有单元测试和静态检查。
-2. `strict_review.md` 中的 P1-1 “fallback SUFFIX 首个 suffix miss 会丢失 HBM 前缀并返回 0”不成立，已被代码和测试结果推翻。
+2. 早期严格审查中的 P1-1 “fallback SUFFIX 首个 suffix miss 会丢失 HBM 前缀并返回 0”不成立，已被代码和测试结果推翻。
 3. 新增 ZMQ mode frame 是真实协议变更，新协议同版本 round-trip 可用。
 4. 当前实现没有旧协议兼容回退，旧格式 request 发给新 server 时不能得到正常响应。
 5. 容器内协议级 benchmark 显示，SUFFIX 能显著减少 lookup payload bytes，并降低本机 ZMQ round-trip latency。
@@ -294,9 +294,9 @@ vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py:2248
 
 ## 四、争议点复核
 
-### 1. strict_review.md 的 P1-1 不成立
+### 1. 早期严格审查中的 P1-1 不成立
 
-`strict_review.md` 曾判断：
+早期严格审查曾判断：
 
 ```text
 fallback SUFFIX 路径会丢失 HBM 前缀命中，首个 suffix miss 返回 0

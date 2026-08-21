@@ -15,19 +15,16 @@
 ```text
 pr_13160/
 ├── dsv4/
-│   ├── pdmix_non_layerwise/
-│   ├── pdmix_layerwise/
-│   ├── pd_non_layerwise/
-│   ├── pd_layerwise/
-│   └── pd_layerwise_offload/
+│   └── pdmix_layerwise/
 ├── qwen3_5/
 │   └── pdmix_non_layerwise/
 ├── glm5_2/
 │   └── pdmix_non_layerwise/
 ├── qwen3_32b/
 │   └── pdmix_non_layerwise/
-└── pooling/
-    └── dram_ssd/
+└── qwen3_32b/
+    ├── pdmix_non_layerwise/
+    └── pdmix_layerwise/
 ```
 
 目录名称中的含义：
@@ -36,8 +33,7 @@ pr_13160/
 - `pd`：Prefill 和 Decode 分离部署。
 - `non_layerwise`：使用普通 KV Pool save/load 通路。
 - `layerwise`：使用逐层 KV save/load 通路。
-- `layerwise_offload`：验证 layerwise buffer reuse/offload 配置，不等同于 DRAM 到 SSD 的存储分层。
-- `dram_ssd`：验证池化系统的 DRAM、SSD 写入、读取和分层存储通路。
+- `layerwise_offload` 和 `dram_ssd`：尚未形成可运行场景，暂不在目录中保留空壳。
 
 ## 场景文件
 
@@ -112,11 +108,11 @@ test.sh
 
 模型启动参数、功能开关和支持范围必须以 `code/vllm-ascend` 中 PR #13160 对应分支的源码和正式 `docs` 为依据，不使用个人知识库或历史测试记录作为最终能力判断。
 
-当前正式 layerwise 文档声明 hybrid KV cache 不受支持，而 DSV4 属于 hybrid KV cache 模型。因此，DSV4 的 `pdmix_layerwise`、`pd_layerwise` 和 `pd_layerwise_offload` 场景在编写为正向测试前，需要先确认 PR #13160 是否明确新增了该能力，或者正式文档是否需要同步更新。
+当前正式 layerwise 文档声明 hybrid KV cache 不受支持，而 DSV4 属于 hybrid KV cache 模型。因此，DSV4 的 `pdmix_layerwise` 场景在编写为正向测试前，需要先确认 PR #13160 是否明确新增了该能力，或者正式文档是否需要同步更新。
 
 ## 当前阶段
 
-当前先建立测试目录和场景文件规范。后续逐个场景补充：
+当前保留已具备实际脚本的场景；未开始的 TODO 空壳目录已删除，后续只有在具备启动和验证步骤时才新建场景：
 
 1. 经过实际环境验证的服务启动脚本。
 2. 能够机器判定结果的测试脚本。

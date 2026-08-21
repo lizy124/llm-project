@@ -126,9 +126,9 @@ vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/coordinator.py
 6. worker fallback 在 `SUFFIX + hbm_hit_tokens > 0` 时会先插入 HBM 边界，再判断 `group_hits` 是否为空。
 7. coordinator 路径使用 `HBMCachedBlockHashList` 表示 HBM prefix marker，保留逻辑 block index。
 
-### 4. 已推翻 strict_review.md 的一个 P1
+### 4. 已推翻早期严格审查中的一个 P1
 
-`draft/issues_14145/issue_14145_zmq_lookup_payload_omit_strict_review.md` 中曾认为：
+早期严格审查曾认为：
 
 ```text
 fallback SUFFIX 路径会丢失 HBM 前缀命中，首个 suffix miss 返回 0

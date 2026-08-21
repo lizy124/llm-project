@@ -7,7 +7,7 @@
 > 验收人：@赵鹏博
 > 关联任务池：[#9079 [Contribution] vLLM-Ascend 外部开发者任务池](https://github.com/vllm-project/vllm-ascend/issues/9079)
 > 发布日期：2026-08-11
-> 说明：原有 35 个候选 issue；经源码审核、任务合并和二次优先级筛选，最终形成以下 10 个发布候选。历史筛选记录见 [check.md](check.md)，当前代码严格复核见 [CODE_AUDIT.md](CODE_AUDIT.md)，开发价值与实施顺序见 [VALUE_RANKING.md](VALUE_RANKING.md)，最终优选任务见 [TOP5.md](TOP5.md)。
+> 说明：原有 35 个候选 issue；经源码审核、任务合并和二次优先级筛选，最终形成以下 10 个发布候选。历史筛选记录见 [check.md](check.md)，当前代码严格复核见 [CODE_AUDIT.md](CODE_AUDIT.md)，开发价值与实施顺序见 [VALUE_RANKING.md](VALUE_RANKING.md)，当前优先发布稿见 [TOP3.md](TOP3.md)。
 
 ## 最终筛选规则
 
