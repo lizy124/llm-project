@@ -1,4 +1,0 @@
-{"case": "kvpool_both_stream", "index": 1, "status": null, "elapsed_sec": 0.0028338998090475798, "error": "URLError(ConnectionRefusedError(111, 'Connection refused'))", "text": ""}
-{"case": "kvpool_both_stream", "index": 2, "status": null, "elapsed_sec": 0.00016878987662494183, "error": "URLError(ConnectionRefusedError(111, 'Connection refused'))", "text": ""}
-{"case": "kvpool_both_stream", "index": 3, "status": null, "elapsed_sec": 0.00010977988131344318, "error": "URLError(ConnectionRefusedError(111, 'Connection refused'))", "text": ""}
-{"case": "kvpool_both_stream", "index": 4, "status": null, "elapsed_sec": 9.79399774223566e-05, "error": "URLError(ConnectionRefusedError(111, 'Connection refused'))", "text": ""}

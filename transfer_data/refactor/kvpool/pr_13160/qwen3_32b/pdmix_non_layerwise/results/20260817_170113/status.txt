@@ -1,2 +1,0 @@
-RUNNING: starting service
-FAIL: server process exited before readiness

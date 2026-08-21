@@ -1,2 +1,0 @@
-RUNNING: Qwen3-32B PDMix layerwise (memcache) KV Pool validation
-PASS: Qwen3-32B PDMix layerwise (memcache) KV Pool smoke and repeated-prefix validation passed

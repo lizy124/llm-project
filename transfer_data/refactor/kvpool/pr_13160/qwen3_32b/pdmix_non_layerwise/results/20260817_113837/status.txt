@@ -1,1 +1,0 @@
-BLOCKED: Memcache env not found: /usr/local/memcache_hybrid/set_env.sh
