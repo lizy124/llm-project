@@ -1,0 +1,6 @@
+models endpoint ok
+smoke request ok
+first repeated-prefix request ok elapsed=2.11s
+second repeated-prefix request ok elapsed=1.75s
+usage1 {"prompt_tokens": 3458, "total_tokens": 3474, "completion_tokens": 16, "prompt_tokens_details": null}
+usage2 {"prompt_tokens": 3458, "total_tokens": 3474, "completion_tokens": 16, "prompt_tokens_details": null}

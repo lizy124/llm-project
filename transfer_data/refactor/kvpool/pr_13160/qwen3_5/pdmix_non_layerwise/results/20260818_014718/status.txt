@@ -1,0 +1,1 @@
+BLOCKED: official Qwen3.5-397B BF16 doc requires about 32 A3/A2 cards, visible devices=16

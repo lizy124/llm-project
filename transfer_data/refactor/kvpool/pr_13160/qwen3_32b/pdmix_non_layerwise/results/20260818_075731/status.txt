@@ -1,0 +1,2 @@
+RUNNING: starting service
+PASS: service ready at http://127.0.0.1:8004

@@ -1,0 +1,2 @@
+RUNNING: starting service
+BLOCKED: server exited before readiness because KV backend service/configuration was unavailable

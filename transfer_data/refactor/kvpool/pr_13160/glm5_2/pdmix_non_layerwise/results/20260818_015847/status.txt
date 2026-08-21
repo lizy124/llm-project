@@ -1,0 +1,2 @@
+RUNNING: starting GLM-5.2 W4A8 PDMix non-layerwise KV Pool service
+BLOCKED: server exited before readiness because KV backend or GLM-5.2 runtime resources were unavailable
