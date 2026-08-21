@@ -111,9 +111,12 @@ preferred_auth_method = "apikey"
 name = "univibe"
 base_url = "https://api.univibe.cc/openai"
 wire_api = "responses"
+experimental_bearer_token = "<YOUR_UNIVIBE_API_KEY>"
 ```
 
-说明：用户提供的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` 是 Anthropic 接口环境变量；本次按 Codex 文档配置的是 OpenAI 兼容接口，因此 Codex 使用 `OPENAI_API_KEY` 和 `https://api.univibe.cc/openai`。
+说明：
+- 用户提供的 `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` 是 Anthropic 接口环境变量；本次按 Codex 文档配置的是 OpenAI 兼容接口，因此 Codex 使用 `OPENAI_API_KEY` 和 `https://api.univibe.cc/openai`。
+- `experimental_bearer_token` 字段用于在新版本 Codex（>=0.149）中直接把 Key 随请求一起作为 `Authorization: Bearer ...` 头发送。仅依赖 `auth.json` 在新版下会出现 `auth.header_attached=false`、返回 401 的情况。`auth.json` 仍需保留（用于工具内部状态），但 provider block 中的 `experimental_bearer_token` 才是真正随请求发出的 Key。
 
 ## 7. 验证安装
 
