@@ -110,7 +110,7 @@ SchedulerOutput
 - `Scheduler.add_request()`：接收新请求或 streaming 后续 chunk；
 - `Scheduler.schedule()`：生成一轮 `SchedulerOutput`；
 - `Scheduler.update_from_output()`：消费 worker 返回结果并更新状态；
-- `Scheduler.free_request()`：结束请求并处理资源释放；
+- `Scheduler.finish_requests()` / `Scheduler._free_request()`：结束请求并处理资源释放；
 - `_update_after_schedule()`：提交本轮调度后的请求进度和异步账本；
 - `_connector_finished()`：处理请求结束时的 KV connector 收尾；
 - `_drain_deferred_frees()`：回收因异步传输而延迟释放的 block。
@@ -301,10 +301,10 @@ Worker 根据 `SchedulerOutput`：
 7. 判断 stop、abort、长度上限和异常；
 8. 对未结束请求保留 running 状态，对结束请求调用资源释放逻辑。
 
-### 6.5 请求结束：`free_request()`
+### 6.5 请求结束：`finish_requests()` 与 `_free_request()`
 
 源码文件：`vllm/v1/core/sched/scheduler.py`  
-核心符号：`Scheduler.free_request()`、`Scheduler._connector_finished()`
+核心符号：`Scheduler.finish_requests()`、`Scheduler._free_request()`、`Scheduler._connector_finished()`
 
 结束请求时需要协调：
 
@@ -645,7 +645,7 @@ add_request()
   -> Worker / ModelRunner
   -> ModelRunnerOutput
   -> update_from_output()
-  -> stop / continue / retry / free_request()
+  -> stop / continue / retry / finish_requests() / _free_request()
 ```
 
 只要沿着这条链路，再用 `Request`、`SchedulerOutput` 和 KV block 这三个对象对账，就能理解大多数 Scheduler 行为，而不需要依赖会漂移的行号。

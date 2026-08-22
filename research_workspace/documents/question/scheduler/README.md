@@ -1,6 +1,6 @@
 # vLLM V1 Scheduler 问题目录
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码位置：`vllm/v1/core/sched/scheduler.py`
 
 这个目录按问题拆解 vLLM V1 `Scheduler` 的主流程。建议先读总览，再按 `01` 到 `08` 顺序读专题；遇到 speculative decoding 相关概念时，再读补充专题。
 
