@@ -8,9 +8,12 @@
 
 ## 1. 总览文档
 
+- [Scheduler 总览：文件路径、符号、职责与完整生命周期](scheduler_overview.md)
 - [vLLM V1 Scheduler 逻辑梳理](vllm_scheduler.md)
 
-适合第一次建立全局印象。它按源码主链路梳理：
+建议先读 `scheduler_overview.md`，建立组件边界、状态机和阅读方法；再读 `vllm_scheduler.md`，沿源码主链路查看更细的实现说明。两份文档都使用文件路径和符号名定位源码，不把行号作为稳定引用。
+
+两份总览文档共同覆盖这条主链路：
 
 ```text
 add_request
