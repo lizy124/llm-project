@@ -1,6 +1,6 @@
 # vLLM V1 Scheduler 问题目录
 
-源码位置：`vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这个目录按问题拆解 vLLM V1 `Scheduler` 的主流程。建议先读总览，再按 `01` 到 `08` 顺序读专题；遇到 speculative decoding 相关概念时，再读补充专题。
 
@@ -22,7 +22,7 @@ add_request
   → SchedulerOutput
   → ModelRunner forward
   → update_from_output()
-  → stop / free / connector cleanup
+  → stop / finish_requests() / _free_request() / connector cleanup
 ```
 
 如果只想快速了解 Scheduler 做什么，先读这篇。
@@ -159,6 +159,7 @@ num_tokens
 num_computed_tokens
 num_tokens_with_spec
 num_output_placeholders
+num_stale_output_tokens / drop_stale_output
 num_scheduled_tokens
 WAITING / RUNNING / PREEMPTED / blocked / finished
 ```
@@ -177,6 +178,7 @@ num_tokens_with_spec
 spec_token_ids
 scheduled_spec_decode_tokens
 num_output_placeholders
+num_stale_output_tokens / drop_stale_output
 num_computed_tokens
 num_scheduled_tokens
 accepted draft tokens

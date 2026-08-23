@@ -2,7 +2,7 @@
 
 源码仓库：vLLM
 
-源码路径均相对于 vLLM 仓库根目录；如果本地源码放在 `code/vllm/` 下，实际路径前面加上 `code/vllm/` 即可。本文只使用文件路径和符号名定位源码，不依赖行号。
+源码路径均相对于 vLLM 仓库根目录。本文只使用文件路径和符号名定位源码，不依赖行号。
 
 核心源码文件：
 
@@ -130,6 +130,7 @@ SchedulerOutput
 - `num_in_flight_tokens`：已经发出但尚未由 Scheduler 回收的计算量；
 - `num_output_placeholders`：异步执行中尚未写回的输出位置；
 - `spec_token_ids`：待验证的 draft token；
+- `num_stale_output_tokens` / `drop_stale_output`：preempt 后仍在途的旧输出及其交付/丢弃策略；
 - `block_hashes`、KV transfer 参数和多模态特征。
 
 ### 3.3 调度接口和输出
@@ -328,13 +329,21 @@ Request finished
 预算来自调度配置、模型上下文上限、当前 running 数量和并行/异步约束。常见限制包括：
 
 - `max_num_scheduled_tokens`：本轮最多安排的 token 数；
+- `max_num_batched_tokens`：模型输入总预算；每个请求还要为 `draft_slots` 预留 speculative drafter 输入位置；
 - `max_num_running_reqs`：同时运行的请求数；
 - `max_model_len`：单请求最大上下文长度；
 - encoder compute budget；
 - speculative decoding 的 lookahead token；
 - pipeline parallel 或 async scheduling 的额外占位。
 
-预算不是简单的请求数限制。一个请求可能消耗多个 token 预算，也可能因为 prefix cache 命中而减少本轮真正需要计算的 token。
+预算不是简单的请求数限制。一个请求可能消耗多个 token 预算，也可能因为 prefix cache 命中而减少本轮真正需要计算的 token。实际单请求计算上限还要同时受：
+
+```text
+min(token_budget, input_budget - draft_slots)
+```
+
+成功调度后，`token_budget` 扣除 `num_new_tokens`，`input_budget` 扣除
+`num_new_tokens + draft_slots`。
 
 ### 7.2 第二步：优先推进 running
 
@@ -539,12 +548,12 @@ PP cadence、DP prefill balancing 和 async scheduling 会引入额外的 in-fli
 
 1. 一个 request id 在 `requests` 中最多对应一个 `Request` 对象；
 2. waiting、skipped_waiting、running 之间的归属必须明确，不能同时出现在互斥队列中；
-3. `num_scheduled_tokens` 不能超过本轮 token budget；
+3. `num_scheduled_tokens` 的总和不能超过本轮 `token_budget`，并且输入预算要覆盖每个请求的 `num_new_tokens + draft_slots`；
 4. `num_computed_tokens` 的推进必须与本轮调度记录一致；
 5. Worker 回收必须能用 `SchedulerOutput` 对上本轮请求和 token 数；
 6. 被抢占请求不能丢失真实 token 和必要的 KV 状态；
 7. 远端 KV 未完成接收时，相关 block 不能被当作普通可复用 block；
-8. 延迟释放的 block 必须等到 KV/encoder consumer 完成后才能回到 free list；
+8. 延迟释放的 block 必须等到 KV/encoder consumer 完成后才能回到 free list；deferred free 只延迟 block 归还，不延迟 `_free_blocks()` 对请求索引的删除；
 9. 请求结束后，encoder cache、KV block、connector 状态和请求总表最终都要收敛；
 10. spec decode 的 draft token、已接受 token、替代 token 和真实 token 计数不能混用。
 

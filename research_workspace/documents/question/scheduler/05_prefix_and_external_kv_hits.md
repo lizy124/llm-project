@@ -1,6 +1,6 @@
 # 05. prefix cache / 外部 KV cache 命中了多少 token？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在把 waiting 请求调度进 running 之前，如何判断本地 prefix cache 命中了多少 token、外部 KV cache 又额外命中了多少 token，以及这些命中结果如何影响本轮要计算的 `num_new_tokens`、KV block 分配和 KV Connector metadata。
 
@@ -33,7 +33,7 @@ prefix cache / 外部 KV cache 命中逻辑发生在 waiting 请求调度阶段�
 if request.num_computed_tokens == 0:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:724`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 也就是说，只有请求还没有任何已计算进度时，Scheduler 才会执行这一轮本地 prefix cache 和外部 KV cache 查询。
 
@@ -54,7 +54,7 @@ waiting request
 核心源码是：
 
 ```python
-new_computed_blocks, num_new_local_computed_tokens = (
+new_computed_blocks, num_new_local_computed_tokens, shared_prefix_boundary = (
     self.kv_cache_manager.get_computed_blocks(request)
 )
 
@@ -69,7 +69,6 @@ num_computed_tokens = (
 )
 ```
 
-位置：`scheduler.py:761`、`scheduler.py:775`、`scheduler.py:797`
 
 最终效果是：
 
@@ -90,14 +89,13 @@ request.num_tokens_with_spec + request.num_output_placeholders - request.num_com
 
 而 prefix cache / external KV cache 查询主要发生在 waiting 请求第一次进入 running 之前。
 
-源码位置在 waiting 调度阶段：
+对应 `Scheduler.schedule()` 的 waiting 调度阶段：
 
 ```python
 # Get already-cached tokens.
 if request.num_computed_tokens == 0:
 ```
 
-位置：`scheduler.py:723`
 
 这里的含义是：
 
@@ -118,7 +116,6 @@ else:
     num_computed_tokens = request.num_computed_tokens
 ```
 
-位置：`scheduler.py:823`
 
 也就是说：
 
@@ -137,27 +134,27 @@ request.num_computed_tokens > 0：
 普通本地 prefix cache 查询是：
 
 ```python
-new_computed_blocks, num_new_local_computed_tokens = (
+new_computed_blocks, num_new_local_computed_tokens, shared_prefix_boundary = (
     self.kv_cache_manager.get_computed_blocks(request)
 )
 ```
 
-位置：`scheduler.py:761`
 
-`KVCacheManager.get_computed_blocks()` 的定义是：
+`KVCacheManager.get_computed_blocks()` 当前返回三个值：
 
 ```python
-def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
+def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int, int]:
 ```
 
-位置：`vllm/vllm/v1/core/kv_cache_manager.py:207`
+源码文件：`vllm/v1/core/kv_cache_manager.py`
 
-它返回两个东西：
+它返回三个值：
 
 | 返回值 | 含义 |
 |---|---|
 | `new_computed_blocks` | 本地 prefix cache 命中的 KV blocks |
 | `num_new_local_computed_tokens` | 本地 prefix cache 命中的 token 数 |
+| `shared_prefix_boundary` | 稀疏保留组（如 Mamba/SWA）需要保留的共享前缀边界；普通模型通常为 0 |
 
 函数注释说：
 
@@ -165,9 +162,9 @@ def get_computed_blocks(self, request: Request) -> tuple[KVCacheBlocks, int]:
 # A tuple containing:
 # - A list of blocks that are computed for the request.
 # - The number of computed tokens.
+# - The shared prefix boundary for sparse KV groups.
 ```
 
-位置：`kv_cache_manager.py:215`
 
 因此，本地 prefix cache 的回答是：
 
@@ -186,7 +183,6 @@ if not self.enable_caching or request.skip_reading_prefix_cache:
     return self.empty_kv_cache_blocks, 0
 ```
 
-位置：`kv_cache_manager.py:223`
 
 也就是说，以下情况本地 prefix cache 命中直接为 0：
 
@@ -202,7 +198,6 @@ if not self.enable_caching or request.skip_reading_prefix_cache:
 # or calls a pooling model with all pooling
 ```
 
-位置：`kv_cache_manager.py:221`
 
 所以即使 KV Cache 里可能存在相同前缀，如果该请求不能读 prefix cache，也会返回：
 
@@ -221,7 +216,6 @@ num_new_local_computed_tokens = 0
 max_cache_hit_length = request.num_tokens - 1
 ```
 
-位置：`kv_cache_manager.py:232`
 
 注释解释：
 
@@ -230,7 +224,6 @@ max_cache_hit_length = request.num_tokens - 1
 # to obtain logits. Thus, set max_cache_hit_length to prompt_length - 1.
 ```
 
-位置：`kv_cache_manager.py:226`
 
 意思是：
 
@@ -274,7 +267,6 @@ computed_blocks, num_new_computed_tokens = (
 )
 ```
 
-位置：`kv_cache_manager.py:233`
 
 这里的输入是：
 
@@ -307,7 +299,6 @@ if self.log_stats:
     )
 ```
 
-位置：`kv_cache_manager.py:259`
 
 Scheduler 侧在 hybrid 特殊路径中也会记录类似统计：
 
@@ -319,7 +310,6 @@ self.kv_cache_manager.prefix_cache_stats.record(
 )
 ```
 
-位置：`scheduler.py:753`
 
 这里统计的是：
 
@@ -365,7 +355,6 @@ if (
     )
 ```
 
-位置：`scheduler.py:726`
 
 这个路径用于 Hybrid + Mamba 模型，并且配置了 KV Connector 的场景。
 
@@ -381,7 +370,6 @@ computed, per_group_hits
 num_new_local_computed_tokens = max(per_group_hits)
 ```
 
-位置：`scheduler.py:752`
 
 源码注释解释：
 
@@ -393,7 +381,6 @@ num_new_local_computed_tokens = max(per_group_hits)
 # external = total - local_computed.
 ```
 
-位置：`scheduler.py:743`
 
 这里的关键点是：
 
@@ -422,7 +409,6 @@ if self.has_mamba_layers:
     )
 ```
 
-位置：`scheduler.py:766`
 
 这个值后续传给：
 
@@ -430,7 +416,6 @@ if self.has_mamba_layers:
 self._mamba_block_aligned_split(..., num_uncached_common_prefix_tokens)
 ```
 
-位置：`scheduler.py:904`
 
 它不是外部 KV 命中数，而是 Mamba / Marconi-style APC 逻辑使用的提示：
 
@@ -457,7 +442,6 @@ if self.connector is not None:
     )
 ```
 
-位置：`scheduler.py:774`
 
 这个接口返回两个值：
 
@@ -491,7 +475,6 @@ Scheduler 拿到 connector 返回值后：
 num_external_computed_tokens = ext_tokens
 ```
 
-位置：`scheduler.py:789`
 
 之后合并：
 
@@ -501,7 +484,6 @@ num_computed_tokens = (
 )
 ```
 
-位置：`scheduler.py:797`
 
 这里把外部 KV cache 命中的 token 也叫 computed tokens，因为从 Scheduler 的角度看：
 
@@ -538,7 +520,6 @@ if ext_tokens is None:
     continue
 ```
 
-位置：`scheduler.py:781`
 
 源码注释说：
 
@@ -547,7 +528,6 @@ if ext_tokens is None:
 # the number of matched tokens.
 ```
 
-位置：`scheduler.py:782`
 
 含义：
 
@@ -578,7 +558,6 @@ connector_prefix_cache_queries = (
 connector_prefix_cache_hits = num_external_computed_tokens
 ```
 
-位置：`scheduler.py:791`
 
 含义：
 
@@ -597,7 +576,6 @@ self.connector_prefix_cache_stats.record(
 )
 ```
 
-位置：`scheduler.py:979`
 
 这说明外部 KV cache 的统计是在：
 
@@ -654,7 +632,6 @@ num_new_tokens = 10000 - 8000 = 2000
 assert num_computed_tokens <= request.num_tokens
 ```
 
-位置：`scheduler.py:800`
 
 这保证：
 
@@ -691,7 +668,6 @@ if request.prefill_stats is not None:
     )
 ```
 
-位置：`scheduler.py:814`
 
 这说明 Scheduler 会把三类信息记录到请求统计里：
 
@@ -707,7 +683,6 @@ prompt 总 token 数；
 # Track first scheduled prefill, not post-preemption repeat prefills
 ```
 
-位置：`scheduler.py:814`
 
 也就是说，这里的 prefill stats 更关注第一次进入 prefill 时的 cache 命中，而不是每次被抢占后重复 prefill 的命中。
 
@@ -721,7 +696,6 @@ prompt 总 token 数；
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`scheduler.py:847`
 
 所以：
 
@@ -771,7 +745,6 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:834`
 
 含义：
 
@@ -791,7 +764,6 @@ if load_kv_async:
 delay_cache_blocks=load_kv_async
 ```
 
-位置：`scheduler.py:949`
 
 表示：
 
@@ -815,7 +787,6 @@ if load_kv_async:
     continue
 ```
 
-位置：`scheduler.py:985`
 
 也就是说：
 
@@ -847,7 +818,6 @@ Worker 完成加载后，会在后续输出中报告 `finished_recving`，Schedu
 _update_waiting_for_remote_kv(request)
 ```
 
-位置：`scheduler.py:2492`
 
 这个函数里会真正 cache blocks：
 
@@ -855,7 +825,6 @@ _update_waiting_for_remote_kv(request)
 self.kv_cache_manager.cache_blocks(request, request.num_computed_tokens)
 ```
 
-位置：`scheduler.py:2517`
 
 如果完整 prompt 都从远端命中，还要回退一个 token：
 
@@ -864,7 +833,6 @@ if request.num_computed_tokens == request.num_tokens:
     request.num_computed_tokens = request.num_tokens - 1
 ```
 
-位置：`scheduler.py:2521`
 
 原因和本地 full prefix hit 一样：
 
@@ -896,7 +864,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:942`
 
 这些参数的含义是：
 
@@ -934,7 +901,7 @@ def allocate_new_computed_blocks(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/core/kv_cache_coordinator.py:192`
+源码文件：`vllm/v1/core/kv_cache_coordinator.py`
 
 这个函数会先处理本地 cache-hit blocks：
 
@@ -942,7 +909,7 @@ def allocate_new_computed_blocks(
 manager.add_local_computed_blocks(...)
 ```
 
-位置：`kv_cache_coordinator.py:223`
+对应实现：`KVCacheCoordinator`
 
 如果外部命中数大于 0，再分配外部 computed tokens 对应的 blocks：
 
@@ -952,7 +919,7 @@ if num_external_computed_tokens > 0:
         manager.allocate_external_computed_blocks(...)
 ```
 
-位置：`kv_cache_coordinator.py:230`
+对应实现：`KVCacheCoordinator`
 
 注释说明这是 two-phase allocation：
 
@@ -980,7 +947,7 @@ def add_local_computed_blocks(
 ) -> None:
 ```
 
-位置：`vllm/vllm/v1/core/single_type_kv_cache_manager.py:223`
+源码文件：`vllm/v1/core/single_type_kv_cache_manager.py`
 
 它会做几件事：
 
@@ -1002,7 +969,7 @@ req_blocks.extend(new_computed_blocks)
 self.num_cached_block[request_id] = len(req_blocks)
 ```
 
-位置：`single_type_kv_cache_manager.py:258`
+对应实现：`SingleTypeKVCacheManager`
 
 所以本地 prefix cache hit 不是复制 KV，而是：
 
@@ -1027,7 +994,7 @@ def allocate_external_computed_blocks(
 ) -> None:
 ```
 
-位置：`single_type_kv_cache_manager.py:282`
+对应实现：`SingleTypeKVCacheManager`
 
 它会计算总 computed tokens：
 
@@ -1037,7 +1004,7 @@ num_total_computed_tokens = (
 )
 ```
 
-位置：`single_type_kv_cache_manager.py:300`
+对应实现：`SingleTypeKVCacheManager`
 
 然后为外部 computed tokens 对应的 block 范围分配新 blocks：
 
@@ -1048,7 +1015,7 @@ allocated_blocks = self.block_pool.get_new_blocks(
 req_blocks.extend(allocated_blocks)
 ```
 
-位置：`single_type_kv_cache_manager.py:314`
+对应实现：`SingleTypeKVCacheManager`
 
 含义：
 
@@ -1065,7 +1032,7 @@ if self._record_new_block_ids:
     self.new_block_ids.extend(b.block_id for b in allocated_blocks)
 ```
 
-位置：`single_type_kv_cache_manager.py:318` 到 `single_type_kv_cache_manager.py:319`
+对应实现：`SingleTypeKVCacheManager`
 
 ---
 
@@ -1081,7 +1048,6 @@ self.connector.update_state_after_alloc(
 )
 ```
 
-位置：`scheduler.py:970`
 
 这一步的作用是：
 
@@ -1098,7 +1064,7 @@ connector 现在可以知道：
 # num_computed_tokens.
 ```
 
-位置：`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:696`
+源码文件：`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
 
 而 `update_state_after_alloc()` 会根据 `blocks` 和 `num_external_tokens` 构造后续 load 需要的源 key、目标 block id 等信息。
 
@@ -1130,7 +1096,7 @@ def get_num_new_matched_tokens(
 ) -> tuple[int | None, bool]:
 ```
 
-位置：`vllm/vllm/v1/simple_kv_offload/manager.py:243`
+源码文件：`vllm/v1/simple_kv_offload/manager.py`
 
 它会根据本地已经 computed 的 token 数跳过前面的 hashes：
 
@@ -1139,7 +1105,7 @@ num_skipped_hashes = num_computed_tokens // self.hash_block_size
 remaining_hashes = request.block_hashes[num_skipped_hashes:]
 ```
 
-位置：`manager.py:255`
+对应实现：`SimpleCPUOffload`
 
 然后设置最大命中长度：
 
@@ -1147,7 +1113,7 @@ remaining_hashes = request.block_hashes[num_skipped_hashes:]
 max_hit_len = request.num_tokens - 1 - num_computed_tokens
 ```
 
-位置：`manager.py:262`
+对应实现：`SimpleCPUOffload`
 
 这和本地 prefix cache 的逻辑一致：即使全命中，也要保留最后 token 重新计算 logits。
 
@@ -1159,7 +1125,7 @@ cpu_hit_blocks, hit_length = self.cpu_coordinator.find_longest_cache_hit(
 )
 ```
 
-位置：`manager.py:265`
+对应实现：`SimpleCPUOffload`
 
 命中后会 pin 住 CPU blocks，避免在 `update_state_after_alloc()` 前被 LRU 回收：
 
@@ -1172,7 +1138,7 @@ self._pending_cpu_hits[request.request_id] = (
 return hit_length, True
 ```
 
-位置：`manager.py:273`
+对应实现：`SimpleCPUOffload`
 
 这个例子说明：
 
@@ -1194,7 +1160,7 @@ def get_num_new_matched_tokens(
 ) -> tuple[int | None, bool]:
 ```
 
-位置：`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:692`
+源码文件：`vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py`
 
 注释说明返回值：
 
@@ -1204,7 +1170,7 @@ def get_num_new_matched_tokens(
 - 如果第二个值是 True，表示 token 会异步加载。
 ```
 
-对应源码：`offloading/scheduler.py:704`
+对应源码：`offloading/scheduler.py`
 
 这个实现里，`None` 的常见来源包括：请求还有 in-flight transfer 时直接延迟返回，或者 `_lookup()` 因 backend deferred lookup / hit blocks 正在加载而暂时无法收敛。
 
@@ -1214,7 +1180,7 @@ def get_num_new_matched_tokens(
 req_status.num_locally_computed_tokens = num_computed_tokens
 ```
 
-位置：`offloading/scheduler.py:726`
+对应实现：`OffloadingConnector scheduler`
 
 然后查询外部命中；如果请求被标记为 `skip_reading_prefix_cache`，则直接视为 0 命中：
 
@@ -1225,7 +1191,7 @@ else:
     num_hit_tokens = self._lookup(req_status)
 ```
 
-位置：`offloading/scheduler.py:729` 到 `offloading/scheduler.py:733`
+对应实现：`OffloadingConnector scheduler`
 
 最后返回：
 
@@ -1233,7 +1199,7 @@ else:
 return num_hit_tokens, bool(num_hit_tokens)
 ```
 
-位置：`offloading/scheduler.py:747`
+对应实现：`OffloadingConnector scheduler`
 
 也就是说，在这个实现里，只要有外部命中，就会走 async load。
 
@@ -1253,7 +1219,6 @@ request.num_computed_tokens == request.num_tokens
 request.num_computed_tokens = request.num_tokens - 1
 ```
 
-位置：`scheduler.py:2521`
 
 这和本地 prefix cache 的：
 
@@ -1261,7 +1226,6 @@ request.num_computed_tokens = request.num_tokens - 1
 max_cache_hit_length = request.num_tokens - 1
 ```
 
-位置：`kv_cache_manager.py:232`
 
 是一致的。
 
@@ -1291,7 +1255,6 @@ cache 命中最终影响的是本轮 `num_new_tokens`。
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`scheduler.py:847`
 
 所以：
 
@@ -1339,7 +1302,6 @@ request.status: WAITING / PREEMPTED → RUNNING
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:1028`
 
 然后 `_update_after_schedule()` 再加上本轮调度 token。
 
@@ -1351,7 +1313,6 @@ request.num_computed_tokens = num_computed_tokens
 request.status: WAITING / PREEMPTED → WAITING_FOR_REMOTE_KVS
 ```
 
-位置：`scheduler.py:989`
 
 请求不会进入 running，而是放入 skipped_waiting，等待 Worker 报告 KV load 完成。
 
@@ -1376,7 +1337,6 @@ scheduled_cached_reqs
 scheduler_output.kv_connector_metadata = meta
 ```
 
-位置：`scheduler.py:1168`
 
 这个 metadata 来自：
 
@@ -1384,7 +1344,6 @@ scheduler_output.kv_connector_metadata = meta
 meta = self._build_kv_connector_meta(self.connector, scheduler_output)
 ```
 
-位置：`scheduler.py:1167`
 
 作用是：
 
@@ -1660,7 +1619,7 @@ async external KV load 则把“计算”变成“加载”，请求先进入 WA
 
 ```text
 本地 prefix cache 查询：
-  new_computed_blocks, num_new_local_computed_tokens =
+  new_computed_blocks, num_new_local_computed_tokens, shared_prefix_boundary =
       kv_cache_manager.get_computed_blocks(request)
 
 外部 KV cache 查询：

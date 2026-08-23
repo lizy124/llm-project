@@ -1,6 +1,6 @@
 # 08. Worker 执行完后，如何更新请求状态、释放 block、返回输出？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 发出 `SchedulerOutput` 后，Worker / ModelRunner 执行完返回 `ModelRunnerOutput`，Scheduler 如何处理 sampled token、logprobs、pooling output、spec decode 接受/拒绝、structured output grammar、KV Connector output、请求停止、资源释放，并最终返回 `EngineCoreOutputs`。
 
@@ -29,7 +29,7 @@ def update_from_output(
 ) -> dict[int, EngineCoreOutputs]:
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:1551`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 来回收这一轮执行结果。
 
@@ -83,7 +83,6 @@ dict[int, EngineCoreOutputs]
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`scheduler.py:1182`
 
 其中会先推进请求进度：
 
@@ -92,7 +91,6 @@ request.num_computed_tokens += num_scheduled_token
 request.num_in_flight_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1226`
 
 这是一种“乐观推进”；同时 `num_in_flight_tokens` 会记录已发出但尚未由 `update_from_output()` 回收的 token 数。
 
@@ -131,7 +129,6 @@ scheduler_output: SchedulerOutput
 model_runner_output: ModelRunnerOutput
 ```
 
-位置：`scheduler.py:1552`
 
 可以理解为：
 
@@ -153,17 +150,22 @@ num_scheduled_tokens = scheduler_output.num_scheduled_tokens
 pooler_outputs = model_runner_output.pooler_output
 num_nans_in_logits = model_runner_output.num_nans_in_logits
 kv_connector_output = model_runner_output.kv_connector_output
+ec_connector_output = model_runner_output.ec_connector_output
 cudagraph_stats = model_runner_output.cudagraph_stats
+routed_experts = model_runner_output.routed_experts
+sampling_masks = model_runner_output.sampling_masks
 ```
 
-位置：`scheduler.py:1556`
 
 这里把“计划”和“实际输出”汇合到一起：
 
 ```text
 num_scheduled_tokens 告诉 Scheduler 本轮哪些请求被执行了；
 sampled_token_ids / pooler_output 告诉 Scheduler Worker 实际产出了什么；
-kv_connector_output 告诉 Scheduler 外部 KV transfer 是否完成或失败。
+logprobs / prompt_logprobs_dict / sampling_masks 提供采样相关附加结果；
+kv_connector_output / ec_connector_output 告诉 Scheduler 外部 KV / encoder
+cache transfer 是否完成或失败；`routed_experts` 和 `cudagraph_stats` 分别
+用于路由专家结果和执行统计。
 ```
 
 ---
@@ -178,7 +180,6 @@ if self.defer_block_free and scheduler_output.total_num_scheduled_tokens > 0:
     self._drain_deferred_frees()
 ```
 
-位置：`scheduler.py:1567`
 
 含义是：
 
@@ -206,7 +207,6 @@ while self.deferred_frees:
     self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`scheduler.py:2223`
 
 这和 `06_kv_block_allocation_and_preemption.md` 中的 deferred free 逻辑形成闭环。
 
@@ -227,7 +227,6 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
     )
 ```
 
-位置：`scheduler.py:1579`
 
 源码注释解释：
 
@@ -237,7 +236,6 @@ if kv_connector_output and kv_connector_output.invalid_block_ids:
 # count to trigger recomputation of the invalid blocks.
 ```
 
-位置：`scheduler.py:1580`
 
 含义是：
 
@@ -256,7 +254,6 @@ if failed_kv_load_req_ids and not self.recompute_kv_load_failures:
     self.finish_requests(failed_kv_load_req_ids, RequestStatus.FINISHED_ERROR)
 ```
 
-位置：`scheduler.py:1823`
 
 所以 KV load failure 有两类处理方式：
 
@@ -280,7 +277,6 @@ fail：
 for req_id, num_tokens_scheduled in num_scheduled_tokens.items():
 ```
 
-位置：`scheduler.py:1614`
 
 这里的 `num_scheduled_tokens` 来自 `SchedulerOutput`。
 
@@ -304,7 +300,6 @@ if request is None or request.is_finished():
     continue
 ```
 
-位置：`scheduler.py:1616`
 
 第二个条件很重要：
 
@@ -328,7 +323,6 @@ generated_token_ids = (
 )
 ```
 
-位置：`scheduler.py:1632`
 
 含义：
 
@@ -365,7 +359,6 @@ scheduled_spec_token_ids = (
 )
 ```
 
-位置：`scheduler.py:1637`
 
 则根据 Worker 返回的 `generated_token_ids` 判断接受了多少 draft tokens：
 
@@ -376,7 +369,6 @@ num_accepted = max(len(generated_token_ids) - num_sampled, 0)
 num_rejected = num_draft_tokens - num_accepted
 ```
 
-位置：`scheduler.py:1647`
 
 普通自回归场景中：
 
@@ -396,7 +388,10 @@ num_accepted = len(generated_token_ids) - 1
 Worker 返回 token 数 = accepted draft tokens + target sampled token
 ```
 
-当前源码还要求 `request.async_tokens_to_discard == 0` 才进入这段修正；如果 reset / preempt 后还有 stale async frame 待丢弃，就跳过 spec 回退，避免旧输出把计数扣错。
+当前源码会先把本轮 in-flight 输出中属于 stale share 的 token 计入
+`output_is_stale`，并在 `num_stale_output_tokens` 中逐步消化。如果是
+`drop_stale_output` 模式，这一帧会直接丢弃；如果 stale output 仍需交付，
+则仍可 append，但不会用它执行 spec reject 回退，避免旧输出把计数扣错。
 
 如果有 draft token 被拒绝，Scheduler 要回退之前乐观推进的进度：
 
@@ -405,7 +400,6 @@ if request.num_computed_tokens > 0:
     request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1656`
 
 如果 async scheduling 中 output placeholders 也包含 spec tokens，也要同步回退：
 
@@ -414,7 +408,6 @@ if request.num_output_placeholders > 0:
     request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1660`
 
 这说明 spec decode 的状态更新是两阶段：
 
@@ -437,7 +430,6 @@ if request.has_encoder_inputs:
     self._free_encoder_inputs(request)
 ```
 
-位置：`scheduler.py:1671`
 
 为什么不能在 schedule 阶段马上释放？
 
@@ -455,7 +447,6 @@ cached_encoder_input_ids = self.encoder_cache_manager.get_cached_input_ids(
 )
 ```
 
-位置：`scheduler.py:1972`
 
 如果是 encoder-decoder 模型，并且已经生成过 decoder token：
 
@@ -464,7 +455,6 @@ if self.is_encoder_decoder and request.num_computed_tokens > 0:
     self.encoder_cache_manager.free_encoder_input(request, input_id)
 ```
 
-位置：`scheduler.py:1991`
 
 对于普通多模态 placeholder，如果 decoder 进度已经越过该 placeholder，并且不会被 pending draft rejection 回退到里面，也会释放：
 
@@ -476,7 +466,6 @@ elif (
     self.encoder_cache_manager.free_encoder_input(request, input_id)
 ```
 
-位置：`scheduler.py:1996`
 
 其中 `spec_lookahead = 1 if self.use_eagle else 0`，EAGLE drafter 可能还有 +1 read，所以普通多模态 placeholder 需要越过 placeholder 范围再加这个 lookahead 才能释放。
 
@@ -492,7 +481,6 @@ new_token_ids, stopped = self._update_request_with_output(
 )
 ```
 
-位置：`scheduler.py:1684`
 
 内部逻辑：
 
@@ -505,7 +493,6 @@ for num_new, output_token_id in enumerate(new_token_ids, 1):
         break
 ```
 
-位置：`scheduler.py:1961`
 
 也就是说：
 
@@ -532,7 +519,6 @@ max_model_len；
 # to return empty token ids for the request.
 ```
 
-位置：`scheduler.py:1957`
 
 所以 prefill chunk 中间阶段通常不会产生 EngineCoreOutput token。
 
@@ -549,7 +535,6 @@ elif request.pooling_params and pooler_output is not None:
     stopped = True
 ```
 
-位置：`scheduler.py:1688`
 
 含义是：
 
@@ -585,7 +570,6 @@ if new_token_ids and self.structured_output_manager.should_advance(request):
         stopped = True
 ```
 
-位置：`scheduler.py:1693`
 
 含义：
 
@@ -614,7 +598,6 @@ if model_runner_output.routed_experts is not None:
     self.routed_experts_mgr.store_batch(re.routing_data, re.slot_mapping)
 ```
 
-位置：`scheduler.py:1595`
 
 后面在每个请求里，根据 prefill / decode / spec decode 的不同情况取 routed experts：
 
@@ -623,7 +606,6 @@ if self.enable_return_routed_experts and routing_data is not None and new_token_
     ...
 ```
 
-位置：`scheduler.py:1720`
 
 这不是 Scheduler 主调度逻辑的核心，但它体现了一个模式：
 
@@ -642,7 +624,6 @@ Scheduler 会把 Worker 返回的附加信息按 request_id 重新对齐，
 finish_reason = request.get_finished_reason()
 ```
 
-位置：`scheduler.py:1760`
 
 然后调用：
 
@@ -650,7 +631,6 @@ finish_reason = request.get_finished_reason()
 finished = self._handle_stopped_request(request)
 ```
 
-位置：`scheduler.py:1764`
 
 `_handle_stopped_request()` 的逻辑是：
 
@@ -672,7 +652,6 @@ self._enqueue_waiting_request(request)
 return False
 ```
 
-位置：`scheduler.py:1936`
 
 含义：
 
@@ -701,7 +680,6 @@ if finished:
     kv_transfer_params, ec_transfer_params = self._free_request(request)
 ```
 
-位置：`scheduler.py:1765`
 
 `_free_request()` 核心逻辑是：
 
@@ -725,7 +703,6 @@ if not delay_free_blocks:
 return kv_xfer_params, ec_xfer_params
 ```
 
-位置：`scheduler.py:2156`
 
 它做了几件事：
 
@@ -749,7 +726,6 @@ return kv_xfer_params, ec_xfer_params
 connector_delay_free_blocks, kv_xfer_params = self._connector_finished(request)
 ```
 
-位置：`scheduler.py:2162`
 
 `_connector_finished()` 会先释放 out-of-window prefix blocks：
 
@@ -763,7 +739,6 @@ self.kv_cache_manager.remove_skipped_blocks(
 )
 ```
 
-位置：`scheduler.py:2448`
 
 然后取 block ids：
 
@@ -774,7 +749,6 @@ block_ids = self.kv_cache_manager.get_block_ids_for_computed_tokens(
 )
 ```
 
-位置：`scheduler.py:2456`
 
 再调用 connector：
 
@@ -782,7 +756,6 @@ block_ids = self.kv_cache_manager.get_block_ids_for_computed_tokens(
 return self.connector.request_finished_all_groups(request, block_ids)
 ```
 
-位置：`scheduler.py:2469`
 
 这一步的意义是：
 
@@ -813,7 +786,6 @@ def _free_blocks(self, request: Request):
     del self.requests[request.request_id]
 ```
 
-位置：`scheduler.py:2185`
 
 如果 `_free_request()` 中因为 connector 或其它原因设置了 `delay_free_blocks=True`，就不会立即调用 `_free_blocks()`。
 
@@ -843,7 +815,6 @@ stopped_running_reqs: set[Request] = set()
 stopped_preempted_reqs: set[Request] = set()
 ```
 
-位置：`scheduler.py:1612`
 
 请求 stop 后，根据 stop 前状态加入不同集合：
 
@@ -854,7 +825,6 @@ else:
     stopped_preempted_reqs.add(request)
 ```
 
-位置：`scheduler.py:1768`
 
 循环结束后批量移除：
 
@@ -863,11 +833,11 @@ if stopped_running_reqs:
     self.running = remove_all(self.running, stopped_running_reqs)
 if stopped_preempted_reqs:
     self.waiting.remove_requests(stopped_preempted_reqs)
+    self.skipped_waiting.remove_requests(stopped_preempted_reqs)
 ```
 
-位置：`scheduler.py:1816`
 
-这样做可以避免在遍历过程中修改 running / waiting 队列。
+这样做可以避免在遍历过程中修改 running / waiting / skipped_waiting 队列。
 
 ---
 
@@ -894,7 +864,6 @@ EngineCoreOutput(
 )
 ```
 
-位置：`scheduler.py:1795`
 
 触发条件是：
 
@@ -902,23 +871,21 @@ EngineCoreOutput(
 if (
     new_token_ids
     or pooler_output is not None
-    or kv_transfer_params
-    or ec_transfer_params
     or stopped
 ):
 ```
 
-位置：`scheduler.py:1786`
 
 也就是说：
 
 ```text
 有新 token；
 或有 pooling output；
-或有 KV transfer params；
-或有 EC transfer params；
 或请求停止；
 才会产生 EngineCoreOutput。
+
+KV / EC transfer params 只有在请求本轮已经产生可发送的
+`EngineCoreOutput` 时才会随该输出返回；它们本身不会单独触发一条输出。
 ```
 
 如果只是中间 prefill chunk，没有 token、没有 pooling、没有 stop，就不会返回 partial prefill output：
@@ -928,7 +895,6 @@ if (
 assert not prompt_logprobs_tensors
 ```
 
-位置：`scheduler.py:1812`
 
 ---
 
@@ -945,7 +911,6 @@ if (
     new_logprobs = logprobs.slice_request(req_index, len(new_token_ids))
 ```
 
-位置：`scheduler.py:1773`
 
 prompt logprobs 通过：
 
@@ -953,7 +918,6 @@ prompt logprobs 通过：
 prompt_logprobs_tensors = prompt_logprobs_dict.get(req_id)
 ```
 
-位置：`scheduler.py:1784`
 
 如果 Worker 报告 logits 中 NaN 数量：
 
@@ -962,7 +926,6 @@ if num_nans_in_logits is not None and req_id in num_nans_in_logits:
     request.num_nans_in_logits = num_nans_in_logits[req_id]
 ```
 
-位置：`scheduler.py:1781`
 
 这些信息都会被封装进 `EngineCoreOutput`。
 
@@ -977,7 +940,6 @@ if kv_connector_output:
     self._update_from_kv_xfer_finished(kv_connector_output)
 ```
 
-位置：`scheduler.py:1838`
 
 `_update_from_kv_xfer_finished()` 中，如果有远端 KV load 完成：
 
@@ -992,7 +954,6 @@ for req_id in kv_connector_output.finished_recving or ():
         self._free_blocks(self.requests[req_id])
 ```
 
-位置：`scheduler.py:2574`
 
 含义是：
 
@@ -1016,7 +977,6 @@ for req_id in kv_connector_output.finished_sending or ():
     self._free_blocks(self.requests[req_id])
 ```
 
-位置：`scheduler.py:2583`
 
 这会释放之前因 connector async send 而延迟释放的 blocks，并从 `self.requests` 删除请求。
 
@@ -1034,7 +994,6 @@ kv_connector_stats = (
 )
 ```
 
-位置：`scheduler.py:1842`
 
 Scheduler 侧 stats：
 
@@ -1042,7 +1001,6 @@ Scheduler 侧 stats：
 scheduler_kv_connector_stats = self.connector.get_kv_connector_stats()
 ```
 
-位置：`scheduler.py:1847`
 
 然后聚合。
 
@@ -1052,7 +1010,6 @@ KV cache events 来自 KV cache manager：
 events = self.kv_cache_manager.take_events()
 ```
 
-位置：`scheduler.py:1859`
 
 也可能来自 connector：
 
@@ -1060,7 +1017,6 @@ events = self.kv_cache_manager.take_events()
 connector_events = self.connector.take_events()
 ```
 
-位置：`scheduler.py:1863`
 
 最后发布：
 
@@ -1069,7 +1025,6 @@ batch = KVEventBatch(ts=time.time(), events=events)
 self.kv_event_publisher.publish(batch)
 ```
 
-位置：`scheduler.py:1872`
 
 ---
 
@@ -1081,7 +1036,6 @@ self.kv_event_publisher.publish(batch)
 outputs[request.client_index].append(...)
 ```
 
-位置：`scheduler.py:1794`
 
 最后构造：
 
@@ -1092,7 +1046,6 @@ engine_core_outputs = {
 }
 ```
 
-位置：`scheduler.py:1877`
 
 如果启用了 `finished_req_ids_dict`，还会给每个 client 附加 finished request ids：
 
@@ -1100,7 +1053,6 @@ engine_core_outputs = {
 eco.finished_requests = finished_set
 ```
 
-位置：`scheduler.py:1889`
 
 最后如果有 scheduler stats，会附加到其中一个 `EngineCoreOutputs`：
 
@@ -1108,7 +1060,6 @@ eco.finished_requests = finished_set
 eco.scheduler_stats = stats
 ```
 
-位置：`scheduler.py:1906`
 
 最终返回：
 
@@ -1116,7 +1067,6 @@ eco.scheduler_stats = stats
 return engine_core_outputs
 ```
 
-位置：`scheduler.py:1908`
 
 ---
 
@@ -1319,7 +1269,6 @@ prefill chunk 的主要作用是计算 KV Cache。
 EngineCore returns no partial prefill outputs.
 ```
 
-位置：`scheduler.py:1812`
 
 ### 29.3 为什么 schedule 先增加 `num_computed_tokens`，update 再回退？
 
@@ -1339,7 +1288,6 @@ Scheduler 先乐观认为发出去的 token 已经进入计算进度；如果后
 del self.requests[request.request_id]
 ```
 
-位置：`scheduler.py:2188`
 
 ### 29.5 `finished_recving` 后为什么不立刻进入 running？
 

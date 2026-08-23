@@ -1,6 +1,6 @@
 # 01. 当前有哪些请求在等待、运行、阻塞？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 如何知道当前系统里有哪些请求、哪些请求正在运行、哪些请求还在等待、哪些请求暂时阻塞，以及这些状态如何迁移。
 
@@ -89,7 +89,7 @@ running → finished → 从 running 移除
 self.requests: dict[str, Request] = {}
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:172` 到 `vllm/vllm/v1/core/sched/scheduler.py:173`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `self.requests` 是 `request_id -> Request` 的字典。
 
@@ -122,7 +122,7 @@ self.requests 是全集索引，不是调度队列。
 self.waiting = create_request_queue(self.policy)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:181` 到 `vllm/vllm/v1/core/sched/scheduler.py:182`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `self.waiting` 保存可以被正常尝试调度的请求。
 
@@ -146,7 +146,7 @@ RequestStatus.PREEMPTED
 self.skipped_waiting = create_request_queue(self.policy)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:183` 到 `vllm/vllm/v1/core/sched/scheduler.py:184`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `skipped_waiting` 的名字很准确：它保存的是“当前还不能正常调度，需要跳过一下”的请求。
 
@@ -181,7 +181,7 @@ skipped_waiting = blocked requests + temporarily skipped waiting requests
 self.running: list[Request] = []
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:185`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `running` 中的请求已经进入模型执行流。
 
@@ -194,7 +194,7 @@ self.running: list[Request] = []
 
 每轮 `schedule()` 会先扫描 `self.running`，再考虑 waiting 请求。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:477` 到 `vllm/vllm/v1/core/sched/scheduler.py:663`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ---
 
@@ -214,7 +214,7 @@ def _is_blocked_waiting_status(status: RequestStatus) -> bool:
     )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1910` 到 `vllm/vllm/v1/core/sched/scheduler.py:1916`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这三个状态的含义如下。
 
@@ -223,6 +223,20 @@ def _is_blocked_waiting_status(status: RequestStatus) -> bool:
 | `WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR` | 等结构化输出 grammar 准备完成 | `skipped_waiting` | grammar 构造好后变回 `WAITING` |
 | `WAITING_FOR_REMOTE_KVS` | 等远端 KV Cache 加载完成 | `skipped_waiting` | Worker 报告 finished_recving 后恢复 |
 | `WAITING_FOR_STREAMING_REQ` | 等 streaming input 下一段输入 | `skipped_waiting` | `add_request()` 收到同 request id 新输入后恢复 |
+
+当前分支的 finished 状态包括：
+
+```text
+FINISHED_STOPPED
+FINISHED_LENGTH_CAPPED
+FINISHED_ABORTED
+FINISHED_IGNORED
+FINISHED_ERROR
+FINISHED_REPETITION
+```
+
+`RequestStatus.is_finished()` 以枚举顺序判断：所有位于 `PREEMPTED` 之后的
+状态都视为 finished。
 
 因此，严格判断“阻塞请求”时应该看：
 
@@ -243,7 +257,7 @@ and _is_blocked_waiting_status(request.status)
 def add_request(self, request: Request) -> None:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2069`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ### 4.1 全新 request_id
 
@@ -254,7 +268,7 @@ self._enqueue_waiting_request(request)
 self.requests[request.request_id] = request
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2086` 到 `vllm/vllm/v1/core/sched/scheduler.py:2087`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `_enqueue_waiting_request()` 决定进入 `waiting` 还是 `skipped_waiting`：
 
@@ -266,7 +280,7 @@ def _enqueue_waiting_request(self, request: Request) -> None:
         self.waiting.add_request(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1918` 到 `vllm/vllm/v1/core/sched/scheduler.py:1922`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 也就是说：
 
@@ -284,7 +298,7 @@ def _enqueue_waiting_request(self, request: Request) -> None:
 existing = self.requests.get(request.request_id)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2070`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这一般表示 streaming input 的后续 chunk。
 
@@ -296,7 +310,7 @@ if existing.status != RequestStatus.WAITING_FOR_STREAMING_REQ:
     existing.streaming_queue.append(update)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2071` 到 `vllm/vllm/v1/core/sched/scheduler.py:2076`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 如果已有请求正在等输入，并且本次 update 不是结束哨兵，则会立即恢复 session：
 
@@ -305,7 +319,7 @@ elif update is not None:
     self._update_request_as_session(existing, update)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2077` 到 `vllm/vllm/v1/core/sched/scheduler.py:2079`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `_update_request_as_session()` 最后会设置：
 
@@ -313,7 +327,7 @@ elif update is not None:
 session.status = RequestStatus.WAITING
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1301` 到 `vllm/vllm/v1/core/sched/scheduler.py:1303`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这表示请求从：
 
@@ -330,7 +344,7 @@ else:
     self.finish_requests(request.request_id, RequestStatus.FINISHED_ABORTED)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2080` 到 `vllm/vllm/v1/core/sched/scheduler.py:2082`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ---
 
@@ -343,7 +357,7 @@ while req_index < len(self.running) and token_budget > 0:
     request = self.running[req_index]
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:477` 到 `vllm/vllm/v1/core/sched/scheduler.py:480`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这说明：
 
@@ -361,7 +375,7 @@ if request.num_output_placeholders > 0 and ... >= request.num_prompt_tokens + re
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:482` 到 `vllm/vllm/v1/core/sched/scheduler.py:496`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这是 async scheduling 下避免多调度一步。
 
@@ -427,7 +441,7 @@ num_computed_tokens = H - 1
 num_output_placeholders = 0
 ```
 
-上一轮调度会 forward 3 个位置：
+上一轮调度会 forward 3 个请求：
 
 ```text
 last_token, A, B
@@ -456,7 +470,7 @@ if self.current_step < request.next_decode_eligible_step:
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:498` 到 `vllm/vllm/v1/core/sched/scheduler.py:502`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 表示这个 running 请求还没到下一次 decode 的节奏。
 
@@ -468,7 +482,7 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:504` 到 `vllm/vllm/v1/core/sched/scheduler.py:508`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这时请求仍在 `running`，只是当前 step 不推进。
 
@@ -480,7 +494,7 @@ if num_new_tokens == 0:
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:551` 到 `vllm/vllm/v1/core/sched/scheduler.py:567`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 可能原因包括 encoder budget 不足、Mamba block 对齐后不能形成合法 chunk 等。
 
@@ -496,7 +510,7 @@ if num_new_tokens == 0:
 new_blocks = self.kv_cache_manager.allocate_slots(...)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:570` 到 `vllm/vllm/v1/core/sched/scheduler.py:576`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 失败后选择被抢占请求。
 
@@ -509,7 +523,7 @@ preempted_req = max(
 )
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:584` 到 `vllm/vllm/v1/core/sched/scheduler.py:589`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 非 PRIORITY 策略：
 
@@ -517,7 +531,7 @@ preempted_req = max(
 preempted_req = self.running.pop()
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:608` 到 `vllm/vllm/v1/core/sched/scheduler.py:610`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 抢占处理：
 
@@ -525,24 +539,35 @@ preempted_req = self.running.pop()
 self._preempt_request(preempted_req, scheduled_timestamp)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:611` 到 `vllm/vllm/v1/core/sched/scheduler.py:612`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 `_preempt_request()` 做的事情：
 
+`drop_stale_output` 由调用场景决定：reset 或需要 KV delivery 时可能为真，
+普通抢占通常为假。
+
 ```python
-self._free_request_blocks(request)
+def _preempt_request(
+    self, request: Request, timestamp: float, drop_stale_output: bool = False
+) -> None:
+    self._free_request_blocks(request)
 self.encoder_cache_manager.free(request)
 self._inflight_prefills.discard(request)
 request.status = RequestStatus.PREEMPTED
 request.num_computed_tokens = 0
 if request.spec_token_ids:
     request.spec_token_ids = []
+request.drop_stale_output = drop_stale_output or (
+    request.drop_stale_output and request.num_stale_output_tokens > 0
+)
+request.num_stale_output_tokens = request.num_in_flight_tokens
+request.num_output_placeholders = 0
 request.num_preemptions += 1
 self.waiting.prepend_request(request)
 self.reset_preempted_req_ids.add(request.request_id)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1191` 到 `vllm/vllm/v1/core/sched/scheduler.py:1213`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 状态迁移：
 
@@ -564,7 +589,7 @@ self.running / RUNNING
 request_queue = self._select_waiting_queue_for_scheduling()
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:673` 到 `vllm/vllm/v1/core/sched/scheduler.py:685`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 选择函数：
 
@@ -581,7 +606,7 @@ def _select_waiting_queue_for_scheduling(self) -> RequestQueue | None:
     return self.waiting or self.skipped_waiting or None
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1924` 到 `vllm/vllm/v1/core/sched/scheduler.py:1934`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 解释：
 
@@ -602,7 +627,7 @@ if self._is_blocked_waiting_status(request.status) and not self._try_promote_blo
     continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:690` 到 `vllm/vllm/v1/core/sched/scheduler.py:701`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这段逻辑说明：
 
@@ -616,7 +641,7 @@ if self._is_blocked_waiting_status(request.status) and not self._try_promote_blo
 def _try_promote_blocked_waiting_request(self, request: Request) -> bool:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2526` 到 `vllm/vllm/v1/core/sched/scheduler.py:2552`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ### 8.1 远端 KV load 阻塞恢复
 
@@ -632,7 +657,7 @@ if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
     return True
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2530` 到 `vllm/vllm/v1/core/sched/scheduler.py:2541`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 含义：
 
@@ -659,7 +684,7 @@ if request.status == RequestStatus.WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR:
     return True
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2543` 到 `vllm/vllm/v1/core/sched/scheduler.py:2548`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 状态迁移：
 
@@ -675,7 +700,7 @@ if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
     return False
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2550` 到 `vllm/vllm/v1/core/sched/scheduler.py:2552`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 它需要通过 `add_request()` 收到新的 streaming input chunk 后恢复。
 
@@ -695,7 +720,7 @@ waiting 请求被成功调度后，会从原队列弹出：
 request = request_queue.pop_request()
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:985`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 如果不是异步 KV load，则加入 running：
 
@@ -703,7 +728,7 @@ request = request_queue.pop_request()
 self.running.append(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1008`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 然后根据原状态记录为新请求或恢复请求：
 
@@ -714,7 +739,7 @@ elif request.status == RequestStatus.PREEMPTED:
     scheduled_resumed_reqs.append(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1013` 到 `vllm/vllm/v1/core/sched/scheduler.py:1018`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这三类 scheduled 列表的核心区别是：
 
@@ -739,7 +764,7 @@ V2 model runner 路径不同：Scheduler 会把 `scheduled_resumed_reqs` 合并�
 request.status = RequestStatus.RUNNING
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1027` 到 `vllm/vllm/v1/core/sched/scheduler.py:1028`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 状态迁移：
 
@@ -766,7 +791,7 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:834` 到 `vllm/vllm/v1/core/sched/scheduler.py:837`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 分配 block 后，不加入 running，而是：
 
@@ -778,7 +803,7 @@ self._inflight_prefills.add(request)
 continue
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:985` 到 `vllm/vllm/v1/core/sched/scheduler.py:1006`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 状态迁移：
 
@@ -799,7 +824,7 @@ self.num_waiting_for_streaming_input += 1
 self._enqueue_waiting_request(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1941` 到 `vllm/vllm/v1/core/sched/scheduler.py:1951`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 状态迁移：
 
@@ -820,7 +845,7 @@ WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR
 
 通过 `_enqueue_waiting_request()` 进入 `skipped_waiting`。
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1918` 到 `vllm/vllm/v1/core/sched/scheduler.py:1922`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ---
 
@@ -836,7 +861,7 @@ if finished:
     kv_transfer_params, ec_transfer_params = self._free_request(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1759` 到 `vllm/vllm/v1/core/sched/scheduler.py:1767`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 这个 stop 是否代表整个请求真的结束？
 还是只是 resumable/streaming 请求暂时停下等下一段输入？
 如果请求真的结束，就通知 KV / EC connector、释放 encoder cache、记录 finished id，并释放或延迟释放 KV blocks。
@@ -848,15 +873,16 @@ if stopped_running_reqs:
     self.running = remove_all(self.running, stopped_running_reqs)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1816` 到 `vllm/vllm/v1/core/sched/scheduler.py:1818`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 如果是 preempted/waiting 中停止，也会从 waiting 删除：
 
 ```python
 self.waiting.remove_requests(stopped_preempted_reqs)
+self.skipped_waiting.remove_requests(stopped_preempted_reqs)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:1819` 到 `vllm/vllm/v1/core/sched/scheduler.py:1821`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ### 11.2 外部 abort
 
@@ -866,7 +892,7 @@ self.waiting.remove_requests(stopped_preempted_reqs)
 def finish_requests(self, request_ids, finished_status)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2093` 到 `vllm/vllm/v1/core/sched/scheduler.py:2095`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 它会分别从 running 和 waiting/skipped_waiting 中移除：
 
@@ -876,7 +902,7 @@ self.waiting.remove_requests(waiting_requests_to_remove)
 self.skipped_waiting.remove_requests(waiting_requests_to_remove)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2134` 到 `vllm/vllm/v1/core/sched/scheduler.py:2139`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 然后设置 finished 状态并调用 `_free_request()`。如果请求正在 `WAITING_FOR_REMOTE_KVS`，会根据是否已经 finished_recving 决定是否延迟释放 block：
 
@@ -889,7 +915,7 @@ if request.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
 self._free_request(request, delay_free_blocks=delay_free_blocks)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2142` 到 `vllm/vllm/v1/core/sched/scheduler.py:2152`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ---
 
@@ -909,7 +935,7 @@ if not delay_free_blocks:
     self._free_blocks(request)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2156` 到 `vllm/vllm/v1/core/sched/scheduler.py:2183`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 如果 KV / EC connector 需要异步发送或保存缓存，`delay_free_blocks=True`，则不会立即调用 `_free_blocks()`。
 
@@ -919,7 +945,7 @@ if not delay_free_blocks:
 del self.requests[request.request_id]
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2185` 到 `vllm/vllm/v1/core/sched/scheduler.py:2188`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 所以：
 
@@ -940,7 +966,7 @@ num_in_queues = (
 return len(self.requests) > num_in_queues
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2250` 到 `vllm/vllm/v1/core/sched/scheduler.py:2260`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 ---
 
@@ -953,7 +979,7 @@ def get_request_counts(self) -> tuple[int, int]:
     return len(self.running), len(self.waiting) + len(self.skipped_waiting)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2065` 到 `vllm/vllm/v1/core/sched/scheduler.py:2067`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 返回：
 
@@ -970,7 +996,7 @@ waiting 数量 = len(self.waiting) + len(self.skipped_waiting)
 def get_num_unfinished_requests(self) -> int:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2238`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 核心逻辑：
 
@@ -987,7 +1013,7 @@ num_waiting = (
 return num_waiting + len(self.running)
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:2238` 到 `vllm/vllm/v1/core/sched/scheduler.py:2248`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这里有一个重要细节：
 

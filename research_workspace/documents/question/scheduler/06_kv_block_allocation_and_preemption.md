@@ -1,6 +1,6 @@
 # 06. KV Cache block 是否够用，不够时是否需要抢占？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在调度 running / waiting 请求时，如何向 `KVCacheManager` 申请 KV Cache block；申请失败时，哪些场景会触发抢占；被抢占请求如何回到 waiting；请求结束后 block 又如何释放或延迟释放。
 
@@ -36,7 +36,7 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`code/vllm/vllm/v1/core/sched/scheduler.py:572`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 waiting 阶段调用：
 
@@ -56,7 +56,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:942`
 
 返回值含义：
 
@@ -96,7 +95,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:572`
 
 running 阶段的分配比较简单，因为请求已经有一部分 blocks 绑定在自己身上，本轮只需要追加新增 token / lookahead token 所需的 slots。
 
@@ -120,7 +118,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:942`
 
 waiting 阶段的分配要同时考虑：
 
@@ -158,7 +155,7 @@ def allocate_slots(
 ) -> KVCacheBlocks | None:
 ```
 
-位置：`code/vllm/vllm/v1/core/kv_cache_manager.py:269`
+源码文件：`vllm/v1/core/kv_cache_manager.py`
 
 关键参数如下：
 
@@ -192,7 +189,6 @@ def allocate_slots(
 ----------------------------------------------------------------------
 ```
 
-位置：`kv_cache_manager.py:315`
 
 几个缩写含义：
 
@@ -236,7 +232,6 @@ if num_new_tokens == 0 and num_external_computed_tokens == 0:
     )
 ```
 
-位置：`kv_cache_manager.py:365`
 
 这说明：
 
@@ -256,7 +251,6 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:834`
 
 ---
 
@@ -275,7 +269,6 @@ if load_kv_async:
 # - Allocate new blocks for tokens to be computed (`new + lookahead`)
 ```
 
-位置：`kv_cache_manager.py:353`
 
 可以理解为：
 
@@ -299,7 +292,6 @@ num_local_computed_tokens = (
 )
 ```
 
-位置：`kv_cache_manager.py:380`
 
 然后合并外部 KV 命中：
 
@@ -310,7 +302,6 @@ total_computed_tokens = min(
 )
 ```
 
-位置：`kv_cache_manager.py:383`
 
 含义：
 
@@ -345,7 +336,6 @@ if has_scheduled_reqs and request.status in (
     watermark_blocks = self.watermark_blocks
 ```
 
-位置：`kv_cache_manager.py:388`
 
 含义是：
 
@@ -390,7 +380,6 @@ if full_sequence_must_fit:
         return None
 ```
 
-位置：`kv_cache_manager.py:397`
 
 注释说明它用于：
 
@@ -399,7 +388,6 @@ Only allocate blocks if the KV cache has enough free blocks to hold the full seq
 accounting for prefix cache hits and sliding window.
 ```
 
-位置：`kv_cache_manager.py:303`
 
 作用是 admission gate：
 
@@ -415,7 +403,6 @@ accounting for prefix cache hits and sliding window.
 full_sequence_must_fit=self.scheduler_reserve_full_isl
 ```
 
-位置：`scheduler.py:951`
 
 ---
 
@@ -431,7 +418,6 @@ self.coordinator.remove_skipped_blocks(
 )
 ```
 
-位置：`kv_cache_manager.py:429`
 
 注释说明：
 
@@ -447,7 +433,6 @@ self.coordinator.remove_skipped_blocks(
 # tokens can roll it back.
 ```
 
-位置：`kv_cache_manager.py:420`
 
 这一步的意义是：
 
@@ -478,7 +463,6 @@ num_blocks_to_allocate = self.coordinator.get_num_blocks_to_allocate(
 )
 ```
 
-位置：`kv_cache_manager.py:435`
 
 其中：
 
@@ -490,7 +474,6 @@ num_tokens_need_slot = min(
 )
 ```
 
-位置：`kv_cache_manager.py:415`
 
 含义：
 
@@ -517,7 +500,6 @@ if required_blocks > available_blocks:
     return None
 ```
 
-位置：`kv_cache_manager.py:446`
 
 这里有两个额外约束。
 
@@ -532,7 +514,6 @@ if load_kv_async:
     reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:934`
 
 原因是 async load 会持有 blocks，且在这里不可抢占。如果它把 block 占光，可能导致已经 in-flight 的 prefill 无法完成。
 
@@ -574,7 +555,6 @@ if (
     )
 ```
 
-位置：`kv_cache_manager.py:454`
 
 这一步会：
 
@@ -605,7 +585,6 @@ new_blocks = self.coordinator.allocate_new_blocks(
 )
 ```
 
-位置：`kv_cache_manager.py:467`
 
 返回的 `new_blocks` 会被包装成：
 
@@ -613,7 +592,6 @@ new_blocks = self.coordinator.allocate_new_blocks(
 return self.create_kv_cache_blocks(new_blocks)
 ```
 
-位置：`kv_cache_manager.py:477` 或 `kv_cache_manager.py:490`
 
 Scheduler 会把它记录到：
 
@@ -621,7 +599,7 @@ Scheduler 会把它记录到：
 req_to_new_blocks[request_id] = new_blocks
 ```
 
-running 阶段位置：`scheduler.py:625`
+running 阶段调用 `Scheduler.schedule()` 中的 running 分支。
 
 waiting 阶段则记录完整 blocks：
 
@@ -629,7 +607,6 @@ waiting 阶段则记录完整 blocks：
 req_to_new_blocks[request_id] = self.kv_cache_manager.get_blocks(request_id)
 ```
 
-位置：`scheduler.py:1022`
 
 ---
 
@@ -642,7 +619,6 @@ if not self.enable_caching or delay_cache_blocks:
     return self.create_kv_cache_blocks(new_blocks)
 ```
 
-位置：`kv_cache_manager.py:476`
 
 `delay_cache_blocks=True` 主要用于 P/D 或 KV transfer：
 
@@ -662,7 +638,6 @@ num_tokens_to_cache = min(
 self.coordinator.cache_blocks(request, num_tokens_to_cache)
 ```
 
-位置：`kv_cache_manager.py:484`
 
 这里会排除不可提交的 token，例如可能被拒绝的 draft token。
 
@@ -684,7 +659,6 @@ while True:
     ...
 ```
 
-位置：`scheduler.py:570`
 
 也就是说：
 
@@ -709,7 +683,6 @@ preempted_req = max(
 self.running.remove(preempted_req)
 ```
 
-位置：`scheduler.py:584`
 
 含义是：
 
@@ -741,7 +714,6 @@ PRIORITY 策略下，不是简单抢占队尾，而是根据优先级和到达�
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:609`
 
 也就是抢占 running 队尾请求。
 
@@ -763,12 +735,13 @@ PRIORITY 模式下，有可能抢占到本轮前面已经成功调度过的 runn
 if preempted_req in scheduled_running_reqs:
     preempted_req_id = preempted_req.request_id
     scheduled_running_reqs.remove(preempted_req)
-    token_budget += num_scheduled_tokens.pop(preempted_req_id)
+    restored = num_scheduled_tokens.pop(preempted_req_id)
+    token_budget += restored
+    input_budget += restored + draft_slots
     req_to_new_blocks.pop(preempted_req_id)
     scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`scheduler.py:590`
 
 如果它本轮还安排了 encoder input，还要恢复 encoder budget：
 
@@ -784,7 +757,6 @@ if preempted_encoder_inputs:
     encoder_compute_budget += num_embeds_to_restore
 ```
 
-位置：`scheduler.py:596`
 
 这说明抢占不是单纯释放 block，还必须保持本轮 `SchedulerOutput` 的一致性：
 
@@ -799,10 +771,11 @@ if preempted_encoder_inputs:
 真正的抢占处理在：
 
 ```python
-def _preempt_request(self, request: Request, timestamp: float) -> None:
+def _preempt_request(
+    self, request: Request, timestamp: float, drop_stale_output: bool = False
+) -> None:
 ```
 
-位置：`scheduler.py:1191`
 
 核心逻辑：
 
@@ -814,12 +787,16 @@ request.status = RequestStatus.PREEMPTED
 request.num_computed_tokens = 0
 if request.spec_token_ids:
     request.spec_token_ids = []
+request.drop_stale_output = drop_stale_output or (
+    request.drop_stale_output and request.num_stale_output_tokens > 0
+)
+request.num_stale_output_tokens = request.num_in_flight_tokens
+request.num_output_placeholders = 0
 request.num_preemptions += 1
 self.waiting.prepend_request(request)
 self.reset_preempted_req_ids.add(request.request_id)
 ```
 
-位置：`scheduler.py:1200`
 
 所以被抢占请求会发生这些变化：
 
@@ -832,8 +809,9 @@ self.reset_preempted_req_ids.add(request.request_id)
 6. num_computed_tokens 重置为 0；
 7. 清空 spec_token_ids；
 8. num_preemptions 加 1；
-9. 放回 self.waiting 队列头部；
-10. 记录到 reset_preempted_req_ids，后续通过 SchedulerOutput 通知 Worker 侧重置相关状态。
+9. 记录仍在途的 stale output，按 `drop_stale_output` 决定交付或丢弃；
+10. 放回 self.waiting 队列头部；
+11. 记录到 reset_preempted_req_ids，后续通过 SchedulerOutput 通知 Worker 侧重置相关状态。
 ```
 
 状态迁移是：
@@ -855,7 +833,6 @@ RUNNING
 request.num_computed_tokens = 0
 ```
 
-位置：`scheduler.py:1204`
 
 原因是：
 
@@ -910,7 +887,6 @@ if preempted_req == request:
     break
 ```
 
-位置：`scheduler.py:613`
 
 含义是：
 
@@ -928,7 +904,6 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:617`
 
 running 阶段停止。
 
@@ -942,7 +917,6 @@ waiting 阶段入口是：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:674`
 
 只要 running 阶段发生过抢占，`preempted_reqs` 非空，本轮就不会再调度 waiting 请求。
 
@@ -972,7 +946,6 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:956`
 
 这里没有调用 `_preempt_request()`。
 
@@ -1002,7 +975,6 @@ async KV load 会设置：
 reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:934`
 
 并传给：
 
@@ -1010,7 +982,6 @@ reserved_blocks = self._inflight_prefill_reserved_blocks()
 allocate_slots(..., reserved_blocks=reserved_blocks)
 ```
 
-位置：`scheduler.py:952`
 
 注释说：
 
@@ -1021,7 +992,6 @@ allocate_slots(..., reserved_blocks=reserved_blocks)
 # avoid deadlock and predictable preemptions.
 ```
 
-位置：`scheduler.py:935`
 
 这说明 async KV load 请求虽然不消耗本地 forward token budget，但它对 block 资源很敏感：
 
@@ -1047,7 +1017,6 @@ num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
 ```
 
-位置：`scheduler.py:622`
 
 这里 `req_to_new_blocks` 记录的是本轮新增分配的 blocks。
 
@@ -1065,7 +1034,6 @@ request.status = RequestStatus.RUNNING
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:1022`
 
 这里记录的是请求当前完整 block 列表，因为它是新进入模型执行流的请求，需要给 Worker 足够的初始化信息。
 
@@ -1097,7 +1065,6 @@ V2 model runner 路径下，Scheduler 会把 `scheduled_resumed_reqs` 合并进 
 def _free_request(self, request: Request, delay_free_blocks: bool = False)
 ```
 
-位置：`scheduler.py:2156`
 
 核心逻辑：
 
@@ -1115,7 +1082,6 @@ if not delay_free_blocks:
 return kv_xfer_params, ec_xfer_params
 ```
 
-位置：`scheduler.py:2161`
 
 这里有一个关键点：
 
@@ -1138,7 +1104,6 @@ def _free_blocks(self, request: Request):
     del self.requests[request.request_id]
 ```
 
-位置：`scheduler.py:2185`
 
 所以：
 
@@ -1165,7 +1130,6 @@ finished 请求可能已经不在 running / waiting 中，
 def _free_request_blocks(self, request: Request):
 ```
 
-位置：`scheduler.py:2197`
 
 它会判断是否需要延迟释放：
 
@@ -1177,7 +1141,6 @@ if not self.defer_block_free or (
     return
 ```
 
-位置：`scheduler.py:2201`
 
 如果当前还有 in-flight GPU step 可能写这些 blocks，则不能立刻还给 block pool：
 
@@ -1187,7 +1150,6 @@ if blocks:
     self.deferred_frees.append((self.sched_step_seq, blocks))
 ```
 
-位置：`scheduler.py:2208`
 
 原因是 async scheduling / pipeline parallel 下，Scheduler 可能提前释放某个请求，但 GPU 上一轮写 KV 的操作还没真正完成。如果此时 block 被立即复用，可能产生写入竞态。
 
@@ -1211,7 +1173,6 @@ def _drain_deferred_frees(self):
         self.kv_cache_manager.block_pool.free_blocks(reversed(blocks))
 ```
 
-位置：`scheduler.py:2223`
 
 含义是：
 
@@ -1236,7 +1197,7 @@ def _drain_deferred_frees(self):
 running req-a:
   本轮 decode 1 token
   num_new_tokens = 1
-  num_lookahead_tokens = 0
+  num_lookahead_tokens = 0（本例未启用 speculative lookahead）
   KV block pool 还有空闲 block
 ```
 
@@ -1376,7 +1337,8 @@ waiting 阶段停止，不启动这次 async load。
 
 不一定。
 
-`token_budget` 限制的是本轮模型计算 token 数；KV block 限制的是缓存容量。
+`token_budget` 限制的是本轮模型计算 token 数；`input_budget - draft_slots`
+还要为模型输入和 speculative drafter 预留位置；KV block 限制的是缓存容量。
 
 可能出现：
 
@@ -1394,6 +1356,7 @@ KV block 够只能说明有地方存 KV，是否能调度还要看：
 
 ```text
 token_budget；
+input_budget - draft_slots；
 max_model_len；
 encoder budget；
 Mamba alignment；

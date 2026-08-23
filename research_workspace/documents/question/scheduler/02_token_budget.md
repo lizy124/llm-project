@@ -1,6 +1,6 @@
 # 02. 本轮最多能调度多少 token？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 每一轮 `schedule()` 到底能安排多少 token，哪些配置会限制本轮调度量，token budget 是如何被 running / waiting 请求共同消耗的，以及为什么有些请求明明在队列里却不能被本轮调度。
 
@@ -10,13 +10,16 @@
 
 ## 1. 一句话回答
 
-Scheduler 每轮最多能调度的 token 数由 `self.max_num_scheduled_tokens` 决定，进入 `schedule()` 后变成本轮局部变量 `token_budget`。
+SchedulerOutput 中记录的计算 token 总数由 `self.max_num_scheduled_tokens` 封顶，进入 `schedule()` 后由局部变量 `token_budget` 记剩余额度。当前分支还同时维护 `input_budget`：它以 `max_num_batched_tokens` 初始化，并为每个请求的计算 token 和 speculative drafter slot 共同记账。因此实际调度量必须同时满足这两个预算。
 
 ```python
 token_budget = self.max_num_scheduled_tokens
+spec = self.vllm_config.speculative_config
+draft_slots = spec.max_num_new_slots_for_drafting if spec is not None else 0
+input_budget = self.scheduler_config.max_num_batched_tokens
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:453`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 之后：
 
@@ -32,6 +35,11 @@ token_budget = self.max_num_scheduled_tokens
   → 剩余预算再给 waiting 请求使用
   → 每个请求调度多少，扣多少
   → token_budget 用完，本轮停止接纳更多 token
+
+同时：
+  input_budget
+  → 为每个已调度请求扣除 num_new_tokens + draft_slots
+  → 剩余额度不足以容纳 drafter slot 时停止本轮调度
 ```
 
 ---
@@ -48,7 +56,6 @@ self.max_num_scheduled_tokens = (
 )
 ```
 
-位置：`scheduler.py:110`
 
 含义：
 
@@ -75,7 +82,6 @@ max_num_scheduled_tokens = 每一轮 SchedulerOutput 允许安排的最大 token
 token_budget = self.max_num_scheduled_tokens
 ```
 
-位置：`scheduler.py:453`
 
 `token_budget` 是本轮局部变量。
 
@@ -109,7 +115,6 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:453` 到 `scheduler.py:456`
 
 这意味着本轮不调度任何 token。
 
@@ -134,7 +139,6 @@ if self._pause_state == PauseState.PAUSED_NEW:
 
 这里的 `return 0` 不是表示请求真的完成或释放了，而是暂停态下对外报告“当前没有需要继续推进的 unfinished requests”，让外层停止继续调度和 forward。请求本身仍保留在 Scheduler 的队列 / 状态里，后续恢复后还可以继续推进。
 
-位置：`scheduler.py:2238` 到 `scheduler.py:2248`
 
 ### 4.2 为什么 `PAUSED_NEW` 不直接把 token_budget 设为 0
 
@@ -153,7 +157,6 @@ if self._pause_state == PauseState.PAUSED_NEW:
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:674`
 
 所以 `PAUSED_NEW` 下 running 阶段仍可用 token budget，但 waiting 阶段不会执行。
 
@@ -171,7 +174,6 @@ running 阶段入口：
 while req_index < len(self.running) and token_budget > 0:
 ```
 
-位置：`scheduler.py:479`
 
 只要还有 running 请求，并且 token budget 大于 0，就尝试推进 running 请求。
 
@@ -181,7 +183,6 @@ while req_index < len(self.running) and token_budget > 0:
 token_budget -= num_new_tokens
 ```
 
-位置：`scheduler.py:627`
 
 ### 5.2 waiting 请求使用剩余预算
 
@@ -191,7 +192,6 @@ waiting 阶段入口：
 while (self.waiting or self.skipped_waiting) and token_budget > 0:
 ```
 
-位置：`scheduler.py:677`
 
 也就是说：
 
@@ -205,7 +205,6 @@ waiting 请求调度成功后同样扣预算：
 token_budget -= num_new_tokens
 ```
 
-位置：`scheduler.py:1025` 到 `scheduler.py:1026`
 
 ### 5.3 为什么 running 优先
 
@@ -232,7 +231,6 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:510`
 
 解释：
 
@@ -268,21 +266,23 @@ if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
     num_new_tokens = self.scheduler_config.long_prefill_token_threshold
 ```
 
-位置：`scheduler.py:515`
 
 这个配置用于限制单个长 prefill 每轮最多调度多少 token。
 
 如果没有这个限制，长 prompt 请求可能一次吃掉整个 batch token budget，导致其他请求延迟增加。
 
-### 7.2 本轮剩余 token budget
+### 7.2 本轮剩余 token budget 与 input budget
 
 ```python
-num_new_tokens = min(num_new_tokens, token_budget)
+num_new_tokens = min(
+    num_new_tokens,
+    token_budget,
+    input_budget - draft_slots,
+)
 ```
 num_new_tokens 是针对当前正在遍历的单个 request 而言，不是所有请求的总和。
-位置：`scheduler.py:517`
 
-这是最直接的预算限制。
+`token_budget` 限制 SchedulerOutput 记录的计算 token 总量；`input_budget` 还为 speculative drafter 的新增 slot 留空间。没有 speculative config 时 `draft_slots == 0`，两者才退化为只比较 token 数。
 
 如果当前剩余 budget 只有 512，即使请求还需要 4096 token，本轮最多也只能安排 512 token。
 
@@ -297,7 +297,6 @@ num_new_tokens = min(
 )
 ```
 
-位置：`scheduler.py:521`
 
 这里防止调度位置超过模型最大上下文长度。
 
@@ -309,7 +308,6 @@ num_new_tokens = min(
 self.num_sampled_tokens_per_step = 1
 ```
 
-位置：`scheduler.py:121`
 
 扩散模型可能不采样 token，因此是 0。
 
@@ -321,7 +319,6 @@ self.num_sampled_tokens_per_step = 1
 encoder_compute_budget = self.max_num_encoder_input_tokens
 ```
 
-位置：`scheduler.py:460`
 
 然后调用：
 
@@ -329,7 +326,6 @@ encoder_compute_budget = self.max_num_encoder_input_tokens
 encoder_inputs_to_schedule, num_new_tokens, new_encoder_compute_budget, ... = self._try_schedule_encoder_inputs(...)
 ```
 
-位置：`scheduler.py:532`
 
 这里的 `encoder_compute_budget` 是单独分配、单独扣减的，不是 `token_budget`。`_try_schedule_encoder_inputs()` 会检查当前 encoder input 需要的 embedding 数是否超过剩余 budget；如果 budget 或 encoder cache 不够，就不能跳过它，只能把 `num_new_tokens` 截断到这个 encoder input 之前。
 ### 7.5 Mamba block 对齐限制
@@ -339,7 +335,6 @@ if self.need_mamba_block_aligned_split:
     num_new_tokens = self._mamba_block_aligned_split(request, num_new_tokens)
 ```
 
-位置：`scheduler.py:546`
 
 普通 attention 的 KV cache 本来就是按 block 管理的；这里的限制是给 Mamba state cache 用的。
 
@@ -364,7 +359,6 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:834`
 
 这表示本轮只是为远端 KV load 分配 block，不做模型 forward 计算。
 
@@ -381,7 +375,6 @@ if load_kv_async:
     reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:934` 到 `scheduler.py:940`
 
 ### 8.2 普通 waiting 请求：剩余未计算 token
 
@@ -391,7 +384,6 @@ if load_kv_async:
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`scheduler.py:847`
 
 这里的 `num_computed_tokens` 包含：
 
@@ -423,14 +415,13 @@ Scheduler 只需要安排剩下 3000 token 的 prefill。
 ```python
 num_new_tokens = 1 + self.num_spec_tokens
 if (
-    num_new_tokens > token_budget
+    num_new_tokens > request_token_budget
     or num_computed_tokens + num_new_tokens > self.max_model_len
 ):
     break
 pad_spec_decode = True
 ```
 
-位置：`scheduler.py:849` 到 `scheduler.py:865`
 
 这个分支会先消耗更多 token budget；如果预算或模型长度不够，则本轮 waiting 调度停止，而不是退回调度未 padding 的 1 token。
 
@@ -442,7 +433,6 @@ if 0 < threshold < num_new_tokens:
     num_new_tokens = threshold
 ```
 
-位置：`scheduler.py:867`
 
 和 running 一样，防止单个长 prefill 独占本轮预算。
 
@@ -451,12 +441,11 @@ if 0 < threshold < num_new_tokens:
 ```python
 if (
     not self.scheduler_config.enable_chunked_prefill
-    and num_new_tokens > token_budget
+    and num_new_tokens > request_token_budget
 ):
     break
 ```
 
-位置：`scheduler.py:873`
 
 这是一个非常重要的分支。
 
@@ -473,10 +462,9 @@ if (
 如果启用 chunked prefill，则允许部分调度：
 
 ```python
-num_new_tokens = min(num_new_tokens, token_budget)
+num_new_tokens = min(num_new_tokens, request_token_budget)
 ```
 
-位置：`scheduler.py:881`
 
 ### 9.4 encoder input 限制
 
@@ -486,7 +474,6 @@ waiting 请求也会调用：
 _try_schedule_encoder_inputs(...)
 ```
 
-位置：`scheduler.py:885`
 
 它可能把 `num_new_tokens` 降为 0。
 
@@ -495,7 +482,6 @@ if num_new_tokens == 0:
     break
 ```
 
-位置：`scheduler.py:898`
 
 ### 9.5 Mamba block 对齐限制
 
@@ -506,7 +492,6 @@ if self.need_mamba_block_aligned_split and not load_kv_async:
         break
 ```
 
-位置：`scheduler.py:903`
 
 如果 Mamba 对齐后不能形成可调度 chunk，则 waiting 调度停止。
 
@@ -520,7 +505,6 @@ if self.need_mamba_block_aligned_split and not load_kv_async:
 encoder_compute_budget = self.max_num_encoder_input_tokens
 ```
 
-位置：`scheduler.py:460`
 
 它限制本轮最多处理多少 encoder input。
 
@@ -532,7 +516,6 @@ self.max_num_encoder_input_tokens = (
 )
 ```
 
-位置：`scheduler.py:222`
 
 ### 10.1 token_budget 和 encoder_compute_budget 的区别
 
@@ -553,7 +536,6 @@ self.max_num_encoder_input_tokens = (
 encoder_compute_budget -= num_encoder_embeds
 ```
 
-位置：`scheduler.py:1516`
 
 如果某个 encoder input 已经在远端 EC cache 里，则会进入 external load 路径，不一定本地消耗 encoder compute。
 
@@ -567,7 +549,6 @@ encoder_compute_budget -= num_encoder_embeds
 self.max_num_running_reqs = self.scheduler_config.max_num_seqs
 ```
 
-位置：`scheduler.py:109`
 
 waiting 调度时：
 
@@ -577,16 +558,16 @@ if num_running >= self.max_num_running_reqs:
     break
 ```
 
-位置：`scheduler.py:680`
 
 这不是 token 数限制，而是 sequence/request 数限制。当前源码会把 `WAITING_FOR_STREAMING_REQ` 的暂停 streaming session 也计入 `num_running`，因为它虽然不在 `self.running` 中，但仍占用一个 model-runner request slot。
 
 即使 token budget 还有剩余，如果 running 请求数量加上等待 streaming input 的 session 数已经达到上限，也不能再接纳新的 waiting 请求。
 
-所以 Scheduler 的本轮调度量受两个维度共同限制：
+所以 Scheduler 的本轮调度量至少受三个维度共同限制：
 
 ```text
 token 维度：max_num_scheduled_tokens / token_budget
+模型输入维度：max_num_batched_tokens / input_budget（含每请求 draft_slots）
 sequence 维度：max_num_running_reqs / max_num_seqs（包含等待 streaming input 的 session）
 ```
 
@@ -601,9 +582,9 @@ running 调度成功：
 ```python
 num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
+input_budget -= num_new_tokens + draft_slots
 ```
 
-位置：`scheduler.py:626`
 
 ### 12.2 waiting 请求扣减
 
@@ -612,9 +593,9 @@ waiting 调度成功：
 ```python
 num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
+input_budget -= num_new_tokens + draft_slots
 ```
 
-位置：`scheduler.py:1025` 到 `scheduler.py:1026`
 
 ### 12.3 异步 KV load 不扣 token budget
 
@@ -624,7 +605,6 @@ token_budget -= num_new_tokens
 num_new_tokens = 0
 ```
 
-位置：`scheduler.py:834`
 
 然后请求进入 `WAITING_FOR_REMOTE_KVS`，不会把它作为普通本地计算加入 running。
 
@@ -648,18 +628,18 @@ total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
 assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
 
 assert token_budget >= 0
+assert input_budget >= 0
 assert len(self.running) <= self.max_num_running_reqs
 assert len(scheduled_new_reqs) + len(scheduled_resumed_reqs) + len(
     scheduled_running_reqs
 ) <= len(self.running)
 ```
 
-位置：`scheduler.py:1061` 到 `scheduler.py:1072`
 
 这些 assert 保证：
 
 1. 记录下来的总调度 token 没超过配置上限；
-2. 局部剩余预算没有被扣成负数；
+2. token 和 input 两套局部剩余预算都没有被扣成负数；
 3. running 请求数量没有超过 `max_num_running_reqs`；
 4. 本轮 scheduled 请求数不超过当前 running 队列中的请求数。
 
@@ -670,7 +650,6 @@ num_scheduled_tokens=num_scheduled_tokens
 total_num_scheduled_tokens=total_num_scheduled_tokens
 ```
 
-位置：`scheduler.py:1142` 到 `scheduler.py:1160`
 
 同一段还会写入 `scheduled_spec_decode_tokens`、`scheduled_encoder_inputs`、`new_block_ids_to_zero` 和 `num_spec_tokens_to_schedule` 等字段；后面如果有 KV / EC connector，还会继续补充 connector metadata。
 
@@ -686,7 +665,6 @@ total_num_scheduled_tokens=total_num_scheduled_tokens
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`scheduler.py:1182`
 
 里面会更新：
 
@@ -694,7 +672,6 @@ self._update_after_schedule(scheduler_output)
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1228`
 
 这意味着：
 
@@ -710,7 +687,6 @@ request.num_computed_tokens += num_scheduled_token
 
 如果后续投机解码有 token 被拒绝，再在 `update_from_output()` 中回退。
 
-位置：`scheduler.py:1656`
 
 ---
 
@@ -722,7 +698,6 @@ request.num_computed_tokens += num_scheduled_token
 def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
 ```
 
-位置：`scheduler.py:433`
 
 如果开启 throttle：
 
@@ -732,7 +707,6 @@ defer_prefills = (
 ) and any(not r.is_prefill_chunk for r in self.running)
 ```
 
-位置：`scheduler.py:473`
 
 含义：
 
@@ -748,7 +722,6 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:504`
 
 waiting 中的新 prefill 也可能被延后：
 
@@ -757,7 +730,6 @@ elif defer_prefills and num_computed_tokens < request.num_tokens - 1:
     break
 ```
 
-位置：`scheduler.py:838`
 
 所以 token_budget 即使还剩，也可能不用于 prefill。
 
@@ -788,6 +760,8 @@ Scheduler 会基于延迟、平衡、cache、block 等条件决定是否使用�
 9. DP prefill throttling 延后 prefill；
 10. 新 decode 请求 spec padding 后预算或长度不够；
 11. 外部 KV async load 本轮只分配 block，不计算 token。
+12. `input_budget` 无法再容纳请求的计算 token 和 drafter slot；
+13. multi-module MTP 的 prefill lookahead 约束不能形成合法 chunk。
 
 因此：
 
@@ -809,7 +783,6 @@ num_computed_tokens = (
 )
 ```
 
-位置：`scheduler.py:797`
 
 然后只调度剩余 token：
 
@@ -817,7 +790,6 @@ num_computed_tokens = (
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`scheduler.py:847`
 
 如果外部 KV 命中越多，`num_new_tokens` 越少，本轮 token budget 消耗越少。
 
@@ -847,6 +819,8 @@ prompt = 16000 token
 ```text
 max_num_scheduled_tokens = 8192
 本轮开始 token_budget = 8192
+max_num_batched_tokens = 8192
+本例未启用 speculative decoding，因此 draft_slots = 0，input_budget = 8192
 running:
   req-a 需要 decode 1 token
   req-b 是 chunked prefill，还需要 4096 token
@@ -904,6 +878,7 @@ schedule()
 
 ```text
 max_num_running_reqs
+max_num_batched_tokens / input_budget / draft_slots
 long_prefill_token_threshold
 enable_chunked_prefill
 max_model_len
@@ -914,6 +889,7 @@ KV Connector 外部命中 / async load
 pause state
 DP prefill throttling
 spec decode padding / async placeholders
+multi-module MTP prefill lookahead
 ```
 
 因此，`token_budget` 是 Scheduler 的“总 token 预算”，但最终调度量是多个约束共同作用后的结果。

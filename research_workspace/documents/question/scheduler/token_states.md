@@ -1,14 +1,15 @@
 # vLLM Scheduler 中 token 的各种状态
 
-源码相关位置：
+源码相关文件与符号：
 
-- `vllm/vllm/v1/request.py:131`：Request token 字段初始化、`append_output_token_ids()` 与 token 长度属性。
-- `vllm/vllm/v1/core/sched/scheduler.py:510`：running 请求的 `num_new_tokens` 计算公式。
-- `vllm/vllm/v1/core/sched/scheduler.py:631`：spec token 从 request 转移到 `SchedulerOutput`。
-- `vllm/vllm/v1/core/sched/scheduler.py:1225`：`_update_after_schedule()` 乐观推进 computed / in-flight 计数。
-- `vllm/vllm/v1/core/sched/scheduler.py:1614`：`update_from_output()` 回收 in-flight、处理 sampled token 与 spec reject。
-- `vllm/vllm/v1/core/sched/scheduler.py:2295`：reset prefix cache 后丢弃 stale async output frame。
-- `vllm/vllm/v1/core/sched/async_scheduler.py:19`：async scheduling 的 output placeholder 与 spec placeholder 更新。
+- `vllm/v1/request.py`：Request token 字段初始化、`append_output_token_ids()` 与 token 长度属性。
+- `vllm/v1/core/sched/scheduler.py`：running 请求的 `num_new_tokens` 计算公式。
+- `vllm/v1/core/sched/scheduler.py`：spec token 从 request 转移到 `SchedulerOutput`。
+- `vllm/v1/core/sched/scheduler.py`：`_update_after_schedule()` 乐观推进 computed / in-flight 计数。
+- `vllm/v1/core/sched/scheduler.py`：`update_from_output()` 回收 in-flight、处理 sampled token 与 spec reject。
+- `vllm/v1/core/sched/scheduler.py`：`_preempt_request()` 标记 stale output，
+  `update_from_output()` 负责交付或丢弃这些返回帧。
+- `vllm/v1/core/sched/async_scheduler.py`：async scheduling 的 output placeholder 与 spec placeholder 更新。
 
 本文不只解释 speculative decoding，而是从头梳理 vLLM Scheduler 里 token 的完整状态。重点解释这些字段为什么同时存在、各自代表什么、什么时候增长、什么时候回退。
 
@@ -181,7 +182,8 @@ spec decode 有 4 个 draft 时，通常加：
 | `num_computed_tokens` | Scheduler 认为已计算到的位置 | 不是 token 列表，是进度 | schedule 后前进，spec reject / invalid KV block 后回退 |
 | `num_in_flight_tokens` | 已调度但尚未被 `update_from_output()` 回收的 token 数 | 否，是 in-flight 计数 | schedule 后增加，worker output 回来后扣减 |
 | `num_output_placeholders` | async in-flight 输出占位 | 否，是输出位置数量 | async schedule 后增加，output 返回后减少，spec reject 时也会回退 |
-| `async_tokens_to_discard` | reset / force-preempt 后待丢弃的 stale async output frame 数 | 否，是 stale frame 计数 | reset prefix cache 时设置，async output 回来时递减 |
+| `num_stale_output_tokens` | preempt 后仍在途的 stale output token 数 | 否，是 stale token 计数 | `_preempt_request()` 设置，`update_from_output()` 按本轮返回量递减 |
+| `drop_stale_output` | 是否丢弃 stale output，而不是交付给客户端 | 否，是行为开关 | reset 或 connector 场景的 preempt 时设置 |
 | `num_scheduled_tokens[req_id]` | 某轮给该请求安排的 token 数 | 不是 token 列表，是本轮工作量 | 每次 `schedule()` 生成 |
 | `scheduled_spec_decode_tokens[req_id]` | 本轮发给 Worker 验证的 draft tokens | 否，待验证 | `schedule()` 生成 |
 | `generated_token_ids` | Worker 返回的真实输出 token | 是，待 append | `ModelRunnerOutput` 返回后 |
@@ -647,6 +649,10 @@ spec decode：1 + draft token 数
 
 这个值会进入 `SchedulerOutput`，告诉 Worker 本轮要做多少工作。
 
+实际值还会在 `schedule()` 中受 `token_budget` 和
+`input_budget - draft_slots` 限制；`draft_slots` 是 speculative decoding
+占用的输入预算，不应和 `num_scheduled_tokens` 混为同一个计数。
+
 调度后，Scheduler 会用它推进：
 
 ```python
@@ -1012,14 +1018,17 @@ d1 d2 x  # 3 个真实输出 token
 
 那么 spec reject 逻辑会先扣 rejected draft 数；随后 `AsyncScheduler._update_request_with_output()` 再按真实 append 的 `new_token_ids` 数量扣减。总扣减量仍是 rejected + returned tokens，最终让状态和真实输出对齐。
 
-如果 `reset_prefix_cache(reset_running_requests=True)` 在 async 输出返回前强制 preempt，Scheduler 会把当时的 `num_output_placeholders` 转成：
+如果 reset prefix cache 或 connector 场景在 async 输出返回前强制 preempt，Scheduler
+会把当时仍在途的计算输出记录为 stale：
 
 ```python
-request.async_tokens_to_discard = request.num_output_placeholders
+request.num_stale_output_tokens = request.num_in_flight_tokens
 request.num_output_placeholders = 0
 ```
 
-之后 stale async output frame 回来时，`AsyncScheduler._update_request_with_output()` 会先递减 `async_tokens_to_discard` 并返回空输出，不再 append token，也不再按这帧更新 placeholder。
+如果 `drop_stale_output` 为真，stale frame 会被直接丢弃；否则 stale token
+仍可交付，但不会参与 spec reject 回退。`update_from_output()` 每次按
+`num_tokens_scheduled` 消化 `num_stale_output_tokens`，避免同一批输出重复影响计数。
 
 ---
 
@@ -1057,8 +1066,8 @@ async placeholder
   → schedule 发出但 output 未返回
   → num_output_placeholders 增加
   → output 返回后减少
-  → reset / force-preempt 时转为 async_tokens_to_discard
-  → 真实 token append 到 _all_token_ids，或 stale frame 被丢弃
+  → reset / force-preempt 时标记 num_stale_output_tokens
+  → 真实 token append 到 _all_token_ids，或按 drop_stale_output 丢弃 stale frame
 ```
 
 ---
@@ -1120,7 +1129,8 @@ num_tokens_with_spec 是真实 token 加上当前准备验证的 draft token；
 num_computed_tokens 是 Scheduler 认为计算进度已经推进到哪里；
 num_in_flight_tokens 是这条乐观进度里尚未被 update_from_output() 回收的 token 数；
 num_output_placeholders 是 async 下已经发出去但还没写回 request 的输出占位；
-async_tokens_to_discard 是 reset / force-preempt 后需要丢弃的 stale output frame 数；
+num_stale_output_tokens 是 reset / force-preempt 后仍在途的 stale output token 数；
+drop_stale_output 决定这些 token 是交付还是丢弃；
 num_scheduled_tokens 是本轮实际安排给 Worker 的工作量；
 最终哪些 token 成为真实输出，要等 Worker 返回后由 update_from_output() append 和修正。
 ```

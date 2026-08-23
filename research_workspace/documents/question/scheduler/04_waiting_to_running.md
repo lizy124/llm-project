@@ -1,6 +1,6 @@
 # 04. 哪些 waiting 请求可以进入运行态？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 在处理完 `self.running` 后，如何从 `self.waiting` / `self.skipped_waiting` 中选择请求，判断它是否可以进入 `self.running`，以及哪些条件会导致 waiting 请求本轮不能进入运行态。
 
@@ -25,7 +25,7 @@ waiting 阶段入口是：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:674`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 这说明 waiting 请求能进入 running 的第一前提是：
 
@@ -40,14 +40,13 @@ if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 while (self.waiting or self.skipped_waiting) and token_budget > 0:
 ```
 
-位置：`scheduler.py:677`
 
 所以 waiting 请求进入 running 的必要条件可以概括为：
 
 ```text
 1. 本轮没有 preempted_reqs；
 2. pause_state == UNPAUSED；
-3. token_budget > 0；
+3. token_budget > 0，且 `input_budget` 还能容纳本请求的计算 token 与 `draft_slots`；
 4. len(self.running) < self.max_num_running_reqs；
 5. 能从 self.waiting / self.skipped_waiting 选出一个队头请求；
 6. 如果请求是 blocked waiting status，需要先恢复成功；
@@ -68,7 +67,6 @@ self.running.append(request)
 request.status = RequestStatus.RUNNING
 ```
 
-位置：`scheduler.py:985`、`scheduler.py:1008`、`scheduler.py:1027`
 
 ---
 
@@ -92,7 +90,6 @@ waiting 阶段在 running 阶段之后：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:673`
 
 这有两个重要含义。
 
@@ -135,7 +132,6 @@ waiting 阶段要求：
 self._pause_state == PauseState.UNPAUSED
 ```
 
-位置：`scheduler.py:674`
 
 Scheduler 有三种 pause 状态：
 
@@ -152,7 +148,6 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:453` 到 `scheduler.py:456`
 
 而 `PAUSED_NEW` 不会直接把 `token_budget` 置 0，因为 running 请求仍然可以继续推进。但它会让 waiting 阶段条件不成立。
 
@@ -173,7 +168,6 @@ waiting 循环是：
 while (self.waiting or self.skipped_waiting) and token_budget > 0:
 ```
 
-位置：`scheduler.py:677`
 
 这说明 waiting 阶段继续运行需要两个条件：
 
@@ -198,7 +192,6 @@ if num_running >= self.max_num_running_reqs:
     break
 ```
 
-位置：`scheduler.py:680` 到 `scheduler.py:682`
 
 这里限制的是同时占用 model-runner request slot 的请求数量，不是 token 数量。当前源码会把 `WAITING_FOR_STREAMING_REQ` 的暂停 streaming session 也计入 `num_running`，因为它虽然不在 `self.running` 中，但仍占用一个 model-runner request slot。
 
@@ -208,7 +201,6 @@ if num_running >= self.max_num_running_reqs:
 self.max_num_running_reqs = self.scheduler_config.max_num_seqs
 ```
 
-位置：`scheduler.py:109`
 
 因此：
 
@@ -239,7 +231,6 @@ assert request_queue is not None
 request = request_queue.peek_request()
 ```
 
-位置：`scheduler.py:684`
 
 选择逻辑是：
 
@@ -256,7 +247,6 @@ def _select_waiting_queue_for_scheduling(self) -> RequestQueue | None:
     return self.waiting or self.skipped_waiting or None
 ```
 
-位置：`scheduler.py:1924`
 
 ### 6.1 FCFS 策略
 
@@ -266,7 +256,6 @@ FCFS 下优先返回：
 self.skipped_waiting or self.waiting or None
 ```
 
-位置：`scheduler.py:1925`
 
 也就是说，如果 `skipped_waiting` 非空，会优先重试被跳过的请求。
 
@@ -287,7 +276,6 @@ skipped_req = self.skipped_waiting.peek_request()
 return self.waiting if waiting_req < skipped_req else self.skipped_waiting
 ```
 
-位置：`scheduler.py:1929`
 
 这说明：
 
@@ -325,7 +313,6 @@ def _is_blocked_waiting_status(status: RequestStatus) -> bool:
     )
 ```
 
-位置：`scheduler.py:1911`
 
 waiting 循环中，如果队头请求是 blocked 状态，会先尝试恢复：
 
@@ -338,7 +325,6 @@ if self._is_blocked_waiting_status(
     continue
 ```
 
-位置：`scheduler.py:691`
 
 含义是：
 
@@ -358,7 +344,6 @@ Scheduler 每轮会尝试把它恢复到 WAITING / PREEMPTED；
 def _try_promote_blocked_waiting_request(self, request: Request) -> bool:
 ```
 
-位置：`scheduler.py:2526`
 
 ### 8.1 `WAITING_FOR_REMOTE_KVS`
 
@@ -371,7 +356,6 @@ if request.request_id not in self.finished_recving_kv_req_ids:
     return False
 ```
 
-位置：`scheduler.py:2534`
 
 如果 Worker 还没报告 finished_recving，则恢复失败，继续留在 skipped waiting。
 
@@ -386,7 +370,6 @@ else:
 return True
 ```
 
-位置：`scheduler.py:2536`
 
 迁移关系：
 
@@ -411,7 +394,6 @@ request.status = RequestStatus.WAITING
 return True
 ```
 
-位置：`scheduler.py:2543`
 
 迁移关系：
 
@@ -431,7 +413,6 @@ if request.status == RequestStatus.WAITING_FOR_STREAMING_REQ:
     return False
 ```
 
-位置：`scheduler.py:2550`
 
 它需要 `add_request()` 收到同一个 request id 的新 input chunk，再通过 `_update_request_as_session()` 改回 `WAITING`。
 
@@ -464,7 +445,6 @@ if (
     continue
 ```
 
-位置：`scheduler.py:705`
 
 含义是：
 
@@ -500,19 +480,17 @@ waiting 请求被接纳进入 running 前，会先计算已经可复用的 token
 if request.num_computed_tokens == 0:
 ```
 
-位置：`scheduler.py:724`
 
 才会查询本地 prefix cache 和外部 KV cache。
 
 普通路径下，本地 prefix cache 查询是：
 
 ```python
-new_computed_blocks, num_new_local_computed_tokens = (
+new_computed_blocks, num_new_local_computed_tokens, shared_prefix_boundary = (
     self.kv_cache_manager.get_computed_blocks(request)
 )
 ```
 
-位置：`scheduler.py:761`
 
 含义：
 
@@ -520,6 +498,7 @@ new_computed_blocks, num_new_local_computed_tokens = (
 |---|---|
 | `new_computed_blocks` | 本地 prefix cache 命中的 KV blocks |
 | `num_new_local_computed_tokens` | 本地 prefix cache 命中的 token 数 |
+| `shared_prefix_boundary` | 稀疏 KV group 需要保留的共享前缀边界；普通模型通常为 0 |
 
 如果是 Hybrid + Mamba + connector 场景，会走特殊路径：
 
@@ -530,7 +509,6 @@ computed, per_group_hits = (
 num_new_local_computed_tokens = max(per_group_hits)
 ```
 
-位置：`scheduler.py:734`
 
 这部分细节会在 `05_prefix_and_external_kv_hits.md` 中专门展开。这里先抓住主线：
 
@@ -554,7 +532,6 @@ if self.connector is not None:
     )
 ```
 
-位置：`scheduler.py:774`
 
 这里把本地命中的 token 数传给 connector。
 
@@ -581,7 +558,6 @@ num_computed_tokens = (
 )
 ```
 
-位置：`scheduler.py:797`
 
 并且必须满足：
 
@@ -589,7 +565,6 @@ num_computed_tokens = (
 assert num_computed_tokens <= request.num_tokens
 ```
 
-位置：`scheduler.py:800`
 
 ---
 
@@ -611,7 +586,6 @@ step_skipped_waiting.prepend_request(request)
 continue
 ```
 
-位置：`scheduler.py:781`
 
 含义是：
 
@@ -648,7 +622,6 @@ if (
     continue
 ```
 
-位置：`scheduler.py:802`
 
 含义是：
 
@@ -673,7 +646,6 @@ if load_kv_async:
     num_new_tokens = 0
 ```
 
-位置：`scheduler.py:834`
 
 这表示：
 
@@ -693,7 +665,6 @@ if load_kv_async:
     continue
 ```
 
-位置：`scheduler.py:986` 到 `scheduler.py:1006`
 
 也就是说 async remote KV load 不会让请求进入 running。
 
@@ -727,7 +698,6 @@ elif defer_prefills and num_computed_tokens < request.num_tokens - 1:
     break
 ```
 
-位置：`scheduler.py:838`
 
 注释说明：
 
@@ -737,7 +707,6 @@ elif defer_prefills and num_computed_tokens < request.num_tokens - 1:
 # prefill compute is deferred to a cadence-aligned step.
 ```
 
-位置：`scheduler.py:839`
 
 含义是：
 
@@ -765,7 +734,6 @@ elif defer_prefills and num_computed_tokens < request.num_tokens - 1:
 num_new_tokens = request.num_tokens - num_computed_tokens
 ```
 
-位置：`scheduler.py:847`
 
 这里用的是 `request.num_tokens`，不是 `request.num_prompt_tokens`。
 
@@ -777,7 +745,6 @@ num_new_tokens = request.num_tokens - num_computed_tokens
 # requests, which have output tokens.
 ```
 
-位置：`scheduler.py:843`
 
 原因是 PREEMPTED / resumed 请求可能已经有 output token。恢复时不只是重新 prefill prompt，还要把当前请求已有的 token 序列考虑进去。
 
@@ -821,7 +788,6 @@ if (
     pad_spec_decode = True
 ```
 
-位置：`scheduler.py:849` 到 `scheduler.py:865`
 
 如果 padding 后超过本轮剩余 `token_budget`，或会超过 `max_model_len`，这里会直接 `break`，避免在本轮调度一个未 padding 的新 decode 请求。
 
@@ -833,7 +799,6 @@ if 0 < threshold < num_new_tokens:
     num_new_tokens = threshold
 ```
 
-位置：`scheduler.py:867`
 
 这和 running 阶段类似，用于避免单个长 prompt 一次吃掉太多 token budget。
 
@@ -859,29 +824,29 @@ num_new_tokens = 4096
 ```python
 if (
     not self.scheduler_config.enable_chunked_prefill
-    and num_new_tokens > token_budget
+    and num_new_tokens > request_token_budget
 ):
     break
 ```
 
-位置：`scheduler.py:873`
 
 含义是：
 
 ```text
+`request_token_budget = min(token_budget, input_budget - draft_slots)`。
+
 如果关闭 chunked prefill，
 waiting 请求必须能在本轮完整安排它剩余的 prefill token；
-如果剩余 token 超过当前 token_budget，本轮 waiting 调度停止。
+如果剩余 token 超过当前 `request_token_budget`，本轮 waiting 调度停止。
 ```
 
 如果启用了 chunked prefill，则允许只安排一部分：
 
 ```python
-num_new_tokens = min(num_new_tokens, token_budget)
+num_new_tokens = min(num_new_tokens, request_token_budget)
 assert num_new_tokens > 0
 ```
 
-位置：`scheduler.py:881`
 
 ### 18.1 为什么关闭 chunked prefill 时是 break
 
@@ -915,7 +880,6 @@ if request.has_encoder_inputs:
         break
 ```
 
-位置：`scheduler.py:885`
 
 `_try_schedule_encoder_inputs()` 会检查本轮 decoder token 范围是否覆盖 image/audio/video 等 encoder input。
 
@@ -957,13 +921,11 @@ if self.need_mamba_block_aligned_split and not load_kv_async:
         break
 ```
 
-位置：`scheduler.py:903`
 
 Mamba 对齐的目标是让 prefill chunk 尽量按 block 边界切分，便于 Mamba state cache。
 
 当前源码还会结合 `num_uncached_common_prefix_tokens` 做 Marconi cache admission 优化：如果公共前缀未缓存长度足够长，并且本轮 token 数超过它，会先截到公共前缀长度再按 block 对齐。
 
-位置：`scheduler.py:376` 到 `scheduler.py:384`
 
 如果对齐后 `num_new_tokens` 变成 0，Scheduler 会停止 waiting 调度。
 
@@ -982,7 +944,6 @@ effective_lookahead_tokens = (
 )
 ```
 
-位置：`scheduler.py:917`
 
 注释说明这是为处理 P/D Disaggregation + Spec Decoding 的边界情况：
 
@@ -1017,7 +978,6 @@ if (
     )
 ```
 
-位置：`scheduler.py:923`
 
 这些 `num_encoder_tokens` 会传给 KV cache manager 的 `allocate_slots()`。
 
@@ -1040,7 +1000,6 @@ if load_kv_async:
     reserved_blocks = self._inflight_prefill_reserved_blocks()
 ```
 
-位置：`scheduler.py:934`
 
 注释解释：
 
@@ -1051,7 +1010,6 @@ if load_kv_async:
 # avoid deadlock and predictable preemptions.
 ```
 
-位置：`scheduler.py:936`
 
 含义是：
 
@@ -1083,7 +1041,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:942`
 
 waiting 阶段的 block 分配比 running 阶段复杂，因为它要同时处理：
 
@@ -1108,7 +1065,6 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:956`
 
 也就是说：
 
@@ -1134,7 +1090,6 @@ if self.connector is not None:
     )
 ```
 
-位置：`scheduler.py:969`
 
 这一步非常关键。
 
@@ -1158,7 +1113,6 @@ block 分配成功后，Scheduler 先把请求从原队列弹出：
 request = request_queue.pop_request()
 ```
 
-位置：`scheduler.py:985`
 
 如果是 async KV load：
 
@@ -1171,7 +1125,6 @@ if load_kv_async:
     continue
 ```
 
-位置：`scheduler.py:986` 到 `scheduler.py:1006`
 
 这里有几个关键点：
 
@@ -1205,7 +1158,6 @@ transfer 完成后，_update_waiting_for_remote_kv 会只 cache 成功加载的 
 self.running.append(request)
 ```
 
-位置：`scheduler.py:1008`
 
 如果开启 stats，会记录调度事件：
 
@@ -1215,7 +1167,6 @@ request.record_event(
 )
 ```
 
-位置：`scheduler.py:1009`
 
 然后根据原始状态区分新请求和恢复请求：
 
@@ -1228,7 +1179,6 @@ else:
     raise RuntimeError(f"Invalid request status: {request.status}")
 ```
 
-位置：`scheduler.py:1013`
 
 最后设置状态和调度记录：
 
@@ -1242,7 +1192,6 @@ request.status = RequestStatus.RUNNING
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:1022` 到 `scheduler.py:1028`
 
 迁移关系是：
 
@@ -1270,7 +1219,6 @@ self.waiting / PREEMPTED
 request.num_computed_tokens = num_computed_tokens
 ```
 
-位置：`scheduler.py:1028`
 
 这里的 `num_computed_tokens` 是：
 
@@ -1286,7 +1234,6 @@ request.num_computed_tokens = num_computed_tokens
 num_scheduled_tokens[request_id] = num_new_tokens
 ```
 
-位置：`scheduler.py:1025`
 
 等 `SchedulerOutput` 构造完成后，`_update_after_schedule()` 会再执行：
 
@@ -1294,7 +1241,6 @@ num_scheduled_tokens[request_id] = num_new_tokens
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1228`
 
 所以 waiting 请求进入 running 的进度更新分两步：
 
@@ -1340,7 +1286,6 @@ if num_computed_tokens + num_new_tokens < request.num_tokens:
     self._inflight_prefills.add(request)
 ```
 
-位置：`scheduler.py:1033`
 
 含义：
 
@@ -1356,7 +1301,6 @@ async KV load 也会加入 `_inflight_prefills`：
 self._inflight_prefills.add(request)
 ```
 
-位置：`scheduler.py:1005`
 
 但二者语义略有不同：
 
@@ -1381,7 +1325,6 @@ if encoder_inputs_to_schedule:
     encoder_compute_budget = new_encoder_compute_budget
 ```
 
-位置：`scheduler.py:1037`
 
 如果 encoder input 来自外部 encoder cache：
 
@@ -1393,7 +1336,6 @@ if external_load_encoder_input:
             self.ec_connector.update_state_after_alloc(request, i)
 ```
 
-位置：`scheduler.py:1046`
 
 这些信息会进入 `SchedulerOutput.scheduled_encoder_inputs` 或 ECConnector metadata，供 Worker / connector 执行。
 
@@ -1407,7 +1349,6 @@ waiting 阶段开始时创建一个临时队列：
 step_skipped_waiting = create_request_queue(self.policy)
 ```
 
-位置：`scheduler.py:675`
 
 本轮临时跳过的请求会进入这个队列，例如：
 
@@ -1426,7 +1367,6 @@ if step_skipped_waiting:
     self.skipped_waiting.prepend_requests(step_skipped_waiting)
 ```
 
-位置：`scheduler.py:1052`
 
 注释说明：
 
@@ -1434,7 +1374,6 @@ if step_skipped_waiting:
 # re-queue requests skipped in this pass ahead of older skipped items.
 ```
 
-位置：`scheduler.py:1052`
 
 也就是说：
 
@@ -1456,7 +1395,6 @@ if not defer_prefills:
     self.prefill_capacity_bound = bool(self.waiting)
 ```
 
-位置：`scheduler.py:1058`
 
 含义是：
 
@@ -1475,7 +1413,6 @@ defer_prefills = (
 ) and any(not r.is_prefill_chunk for r in self.running)
 ```
 
-位置：`scheduler.py:473`
 
 也就是说：
 
@@ -1503,7 +1440,6 @@ RequestStatus.WAITING
 scheduled_new_reqs.append(request)
 ```
 
-位置：`scheduler.py:1013`
 
 这类请求通常是第一次进入模型执行流。
 
@@ -1521,7 +1457,6 @@ RequestStatus.PREEMPTED
 scheduled_resumed_reqs.append(request)
 ```
 
-位置：`scheduler.py:1015`
 
 这类请求之前运行过，因为 KV block 不够等原因被抢占，后来重新进入 running。
 
@@ -1545,7 +1480,6 @@ scheduled_resumed_reqs:
 scheduled_new_reqs=new_reqs_data
 ```
 
-位置：`scheduler.py:1142`
 
 running / resumed 请求会参与：
 
@@ -1553,7 +1487,6 @@ running / resumed 请求会参与：
 scheduled_cached_reqs=cached_reqs_data
 ```
 
-位置：`scheduler.py:1142`
 
 不过在 V2 ModelRunner 下，会把 resumed 请求合并进 new requests：
 
@@ -1563,7 +1496,6 @@ if self.use_v2_model_runner:
     scheduled_resumed_reqs.clear()
 ```
 
-位置：`scheduler.py:1084` 到 `scheduler.py:1087`
 
 语义上可以理解为：
 
@@ -1649,7 +1581,6 @@ not enable_chunked_prefill
 break
 ```
 
-位置：`scheduler.py:873`
 
 结果：
 
@@ -1780,7 +1711,6 @@ FCFS 下甚至优先选择：
 self.skipped_waiting or self.waiting
 ```
 
-位置：`scheduler.py:1925`
 
 ### 38.3 cache 命中后是不是一定进入 running？
 

@@ -1,6 +1,6 @@
 # 03. 哪些 running 请求继续 decode / prefill？
 
-源码位置：`vllm/vllm/v1/core/sched/scheduler.py`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 本问题关注：Scheduler 每轮进入 `schedule()` 后，已经在 `self.running` 里的请求，哪些会继续推进 decode / prefill，哪些虽然仍然处于 running 但本轮会被跳过，以及 running 请求本轮具体会被安排多少 token。
 
@@ -14,7 +14,7 @@
 # num_tokens_with_spec.
 ```
 
-位置：`vllm/vllm/v1/core/sched/scheduler.py:435`
+源码文件：`vllm/v1/core/sched/scheduler.py`
 
 也就是说：
 
@@ -36,7 +36,6 @@ while req_index < len(self.running) and token_budget > 0:
     request = self.running[req_index]
 ```
 
-位置：`scheduler.py:479`
 
 对于每个 running 请求，Scheduler 会依次判断：
 
@@ -45,7 +44,7 @@ while req_index < len(self.running) and token_budget > 0:
 2. PP / async cadence 是否允许本轮继续 decode；
 3. DP prefill balancing 是否要求暂缓 prefill chunk；
 4. 根据 num_tokens_with_spec + placeholders - num_computed_tokens 计算 num_new_tokens；
-5. 用 long_prefill_token_threshold / token_budget / max_model_len 截断；
+5. 用 long_prefill_token_threshold / token_budget / input_budget / max_model_len 截断；
 6. 如果有 encoder input，检查 encoder budget 和 encoder cache；
 7. 如果有 Mamba block 对齐要求，继续裁剪 num_new_tokens；
 8. 如果 num_new_tokens == 0，本轮跳过该 running 请求；
@@ -69,9 +68,9 @@ and KV block 分配成功
 scheduled_running_reqs.append(request)
 num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
+input_budget -= num_new_tokens + draft_slots
 ```
 
-位置：`scheduler.py:622`
 
 ---
 
@@ -79,13 +78,12 @@ token_budget -= num_new_tokens
 
 `self.running` 保存的是已经进入模型执行流的请求。
 
-初始化位置：
+初始化字段见：
 
 ```python
 self.running: list[Request] = []
 ```
 
-位置：`scheduler.py:185`
 
 一个请求进入 `self.running` 后，通常已经满足：
 
@@ -136,7 +134,6 @@ scheduled_running_reqs 表示本轮真正被安排执行的 running 请求。
 # num_tokens_with_spec.
 ```
 
-位置：`scheduler.py:435`
 
 这说明 vLLM V1 的 Scheduler 采用统一 token 追赶模型：
 
@@ -170,9 +167,10 @@ preempted_reqs: list[Request] = []
 req_to_new_blocks: dict[str, KVCacheBlocks] = {}
 num_scheduled_tokens: dict[str, int] = {}
 token_budget = self.max_num_scheduled_tokens
+input_budget = self.scheduler_config.max_num_batched_tokens
+draft_slots = ...  # speculative config 提供的每请求 drafter slot
 ```
 
-位置：`scheduler.py:446` 到 `scheduler.py:453`
 
 如果当前 pause 状态是 `PAUSED_ALL`，则直接把预算清零：
 
@@ -181,7 +179,6 @@ if self._pause_state == PauseState.PAUSED_ALL:
     token_budget = 0
 ```
 
-位置：`scheduler.py:453` 到 `scheduler.py:456`
 
 running 阶段入口是：
 
@@ -191,7 +188,6 @@ while req_index < len(self.running) and token_budget > 0:
     request = self.running[req_index]
 ```
 
-位置：`scheduler.py:478`
 
 这说明：
 
@@ -217,7 +213,6 @@ if (
     continue
 ```
 
-位置：`scheduler.py:482`
 
 这个逻辑主要服务于 async scheduling 和 speculative decoding。
 
@@ -274,7 +269,6 @@ req_index += 1
 continue
 ```
 
-位置：`scheduler.py:495`
 
 请求仍然留在 `self.running` 中，只是本轮不继续调度。
 
@@ -290,7 +284,6 @@ if self.current_step < request.next_decode_eligible_step:
     continue
 ```
 
-位置：`scheduler.py:498`
 
 注释说明：
 
@@ -299,7 +292,6 @@ if self.current_step < request.next_decode_eligible_step:
 # to match worker-side sampled-tokens broadcast slot ring cadence.
 ```
 
-位置：`scheduler.py:499`
 
 这表示在 V2 + Pipeline Parallel + async scheduling 场景下，同一个请求不能在任意连续 step 都 decode。
 
@@ -325,7 +317,6 @@ current_step < next_decode_eligible_step
 def schedule(self, throttle_prefills: bool = False) -> SchedulerOutput:
 ```
 
-位置：`scheduler.py:433`
 
 如果开启 throttle，Scheduler 会计算：
 
@@ -335,7 +326,6 @@ defer_prefills = (
 ) and any(not r.is_prefill_chunk for r in self.running)
 ```
 
-位置：`scheduler.py:473`
 
 含义是：
 
@@ -354,7 +344,6 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:504`
 
 这类请求仍然是 running，只是当前 step 不推进 prefill。
 
@@ -389,7 +378,6 @@ num_new_tokens = (
 )
 ```
 
-位置：`scheduler.py:510`
 
 可以理解为：
 
@@ -476,7 +464,6 @@ if 0 < self.scheduler_config.long_prefill_token_threshold < num_new_tokens:
     num_new_tokens = self.scheduler_config.long_prefill_token_threshold
 ```
 
-位置：`scheduler.py:515`
 
 这个限制主要用于长 prefill / chunked prefill。
 
@@ -504,15 +491,14 @@ num_new_tokens = 2048
 接着会裁剪到当前剩余预算以内：
 
 ```python
-num_new_tokens = min(num_new_tokens, token_budget)
+num_new_tokens = min(num_new_tokens, token_budget, input_budget - draft_slots)
 ```
 
-位置：`scheduler.py:517`
 
 这一步保证：
 
 ```text
-单个 running 请求本轮安排的 token 数不能超过本轮剩余 token_budget。
+单个 running 请求本轮安排的 token 数不能超过本轮剩余 `token_budget`，并且还要为该请求的 `draft_slots` 留出 `input_budget` 空间。
 ```
 
 例如：
@@ -550,7 +536,6 @@ num_new_tokens = min(
 )
 ```
 
-位置：`scheduler.py:521`
 
 这里减掉 `self.num_sampled_tokens_per_step` 是为了给采样 token 留位置。
 
@@ -560,7 +545,6 @@ num_new_tokens = min(
 self.num_sampled_tokens_per_step = 1
 ```
 
-位置：`scheduler.py:121`
 
 所以 running 请求最多只能计算到：
 
@@ -592,7 +576,6 @@ if request.has_encoder_inputs:
     ) = self._try_schedule_encoder_inputs(...)
 ```
 
-位置：`scheduler.py:532`
 
 `_try_schedule_encoder_inputs()` 的职责是：
 
@@ -609,7 +592,6 @@ if request.has_encoder_inputs:
 # and update `num_new_tokens` and encoder token budget accordingly.
 ```
 
-位置：`scheduler.py:1367`
 
 它会查找本轮 token 窗口覆盖的多模态 feature：
 
@@ -621,7 +603,11 @@ lo, hi = get_mm_features_in_window(
 )
 ```
 
-位置：`scheduler.py:1409`
+running 调度传入的 `shift_computed_tokens` 当前来自
+`self.num_prefill_lookahead`：EAGLE 多模块 MTP 可能让 drafter 读取 prefill
+结束附近的额外位置，因此 encoder input 的窗口、cache 释放和 chunk 结束
+判断都要把这个 lookahead 纳入考虑。
+
 
 如果本轮碰到了某个 encoder input，但 encoder compute budget 不够，或者 encoder cache 没空间，则 `num_new_tokens` 可能被缩短，甚至变成 0。
 
@@ -645,7 +631,6 @@ if self.need_mamba_block_aligned_split:
     )
 ```
 
-位置：`scheduler.py:546`
 
 `_mamba_block_aligned_split()` 的核心逻辑不是简单按长度取整，而是先计算调度后的结束位置，再让 chunk 结束位置落在合适的 block 边界上：
 
@@ -654,7 +639,6 @@ aligned_end = num_computed_tokens_after_sched // block_size * block_size
 num_new_tokens = max(aligned_end - num_computed_tokens, 0)
 ```
 
-位置：`scheduler.py:390` 到 `scheduler.py:396`
 
 目的：
 
@@ -671,7 +655,6 @@ num_new_tokens = max(aligned_end - num_computed_tokens, 0)
 # state is simply not cached, requiring no special handling.
 ```
 
-位置：`scheduler.py:351`
 
 所以 Mamba 对齐不是简单地永远向下取整，而是结合当前是否还处于 prefill、是否跨过最后 cache position、是否 Eagle 模式等条件决定。
 
@@ -686,7 +669,6 @@ if (
     num_new_tokens = num_new_tokens // block_size * block_size
 ```
 
-位置：`scheduler.py:376` 到 `scheduler.py:384`
 
 对于 running 调度来说，结论是：
 
@@ -707,7 +689,6 @@ if num_new_tokens == 0:
     continue
 ```
 
-位置：`scheduler.py:551`
 
 Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 
@@ -725,7 +706,6 @@ Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 #    models with mamba cache mode "align".
 ```
 
-位置：`scheduler.py:551`
 
 这里选择 `continue` 而不是 `break` 很重要。
 
@@ -737,7 +717,6 @@ Scheduler 会跳过当前 running 请求，继续看后面的 running 请求。
 # allow the lower-priority requests to be scheduled.
 ```
 
-位置：`scheduler.py:563`
 
 也就是说：
 
@@ -763,7 +742,6 @@ new_blocks = self.kv_cache_manager.allocate_slots(
 )
 ```
 
-位置：`scheduler.py:572`
 
 这里的含义是：
 
@@ -796,7 +774,6 @@ while True:
     ...
 ```
 
-位置：`scheduler.py:570`
 
 ### 16.1 PRIORITY 策略下抢占谁
 
@@ -810,7 +787,6 @@ preempted_req = max(
 self.running.remove(preempted_req)
 ```
 
-位置：`scheduler.py:584`
 
 这里会选择优先级最低的 running 请求。
 
@@ -828,7 +804,6 @@ self.running.remove(preempted_req)
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:609`
 
 通常就是 running 队尾请求。
 
@@ -840,12 +815,13 @@ PRIORITY 模式下，有可能抢占到本轮前面已经调度过的 running �
 
 ```python
 scheduled_running_reqs.remove(preempted_req)
-token_budget += num_scheduled_tokens.pop(preempted_req_id)
+restored = num_scheduled_tokens.pop(preempted_req_id)
+token_budget += restored
+input_budget += restored + draft_slots
 req_to_new_blocks.pop(preempted_req_id)
 scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 ```
 
-位置：`scheduler.py:590`
 
 如果它本轮还安排过 encoder input，也要恢复 encoder compute budget：
 
@@ -853,7 +829,6 @@ scheduled_spec_decode_tokens.pop(preempted_req_id, None)
 encoder_compute_budget += num_embeds_to_restore
 ```
 
-位置：`scheduler.py:649`
 
 这说明 running 阶段的抢占不是简单地“释放一个请求”，还要保证本轮已经构造的调度计划保持一致。
 
@@ -865,7 +840,10 @@ encoder_compute_budget += num_embeds_to_restore
 self._preempt_request(preempted_req, scheduled_timestamp)
 ```
 
-位置：`scheduler.py:611`
+当前实现还会在 KV delivery 需要保留旧输出时传入
+`drop_stale_output=self.requires_kv_delivery`，以决定 preempt 后的 stale
+output 是交付还是丢弃。
+
 
 `_preempt_request()` 会释放请求 block / encoder cache，并把状态改为 `PREEMPTED`，再放回 waiting 队列。
 
@@ -884,7 +862,6 @@ if preempted_req == request:
     break
 ```
 
-位置：`scheduler.py:613`
 
 表示已经没有更多请求可以抢占来满足它了，当前请求本轮无法调度。
 
@@ -900,7 +877,6 @@ if new_blocks is None:
     break
 ```
 
-位置：`scheduler.py:617`
 
 这里是 `break`，不是 `continue`。
 
@@ -918,7 +894,6 @@ KV block 已经不足到无法满足当前请求；
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:674`
 
 也就是说：
 
@@ -940,10 +915,10 @@ request_id = request.request_id
 req_to_new_blocks[request_id] = new_blocks
 num_scheduled_tokens[request_id] = num_new_tokens
 token_budget -= num_new_tokens
+input_budget -= num_new_tokens + draft_slots
 req_index += 1
 ```
 
-位置：`scheduler.py:622`
 
 这几个字段作用不同：
 
@@ -972,7 +947,6 @@ scheduled_running_reqs 是 self.running 的子集。
 if request.spec_token_ids:
 ```
 
-位置：`scheduler.py:631`
 
 Scheduler 会计算本轮实际安排了多少 spec token：
 
@@ -985,7 +959,6 @@ num_scheduled_spec_tokens = (
 )
 ```
 
-位置：`scheduler.py:632`
 
 这个公式可以理解为：
 
@@ -1000,7 +973,6 @@ num_scheduled_spec_tokens = (
 scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 ```
 
-位置：`scheduler.py:642`
 
 然后清空请求上的旧 draft token：
 
@@ -1008,7 +980,6 @@ scheduled_spec_decode_tokens[request.request_id] = spec_token_ids
 request.spec_token_ids = []
 ```
 
-位置：`scheduler.py:646`
 
 后续 Worker 返回后，如果部分 draft token 被拒绝，会在 `update_from_output()` 中回退：
 
@@ -1016,7 +987,6 @@ request.spec_token_ids = []
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1656`
 
 如果 async scheduling 中 placeholder 也包含 spec token，还会同步回退：
 
@@ -1024,7 +994,6 @@ request.num_computed_tokens -= num_rejected
 request.num_output_placeholders -= num_rejected
 ```
 
-位置：`scheduler.py:1660`
 
 所以 speculative decode 的完整闭环是：
 
@@ -1053,7 +1022,6 @@ if encoder_inputs_to_schedule:
     encoder_compute_budget = new_encoder_compute_budget
 ```
 
-位置：`scheduler.py:649`
 
 这表示：
 
@@ -1072,7 +1040,6 @@ if external_load_encoder_input:
             self.ec_connector.update_state_after_alloc(request, i)
 ```
 
-位置：`scheduler.py:657`
 
 这类输入不会按普通本地 encoder compute 消耗预算，但仍要占用 encoder cache，并通知 ECConnector 构造元数据。
 
@@ -1094,7 +1061,6 @@ cached_reqs_data = self._make_cached_request_data(
 )
 ```
 
-位置：`scheduler.py:1104`
 
 然后写入：
 
@@ -1108,7 +1074,6 @@ scheduler_output = SchedulerOutput(
 )
 ```
 
-位置：`scheduler.py:1142`
 
 所以：
 
@@ -1135,7 +1100,6 @@ num_computed_tokens
 num_output_tokens
 ```
 
-位置：`scheduler.py:1308`
 
 其中：
 
@@ -1143,7 +1107,6 @@ num_output_tokens
 req_ids.append(req_id)
 ```
 
-位置：`scheduler.py:1327`
 
 表示本轮有哪些 cached/running 请求要执行。
 
@@ -1157,7 +1120,6 @@ if self.use_pp and not self.scheduler_config.async_scheduling:
     new_token_ids.append(token_ids)
 ```
 
-位置：`scheduler.py:1331`
 
 如果请求上一轮没有被调度过，就需要传完整 token ids：
 
@@ -1166,7 +1128,6 @@ if not scheduled_in_prev_step:
     all_token_ids[req_id] = req.all_token_ids.copy()
 ```
 
-位置：`scheduler.py:1346`
 
 同时传递本轮新增 block：
 
@@ -1176,7 +1137,6 @@ new_block_ids.append(
 )
 ```
 
-位置：`scheduler.py:1349`
 
 以及调度前的计算进度：
 
@@ -1187,7 +1147,6 @@ num_output_tokens.append(
 )
 ```
 
-位置：`scheduler.py:1352`
 
 这里有一个重要细节：
 
@@ -1208,7 +1167,6 @@ SchedulerOutput 中给 Worker 的 num_computed_tokens，
 self._update_after_schedule(scheduler_output)
 ```
 
-位置：`scheduler.py:1182`
 
 核心逻辑是：
 
@@ -1216,7 +1174,6 @@ self._update_after_schedule(scheduler_output)
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1228`
 
 这表示：
 
@@ -1237,7 +1194,6 @@ request.is_prefill_chunk = request.num_computed_tokens < (
 )
 ```
 
-位置：`scheduler.py:1233`
 
 这个字段表示请求当前是否还处于 prefill chunk 状态。
 
@@ -1256,7 +1212,6 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:504`
 
 ### 23.2 routed experts 的 block 快照
 
@@ -1273,7 +1228,6 @@ if self.enable_return_routed_experts:
     )
 ```
 
-位置：`scheduler.py:1250` 到 `scheduler.py:1257`
 
 ### 23.3 从 `_inflight_prefills` 移除
 
@@ -1284,7 +1238,6 @@ if not request.is_prefill_chunk:
     self._inflight_prefills.discard(request)
 ```
 
-位置：`scheduler.py:1239`
 
 表示该请求不再被视为正在飞行中的 prefill。
 
@@ -1300,7 +1253,6 @@ if not request.is_prefill_chunk:
 new_token_ids, stopped = self._update_request_with_output(request, new_token_ids)
 ```
 
-位置：`scheduler.py:1684`
 
 对 speculative decode 来说，如果 draft token 被拒绝，会回退 `num_computed_tokens`：
 
@@ -1308,7 +1260,6 @@ new_token_ids, stopped = self._update_request_with_output(request, new_token_ids
 request.num_computed_tokens -= num_rejected
 ```
 
-位置：`scheduler.py:1656`
 
 所以 running 请求的进度更新分两层：
 
@@ -1346,7 +1297,7 @@ for request in self.running while token_budget > 0:
     )
 
     num_new_tokens = min(num_new_tokens, long_prefill_token_threshold)
-    num_new_tokens = min(num_new_tokens, token_budget)
+    num_new_tokens = min(num_new_tokens, token_budget, input_budget - draft_slots)
     num_new_tokens = min(num_new_tokens, max_model_len remaining space)
 
     if request.has_encoder_inputs:
@@ -1369,6 +1320,7 @@ for request in self.running while token_budget > 0:
     record num_scheduled_tokens[request_id]
     record req_to_new_blocks[request_id]
     token_budget -= num_new_tokens
+    input_budget -= num_new_tokens + draft_slots
 
     if request has spec_token_ids:
         record scheduled_spec_decode_tokens
@@ -1486,7 +1438,6 @@ if defer_prefills and request.is_prefill_chunk:
     continue
 ```
 
-位置：`scheduler.py:504`
 
 结果：
 
@@ -1526,7 +1477,6 @@ FCFS / 非 PRIORITY 下：
 preempted_req = self.running.pop()
 ```
 
-位置：`scheduler.py:609`
 
 如果队尾是 req-c，则 req-c 被抢占：
 
@@ -1611,7 +1561,6 @@ waiting 阶段入口要求：
 if not preempted_reqs and self._pause_state == PauseState.UNPAUSED:
 ```
 
-位置：`scheduler.py:674`
 
 只要本轮发生抢占，就不接纳新的 waiting 请求。
 
@@ -1625,7 +1574,6 @@ Scheduler 在 `_update_after_schedule()` 中会先把本轮已安排的 token �
 request.num_computed_tokens += num_scheduled_token
 ```
 
-位置：`scheduler.py:1228`
 
 这样做是为了 async / PP 场景下避免重复调度。Worker 返回后，如果 spec token 被拒绝，再回退。
 
@@ -1702,6 +1650,7 @@ running 请求本轮候选 token 数：
   num_scheduled_tokens[request_id] = num_new_tokens
   req_to_new_blocks[request_id] = new_blocks
   token_budget -= num_new_tokens
+  input_budget -= num_new_tokens + draft_slots
 
 调度后内部推进：
   request.num_computed_tokens += num_scheduled_tokens[request_id]
