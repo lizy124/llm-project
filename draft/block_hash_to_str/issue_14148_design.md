@@ -204,7 +204,7 @@ UT 风格遵循 PEP 8（类间 2 空行、方法间 1 空行），复用现有�
 ## 10. 交付件清单
 
 - [x] 生产代码改动：`pool_worker.py`（`_alloc_gvas_for_save`，+12/-15 行，分支 `block_hash_to_str`）
-- [x] UT：8 个新测试（转换次数 6 场景 + key 一致性/多组 2 场景）
+- [x] UT：7 个新测试（转换计数 4 场景 + 非零偏移 1 场景 + 重复 hash 1 场景 + 多组 key 一致性 1 场景；v2 审核后删除 1 个平凡用例、补入偏移盲区用例并经变异验证）
 - [x] 本设计文档随 PR 附带（或摘要入 PR 描述）
 - [x] 性能数据：hex 调用计数对比（before/after，见下方验证记录）
 - [ ] 冒烟记录：memcache layerwise + mooncake（待服务器执行）

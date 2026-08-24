@@ -10,9 +10,10 @@
 test_record/
 ├── run_14148_ut.sh              # 服务器测试脚本（见 §3）
 ├── pool_worker.py.diff          # 生产代码改动 diff（+12/-15）
-├── test_pool_worker.py.diff     # 新增 UT 的 diff
+├── test_pool_worker.py.diff     # 新增 UT 的 diff（v2 审核后版本）
 └── logs/
-    ├── ut_after_fix.log         # 改动后全量 UT：80 passed
+    ├── ut_after_fix.log         # 改动后全量 UT（v1）：80 passed
+    ├── ut_after_fix_v2.log      # 改动后全量 UT（v2，UT 审核改进后复跑）：80 passed
     └── ut_before_fix_baseline.log  # 改动前基线 + 新UT：4 failed / 1 passed
 ```
 
@@ -71,17 +72,19 @@ scp + 解压至容器 /tmp/vllm_14148
 docker exec refactor_810 bash -c 'cd /tmp/va_14148; PYTHONPATH=/tmp/vllm_14148 python3 -m pytest ...'
 ```
 
-## 5. 新增测试用例（8 个）
+## 5. 新增测试用例（7 个）
 
 所有新增都在 `TestKVPoolWorkerProcessLayerData` 内，通过 monkeypatch 模块级 `block_hash_to_str` 计数 + `m_store` mock 断言。完整 diff 见 [test_pool_worker.py.diff](test_pool_worker.py.diff)。
 
+> v2 审核调整：初版含 `..._empty_hashes`（空 hash 列表，与抬升越界用例下游路径重合的平凡用例，已删除）；补入 `..._with_partial_lift_keeps_key_offsets_aligned`（非零 `scan_start` 偏移场景，堵住"漏写 `- scan_start` 仍全绿"的测试盲区，经变异验证确认有效）。总数 8→7，UT 总通过数不变（80）。
+
 | 用例 | 场景 | 断言要点 |
 | --- | --- | --- |
-| `..._converts_each_hash_once` | 全未缓存（while 首轮 break） | 每 hash 恰好转 1 次；末块 GVA 数字断言 |
+| `..._converts_each_hash_once` | 全未缓存（while 首轮 break） | 每 hash 恰好转 1 次 |
 | `..._with_cached_prefix` | 部分命中缓存（while 推进 k 块后 break） | 计数 == N；跳过块在传输数组 GVA 保持 0 |
 | `..._all_cached` | 全部命中（while 走满） | 计数 == N；`batch_alloc` 不被调用；传输数组全 0 |
 | `..._skips_scan_when_start_block_lifted_beyond_end` | `save_start_block` 被 `hit_full_blocks` 抬升越过 `scan_end` | 计数为 0；`batch_alloc` 不被调用 |
-| `..._empty_hashes` | `group_block_hashes` 为空 | 计数为 0；`batch_alloc` 不被调用 |
+| `..._with_partial_lift_keeps_key_offsets_aligned`（v2 新增） | `hit_full_blocks=1` 部分抬升，`scan_start=1` 且保存块 1..3 | 计数仅含 h1..h3；`batch_alloc` key 序列正确；传输数组 `[0, 303, 304, 0]` |
 | `..._duplicate_hashes` | 含重复 hash | 计数 == N（重复 hash 逐个计数）；`batch_alloc` 收到重复 key 序列与基线一致 |
 | `..._keys_unchanged_multi_group` | 多组（`num_kv_cache_groups=2`） | `save_keys` 含 group_id 段，key 序列不变 |
 
@@ -91,13 +94,27 @@ docker exec refactor_810 bash -c 'cd /tmp/va_14148; PYTHONPATH=/tmp/vllm_14148 p
 
 ### 6.1 改动后：80 passed
 
-[logs/ut_after_fix.log](logs/ut_after_fix.log) 尾部：
+v2（UT 审核改进后复跑，当前版本）：[logs/ut_after_fix_v2.log](logs/ut_after_fix_v2.log) 尾部：
 
 ```
-================= 80 passed, 14 warnings in 1.66s ================
+================= 80 passed, 14 warnings in 1.68s ================
 ```
 
-覆盖 6 个既有测试类 + 新增 8 用例，无回归。
+v1（初版 UT）：[logs/ut_after_fix.log](logs/ut_after_fix.log)，同样 80 passed。
+
+覆盖 6 个既有测试类 + 新增 7 用例（v2 调整后），无回归。
+
+### 6.1.1 变异验证（v2 新增）：非零偏移用例有效
+
+在服务器上临时注入缺陷（去掉 for 循环的 `- scan_start` 偏移）后仅跑偏移用例：
+
+```
+FAILED ...test_alloc_gvas_for_save_with_partial_lift_keeps_key_offsets_aligned
+       (IndexError: list index out of range)
+1 failed, 79 passed, 14 warnings in 1.81s
+```
+
+变异体被立即捕获；恢复正确代码后全量 80 passed。初版 7 用例均无法捕获该缺陷（`scan_start` 全为 0 或区间为空），v2 补入的用例是唯一防线。
 
 ### 6.2 改动前基线：新计数测试失败
 
