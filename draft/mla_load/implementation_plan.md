@@ -121,7 +121,7 @@ LMCache 也暴露了需要保留的边界：`retrieve_layer` 路径仍有显式�
 1. **preflight 前置条件：**所有 TP rank 必须在每个 step 进入固定次数的 control collective，即使本 rank 的 `metadata.requests` 为空或没有可加载请求；feature/config 也必须在 TP 内一致。当前 `start_load_kv` 对空 requests 会提前返回，这个不变量尚未由源码自动保证，实施前必须通过调用方源码/实测证明，或先调整入口。若无法证明，不能直接加入 step-level collective。
 2. **canonical plan：**各 rank 按相同请求顺序构造 `(key, spans, sizes, block_id)` 计划，并以 eligibility、entry 数、总字节数、span 数和 digest 做固定形状 preflight。任一 rank 不 eligible 或 digest 不一致时，全组统一走旧路径；不能由单个 rank 静默跳过 collective。初版不使用按 rank 的 circular shift，避免 broadcast 的源/目标顺序不一致。
 3. **BackendReadBatch：**将每个 key/entry 的全部目标 spans 放入确定的 backend read batch；每个 key 在 owner 上只调用一次 `get`。这里的 batch 边界与后续广播 chunk 无关，不能因为 payload 超过预算而对同一 key 重复调用 backend。
-4. **完成状态：**owner 调一次 backend `get`，检查返回是否为 `None`、返回列表长度及每 key 状态。当前 Mooncake wrapper 把正的实际完成字节数归一化为 0，因此不能仅靠当前返回值证明精确 bytes-written 或“短读”；若需要该校验，必须扩展 adapter/result，或先证明 `sum(size_list)` 与对象大小严格相等。Mooncake 只要求目标总容量不小于对象大小，若 size 总和更大而尾部未写入，pack 可能带入旧数据。
+4. **完成状态：**owner 调一次 backend `get`，检查返回是否为 `None`、返回列表长度及每 key 状态。当前 Mooncake wrapper 把正的实际完成字节数归一化为 0，因此不能仅靠当前返回值证明精确 bytes-written 或“短读”。同模型、同 cache 配置下，put/get 都由对应的 `prepare_value` 布局生成，`sum(size_list)==object_size` 是合理预期，但接口没有运行时验证；必须补充布局不变量断言，或扩展 adapter/result。Mooncake 只要求目标总容量不小于对象大小，若跨角色/配置差异使 size 总和更大，尾部可能未被写入而在 pack 时带入旧数据。
 5. **BroadcastChunk：**backend read 全部完成后，才从 owner KV cache 的成功 spans 按固定上限（建议可配置，初始 64 MiB，需 NPU 实测）切分广播 payload。使用复用的 `torch.uint8` staging buffer，禁止按整个请求一次性分配；一个大 entry 只能“完整 backend read 一次、随后拆成多个 broadcast chunk”，不能把同一 key 分成多次 backend get。
 6. 广播逐 entry/逐 block 的失败码，所有 rank 使用与原逻辑相同的 invalid-block/recompute 处理；失败 span 不得被当成有效 KV 使用。
 7. backend `get` 完成后必须确认目标 HBM 写入对 pack 可见；需根据各 backend 实际 API 确认是否需要 NPU stream/event 同步。

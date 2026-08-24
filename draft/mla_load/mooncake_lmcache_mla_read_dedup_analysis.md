@@ -111,7 +111,7 @@ self.store.batch_get_into_multi_buffers(keys, addrs, sizes)
 
 非 fabric-memory 路径的 `register_buffer()` 通过 `global_te.register_buffer(ptrs, lengths)` 注册 NPU buffer；fabric-memory 路径跳过这一步，使用统一内存地址语义。因此不能笼统地说 Mooncake 所有模式都经过 `global_te` 注册。无论哪种模式，传给 backend 的目标地址都必须符合该模式的生命周期和地址约束。
 
-wrapper 将 Mooncake 返回的正的完成字节数归一化为 0，负数保留为失败码，异常返回 `None`。当前上层可以检查返回值是否为 `None`、列表长度和每个 key 的状态，但无法从 wrapper 返回值恢复精确的 bytes-written 或识别“正数但少于预期”的短读；如需精确校验，必须扩展 adapter/result。Mooncake C++ 只校验 `dst_total_size >= object total_size`，所以还必须证明 AscendStore 的 `sum(size_list)` 与对象实际大小严格相等，或让 adapter 暴露实际对象大小，否则多出的尾部可能保留旧数据。
+wrapper 将 Mooncake 返回的正的完成字节数归一化为 0，负数保留为失败码，异常返回 `None`。当前上层可以检查返回值是否为 `None`、列表长度和每个 key 的状态，但无法从 wrapper 返回值恢复精确的 bytes-written 或识别“正数但少于预期”的短读。同模型、同 cache 配置下，put/get 都由对应的 `prepare_value` 布局生成，`sum(size_list)==object_size` 是合理预期；但当前接口不验证该不变量。Mooncake C++ 只校验 `dst_total_size >= object total_size`，所以必须增加布局断言或让 adapter 暴露实际对象大小，否则跨角色/配置差异造成的多余尾部可能保留旧数据。
 
 ### 4.2 Mooncake C++ 读路径
 
@@ -121,7 +121,7 @@ wrapper 将 Mooncake 返回的正的完成字节数归一化为 0，负数保留
 2. 选择可用 replica（通常优先本地 MEMORY/NOF，再考虑其他类型）；
 3. 校验用户提供的多 buffer 总容量与对象大小；
 4. 对 memory/NOF 直接向多个目标 slice 发起传输；
-5. 对 local disk、DISK/DFS 等路径，可能先读入连续临时 buffer，再 scatter 到目标地址；
+5. LOCAL_DISK offload 路径可直接使用用户 scatter-gather slices；DISK/DFS 路径先读入连续临时 buffer，再 scatter 到目标地址；
 6. 逐 key 返回完成或失败状态。
 
 `client_service.cpp::Client::BatchGet` 提交 transfer future 并调用 `future.get()`，所以同步 API 正常返回时，目标 buffer 已可用于后续 pack/broadcast。Python binding 会释放 GIL，但不改变这个同步完成语义。
@@ -240,7 +240,7 @@ Mooncake get complete -> owner pack visible -> HCCL broadcast -> peer unpack vis
 
 ### 8.5 replica、磁盘和临时 buffer
 
-memory/NOF 路径可能直接写入 owner spans；DISK/DFS/local-disk 路径可能先进入连续临时 buffer，再 scatter。后端去重只减少调用次数，不会消除这些 replica 内部拷贝。测试必须记录 replica 类型、临时 buffer 峰值、checksum/对象完整性和失败码，不能只测内存 replica。
+memory/NOF 路径可能直接写入 owner spans；LOCAL_DISK offload 路径使用用户 scatter-gather slices；DISK/DFS 路径先进入连续临时 buffer，再 scatter。后端去重只减少调用次数，不会消除这些 replica 内部拷贝。测试必须记录 replica 类型、临时 buffer 峰值、checksum/对象完整性和失败码，不能只测内存 replica。
 
 ### 8.6 partial miss 和失败状态
 
@@ -267,7 +267,7 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 
 ### 9.1 控制条件
 
-增加 opt-in 配置，例如 `enable_mla_read_dedup=False`。只在第 3 节列出的纯 MLA同步场景启用，并在第一阶段只为已经核实完成/返回值语义的 Mooncake adapter 打开；其他 backend 和其他场景调用现有 `m_store.get`，保证回归行为不变。协议归属 framework 不等于所有 backend 默认具备 capability。
+增加 opt-in 配置，例如 `enable_mla_read_dedup=False`。只在第 3 节列出的纯 MLA 同步场景启用，并在第一阶段只为已经核实完成/返回值语义的 Mooncake adapter 打开；其他 backend 和其他场景调用现有 `m_store.get`，保证回归行为不变。协议归属 framework 不等于所有 backend 默认具备 capability。
 
 ### 9.2 一次请求的步骤
 
@@ -307,7 +307,7 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 | --- | --- | --- |
 | rank 请求顺序或 collective 次数不一致 | 致命 | 固定 control preflight、canonical plan、digest、统一 header/status；任何不一致在 payload collective 前由全组回退 |
 | owner get 未完成就 pack | 致命 | 以 Mooncake future + NPU event 建立依赖；故障注入验证 |
-| partial miss 被当成有效 KV | 高 | 广播 per-key/per-span status；与 baseline invalid block 逐项比较 |
+| partial miss 被当成有效 KV | 高 | Mooncake 先广播 per-key/entry status；该 key 的任一未证明完整写入都使整 entry 失败，并与 baseline invalid block 逐项比较 |
 | staging 导致 HBM OOM | 高 | bounded chunk、复用 buffer；64K/多 block 峰值监控 |
 | pack/unpack 和 HCCL 抵消 I/O 收益 | 高 | 记录 backend、pack、broadcast、unpack 分段耗时；以 TTFT/P95 决策 |
 | hybrid/SSM 被错误复制 | 高 | pure MLA hard guard；混合模型回归 backend 调用次数和结果 |

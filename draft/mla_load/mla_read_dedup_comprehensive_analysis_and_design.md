@@ -93,7 +93,7 @@ owner/peer 的裸 HBM 地址以及 local block id 可能不同，因此 canonica
 
 Ascend wrapper 调 `batch_get_into_multi_buffers(keys, addrs, sizes)`。在非 fabric-memory 初始化路径中，`register_buffer` 通过 `global_te.register_buffer(ptrs, lengths)` 注册 KV cache 的 device memory；fabric-memory 路径跳过该注册，使用另一套统一内存地址语义。之后传给 Mooncake 的每个 span 必须符合对应模式的地址和生命周期约束，不能把临时 staging 或已释放 storage 的地址当作 backend 目标。Mooncake C++ 查询 metadata/replica，选择 memory/NOF/local disk/DISK/DFS，检查多 buffer 总容量，memory 可能直接写多个 slice，disk/DFS 可能先写连续临时 buffer 再 scatter，最后返回逐 key 状态。`Client::BatchGet` 等待 transfer future 后返回，Python binding 虽然会释放 GIL，但不改变同步 API 的完成等待语义，因此可作为 owner read；但 pack 所在 NPU stream 的可见性仍需确认。
 
-Mooncake wrapper 会把正的完成字节数归一化为 0，把负值保留为失败码，异常返回 `None`。当前框架可以检查 `None`、返回列表长度和每 key 状态，但不能从 wrapper 得到精确 bytes-written，也不能可靠识别“正数但少于预期”的短读。Mooncake C++ 只要求 `dst_total_size >= object total_size`；如果 framework 提供的 `sum(size_list)` 大于对象实际大小，未覆盖的尾部可能保留旧数据。因此第一阶段必须证明 `sum(size_list)` 与对象大小严格一致，或先扩展 adapter/result 暴露实际对象大小/完成字节数。completion event/stream 要求也应通过 capability/result adapter 表达，而不是在 dedup helper 中猜测。
+Mooncake wrapper 会把正的完成字节数归一化为 0，把负值保留为失败码，异常返回 `None`。当前框架可以检查 `None`、返回列表长度和每 key 状态，但不能从 wrapper 得到精确 bytes-written，也不能可靠识别“正数但少于预期”的短读。同模型、同 cache 配置下，put/get 都由对应的 `prepare_value` 布局生成，`sum(size_list)==object_size` 是合理预期，但当前接口没有运行时验证。Mooncake C++ 只要求 `dst_total_size >= object total_size`；若跨角色/配置差异使 framework 提供的总容量大于对象实际大小，未覆盖的尾部可能保留旧数据。因此第一阶段必须增加布局不变量断言，或扩展 adapter/result 暴露实际对象大小/完成字节数。completion event/stream 要求也应通过 capability/result adapter 表达，而不是在 dedup helper 中猜测。
 
 Mooncake 没有现成 TP fan-out。应该保留其 backend get，把 owner 结果交给 framework pack/broadcast；不要让 Mooncake backend 自己判断 MLA。SSD/DFS 临时 buffer、replica 延迟、对象大小与目标容量、错误码必须纳入测试；显式 lease 主要属于 GVA/layerwise 等后续路径。
 
@@ -167,13 +167,13 @@ chunk 优先按 logical block/layer group 边界切分；超大单 entry 需要 
 
 ### 11.4 Invalid block
 
-每个 rank用自己的 local block id list 和广播的 canonical status 调用现有 `record_failed_blocks`。owner 的 block id 不能广播，因为各 rank allocator 可能不同。成功 entry 才能交给 attention，失败 entry 统一走 recompute。
+每个 rank 用自己的 local block id list 和广播的 canonical status 调用现有 `record_failed_blocks`。owner 的 block id 不能广播，因为各 rank allocator 可能不同。成功 entry 才能交给 attention，失败 entry 统一走 recompute。
 
 ## 12. Stream、lease 和错误状态机
 
 必须保证：backend get complete -> owner pack 可见 -> payload broadcast complete -> peer unpack complete -> attention/load gate。不能用 Python 返回或日志顺序替代 NPU event/stream 证明。
 
-普通同步 backend 只需保证对象在 `get` 返回前有效；成功返回后数据已复制到 owner HBM，远端对象 eviction 不会影响 owner 的 payload或 peer 的本地副本，因此不要求 backend lease 覆盖 peer unpack/attention。仍需保证本地 KV cache block 在 unpack/attention 前不被 allocator 重用。显式 GVA/layerwise/MemCache lease 另行设计，可能必须覆盖 batch-copy/write-finish 和 attention gate；不能把普通同步 Mooncake 的结论套到这些路径。
+普通同步 backend 只需保证对象在 `get` 返回前有效；成功返回后数据已复制到 owner HBM，远端对象 eviction 不会影响 owner 的 payload 或 peer 的本地副本，因此不要求 backend lease 覆盖 peer unpack/attention。仍需保证本地 KV cache block 在 unpack/attention 前不被 allocator 重用。显式 GVA/layerwise/MemCache lease 另行设计，可能必须覆盖 batch-copy/write-finish 和 attention gate；不能把普通同步 Mooncake 的结论套到这些路径。
 
 状态机为：eligible -> plan build -> preflight；mismatch 回旧路径，match 进入 owner read -> status broadcast；全失败走 invalid/recompute，部分/成功走 payload broadcast -> peer unpack -> complete。preflight 失败可统一回退；collective 已开始后不能 rank-local fallback，collective error 应标记 dedup unhealthy 并按进程级错误处理。
 
