@@ -1,5 +1,7 @@
 # Mooncake 后端与 LMCache 的 MLA KV 读去重分析
 
+**最终审核修订说明（2026-08-24）：**本版已重新对照 Mooncake Python/C++ 实现和 AscendStore 调用链。修订重点是 fabric-memory 注册条件、正完成字节数被 wrapper 归一化后的证据边界、同步 get 后不需要跨 peer 的 backend lease、preflight 的空 metadata 前置不变量，以及“backend 每 key 只读一次、广播再分 chunk”的两层协议。
+
 **日期：** 2026-08-24  
 **范围：** `vllm-ascend` 的 AscendStore KV Pool，重点是 Mooncake backend；对比本地 `LMCache` 和上游 vLLM/NIXL 的 replicated-KV 处理。本文只做问题论证和设计评审，不修改实现代码，也没有声称已经完成 NPU 实测。
 
@@ -14,7 +16,7 @@
 ### 1.2 Mooncake 和 LMCache 的共同解法是“owner 读取一次，TP 内广播”，但实现抽象不同
 
 - **共同语义：**为一个 replicated KV group 选择一个 owner；owner 访问远端存储，其他 rank 不访问后端；owner 将结果在本地 TP group 分发。
-- **LMCache 的载荷：**连续的 `MemoryObj`/chunk，广播 metadata 和 `uint8` tensor，再由 peer 送入自己的 GPU cache。
+- **LMCache 的载荷：**连续的 `MemoryObj`/chunk，广播 metadata 和 `uint8` tensor，再由 peer 送入自己的 GPU cache；它是 object/chunk 粒度，并不自动提供 AscendStore 所需的固定 byte budget。
 - **Mooncake 的载荷：**AscendStore 的 `get(keys, addrs, sizes)` 接收每个 key 的多组 NPU 地址和长度，目标通常跨层、跨 cache entry、带 stride/padding，不是一个连续 tensor。Mooncake 原生 API 负责把对象直接 scatter 到多个目标 buffer；它没有“读到 owner 后自动参与 HCCL broadcast”的抽象。
 
 因此可以搬用 LMCache 的**控制面原则**（owner/passive、pure MLA guard、TP group broadcast、chunk 化、统一失败状态），不能直接搬用其 `MemoryObj` 数据结构或 `retrieve_layer` 调用路径。
@@ -107,7 +109,9 @@ get(keys: list[str], addrs: list[list[int]], sizes: list[list[int]])
 self.store.batch_get_into_multi_buffers(keys, addrs, sizes)
 ```
 
-`register_buffer()` 通过 `global_te.register_buffer(ptrs, lengths)` 注册 NPU buffer；地址在 Mooncake transfer engine 生命周期内必须有效。wrapper 将正的完成字节数归一化为 0，负数保留为失败码，异常返回 `None`。这意味着上层不能只判断“调用没有抛异常”，还要解释每个 key 的状态。
+非 fabric-memory 路径的 `register_buffer()` 通过 `global_te.register_buffer(ptrs, lengths)` 注册 NPU buffer；fabric-memory 路径跳过这一步，使用统一内存地址语义。因此不能笼统地说 Mooncake 所有模式都经过 `global_te` 注册。无论哪种模式，传给 backend 的目标地址都必须符合该模式的生命周期和地址约束。
+
+wrapper 将 Mooncake 返回的正的完成字节数归一化为 0，负数保留为失败码，异常返回 `None`。当前上层可以检查返回值是否为 `None`、列表长度和每个 key 的状态，但无法从 wrapper 返回值恢复精确的 bytes-written 或识别“正数但少于预期”的短读；如需精确校验，必须扩展 adapter/result。Mooncake C++ 只校验 `dst_total_size >= object total_size`，所以还必须证明 AscendStore 的 `sum(size_list)` 与对象实际大小严格相等，或让 adapter 暴露实际对象大小，否则多出的尾部可能保留旧数据。
 
 ### 4.2 Mooncake C++ 读路径
 
@@ -128,7 +132,7 @@ self.store.batch_get_into_multi_buffers(keys, addrs, sizes)
 - **owner 可以直接读入自己的 KV cache。**不需要先把 Mooncake 对象改成一个新类型；但必须从 owner 的目标 span 构造可读取的 byte payload。
 - **不能假设所有 replica 一样快或一样连续。**memory/NOF、local disk、DFS 的延迟、临时内存和失败码不同；benchmark 必须分别覆盖。
 - **Mooncake 的同步返回不等于任意 NPU stream 已完成。**若 backend 在非默认 stream 提交操作，必须以实际 transfer engine API 确认 pack 所在 stream 可见，必要时插入 event/同步。
-- **对象/lease 生命周期仍由 Mooncake 控制。**owner 完成读取前不能释放 lease 或让对象被 eviction；layerwise 现有 `batch_remove_lease` 的时机不能被简单挪到第一次 broadcast 后。
+- **对象生命周期要按路径区分。**普通同步 `get` 返回时，数据已经复制到 owner 的本地 HBM；之后远端对象 eviction 不会改变这份本地副本，因此不需要让 Mooncake lease 覆盖 peer unpack/attention。若 adapter 暴露 lease，至少要覆盖 backend get 完成；GVA/layerwise 的跨 layer lease 则可能必须覆盖 batch-copy/write-finish 和 attention gate，不能沿用普通同步结论。
 
 ## 5. LMCache 的解法和边界
 
@@ -150,7 +154,7 @@ self.store.batch_get_into_multi_buffers(keys, addrs, sizes)
 - `cache_engine.py` 初始化处有 `TODO: support save_only_first_rank when use layerwise`；`retrieve_layer` 路径不能视为已经支持该去重语义。
 - `compute_extra_count()`/读锁逻辑用于多个 reader 的并发保护，不是减少实际 backend read 次数的方案。
 - 多进程 connector 的 `mla_only` guard 能避免 hybrid 误启用，但核心 `LMCacheEngine.save_only_first_rank` 主要依据 `metadata.use_mla`；不能把 connector 的局部 guard 当作所有集成路径的全局证明。
-- `MemoryObj` 通常代表连续 chunk，LMCache 不需要处理 Mooncake `addrs/sizes` 这种任意多 span 目标布局；它的 pack/unpack 成本和 AscendStore 不等价。
+- `MemoryObj` 通常代表连续 chunk，LMCache 不需要处理 Mooncake `addrs/sizes` 这种任意多 span 目标布局；它的 pack/unpack 成本和 AscendStore 不等价。LMCache 的 chunk 也不应被解读为已有严格的 byte 上限，AscendStore 必须自行实现并验证 bounded staging。
 - 首 rank 的定义通常是 metadata 中的 first rank（当前实现为 0）。在 PP/DP/多节点组合中，必须确认它是**本地 TP group rank 0**，而不是全局 rank 0。
 
 ### 5.3 可借鉴的不是代码，而是协议
@@ -209,7 +213,7 @@ peer_tp_size == tp_size
 
 ### 8.2 canonical request plan
 
-所有 rank 必须先独立构造相同的 canonical plan：key 顺序、block id、group/layer span 数、每个 span 的 byte size 和 chunk 边界均相同。可以广播或 all-reduce 一个轻量 digest 做一致性检查；检查失败必须在进入 collective 前回退原路径或统一失败，不能让某个 rank 静默跳过 broadcast。
+所有 rank 必须先独立构造相同的 canonical plan：key 顺序、group/layer span 数、每个 span 的 byte size 和广播 chunk 边界均相同；裸地址和 local block id 只保留在本 rank。建议用固定 shape 的 all-gather/all-reduce 交换 eligibility、entry 数、总字节数和 digest。当前 `start_load_kv` 在 `metadata.requests` 为空时提前返回，因此“每个 rank 都进入 preflight”不是现成不变量；必须先由源码/实测证明调用方每 step 同构，或把固定 control collective 前移到空请求返回之前。任一 rank 不 eligible 或 digest 不一致时，全组统一走 legacy，不能让某个 rank 静默跳过 broadcast。
 
 `_circular_shift` 只能保留在原 backend 路径。owner/passive 协议中，所有 rank 使用同一 canonical 顺序，避免 root 和 peer 对不同 chunk 调用 collective 导致 HCCL hang。
 
@@ -240,10 +244,10 @@ memory/NOF 路径可能直接写入 owner spans；DISK/DFS/local-disk 路径可�
 
 ### 8.6 partial miss 和失败状态
 
-Mooncake 返回逐 key 状态，wrapper 还可能返回 `None`。owner 必须把状态归一化后广播给所有 rank：
+Mooncake 返回逐 key 状态，wrapper 还可能返回 `None`。由于 wrapper 已丢失正的完成字节数，当前协议只能可靠使用 `None`、返回长度和 0/负状态；精确 bytes-written/短读必须通过 adapter 扩展，不能在框架中猜测。owner 必须把状态归一化后广播给所有 rank：
 
 - hit：广播对应 payload；
-- miss/短读/异常：所有 rank 将相同 block 标为 invalid，走现有 recompute；
+- miss/adapter 判定的短读/异常：所有 rank 将相同 block 标为 invalid，走现有 recompute；在未获得精确 bytes-written 前，不应声称现有 wrapper 能独立识别短读；
 - 空请求：所有 rank 仍完成相同协议次数，或在 collective 前一致地走空路径；
 - 不能让 peer 把未填满的 staging 当成有效 KV。
 
@@ -251,7 +255,7 @@ Mooncake 返回逐 key 状态，wrapper 还可能返回 `None`。owner 必须把
 
 ### 8.7 lease、eviction 和生命周期
 
-owner 读期间对象必须保持 lease；所有 peer 完成 unpack/消费前不能提前释放。layerwise 当前在最后 layer 才集中 `batch_remove_lease`，第一阶段不应改变这一语义。若未来按 layer/block 广播，必须为每个 chunk 定义“可释放”事件，而不是以 owner 的 broadcast 返回作为全局完成。
+普通同步 Mooncake `get` 的对象只需在 backend 返回前保持有效；返回后数据已复制到 owner HBM，远端对象 eviction 不会影响 owner 或 peer 后续拿到的本地 payload，因此不要求 lease 覆盖 peer unpack/attention。仍需保证本地 KV cache block 在 unpack/attention 前没有被 allocator 重用。GVA/layerwise/MemCache 等显式 lease 路径另行处理：它们可能要把 lease 保持到 batch-copy/write-finish 或 attention gate；不能把该生命周期结论反推到所有 backend。
 
 ### 8.8 async/layerwise 不能直接套 collective
 
@@ -263,19 +267,19 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 
 ### 9.1 控制条件
 
-增加 opt-in 配置，例如 `enable_mla_read_dedup=False`。只在第 3 节列出的纯 MLA 同步场景启用；其他情况调用现有 `m_store.get`，保证回归行为不变。
+增加 opt-in 配置，例如 `enable_mla_read_dedup=False`。只在第 3 节列出的纯 MLA同步场景启用，并在第一阶段只为已经核实完成/返回值语义的 Mooncake adapter 打开；其他 backend 和其他场景调用现有 `m_store.get`，保证回归行为不变。协议归属 framework 不等于所有 backend 默认具备 capability。
 
 ### 9.2 一次请求的步骤
 
-1. **构造计划：**每个 rank 生成相同 key/span/block 顺序和 plan digest；不再按 rank circular shift。
-2. **一致性检查：**校验 entry 数、每个 span 数、总字节数和 chunk 边界；不一致则在 collective 前统一回退。
-3. **owner 读取：**local TP rank 0 调用一次 Mooncake `get`，目标为 owner 自己的 KV cache spans。
-4. **状态归一化：**将 Mooncake 返回值、`None`、短读、异常转换成 per-key/per-span status；owner 记录实际完成字节数。
-5. **受控打包：**按固定 byte budget（初始建议 64 MiB，必须通过 NPU 测试调整）逐 chunk pack 到复用的 `uint8` staging buffer，不按整个长请求一次性分配。
-6. **广播 header：**广播 chunk 数、plan digest、span metadata、status 和 payload 字节数；所有 rank 以相同次数进入 tensor collective。
+1. **构造计划：**每个 rank 生成相同 key/span 逻辑顺序和 plan digest；不再按 rank circular shift。空 requests/no-op 也必须纳入固定 shape 的 preflight，前提是已证明所有 rank 都进入该 control collective。
+2. **一致性检查：**校验 entry 数、每个 span 数、总字节数和广播 chunk 边界；不一致时由 preflight 统一选择 legacy，不能在 collective 已开始后 rank-local 回退。
+3. **BackendReadBatch：**将每个 key 的全部目标 spans 放入确定的 owner backend batch；local TP rank 0 对每个 key 只调用一次 Mooncake `get`，目标为 owner 自己的 KV cache spans。backend batch 与广播 chunk 是两个独立层次。
+4. **状态归一化：**检查 `None`、返回长度和 0/负状态；当前 wrapper 不能提供精确 bytes-written。必须证明 `sum(size_list)==object_size`，或扩展 adapter 保留对象实际大小，才可安全判定 payload 尾部。
+5. **受控打包：**backend read 完成后，按固定 byte budget（初始建议 64 MiB，必须通过 NPU 测试调整）从成功 owner spans 生成多个 broadcast chunk，pack 到复用的 `uint8` staging buffer，不按整个长请求一次性分配。一个超大 entry 只能完整 backend read 一次，之后拆成多个广播块。
+6. **广播 header：**按广播 chunk 顺序广播 plan digest、span metadata、status 和 payload 字节数；所有 rank 以相同次数进入 tensor collective。
 7. **广播 payload：**owner 广播 staging tensor，peer 接收到自己的 staging 后按本地 span 地址 unpack。
 8. **完成和调度：**所有 rank 使用一致 invalid block 集合；成功 span 才交给 attention，失败 span 走原有 recompute；确认 device event 后再允许后续计算。
-9. **生命周期：**遵循现有 lease/remove-lease 规则，确保最后一个 consumer 完成后再释放对象。
+9. **生命周期：**普通同步 backend 只需保持对象有效到 get 返回，并保证本地 KV cache block 在 unpack/attention 前不被重用；显式 GVA/layerwise lease 遵循其独立的最后 consumer/write-finish 规则。
 
 ### 9.3 为什么推荐 bounded chunk
 
@@ -288,28 +292,28 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 | owner/passive 分支 | 可以 | 只需映射到 local TP group，并保证 peer 不访问 backend |
 | pure MLA guard | 可以但需加强 | 同时检查 hybrid、`put_step`、`peer_tp_size` 和 key namespace |
 | LMCache metadata + uint8 broadcast | 原则可用 | 需改成 span descriptor；不能复用 MemoryObj layout 假设 |
-| chunk 化和复用 staging | 可以 | 需要按 HBM byte budget 和 NPU stream 实测 |
+| chunk 化和复用 staging | 可以 | LMCache 只提供 object/chunk 粒度；AscendStore 仍需定义 HBM byte budget、处理超大 entry 并按 NPU stream 实测 |
 | LMCache `retrieve_layer` | 不能直接用 | 代码明确尚未支持 save-only-first-rank layerwise |
 | `compute_extra_count`/读锁 | 不能解决 | 它保护并发，不减少后端读取次数 |
 | vLLM NIXL source-rank mapping | 只能借鉴语义 | NIXL 的 registered buffer/点到点传输不同于 Mooncake multi-buffer |
 | Mooncake C++ 内部 replica 选择 | 无需重写 | owner 仍调用原 `get`；新增的是上层 fan-out |
 | Mooncake 新增 native fan-out | 第二阶段候选 | 需要 C++、元数据、错误恢复和版本兼容，改动面最大 |
 
-主要 gap：没有现成的 AscendStore span pack/unpack helper、没有统一的 TP rendezvous 协议、没有证明所有 backend 读完成后同一 NPU stream 可见、没有 layerwise owner 生命周期方案，也没有针对 HCCL hang/partial miss 的端到端测试。
+主要 gap：没有现成的 AscendStore span pack/unpack helper、没有统一的 TP rendezvous 协议、没有证明所有 TP rank 每 step 都进入 preflight、没有精确对象大小/bytes-written contract、没有证明所有 backend 读完成后同一 NPU stream 可见、没有 layerwise owner 生命周期方案，也没有针对 HCCL hang/partial miss 的端到端测试。
 
 ## 11. 风险清单与缓解措施
 
 | 风险 | 严重度 | 缓解/验收 |
 | --- | --- | --- |
-| rank 请求顺序或 collective 次数不一致 | 致命 | canonical plan、digest、统一 header/status；任何不一致在 collective 前回退 |
+| rank 请求顺序或 collective 次数不一致 | 致命 | 固定 control preflight、canonical plan、digest、统一 header/status；任何不一致在 payload collective 前由全组回退 |
 | owner get 未完成就 pack | 致命 | 以 Mooncake future + NPU event 建立依赖；故障注入验证 |
 | partial miss 被当成有效 KV | 高 | 广播 per-key/per-span status；与 baseline invalid block 逐项比较 |
 | staging 导致 HBM OOM | 高 | bounded chunk、复用 buffer；64K/多 block 峰值监控 |
 | pack/unpack 和 HCCL 抵消 I/O 收益 | 高 | 记录 backend、pack、broadcast、unpack 分段耗时；以 TTFT/P95 决策 |
 | hybrid/SSM 被错误复制 | 高 | pure MLA hard guard；混合模型回归 backend 调用次数和结果 |
 | PP/DP/CP 选错 owner | 高 | 使用 local TP group rank；多组 topology NPU 测试 |
-| SSD/DISK replica 临时 buffer/错误码差异 | 中高 | 按 replica 类型覆盖 hit/miss/短读/eviction |
-| lease 提前释放 | 高 | 检查最后 consumer 完成事件；长请求连续命中测试 |
+| SSD/DISK replica 临时 buffer/错误码差异 | 中高 | 按 replica 类型覆盖 hit/miss/adapter 可识别的短读；不要把 wrapper 的正数 0 当作精确 bytes-written |
+| lease/本地 block 生命周期错误 | 高 | 普通同步对象只需保持到 get 返回；检查本地 block 在 unpack/attention 前不被重用；GVA/layerwise 单独验证最后 consumer/write-finish |
 | async/layerwise 线程死锁 | 高 | 第一阶段关闭；第二阶段先设计 rendezvous，再实现 |
 | graph/fullgraph 对动态 collective 不兼容 | 中高 | 单独做 graph mode 兼容性实验；不满足则明确禁用该开关 |
 
@@ -320,8 +324,8 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 - pure MLA TP=2/4/8：owner backend 调用恰好 1 次，peer 调用 0 次；所有 rank 的 payload 和目标 bytes 逐字节一致；
 - 非 MLA、TP=1、TP mismatch、hybrid、sparse、async、layerwise：调用次数和地址顺序与 baseline 一致；
 - 多 layer、多 group、不同 span 数、stride/padding/offset、空请求；
-- 全 hit、全 miss、部分 miss、`None`、负错误码、短读；
-- digest/entry 数不一致时不进入 collective；
+- 全 hit、全 miss、部分 miss、`None`、负错误码；同时覆盖 `sum(size_list)==object_size`、目标容量大于对象大小时的尾部未写入，以及 adapter 提供精确 bytes-written 后的短读；
+- digest/entry 数不一致时完成 control preflight 后由全组走 legacy，不进入 payload collective；
 - chunk 边界、复用 staging、异常后下一请求不残留状态。
 
 ### 12.2 NPU 多进程
@@ -357,13 +361,13 @@ layerwise 还受 `wait_for_save`、attention start gate、layer finished event�
 5. partial miss 时 scheduler 的 invalid block/recompute 接口能否接受 owner 统一状态；
 6. bounded chunk 的默认 byte budget 和 staging buffer 生命周期；
 7. graph/fullgraph、异步请求队列和 layerwise 的明确禁用条件；
-8. Mooncake lease 在同步 owner/broadcast/unpack 全链路中的最晚释放点。
+8. 普通同步 Mooncake 对象的有效期只需覆盖 backend get；本地 KV block 重用的最晚点，以及 GVA/layerwise 显式 lease 的最后 consumer/write-finish 点。
 
 这些问题没有在代码和 NPU 实验中冻结前，不应开始大范围实现或宣称问题已解决。
 
 ## 14. 最终建议
 
-issue 的性能问题是真实的，且 Mooncake 后端本身没有提供现成的 TP fan-out；最合适的改动边界是 AscendStore worker 的编排层。LMCache 和 vLLM/NIXL 已经验证了 owner/passive 的语义方向，但它们不能替代 Mooncake 的多 span 地址、replica、lease 和 NPU stream 处理。
+issue 的性能问题是真实的，且 Mooncake 后端本身没有提供现成的 TP fan-out；最合适的改动边界是 AscendStore worker 的编排层。LMCache 和 vLLM/NIXL 已经验证了 owner/passive 的语义方向，但它们不能替代 Mooncake 的多 span 地址、replica、精确对象大小和 NPU stream 处理；GVA/layerwise 的显式 lease 还需单独设计。
 
 建议按以下顺序推进：
 
