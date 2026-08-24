@@ -121,8 +121,13 @@ for blk_idx in range(save_start_block, scan_end):
 | 全部块已缓存 | while 推进到 `scan_end` 退出，`for range` 为空，`block_gvas` 为空，行为与原逻辑一致 |
 | 全部块未缓存 | while 首轮 break（不推进），for 覆盖 `[scan_start, scan_end)` 全部块 |
 | `save_start_block ≥ scan_end`（无待存块） | `block_keys` 为空列表，`_refresh_allocated_gvas` 收到空列表直接返回（其内部 `if not cached_keys: return`），while 不进入，for 为空——与原逻辑一致 |
+| `save_start_block > scan_end`（严格大于，load 命中抬升越界） | `save_start_block = max(save_start_block, hit_full_blocks)` 抬升后可严格越过 `min(save_end_block, len(group_block_hashes))`；`block_keys = []`、while 条件为 False、for 区间为空，非异常路径，与原逻辑一致 |
+| `group_block_hashes` 为空（len=0） | `scan_end = 0`，三段逻辑全部为空（`_refresh_allocated_gvas` 空列表直接返回），与原逻辑一致 |
+| 重复 hash（`block_keys` 含重复 key） | ① `_refresh_allocated_gvas` 内部 `dict.fromkeys` 去重，无影响；② while 按值判 `in`，无影响；③ for 中两个重复 key 块均 miss（`_allocated_gvas` 回填发生在 for 之后的 `zip(new_positions, new_keys, new_gvas)` 循环，for 内不中途插入条目），`new_keys` 含重复 key、`batch_alloc` 收到重复列表——与原逻辑一致（原代码同样两次现场构造相同 key），无回归 |
 | partial key | 走 `_make_layerwise_partial_key`（由 req_id/block_index/end_token 拼成，不含 block hash），不在本改动范围 |
 | 多组模型 | group 循环每轮重新计算 `scan_start/scan_end/block_keys`，组间无共享状态，天然隔离 |
+
+**表外下游逻辑说明**：while 推进后的 `save_start_block` 仍是后续逻辑的基准——padding 循环 `full_gvas[save_start_block + i] = gva`（L1285-L1288）按推进后的值对齐 `block_gvas` 与 `block_ids_by_group`。方案 B **不改变**该变量的演进语义（`scan_start` 仅作为 `block_keys` 的下标偏移基准，在 while 前赋值后不再改写），下游 padding、`gva_block_offset`、debug 日志字段均无需同步修改。
 
 ### 5.4 语义等价性论证
 
@@ -148,7 +153,13 @@ pytest -sv tests/ut/distributed/ascend_store/test_pool_worker.py
    - monkeypatch `vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_worker.block_hash_to_str`（模块级导入，patch 模块命名空间）包裹计数器；
    - 构造含 N 个 block 的请求走一次 `_alloc_gvas_for_save`；
    - 断言总调用次数 == N（改动前为 2N~3N）。
-   - 覆盖场景：全部未缓存（while 首轮 break）、部分命中缓存（while 推进 k 块后 break）、全部命中（while 走满）。
+   - 覆盖场景（对应 5.3 边界条件表）：
+     - 全部未缓存（while 首轮 break）；
+     - 部分命中缓存（while 推进 k 块后 break）；
+     - 全部命中（while 走满）；
+     - `save_start_block` 被 `hit_full_blocks` 抬升越过 `scan_end`（空扫描区间，计数为 0）；
+     - `group_block_hashes` 为空（计数为 0）；
+     - 重复 hash（N 个块含重复，计数仍 == N，且 `batch_alloc` 收到的 key 序列与基线一致）。
 2. **key 一致性测试** `test_alloc_gvas_for_save_keys_unchanged`
    - 固定 hash 输入，捕获 `m_store.batch_alloc` 收到的 key 序列；
    - 与改动前基线（硬编码期望值或从 main 分支生成）比对，断言逐项相等。
@@ -192,8 +203,16 @@ UT 风格遵循 PEP 8（类间 2 空行、方法间 1 空行），复用现有�
 
 ## 10. 交付件清单
 
-- [ ] 生产代码改动：`pool_worker.py`（`_alloc_gvas_for_save`，约 ±20 行）
-- [ ] UT：转换次数测试 + key 一致性测试
-- [ ] 本设计文档随 PR 附带（或摘要入 PR 描述）
-- [ ] 性能数据：hex 调用计数对比（before/after）
-- [ ] 冒烟记录：memcache layerwise + mooncake
+- [x] 生产代码改动：`pool_worker.py`（`_alloc_gvas_for_save`，+12/-15 行，分支 `block_hash_to_str`）
+- [x] UT：8 个新测试（转换次数 6 场景 + key 一致性/多组 2 场景）
+- [x] 本设计文档随 PR 附带（或摘要入 PR 描述）
+- [x] 性能数据：hex 调用计数对比（before/after，见下方验证记录）
+- [ ] 冒烟记录：memcache layerwise + mooncake（待服务器执行）
+
+## 11. 实施验证记录（2026-08-24，服务器 192.168.13.165 / refactor_810 容器）
+
+- 验证方式：本地工作树（main + 改动）经 `git stash create` + `git archive` 打包上传；容器内 vllm（editable, 568afb3a13）较旧，用本地 vllm 58d3918e 包以 `PYTHONPATH=/tmp/vllm_14148` 覆盖运行。
+- **改动后**：`tests/ut/distributed/ascend_store/test_pool_worker.py` 全量 **80 passed**（含 8 个新增）。记录：`/home/lizhongyang/tmp/va_14148_results_20260824/ut_after_fix.log`
+- **改动前基线**（main 版本 pool_worker.py + 新 UT）：计数测试 4 failed / 1 passed（passed 的一项为空扫描场景，改动前后转换次数均为 0）。多组场景实测转换 10 次 vs 改动后 4 次（每 hash 2.5 次，与分析文档 3.4 节"每块 2~3 次"吻合）。记录：`/home/lizhongyang/tmp/va_14148_results_20260824/ut_before_fix_baseline.log`
+- **实施中发现的语义补充**：while 跳过的缓存块不进入 for 循环，其 GVA 在 `full_gvas`（`block_gvas_by_group_np`）中保持 0——GVA 复用通过 `_allocated_gvas` 内部字典管理而非传输数组。此为原逻辑既有行为，改动保持一致（UT 断言已按此修正）。
+- 测试环境产物：`/tmp/va_14148`（改动版仓库）、`/tmp/vllm_14148`（vllm 包），验证后服务器上已恢复改动后版本。
