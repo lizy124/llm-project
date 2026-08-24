@@ -84,6 +84,19 @@ MLA 的各 rank 由于 `head_or_tp_rank` 都是 0，key 内容相同；`prepare_
 5. 只以 `tp_mismatch` 作为 guard，没有排除 `peer_tp_size != tp_size`；
 6. 对 backend 返回长度、collective 顺序、owner 读取异常后的数据有效性缺少完整协议校验。
 
+### 3.4 LMCache 的现成解法
+
+本地浅克隆的 LMCache `dev` HEAD 为 `f9addd2`。它已经实现了与本问题相同的 owner/passive 模式，核心开关是 `save_only_first_rank`：
+
+- `lmcache/v1/cache_engine.py` 在 MLA 下默认启用 `save_only_first_rank`（可由 extra config 覆盖）；非首 rank 的 `store` 直接跳过，普通 `retrieve` 中也跳过本地 `storage_manager` 读取。
+- 首 rank 执行一次 `storage_manager.batched_get`（同步或 async 处理后的统一入口），然后通过 vLLM 的 TP group 广播 chunk 数、每个 chunk 的 metadata 和 `uint8` tensor；其他 rank 分配本地 tensor 接收后，再走同一个 `batched_to_gpu`。
+- `lmcache/v1/token_database.py` 在该模式下把 key 的逻辑 `world_size` 折叠为 1；`lmcache/integration/vllm/lmcache_mp_connector_0180.py` 也明确按 `world_size // tp_size`、`rank // tp_size` 消除 MLA 中 TP 对 KV 布局的影响。
+- `lmcache/integration/vllm/utils.py::mla_only` 在多进程 connector 路径明确要求模型是纯 MLA；发现 hybrid/SSM 后该 connector 不启用这一复制语义。需要注意，核心 `LMCacheEngine.save_only_first_rank` 主要依据 `metadata.use_mla`，所以不能把 connector 级 guard 直接当成所有集成路径的全局保证。
+
+因此，LMCache 证明了这个问题存在成熟的语义解法：后端读取次数从 TP 次降为 1，代价是 TP 内 broadcast。它与 AscendStore 候选提交的“整批地址 span 打包”不同，LMCache 按 chunk 的 memory object 广播，天然把单次临时 buffer 限制在 chunk 级别。
+
+LMCache 也暴露了需要保留的边界：`retrieve_layer` 路径仍有显式的“暂不支持 save_only_first_rank”注释并逐层访问 storage；首 rank 目前固定为 `metadata.first_rank = 0`，PP/多节点/DP 组合必须确认它和 local TP rank 0 的关系；multi-process connector 对 MLA+PP 也有额外限制。因此不能直接复制 LMCache 代码，但应把其 owner/passive、TP-group broadcast、pure-MLA guard 和 chunk 级传输作为 AscendStore 第一阶段的主要参考。
+
 ## 4. 建议的实施边界
 
 ### 4.1 第一阶段：只做可证明、安全的同步纯 MLA
@@ -200,4 +213,3 @@ MLA 的各 rank 由于 `head_or_tp_rank` 都是 0，key 内容相同；`prepare_
 3. 实现 opt-in 同步路径和 CPU/mock 单测。
 4. 在 NPU TP=2/4 上做逐字节和故障注入验证，再扩展 TP=8。
 5. 输出 16K/64K 性能结果；根据数据决定默认开关和是否进入 async/layerwise 第二阶段。
-
