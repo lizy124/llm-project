@@ -1,0 +1,49 @@
+draft/block_hash_to_str/test_record/README.md
+  s_19d9f3f210b2ac::t_8a94cf8736e4ca 75,79-80,83,87
+  s_19d9f3f210b2ac::t_88f4c36438f7c1 97-109,112-114,117
+  s_19d9f3f210b2ac::t_2acdd926b518ae 13,15-16
+draft/block_hash_to_str/issue_14148_design.md
+  s_19d9f3f210b2ac::t_c75b2bfb5c3e3c 207
+draft/block_hash_to_str/issue_14148_verification_report.md
+  s_19d9f3f210b2ac::t_01bb339e898dc1 148-149
+  s_19d9f3f210b2ac::t_757a9dbc369d95 77-78
+  s_19d9f3f210b2ac::t_2f4bcd52dcbd14 133
+  s_19d9f3f210b2ac::t_99a95da6c73ba9 157-170
+  s_19d9f3f210b2ac::t_cb8d7835a98420 98,101,104-106
+  s_19d9f3f210b2ac::t_6ba594b3dcd41c 197-199,202
+  s_19d9f3f210b2ac::t_093848581b33ce 5
+  s_19d9f3f210b2ac::t_13742ccbd6a86c 17-18,20
+draft/block_hash_to_str/test_record/logs/ut_after_fix_v2.log
+  s_19d9f3f210b2ac::t_8c1a4fb1ce95bc 1-5
+draft/block_hash_to_str/test_record/test_pool_worker.py.diff
+  s_19d9f3f210b2ac::t_b61ea45af7bcae 2,15,133-137,141,143-146,148-155,157-158,162-172,195-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "bfbdc9b81033d3a9d08aa12cb6bd62c9ac057890",
+  "prompts": {},
+  "sessions": {
+    "s_19d9f3f210b2ac": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8be93d1bc36f6a179e2a60",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "external_session_id": "6a8be93d1bc36f6a179e2a60",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "dedupe_key": "6a8be93d1bc36f6a179e2a60:6a8c04891bc36f6a179e2d62:afterEdit:482fd803",
+        "session_id": "6a8be93d1bc36f6a179e2a60",
+        "runtime_client": "trae-tob-git-ai",
+        "client_type": "ide",
+        "operation_id": "6a8c04891bc36f6a179e2d62",
+        "edit_kind": "file_edit",
+        "tool_use_id": "6a8c04891bc36f6a179e2d62",
+        "tool_type": "builtin"
+      }
+    }
+  }
+}
