@@ -1,0 +1,74 @@
+ascend_project/vLLM-Observability/scripts_165/probe_models2.sh
+  s_5eecdc38e57439::t_04b4905f6f5671 1-13
+ascend_project/vLLM-Observability/scripts_165/download_model.py
+  s_5eecdc38e57439::t_2fb231825d0afd 1-14
+ascend_project/vLLM-Observability/scripts_165/probe_models.sh
+  s_5eecdc38e57439::t_674475a0b53fab 1-11
+ascend_project/vLLM-Observability/PR1_code_walkthrough.md
+  s_5eecdc38e57439::t_d9c3c997a77b3b 1-471
+ascend_project/vLLM-Observability/PR1_description.md
+  s_5eecdc38e57439::t_43f2f6900cddac 1,8,26,36,41-43,52
+  s_5eecdc38e57439::t_b885a652dae287 12,45-46,50
+  s_5eecdc38e57439::t_cb3fcf8a7384f5 23-24
+  s_5eecdc38e57439::t_fa50bcdff80391 3-4,14,16,18-21,25,27-35,37,48,54
+  s_5eecdc38e57439::t_45608ad8ddb524 2,5-7,9-11,13,15,17,22,38-40,44,47,49,51,53,55-62
+ascend_project/vLLM-Observability/scripts_165/check_repos.sh
+  s_5eecdc38e57439::t_f16680e398b38a 1-13
+ascend_project/vLLM-Observability/scripts_165/probe_smoke_deps.sh
+  s_5eecdc38e57439::t_6aab6c51ab7349 1-16
+ascend_project/vLLM-Observability/scripts_165/check_smoke_env.sh
+  s_5eecdc38e57439::t_4254e9deacb3c3 1-17
+ascend_project/vLLM-Observability/scripts_165/check_env.sh
+  s_5eecdc38e57439::t_454f43fc4c4028 1-15
+ascend_project/vLLM-Observability/scripts_165/rerun_ut.sh
+  s_5eecdc38e57439::t_a07510ef54635e 1-9
+ascend_project/vLLM-Observability/scripts_165/run_failed_ut.sh
+  s_5eecdc38e57439::t_36066cea8e4206 1-6
+ascend_project/vLLM-Observability/PR1_kv_pool_metrics_dev_plan.md
+  s_5eecdc38e57439::t_8d44282e493d51 1-191
+ascend_project/vLLM-Observability/scripts_165/smoke_metric_pipeline.py
+  s_5eecdc38e57439::t_6e00122f862746 1-30,32-141,145-150,157-198
+  s_5eecdc38e57439::t_42cd8f98eeedca 142-144
+  s_5eecdc38e57439::t_c00c6ad36bd00b 151-156
+  s_5eecdc38e57439::t_ed98f7b4f4629e 31
+ascend_project/vLLM-Observability/requirements_analysis.md
+  h_3eaf4948cd6ab4 1-135
+ascend_project/Layerwise-Pooling-Optimization/requirements_analysis.md
+  h_3eaf4948cd6ab4 1-140
+ascend_project/vLLM-Observability/scripts_165/run_ut.sh
+  s_5eecdc38e57439::t_5d383d8492e15e 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "aa07ebf3bb6b0930d426f175d7bcb7d3be9da34d",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_5eecdc38e57439": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8c07161bc36f6a179e2dac",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "dedupe_key": "6a8c07161bc36f6a179e2dac:6a8d44438d68e54869cd8ecb:afterEdit:67e3cffc",
+        "external_session_id": "6a8c07161bc36f6a179e2dac",
+        "tool_use_id": "6a8d44438d68e54869cd8ecb",
+        "session_id": "6a8c07161bc36f6a179e2dac",
+        "operation_id": "6a8d44438d68e54869cd8ecb",
+        "client_type": "ide",
+        "tool_type": "builtin",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "tool_id": "icube:applyChatSnapshotPatch"
+      }
+    }
+  }
+}
