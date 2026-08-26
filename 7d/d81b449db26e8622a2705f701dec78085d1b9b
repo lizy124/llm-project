@@ -1,0 +1,41 @@
+ascend_project/vLLM-Observability/B修复pr和需要新增验证.md
+  s_5eecdc38e57439::t_f5fabc49430edb 1-109
+ascend_project/vLLM-Observability/scripts_165/ci.md
+  h_3eaf4948cd6ab4 1-25
+ascend_project/vLLM-Observability/G审查报告.md
+  h_3eaf4948cd6ab4 1-437
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "7dd81b449db26e8622a2705f701dec78085d1b9b",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_5eecdc38e57439": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8c07161bc36f6a179e2dac",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a8e5b6a8d68e54869cd90e1",
+        "dedupe_key": "6a8c07161bc36f6a179e2dac:6a8e5b6a8d68e54869cd90e1:afterEdit:6f6e02c1",
+        "session_id": "6a8c07161bc36f6a179e2dac",
+        "client_type": "ide",
+        "tool_use_id": "6a8e5b6a8d68e54869cd90e1",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_type": "builtin",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "external_session_id": "6a8c07161bc36f6a179e2dac"
+      }
+    }
+  }
+}
