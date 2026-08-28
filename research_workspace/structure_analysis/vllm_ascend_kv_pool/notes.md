@@ -1,100 +1,19 @@
-# AscendStore / KVPool 读码随记（Q&A）
+# AscendStore / KVPool 读码笔记
 
-> 随读随记，后续问题按序号继续追加；同一话题的问题归入同一条。
+> 基于 vllm `commit 6e448d0ea9` + 本地 vllm-ascend 源码。行号均为核验时的准确位置。
+> 重组说明：按主题组织（挂载 → 结构 → 查询 → 存储 → 核心问题 → 本地命中），原 Q&A 随记序号已并入对应章节。
 
 ---
 
-## 1. `KVConnectorBase_V1` 到底是谁用的？
+## 一、插件机制：vllm-ascend 如何被 vllm 挂载
 
-**问题：**
+**结论**：`KVConnectorBase_V1`（vllm `kv_transfer/kv_connector/v1/base.py`）是 vLLM 所有 KV 跨节点/cache 传输后端的通用抽象契约，不止 AscendStoreConnector——vllm-ascend 仓库内有 8 个实现（AscendStore/UCM/RecomputeCPUOffload/SfaRemoteD2H/三个 Mooncake/AscendMultiConnector），vLLM 上游还有 SimpleConnectorBase_V1、BasicKVCacheConnector 等。抽象的意义是让 Scheduler/ModelRunner 不认识具体后端，只调固定签名，换后端零改动。
 
-vLLM 在 `kv_transfer/kv_connector/v1/base.py` 定义的这套接口，是给谁用的？是不是仅给 AscendStoreConnector？以及——vllm-ascend 本质上是不是依赖 vllm、必须遵循这套签名，否则 vllm 根本不认识它、也不会去调用它？
+**依赖方向是单向的**：vllm-ascend → vllm。vllm 不知道 vllm-ascend 里有哪些类，是 vllm-ascend 主动往 vllm 的空工厂里"塞"自己的实现。要被 vllm 认可：① 运行时把名字注册进 `KVConnectorFactory`；② 继承 `KVConnectorBase_V1` 并满足签名。**vLLM 是唯一驱动者**，vllm-ascend 只负责"满足契约、登记注册、响应调用"。
 
-**回答（结论先行）：**
+### 1.1 注册链路：entry point 如何注入 `_registry`
 
-不是只给 AscendStoreConnector 用的。`KVConnectorBase_V1` 是 vLLM 所有 KV 跨节点/cache 传输后端的通用抽象契约。AscendStoreConnector 只是其中一个实现者。而且 vllm-ascend 确实**单向依赖** vllm，它必须以"满足契约 + 登记注册"的方式被 vLLM 识别和驱动，否则不遵守签名就真的不会被 vllm 调用。
-
-下面分三块讲清楚。
-
-### 1.1 这个接口是通用的，不止 AscendStoreConnector
-
-同一套 `KVConnectorBase_V1` 下，至少有两层实现者：
-
-**vllm-ascend 仓库内（grep 到 8 个实现）：**
-
-```text
-AscendStoreConnector               kv_pool/ascend_store/ascend_store_connector.py
-UCMConnectorV1                     kv_pool/ucm_connector/connector.py
-RecomputeCPUOffloadConnectorV1     kv_pool/recompute_cpu_offload/recompute_cpu_offload_connector.py
-SfaRemoteD2HConnector              kv_p2p/sfa_pd_rd2h/connector.py
-MooncakeLayerwiseConnector         kv_p2p/mooncake_layerwise_connector.py
-MooncakeConnector (hybrid)         kv_p2p/mooncake_hybrid_connector.py
-MooncakeConnector                  kv_p2p/mooncake_connector.py
-AscendMultiConnector               distributed/kv_transfer/ascend_multi_connector.py
-```
-
-**vLLM 上游自己也有**：`SimpleConnectorBase_V1`（含 mock/dummy）、`BasicKVCacheConnector`、`SingleNodeConnector`、`PyramidKVConnector`、`MooncakeEVictionConnector` 等。
-
-它们共享同一套基类、同一套生命周期回调。抽象的意义就是**让上层（Scheduler / ModelRunner）不认识具体后端**：上层永远只调固定那组签名，换成哪个后端零改动。
-
-```text
-vLLM Scheduler / ModelRunner
-        │  只认 KVConnectorBase_V1 的抽象签名
-        ▼
-KVConnectorFactory.create_connector(role)
-        │  按 kv_connector 配置名实例化
-        ├── AscendStoreConnector
-        ├── UCMConnectorV1
-        ├── MooncakeConnector
-        └── ...（其他后端）
-```
-
-### 1.2 依赖方向是单向的：vllm-ascend → vllm
-
-`ascend_store_connector.py` 顶部大量 `from vllm.distributed.kv_transfer.kv_connector.v1.base import KVConnectorBase_V1` 以及各种 `from vllm.xxx import ...`——都是 vllm-ascend 反向 import vllm。vllm 根本不知道 vllm-ascend 里有哪些类，是 vllm-ascend 主动往 vllm 的空工厂里"塞"自己的实现。
-
-### 1.3 为什么"不遵守签名 vllm 就不认识、也不调用"
-
-分两个层面：
-
-**（1）注册层——vllm 通过注册表决定"认不认识你"。**
-
-vllm-ascend 的 `distributed/kv_transfer/__init__.py` 里的 `register_connector()`：
-
-```python
-from vllm.distributed.kv_transfer.kv_connector.factory import KVConnectorFactory
-KVConnectorFactory.register_connector(
-    "AscendStoreConnector",
-    "vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.ascend_store_connector",
-    "AscendStoreConnector",
-)
-```
-
-触发点：vllm 启动时扫 entry points，`setup.py` 里 `ascend_kv_connector = vllm_ascend:register_connector`，把它注册进 vllm 的 `KVConnectorFactory._registry`。用户 `--kv-connector AscendStoreConnector` 时，factory 才按名字查表实例化。
-
-→ 不注册，vllm 就没有"按这个名字找实现"的入口，不实例化，也不调用。
-
-**（2）调用层——真正的调用者是 vLLM，不是 vllm-ascend。**
-
-即便注册了，vLLM 的 factory 在 `create_connector`（factory.py L42-75）里做的是 **HMA 支持检查**：若 HMA 已启用（`disable_hybrid_kv_cache_manager=False`）而连接器不支持 HMA，直接 `raise ValueError`（L54-60）。（注：factory **没有** `isinstance` 校验，也没有 nop 回退——注册表查不到名字时仅在 `get_connector_class` 里 `raise ValueError`。）随后在 vLLM 自己的 Scheduler / ModelRunner 生命周期里主动调用：
-
-- Scheduler 进程：`get_num_new_matched_tokens → update_state_after_alloc → build_connector_meta → update_connector_output`
-- Worker 进程：`register_kv_caches → start_load_kv → wait_for_layer_load / save_kv_layer / wait_for_save → get_finished`
-
-→ 缺方法：`AttributeError` / `NotImplementedError`，推理循环崩；
-→ 签名/返回语义不对：vLLM 按基类约定解析，行为错乱。
-
-### 1.4 一句话总结
-
-- vllm-ascend **被动**运行在 vllm 之上，是靠 **entry point + 工厂注册表**动态挂载的插件。
-- 要被 vllm 认可为合法 KV connector，必须：① 运行时把名字注册进 `KVConnectorFactory`；② 继承 `KVConnectorBase_V1` 并被当作符合签名的对象来驱动。
-- **vLLM 是唯一驱动者和调用者**；vllm-ascend 只负责"满足契约、登记注册、响应调用"。不遵守签名，要么拿不到调用，要么拿到也会在运行时报错。
-
-### 1.5 注册机制细讲：entry point 如何注入 `_registry`
-
-`_registry` 是 `KVConnectorFactory` 上的**类级 dict**（`factory.py L28`）：`dict[str, Callable[[], type[KVConnectorBase]]]`。key = 连接器名字，value = 一个"懒加载闭包"（`importlib` 延迟 import、返回类）。两张查表点：`get_connector_class_by_name`（L78，查表在 L91）和 `get_connector_class`（L96，查表在 L124-125），都是 `_registry[name]` 取 loader 再 `()` 触发加载。
-
-`_registry` 自己不会长内容，键值 100% 由 `register_connector()` 事后填充；entry point 则是"把这个函数送到 vllm 面前、让 vllm 主动调用它"的运输机制。完整链路：
+`_registry` 是 `KVConnectorFactory` 上的类级 dict（factory.py L28）：key = 连接器名，value = 懒加载闭包（importlib 延迟 import 返回类）。它自己不长内容，键值 100% 由 `register_connector()` 事后填充；entry point 是"把注册函数送到 vllm 面前、让 vllm 主动调用它"的运输机制。完整链路：
 
 ```
 ① pip install vllm-ascend
@@ -114,13 +33,13 @@ KVConnectorFactory.register_connector(
 ```
 
 关键点：
-- **运行时反过来 import vllm**：vllm 扫描 entry point 是 `importlib.metadata.entry_points(group=...)` 枚举所有已安装包；`plugin.load()` 才真正 import vllm-ascend 并取 `register_connector` 函数。
-- `register_connector` 内部遇到同名会先 `_registry.pop(...)` 再重挂——因为 `_registry` 是可覆盖的可变字典，Ascend 要顶替 vllm 上游已占用的名字（`MultiConnector` / `OffloadingConnector` / `SimpleCPUOffloadConnector`）得先弹掉，否则撞名 `raise ValueError`。`AscendStoreConnector` 是上游没有的新名字，直接注册即可。
-- 与 `_registry` 关系：**entry point 让注册代码跑起来，`register_connector` 把名字写进 `_registry`**。没前者，注册函数永不被执行，`_registry` 里就没这个名字。
+- vllm 扫 entry point 用 `importlib.metadata.entry_points(group=...)`；`plugin.load()` 才真正 import vllm-ascend。
+- `register_connector` 遇同名先 `_registry.pop(...)` 再重挂——Ascend 要顶替 vllm 上游已占用的名字（`MultiConnector` / `OffloadingConnector` / `SimpleCPUOffloadConnector`）得先弹掉，否则撞名 `raise ValueError`。`AscendStoreConnector` 是上游没有的新名字，直接注册。
+- 不注册，vllm 就没有"按名字找实现"的入口，不实例化，也不调用。
 
-### 1.6 具体调用链：从 vLLM 的 schedule() 一步步到 get_num_new_matched_tokens
+**factory 的校验行为**：`create_connector`（factory.py L42-75）做 HMA 支持检查——HMA 已启用而连接器不支持时 `raise ValueError`（L54-60）。**没有** isinstance 校验、没有 nop 回退；注册表查不到名字时 `get_connector_class` 直接 `raise ValueError`。
 
-以 commit `6e448d0ea9` 的 vllm 源码逐行走（多态点正是 1.3 讲的"继承 + 注册 + 薄转发"）。
+### 1.2 调用链：从 vLLM 的 schedule() 到 get_num_new_matched_tokens
 
 ```
 EngineCore/AsyncLLM 每步调 schedule()
@@ -133,27 +52,15 @@ EngineCore/AsyncLLM 每步调 schedule()
             → KVPoolScheduler.get_num_new_matched_tokens    真正外部 pool 命中查询
 ```
 
-- **第 1 步 connector 诞生**：`Scheduler.__init__ L140` 配了 `kv_transfer_config` 就 `KVConnectorFactory.create_connector(role=SCHEDULER)` → 工厂查 `_registry` 返回 AscendStoreConnector 类 → 实例化。Ascend 侧 `__init__ L114`：`role==SCHEDULER` → `self.connector_scheduler = KVPoolScheduler(...)`。于是 `Scheduler.connector` 是"持 KVPoolScheduler 的 AscendStoreConnector"。
-- **第 2 步进入 waiting 循环**：L439 先调度 running（L485），再到 L687 `while (waiting or skipped_waiting) and token_budget > 0`。
-- **第 3 步只在首轮查外部命中**：L745 仅当 `num_computed_tokens == 0`，先取本地 HBM 连续 prefix `get_computed_blocks_for_connector`。
-- **第 4 步真正调用**：L769-781，`ext_tokens, load_kv_async = self.connector.get_num_new_matched_tokens(request, block_aligned_local)`。传的是**按 block 对齐后的本地命中数**（`block_aligned_local = num_new_local_computed_tokens - 尾块`），让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。返回值：`None` → 无法判定，请求弹回 waiting；否则 `num_external_computed_tokens` 为外部还能命中多少。这正对应 `LoadSpec` 里 `vllm_cached_tokens` 与 `kvpool_cached_tokens` 分开。
-- **第 5 步多态到达 Ascend**：vLLM 只认 `KVConnectorBase_V1` 签名，`self.connector.get_num_new_matched_tokens` 落到 ascend `L138-140` 一行 `assert self.connector_scheduler is not None; return ...KVPoolScheduler.get_num_new_matched_tokens(...)`，内部再分流到 `_get_store_lookup_hit_tokens` / `_get_layerwise_gva_hit_tokens` 调 backend `batch_is_exist` / `batch_get_key_info`。
-
-**关键点**：不是每个请求每步都调，只有 `num_computed_tokens == 0`（首轮）走外部命中；必须配了 `kv_transfer_config` 使 `self.connector` 非 None，否则走普通 prefix cache。
+- **connector 诞生**：`Scheduler.__init__ L140` 配了 `kv_transfer_config` 就 `create_connector(role=SCHEDULER)`；Ascend 侧 `__init__ L114` 建 `connector_scheduler = KVPoolScheduler(...)`。
+- **只在首轮查外部命中**：L745 仅当 `num_computed_tokens == 0`；先取本地 HBM 连续 prefix，再问外部。没配 `kv_transfer_config` 则 `self.connector` 为 None，走普通 prefix cache。
+- **传参语义**：L769-781 传入的是按 block 对齐后的本地命中数（`block_aligned_local`，减去尾块），让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。返回 `(ext_tokens, load_kv_async)`。这对应 `LoadSpec` 里 `vllm_cached_tokens` 与 `kvpool_cached_tokens` 分开。
 
 ---
 
-## 2. `AscendStoreConnector` 实现了基类的哪些方法？各自转给谁？
+## 二、AscendStoreConnector：薄转发层
 
-**问题：**
-
-`AscendStoreConnector` 实现了 `KVConnectorBase_V1` 的哪些方法？哪些转给 `KVPoolScheduler`、哪些转给 `KVPoolWorker`？
-
-**回答：**
-
-`AscendStoreConnector` 实现的基类方法分三类：**纯转发给 KVPoolScheduler（scheduler 侧）**、**纯转发给 KVPoolWorker（worker 侧）**、**connector 自身处理**。
-
-前置：`__init__`（L114-125）里 `role==SCHEDULER` 只建 `connector_scheduler`，否则只建 `connector_worker`。所以每个方法开头的 `assert self.connector_scheduler is not None` / `connector_worker is not None` 就是确认"我这个 role 侧存在"。代码里也有两个大注释块 `Scheduler Side Methods`（L127）和 `Worker Side Methods`（L205）与之对应。
+`__init__`（L114-125）：`role==SCHEDULER` 只建 `connector_scheduler`，否则只建 `connector_worker`；`role=worker 且 rank==0 且 !use_layerwise` 时额外起 `LookupKeyServer`。真正实现全在 KVPoolScheduler / KVPoolWorker。
 
 ### 2.1 转给 KVPoolScheduler（scheduler 侧，6 个）
 
@@ -179,44 +86,30 @@ EngineCore/AsyncLLM 每步调 schedule()
 | `get_block_ids_with_load_errors()` | 回传失败 block 集合 |
 | `get_kv_connector_kv_cache_events()` | 取 worker 的 `BlockStored` 事件包成 `AscendStoreKVEvents` |
 | `build_connector_worker_meta()` | 上行 worker metadata |
-| `set_external_slot_release_waiter(waiter)` | gva_layerwise 外部 slot 释放回调（条件性，改 gva 才转发，否则 return False）。**注意：这不是 vLLM 基类方法**，是 Ascend 内部扩展，仅被 vllm-ascend 的 `AscendMultiConnector`（ascend_multi_connector.py L51）调用 |
+| `set_external_slot_release_waiter(waiter)` | gva_layerwise 外部 slot 释放回调（**非 vLLM 基类方法**，Ascend 内部扩展，仅被 `AscendMultiConnector` L51 调用） |
 
-### 2.3 connector 自身处理（不转发，7 个）
+### 2.3 connector 自身处理（7 个）
 
-| 方法 | 归属 | 说明 |
-|---|---|---|
-| `requires_piecewise_for_cudagraph` (classmethod) | connector | `use_layerwise` 时强制 PIECEWISE graph |
-| `set_xfer_handshake_metadata_pp_aware` | connector | 直接 `pass`，不走 P/D handshake |
-| `update_connector_output(output)` | 半转半自 | 前半转 KVPoolScheduler + 后半做 KV event 聚合 |
-| `take_events()` | connector | 聚合多 worker 事件后吐给 prefix cache |
-| `get_kv_connector_stats()` | connector | 按存在性分流：有 scheduler 走 scheduler，否则 worker |
-| `build_kv_connector_stats` (classmethod) | connector | 构造 `AscendStoreKVConnectorStats` |
-| `build_prom_metrics` (classmethod) | connector | 构造 `AscendStorePromMetrics` |
-
-### 2.4 小结
-
-- `AscendStoreConnector` 基本是"薄转发层"：把 vLLM 调用的基类方法按 role 落到 `connector_scheduler` / `connector_worker`；真正的实现全在 `KVPoolScheduler` / `KVPoolWorker`。
-- 真正由 connector 自己写的横切逻辑只有：event 聚合（`update_connector_output` + `take_events`）、piecewise 声明、P/D handshake 忽略、stats/metrics 构造。
-- 对照 1.3 的调用层：vLLM 调这些方法时不知道具体是哪个角色在背后，正是"继承 + 注册 + 薄转发"的多态体现。
+| 方法 | 说明 |
+|---|---|
+| `requires_piecewise_for_cudagraph` (classmethod) | `use_layerwise` 时强制 PIECEWISE graph |
+| `set_xfer_handshake_metadata_pp_aware` | 直接 `pass`，不走 P/D handshake |
+| `update_connector_output(output)` | 半转半自：前半转 KVPoolScheduler + 后半做 KV event 聚合 |
+| `take_events()` | 聚合多 worker 事件后吐给 prefix cache |
+| `get_kv_connector_stats()` | 按存在性分流：有 scheduler 走 scheduler，否则 worker |
+| `build_kv_connector_stats` (classmethod) | 构造 `AscendStoreKVConnectorStats` |
+| `build_prom_metrics` (classmethod) | 构造 `AscendStorePromMetrics` |
 
 ---
 
-## 3. 外部 KV pool 命中如何被查询？Scheduler 侧和 Worker 侧各做什么？
+## 三、查询路径总览：两条路径，分界是 use_layerwise
 
-**问题：**
-
-外部 KV pool 的命中是怎么被查询的？Scheduler 侧和 Worker 侧各自负责什么？
-
-**回答（结论先行）：**
-
-有两**条路径**，分界是 `use_layerwise`（gva 时绑定 memcache）：
-
-- **非 layerwise**：Scheduler 的 backend 客户端虽能触到 DRAM 池，但看不到 worker 持有的权威池状态，所以**通过 ZMQ 把查询委托给 rank0 worker**，由 worker 用 `m_store.exists()` 查并合并本地 HBM 命中，再 RPC 回命中数（真实原因详见条目 6）。
-- **layerwise（gva/memcache）**：Scheduler 用自己持有的 backend 客户端 `store_scheduler.batch_is_exist / batch_get_key_info` **直连远程 store 查**，不经 worker 中转。
+- **非 layerwise**：Scheduler 通过 ZMQ 把查询委托给 rank0 worker，由 worker 用 `m_store.exists()` 查并合并本地 HBM 命中，回传命中数（为什么，见第五部分）。
+- **layerwise**：Scheduler 用自己的 backend 客户端 `store_scheduler.batch_is_exist / batch_get_key_info` 直连远程 store 查，不经 worker 中转。
 
 ### 3.1 Scheduler 侧（KVPoolScheduler）
 
-入口 `get_num_new_matched_tokens`（`pool_scheduler.py L444`），职责 = "选路 + 短路 + 算 LoadSpec"，不碰数据。
+入口 `get_num_new_matched_tokens`（pool_scheduler.py L444），职责 = 选路 + 短路 + 算 LoadSpec，不碰数据。
 
 **三道短路**（L461/464-470/481-482）：
 1. `kv_consumer` 且 `!consumer_is_to_load` → 返回 `(0, False)`
@@ -227,261 +120,194 @@ EngineCore/AsyncLLM 每步调 schedule()
 
 | 模式 | Scheduler 做什么 |
 |---|---|
-| gva/layerwise(memcache) | `_get_layerwise_gva_hit_tokens` → `store_scheduler.batch_get_key_info(all_keys)`，逐 block 判 `ki.size()>0`，所有 rank 的 key 全有效才算命中（L324） |
-| layerwise(mooncake，非 gva) | `_get_store_lookup_hit_tokens(include_layers=True)` → `store_scheduler.batch_is_exist(query_keys)`，`.to_string()` 展开到 layer key，`all(exists==1)` 命中、`any(exists==0)` 停（L268） |
+| gva/layerwise(memcache) | `_get_layerwise_gva_hit_tokens` → `batch_get_key_info(all_keys)`，逐 block 判 `ki.size()>0`，所有 rank 的 key 全有效才算命中（L324） |
+| layerwise(mooncake，非 gva) | `_get_store_lookup_hit_tokens(include_layers=True)` → `batch_is_exist(query_keys)`，展开到 layer key，`all(exists==1)` 命中、`any(exists==0)` 停（L268） |
 | 非 layerwise | 懒建 `LookupKeyClient`，`client.lookup(token_len, block_hashes, group_ids, hbm_hit_tokens)` → **走 ZMQ 问 worker**（L491-498） |
 
-查完统一：命中数回落（eagle 减 `lcm_block_size`、等于全长减 1）→ 算 `need_to_allocate = hit - num_computed_tokens` → 写 `load_specs[req_id] = LoadSpec(vllm_cached_tokens, kvpool_cached_tokens, can_load, ...)` → 返回 `(need_to_allocate, load_async and not use_layerwise)`。
+查完统一：命中数回落（eagle 减 `lcm_block_size`、等于全长减 1）→ `need_to_allocate = hit - num_computed_tokens` → 写 `load_specs[req_id] = LoadSpec(...)` → 返回 `(need_to_allocate, load_async and not use_layerwise)`。
 
 ### 3.2 Worker 侧（只在非 layerwise 出现）
 
-非 layerwise 的命中计算依赖 worker 独有的权威状态（本地 HBM 居住度、group 对齐模式、buffer 布局等，见条目 6.2），所以 **ZMQ 路径在 worker 侧**跑。
+**LookupKeyServer 何时起**：connector L124-125——`role=worker 且 rank==0 且 !use_layerwise`。ZMQ REP socket 常驻线程（L349-373），每收一帧调 `pool_worker.lookup_scheduler(...)`，**结果打包 4 字节回发**（L369）。
 
-**LookupKeyServer 何时起**：`connector.__init__` L124-125——`role=worker 且 rank==0 且 !use_layerwise`。bind 一个 ZMQ REP socket，跑常驻线程 `process_request`（L349-373），每收一帧调 `pool_worker.lookup_scheduler(...)`，把结果打包 4 字节回发。
-
-**worker 实际查询 `lookup_scheduler`**（`pool_worker.py L2390`）：
-1. 先试 `_lookup_with_coordinator(...)`（若配了 coordinator 插件则由它答）
-2. 无则逐 group：`_build_lookup_keys` → `_expand_lookup_keys_by_rank` 展开多 TP rank → **`self.m_store.exists(multi_tp_keys)`** 查 DRAM 池（外部后端 store，见条目 3.3/5）
-3. 按 `group_uses_align_state` 选**连续/断续**命中位置计算，逐 group 取最小，`_max_intersection_hit_position` 求多 group 交集
+**worker 查询 `lookup_scheduler`**（pool_worker.py L2390）：
+1. 先试 `_lookup_with_coordinator(...)`（coordinator 路径，见第六部分 (a)）
+2. fallback：逐 group `_build_lookup_keys` → `_expand_lookup_keys_by_rank` → `m_store.exists(multi_tp_keys)` 查 DRAM 池
+3. 按 `group_uses_align_state` 选连续/断续命中位置计算，逐 group 取最小，`_max_intersection_hit_position` 求多 group 交集
 4. 返回最终命中 token 数
 
-### 3.3 为什么分两条路（架构成因）
+### 3.3 "(gva/memcache)" 是什么
 
-| 维度 | 非 layerwise | layerwise(gva) |
-|---|---|---|
-| 谁查 | worker（`m_store.exists`） | scheduler（`store_scheduler.batch_get_key_info/exist`） |
-| 传输 | ZMQ RPC（scheduler↔rank0 worker） | 后端连接直达 store |
-| 命中语义 | 连续 prefix 命中为主 | 每层全有才算 + 支持 layerwise 复用 |
-| 查询端性质 | worker 是 DRAM 池的**权威代理**（持 alloc GVA / group 状态 / 连续命中计算） | scheduler 的后端客户端是**只读元数据客户端**，按层对象+GVA 寻址适合直接查（见条目 4/5） |
+**layerwise 模式运行在 memcache 后端上，每个按层存的 KV 对象用 GVA（全局虚拟地址）寻址**。`pool_scheduler.py L168`：`self.use_gva_layerwise = self.use_layerwise and self.backend_name == "memcache"`。
 
-**小结**：非 layerwise 走 worker、layerwise 走直连，本质不是"能否触到 store"（两边都能触到 DRAM 池），而是**谁是权威代理**：worker 持有 DRAM 池在当前组的权威状态（`_allocated_gvas`、group 状态、连续/断续命中计算、本地 HBM 居住度），scheduler 的 backend 客户端只是只读元数据客户端，所以非 layerwise 收敛到 rank0 worker 用 `m_store` 查（详见条目 4.2 修正、条目 5）。Scheduler 职责 = 选路 + 短路 + 算 LoadSpec；Worker 职责 = 用后端 store 真正算命中。
+- **memcache**：后端之一，用 `memcache_hybrid.DistributedObjectStore`（host 侧分布式对象存储，走 memfabric 交换网络）。
+- **gva**：每个存进 store 的 KV 对象分配一个 GVA；`batch_get_key_info`（memcache_backend.py L142）返回的 key_info 带 GVA 和 size（scheduler 用 `ki.size() > 0` 判存的来源）。get/put 也靠 GVA 做 DMA。
+- 为什么绑 layerwise：只有 layerwise 把 KV 拆成"每层一个对象"，一个对象一个 GVA；非 layerwise 是整段连续 KV 一个块存，不走单对象 GVA 寻址。
 
 ---
 
-## 4. 澄清"(gva/memcache)"，以及为什么 layerwise 可直连查询
+## 四、存储模型：HBM/DRAM 两层
 
-**问题：**
+AscendStore 有**两层**，别混：
 
-1. 条目 3 里写的 "(gva/memcache)" 是什么意思？
-2. 为什么 layerwise 能直连查、非 layerwise 却不能直连查？
+### 4.1 第 1 层：本地 KV 缓存 buffer = NPU HBM
 
-**回答：**
-
-### 4.1 "(gva/memcache)" 的含义
-
-简写，展开是：**layerwise 模式运行在 memcache 后端上，每个按层存的 KV 对象用 GVA（Global Virtual Address，全局虚拟地址）寻址**。对应 `pool_scheduler.py L168`：
-
-```python
-self.use_gva_layerwise = self.use_layerwise and self.backend_name == "memcache"
-```
-
-- **memcache**：Ascend 的一个后端，用 `memcache_hybrid.DistributedObjectStore`（host 侧分布式对象存储，走 memfabric 交换网络），即 `MemcacheBackend`。
-- **gva**：memcache/memfabric 的内存寻址模型——每个存进 store 的 KV 对象分配一个全局虚拟地址 GVA。查询走 `batch_get_key_info`（`memcache_backend.py L142`），返回的 `key_info` 带该对象的 GVA 和 size（这就是 scheduler 那支用 `ki.size() > 0` 判存的来源）。后续 get/put 也靠 GVA 做 DMA。
-- 为什么绑 layerwise：只有 layerwise 把每个 KV 拆成"每层一个对象"分别存，一个对象对应一个 GVA；memcache 的"按对象寻址 + 取对象信息"天然支持按层命中。非 layerwise 是整段连续 KV 一个块存，不走单对象 GVA 寻址，也就进不了 gva 路径。
-
-### 4.2 为什么 layerwise 能直连查、非 layerwise 不能
-
-根本原因**不是"层不层"，而是存 KV 的 store 能否被 Scheduler 进程当独立客户端来查**。
-
-**memcache** `create_scheduler_client`（L100-105）：
-```python
-return cls(parallel_config, local_rank=0, init_bm=False)  # scheduler 是纯元数据客户端
-```
-`init_bm=False`、不碰 NPU HBM，可直接经 memfabric 调 `batch_is_exist / batch_get_key_info`——因为 store 是 host 侧、跨进程地址可达的分布式对象存储。
-
-**mooncake** `create_scheduler_client`（L164-166）：
-```python
-return cls(parallel_config, contribute_memory=False)  # 只查不贡 memory
-```
-一个 mooncake master 客户端，走 RDMA/网络查远端元数据，scheduler 也能直连。
-
-**非 layerwise 为什么走 ZMQ（修正版）**：不是 scheduler 读不到某个 HBM。两侧其实都能触到同一个外部 DRAM 池。真正原因是**谁是权威代理**——worker 持有该 DRAM 池在当前组的权威状态（已分配的 GVA `_allocated_gvas`、每 group 的 alloc 记录、连续/断续命中计算所需的 `group_uses_align_state`、以及要参考的本地 HBM 居住度 `hbm_hit_tokens`），而这些 scheduler 的后端客户端看不到全貌；scheduler 的 backend 客户端被设计成**只读元数据客户端**（memcache 注释：`The scheduler is a single metadata client... must not initialize memcache storage`）。所以命中判定收敛到持有权威状态的 rank0 worker 上，scheduler 经 ZMQ 委托。**池本身是 host DRAM，不是 HBM**（详见条目 5 的两层模型）。
-
-| 模式 | KV 持久化在哪 | scheduler 拿到的客户端 | 谁能查 |
-|---|---|---|---|
-| layerwise/gva(memcache) | host DRAM 分布式对象存储（memfabric），按层对象+GVA | `create_scheduler_client` 给独立元数据客户端（不碰 HBM） | scheduler 直连查 |
-| layerwise(mooncake) | 远端 mooncake DRAM 池 | mooncake master 客户端（`contribute_memory=False`） | scheduler 直连查 |
-| 非 layerwise | 外部后端 DRAM 池；worker 另持本地 HBM buffer（`.data_ptr()` 注册） | 只读元数据客户端，不看 worker 的权威状态 | worker 用 `m_store` 查 |
-
-**一句话**：layerwise 的 store 是"host/网络地址可达的 DRAM 共享存储"，后端给 scheduler 一个独立可查的只读元数据客户端，按层对象+GVA 寻址适合直连；非 layerwise 的命中依赖 worker 持有的权威池状态（GVA/group/本地 HBM 居住度），scheduler 客户端看不到，所以只能委托持有 `m_store` 的 worker 查。池是在 DRAM 上，并非 HBM（详见条目 5）。
-
----
-
-## 5. 池到底在 HBM 还是 DRAM——两层模型（修正混淆）
-
-**问题：**
-
-条目 3/4 里说"KV 存在 worker 本地 NPU 的 HBM pool 里 / m_store 是 HBM 上的 map"，可池不是建立在 DRAM 上吗？
-
-**回答（结论）：**
-
-之前那句说法不准确，已更正。AscendStore 有**两层**：
-
-### 5.1 第 1 层：本地 KV 缓存 buffer = NPU HBM
-
-`register_kv_caches` 把 vLLM 分配在 NPU 上的 `kv_caches` tensor 按物理地址登记进后端（`pool_worker.py L762`）：
+`register_kv_caches` 把 vLLM 分配在 NPU 上的 `kv_caches` tensor 登记给后端（pool_worker.py L762）：
 
 ```python
 base_addr = cache.data_ptr()             # NPU HBM 地址
-...
-self.m_store.register_buffer(ptrs, lengths)   # 把这段 HBM buffer 登记给后端
+self.m_store.register_buffer(ptrs, lengths)   # 登记本地 HBM buffer（put/get 的源/目标）
 ```
 
-这里的 `ptrs` 来自 HBM 张量 `.data_ptr()`，所以 **`register_buffer` 登记的是本地 HBM buffer（源/目标）**，是"给后端一块可搬移的内存区"，不是持久化池本身。
+`register_buffer` 登记的是"给后端一块可搬移的内存区"，**不是持久化池本身**。
 
-### 5.2 第 2 层：外部存储池 = host DRAM
+### 4.2 第 2 层：外部存储池 = host DRAM
 
-真正的持久化/被查询的池是后端在 **host DRAM** 上的存储：mooncake = 每卡贡献的 DRAM 池；memcache = host 侧 `DistributedObjectStore`。
-
-证据是 memcache `MmcDirect` 的方向（`memcache_backend.py L34-38`）：
+真正被查询的池在 host DRAM：mooncake = 每卡贡献的 DRAM 池；memcache = host 侧 `DistributedObjectStore`。证据是 `MmcDirect` 的方向（memcache_backend.py L34-38）：
 - `COPY_L2G`（Local→Global）→ `put()`：**HBM → DRAM 池**（L214）
 - `COPY_G2L`（Global→Local）→ `get()`：**DRAM 池 → HBM**（L186）
 
-"Local" = HBM 本卡，"Global" = 走 fabric 的 host DRAM 对象存储。
-
-### 5.3 两套地址，别混
+### 4.3 两套地址
 
 | 登记/分配 | 是什么 | 落在哪 |
 |---|---|---|
-| `register_buffer(ptrs, lengths)`（`kv_caches.data_ptr()`） | 本地 kv_cache 缓冲 | **HBM** |
-| `batch_alloc(keys, sizes)` → 返回 GVA（`memcache_backend.py L153`）；worker `_allocated_gvas` 缓存（`pool_worker.py L359`） | 池里的对象 | **DRAM** |
+| `register_buffer(ptrs, lengths)` | 本地 kv_cache 缓冲 | **HBM** |
+| `batch_alloc(keys, sizes)` → GVA（memcache_backend.py L153）；worker `_allocated_gvas` 缓存（pool_worker.py L359） | 池里的对象 | **DRAM** |
 
-`put` 把 HBM 里的 KV 经 device-sdma 拷到 DRAM 池对象；`get` 反向。所以：
-- **`m_store` 不是"HBM 上的 map"**——它是外部后端（mooncake/memcache）对象，索引/数据对应的是 DRAM 池；
-- `m_store.exists` 查的是 **DRAM 池**；
-- worker 的 HBM 只是被登记为 put/get 的本地侧 buffer。
+**结论**：`m_store` 不是"HBM 上的 map"——它是外部后端对象，`exists` 查的是 DRAM 池；worker 的 HBM 只是 put/get 的本地侧 buffer。"5G DRAM pooling" 指 mooncake 每卡贡献的 host DRAM 池，与 `register_buffer` 是两类东西。
 
-### 5.4 对命中查询的影响（衔接条目 4.2）
-
-修正后，"为什么非 layerwise 经 ZMQ、layerwise 直连"的理由是**权威代理 vs 只读元数据客户端**，而非"scheduler 读不到 HBM"：
-
-- scheduler 的 backend 客户端（`create_scheduler_client`：memcache `local_rank=0, init_bm=False`；mooncake `contribute_memory=False`）是**只读元数据客户端**，能触到 DRAM 池但看不到 worker 持有的权威状态；
-- worker 持有 DRAM 池在当前组的权威状态（`_allocated_gvas`、group alloc 记录、`group_uses_align_state`、本地 HBM 居住度 `hbm_hit_tokens`）；
-- 所以非 layerwise 命中收敛到持有 `m_store` 的 rank0 worker；layerwise 因按层对象+GVA 寻址适合只读直连。
-
-**提醒**：以上基于 `commit 6e448d0ea9` 的 vllm + 本地 vllm-ascend 源码。"5G DRAM pooling" 主要指 mooncake 每卡贡献的 host DRAM 池；AscendStore 的 `register_buffer` 与它是两类东西，前者是 HBM buffer 登记，后者才是 DRAM 池。
+**后端给 scheduler 的客户端**：memcache `create_scheduler_client`（L100-105）返回 `cls(parallel_config, local_rank=0, init_bm=False)`——注释原文 "The scheduler is a single metadata client... must not initialize memcache storage"；mooncake（L164-166）返回 `contribute_memory=False` 的 master 客户端。两者都是**只读元数据客户端**，能触到 DRAM 池但看不到 worker 的权威状态。
 
 ---
 
-## 6. 到底什么决定了用不用 ZMQ——逐条推翻错误解释（有代码证据）
+## 五、核心问题：什么决定了用不用 ZMQ
 
-**问题：**
+**问题**：非 layerwise 和 layerwise 的不同到底为什么决定了用不用 ZMQ？关键是"谁能直连 store"吗？
 
-非 layerwise 和 layerwise 的不同到底为什么决定了用不用 ZMQ？关键是"谁能直连 store"吗？
+**回答（结论先行）**：**两种模式的查询回答的问题根本不同——layerwise 的查询是"存在性问题"（这些层对象在不在池里，纯元数据，scheduler 只读客户端即可作答）；非 layerwise 的查询是"能力性问题"（结合本地已有什么、granularity 对齐、group 交集，本 TP 组能以"不重算"的方式服务这个请求的前缀到多远的地方），其计算机器在现行布局下全在 worker。** ZMQ 的存在不是为了解决"够不够得着池"，而是把"需要本地状态参与的复杂计算"收敛到持有状态的 worker 上。
 
-**回答（结论先行）：**
-
-先把常见错误解释逐条否定，再给真正原因。最新版本质（2026-08-27 复核 L177 后确认）：**两种模式的查询回答的问题根本不同——layerwise 的查询是"存在性问题"（这些层对象在不在池里，纯元数据，scheduler 只读客户端即可作答）；非 layerwise 的查询是"能力性问题"（结合本地已有什么、granularity 对齐、group 交集，本 TP 组能不重算地服务多远），答案由 worker 独有状态参与计算，必须 worker 回答。** ZMQ 的存在不是为了解决"够不够得着池"（scheduler 的 `store_scheduler` 在 L177 无条件创建，非 layerwise 也持有 store 客户端），而是把"需要本地状态参与的复杂计算"收敛到持有状态的 worker 上。
-
-### 6.1 先否定三个错误解释
-
-| 错误说法 | 代码证据 | 结论 |
-|---|---|---|
-| "scheduler 读不到 HBM / 池" | mooncake `create_scheduler_client` 也是 `MooncakeDistributedStore()` 连同一个 master（mooncake_backend.py L164-166），`exists()` 两边都调 `store.batch_is_exist()`（L186）；且 scheduler 的 `store_scheduler` 在 pool_scheduler.py **L177 是无条件创建的**（非 layerwise 模式也持有 store 客户端） | **错**。scheduler 能触到同一个 DRAM 池，"够不够得着池"从来不是原因 |
-| "worker 有池句柄，scheduler 没有" | scheduler 的 `store_scheduler` 和 worker 的 `m_store` 都是同一个 Backend 类的实例，都连同一个 store | **错**。两边都有 store 连接 |
-| "key 格式不同" | worker `_get_key_prefix`（metadata.py L328-336）与 scheduler `_generate_store_query_keys`（pool_scheduler.py L230-266）生成完全相同格式的 key，且都展开到所有 rank | **错**。key 不是分水岭 |
-
-### 6.2 非层命中依赖五个 worker 独有状态（`lookup_scheduler` L2390-2479 拆解）
-
-1. **`cache_coordinator` 只有 worker 有**（构造时创建，pool_worker.py L321-322）。`lookup_scheduler` 第一步就调 `_lookup_with_coordinator`（L2407），其中用本地 HBM 命中预填充外部命中集（L2327-2332）：`exists.update(本 worker HBM 里已有的块)`——把"本地 HBM prefix cache 的块"和"外部 DRAM 池的块"**合并计算**。scheduler 不知道自己 HBM 里有什么（它从未注册 buffer），做不了这件事。
-2. **`token_database` 携带 worker 实际 rank + 真实 buffer 地址**（L303-319 + `set_group_buffers` L805-813）。scheduler 没有这个。
-3. **`group_uses_align_state`**（L2446-2453）：由 worker 实际 KV cache group 配置决定（mamba 混合架构对齐方式不同），决定走"断续命中"还是"连续命中"算法。scheduler 没有这个数组。
-4. **命中位置对齐 `cache_transfer_granularity`**（find_all_continuous_hit_positions L2522-2535）：`ends`/`starts` 块边界来自 worker 的 `token_database` 基于真实 buffer 排布算出。
-5. **多 group 交集算法**（`_max_intersection_hit_position` L2482-2491）：要求每个 group 的命中位置列表，而每个 group 又依赖各自的 block_size、align_state、buffer 布局。
-
-### 6.3 对照：layerwise 为什么 scheduler 能直查
-
-layerwise 路径（pool_scheduler.py L268-309）只做：
-
-```python
-exists_states = self.store_scheduler.batch_is_exist(query_keys)   # 纯元数据查询
-for block_keys in query_keys_by_block:
-    if all(exists == 1 for exists in block_states):
-        num_queried_hit_blocks += 1
-    if any(exists == 0 for exists in block_states):
-        break
-```
-
-不需要 `cache_coordinator`、不需要 worker rank/buffer 状态、不需要 `group_uses_align_state`——因为 layerwise"每层一个独立对象"，命中语义简单："这个 key 存在吗？"，答案非 0 即 1，scheduler 自己就能算连续前缀。
-
-### 6.4 最终结论：两种模式查询回答的问题根本不同（存在性问题 vs 能力性问题）
-
-三个先钉死的代码事实：
+### 5.1 五个先钉死的代码事实
 
 1. `store_scheduler` 在 pool_scheduler.py **L177 无条件创建**——非 layerwise 下 scheduler 也持有 store 客户端，"够不够得着池"不是原因；
-2. 查询路径分支（L472-498）**只看 `use_layerwise`**；复用（`layerwise_offload`）只影响 worker 的 `load_start_block`（L1147-1151），**从头到尾不参与查询路径选择**；
-3. LookupKeyServer 只在 `not use_layerwise` 时启动（ascend_store_connector.py L124-125）。
+2. scheduler 的 `store_scheduler` 与 worker 的 `m_store` 是同一个 Backend 类的实例、连同一个 store（mooncake `create_scheduler_client` 也是 `MooncakeDistributedStore()` 连同一 master，mooncake_backend.py L164-166），"有没有池句柄"不是原因；
+3. key 格式两边完全一致（worker `_get_key_prefix`（metadata.py L328-336）与 scheduler `_generate_store_query_keys`（pool_scheduler.py L230-266）生成相同格式，且都展开到所有 rank），"key 不同"不是原因；
+4. 查询路径分支（L472-498）**只看 `use_layerwise`**；复用（`layerwise_offload`）只影响 worker 的 `load_start_block`（L1147-1151），从头到尾不参与查询路径选择；
+5. LookupKeyServer 只在 `not use_layerwise` 时启动（ascend_store_connector.py L124-125）。
 
 ```
                  "这个请求能命中多少？"
                           │
         ┌─────────────────┴─────────────────┐
    layerwise                          非 layerwise
-   问："池里这些层对象存在吗？"      问："我这个 TP 组能不重算地服务多远？"
+   问："池里这些层对象存在吗？"      问："我这个 TP 组，能以'不重算'的方式
+                                        服务这个请求的前缀到多远的地方？"
         │                                   │
-   纯元数据问题，只依赖               结果依赖 worker 独有的东西：
-   ① block_hashes（请求自带）         ① keys 按 worker 真实 rank 拓扑构造
-   ② 层号 × rank 展开                  （池对象就是 worker 用这些 key PUT 的，
-   ③ all/any 前缀走查                    scheduler 没有 token_database）
-        │                             ② 命中位置按 cache_transfer_granularity
-        │                                对齐 + 连续/断续 + 多 group 交集
-        │                                （find_all_*_hit_positions 全是 worker 方法）
-        │                             ③ HMA 时还要合并本地 HBM 可用性
-        │                                （cache_coordinator，worker 独有）
-        │                             ④ 最终执行 get 的就是 worker 各 rank
-        │                                （它是"能服务什么"的权威）
+   纯元数据问题，只依赖               结果依赖 worker 布局状态：
+   ① block_hashes（请求自带）         ① 连续/断续命中 + granularity 对齐
+   ② 层号 × rank 展开                  （find_all_*_hit_positions 全是 worker 方法）
+   ③ all/any 前缀走查                 ② 多 group 交集（_max_intersection_hit_position）
+        │                             ③ HMA 时合并本地 HBM 可用性
+        │                                （worker 方法 _lookup_with_coordinator）
+        │                             ④ ZMQ 协议只回传 4 字节整数，
+        │                                per-block 位图无法回传 → 合并必在应答方
         ▼                                   ▼
    scheduler 拿只读客户端              ZMQ → rank0 worker 用 m_store.exists 查
    直连，省一跳 RPC                     + 在 worker 上算完命中位置再回传一个数
 ```
 
-- **layerwise 的查询 = 存在性问题**（"这些 key 在不在池里"），任何人都能回答，scheduler 的只读客户端自己就能查，所以直连；
-- **非 layerwise 的查询 = 能力性问题**（"结合本地已有什么、granularity 怎么对齐、多 group 怎么交集，我这个 TP 组能不重算地推进多远"），答案由 worker 独有状态参与计算，所以必须由 worker 回答，scheduler 只能 ZMQ 去问。
+### 5.2 非层命中依赖五个 worker 布局独有状态（lookup_scheduler L2390-2479 拆解）
 
-一句话：非 layerwise 的命中是"本地 HBM + 外部池"联合判定（coordinator 路径；fallback 为纯池判定，见 6.5(a) 限定），联合状态只有 worker 有；layerwise 的命中是纯外部池元数据查询，scheduler 直连就够。
+1. **`cache_coordinator` 只在 worker 实例化**（pool_worker.py L321-322，条件 `use_hybrid`）。`lookup_scheduler` 第一步调 worker 方法 `_lookup_with_coordinator`（L2407）——预填充本地块（L2327-2332）、查池（L2358 `m_store.exists`）、合并三件事都是这个**方法**做的（"with coordinator"指借它的 `lookup_mask()` 筛 chunk（L2320）+ 按它的 `lcm_block_size` 粒度记账 `exists` 集合 + 用它的 `find_longest_cache_hit()` 算多 group 最长连续命中（L2376）；I/O 和预填是方法自己的活）。coordinator 是纯计算组件（不碰 store、不持 per-request 状态）。**合并点落在 worker 的接口原因**：connector 接口只把本地命中作为聚合整数传下，per-block 的"本地状态 + 池查询结果"只有在实际查池的一方才同时存在——谁拿着完整位图谁做并集（见第六部分 (a)）。
 
-**诚实注记（避免绝对化）**：严格说，非 layerwise 的 fallback 路径（无 coordinator 时）做的是纯池存在性查询，scheduler 理论上也能直连做。它仍走 ZMQ 的原因是：fallback 与 coordinator 共用 `lookup_scheduler` 这一个入口（都在 worker 上），granularity 命中位置计算和 group 交集全是 worker 方法；再加上 ZMQ 是非 layerwise 的原始设计，scheduler 直连客户端是后来为 layerwise 引入的——没人单独把 fallback 搬到 scheduler 侧。最准确的表述：**结构上是"layerwise 新路径直连、非 layerwise 旧路径保持 ZMQ"；语义上非 layerwise 的主路径（HMA）确实只有 worker 能答。**
+   **存在条件与使用条件是分离的两条正交轴**：实例化条件是 `use_hybrid = uses_hybrid_kv_cache(scheduler_config, kv_cache_groups)`（L172/L600-602）——由**模型架构**决定（是否存在混合 KV cache group，如 mamba 混合 / eagle 多 group），与传输模式 `use_layerwise` 无关，hybrid 架构配 layerwise 时 coordinator 实例**照样创建**；而使用门槛在 L2309 `if self.cache_coordinator is None or use_layerwise: return None`——layerwise 查询即使看到 coordinator 也不理它，落到 fallback。一句话：**hybrid 架构决定 coordinator 存在，layerwise 传输模式决定它被闲置**。layerwise 闲置它的原因不是"分层了凑合不用"，而是它要解决的问题被消解：coordinator 的全部价值是解决多 group 布局不统一（block_size/对齐方式不同 → 升 LCM 粒度统一记账 → 跨 group 求交），layerwise 每 group 独立查存在性前缀、`hit_tokens = min(hits_per_group)` 即可（L337-383），没有并集合并、没有 granularity 对齐、没有交叉布局计算。另注：coordinator 在 worker 里不止服务 lookup——L322 挂给 `token_database` 后，save/load 路径经 metadata.py L345-356 调它的 `store_mask`/`load_mask`；查/存/载三个用途全部只被非 layerwise 消费。
+2. **`token_database` 携带 worker 实际 rank + 真实 buffer 地址**（L303-319 + `set_group_buffers` L805-813）。**查询依赖它的"尺子和刀"，不依赖它的"地图"**——查池用的是它的切块机：`get_block_size`（L2326，把 `hbm_hit_tokens` 换算成块数）+ `process_token_key_strings`（L2344/L2187，一次产出每个 chunk 的 key、start/end 边界）；chunk 边界正是命中位置计算的原料（`find_all_*_hit_positions` 靠 start/end 把"哪些 key 存在"换算成"命中 N 个 token"，含 granularity 对齐）。而它持有的真实 buffer 地址（`group_kv_caches_base_addr` 等）只有传输路径消费（put/get 落点，kv_transfer.py L51/L762/L946），查询路径零引用。key 格式两边一致（scheduler `_generate_store_query_keys` 是独立复刻），所以这条证明的是**机器的摆放位置**（整套切块+命中计算共生在 worker 的 `lookup_scheduler` 入口下），不是信息的不可得性。一句话：**token_database 是"传输必需、查询搭车"——worker 为 put/get 落点必须造这台切块机（真强依赖），查询需要的只是它的纯配置推导（块大小/chunk 枚举/边界，无运行时状态），顺手用而不再另造。**
+3. **`group_uses_align_state`**（L619-635 推导，L2446-2453 消费）：初始化时从 `kv_cache_config` 逐 group 推导——**该 group 内是否含 align 模式的 `MambaSpec`**（纯 attention / eagle group 为 False）。它在查询里选"位图 → 命中位置"的换算算法：True 走 `find_all_discontinuous_hit_positions`，False 走 `find_all_continuous_hit_positions`（L2505-2535，两函数唯一差别：miss 时后者 `break`、前者跳过继续扫）。**这是五条里语义依赖最实的一条——flag 选错，答案必错，两个方向都会错**：对 mamba group 用连续算法，第一个天然 null 块（align 模式布局中本就不落池）就截断，命中被错报到接近 0；对 attention group 用断续算法，中间挖洞还继续报命中，但 attention KV 逐 token 增量、缺一段前缀即整体不可用，报出的命中是虚的。即：**它定义了"命中"对该 group 的语义，没有它位图无法换算成正确的命中数**（coordinator 是"有它更高效"，token_database 是"机器在这顺手用"，这条是"答案对不对取决于它"）。最终 `_max_intersection_hit_position`（L2482-2491）对各 group 命中位置集求交集取 max，也以此语义正确性为前提。flag 本身仍是纯配置推导（scheduler 理论上可推），限定注记照旧适用。
+4. **命中位置对齐 `cache_transfer_granularity`**（find_all_continuous_hit_positions L2522-2535）：块边界来自 worker 的 `token_database` 基于真实 buffer 排布算出。
+5. **多 group 交集算法**（`_max_intersection_hit_position` L2482-2491）：每个 group 依赖各自的 block_size、align_state、buffer 布局。
+
+**限定注记（布局独有，非信息独有）**：vLLM factory 对两种角色都传 kv_cache_config（factory.py L75），connector 在 SCHEDULER 角色下 `assert kv_cache_config is not None`（L115）并全量交给 KVPoolScheduler——据此 scheduler 持有 `use_hybrid`/`kv_cache_group_ids`/`grouped_block_size`/`lcm_block_size`/`cache_transfer_granularity`/`mamba_group_ids`/`use_eagle` 全套 group 结构信息（pool_scheduler.py L76-133）。所以五个状态里**没有一个**在查询路径上是 scheduler 真正拿不到的信息；scheduler 真正没有的只有两样，且都是布局性的：① coordinator **实例**（构造原料 scheduler 全有，但引擎只在 worker 实例化）；② token_database 的 buffer 地址（传输态，查询不消费）。因此非层走 ZMQ 的根因是**结构与历史**，"能力性问题由 worker 回答"描述的是 HMA 主路径的算法复杂度与现行布局，**不是信息上的必然**。
+
+**加强证据（比 factory 传参更直接）**：scheduler 的直连 store 客户端 `store_scheduler` 在 `__init__` **无条件创建**（pool_scheduler.py L177，不看 use_layerwise）——即非 layerwise 模式下 scheduler 手里**一直有现成的直连客户端**，但非层查询分支（L488-498）对它视而不见，现场 new 一个 ZMQ `LookupKeyClient` 去问 worker。为什么不用直连：直连客户端只给原始 per-key 存在位，layerwise 位图到手即答案（前缀走查 + 每 group 取 min）；非层的位图只是原料，后面还有整条命中计算流水线（本地块预填/并集合并、align_state 选连续/断续、granularity 对齐、多 group 交集）——这套机器全在 worker，scheduler 侧一行没有，改走直连意味着把流水线移植到 scheduler（纯重构、零功能收益）。因此最终三层归因（按权重）：① 历史——ZMQ 是原始设计（#5719 在先），layerwise（#10077）进场时选直连，没人回头改造老路径；② 成本——改造是纯重构；③ 自然归属——coordinator 路径要合并本地 per-block 状态，持有 HBM 的 worker 本来就是这套计算的自然主人。连"scheduler 够不着池"都不成立——ZMQ 纯粹是历史路径 + 计算机器摆放位置使然。
+
+**再追问一层：流水线驻留 worker 是被"本地命中"拴住的吗？——不是，③"自然归属"也站不住**。非层流水线拆开看，九分之八不碰本地状态：构 key（静态）、查池（远端）、align_state 选算法（静态）、granularity 对齐（静态）、多 group 交集（静态）——唯一真需要本地动态信息的是 coordinator 路径的本地块预填/并集合并（L2327-2332）。两个直接证据：**(i) fallback 路径零本地合并也在 worker**——L2417-2464 全程不消费 `hbm_hit_tokens`、不做任何本地合并，纯构 key + 查池 + 静态配置换算，若"本地查询"是流水线驻留 worker 的原因，这条路径就该允许 scheduler 直查，但它照样走 ZMQ；**(ii) scheduler 侧直查代码里有"非层直查"的死分支**——L278/L341 `query_start_block = 0 if use_layerwise else min(num_computed_tokens // block_size, ...)`，else 分支永远走不到，但它的存在说明曾有人设计过"scheduler 直查非层路径、用 num_computed_tokens 跳过本地已算块"的方案，只是没启用（连综合本地已算量都不构成障碍，草稿都打好了）。所以准确说法：**流水线在 worker 不是"本地查询把它拴在那"，而是"它跟 put/get 机器一起出生在 worker（#5719），后来没人搬"——本地合并只让"不搬"显得合理，不是让"搬不走"**；三层归因里③应降权，①历史的分量相应加重。
+
+### 5.3 对照：layerwise 为什么五个状态都不需要
+
+layerwise 路径（pool_scheduler.py L268-309）只做纯元数据查询 + all/any 前缀走查，不需要 coordinator、worker rank/buffer 状态、align_state。逐条消解：
+
+| worker 布局独有状态 | 在非层服务于什么 | 为何 layerwise 不需要 |
+|---|---|---|
+| `cache_coordinator` | 并集命中的计算引擎（查池+合并+多 group 连续命中） | **减法模型**：查询从 block 0 起只问池自己的命中总数（L278/L341 `query_start_block = 0 if use_layerwise`），本地状态在消费端（`load_start_block`）用，不在查询端合并 |
+| `token_database`（rank/buffer 地址） | key 按 rank 拓扑展开；get 落回真实 buffer | key 是层×rank 逻辑粒度（L322 `model@[group@]block_hash@rank`），由 block_hashes + 层号 × rank 展开即可构造，与 buffer 物理排布脱钩 |
+| `group_uses_align_state` | 连续/断续命中位置算法（块物理相邻性） | 逐层对象非 0 即 1（L301-305/L369-372），没有"物理连续性"概念；连续前缀只是顺序遍历 |
+| granularity 对齐 | 命中位置对齐真实 buffer 块边界（get 搬移落点） | 对象即传输粒度，天然对齐；查询只回"命中多少 token" |
+| 多 group 交集 | 按各 group 布局交叉求交集 | 每 group 独立查存在性连续前缀，`hit_tokens = min(hits_per_group)`（L337-383），scheduler 自己就能算 |
+
+**一句话收束**：layerwise 把"这个请求能命中多少"这个问题本身问小了——从"结合本地/排布/多组交叉，我能以'不重算'的方式服务这个请求的前缀到多远"（能力性）降成"这些逻辑层 key 在不在池里"（存在性，block_hashes 就够）。决定直连/ZMQ 的不是"worker 手里有什么"，而是 **layerwise 把查询降维成了 scheduler 够得着的存在性问题**。
+
+### 5.4 诚实注记（重要限定，含 git 实证）
+
+严格说，非 layerwise 的 fallback 路径（无 coordinator 时）做的是纯池存在性查询，scheduler 理论上也能直连做。它仍走 ZMQ 的原因有两层：
+
+1. **共用入口**：fallback 与 coordinator 共用 `lookup_scheduler` 这一个 worker 方法（L2390），granularity 命中位置计算和 group 交集全是 worker 方法，没人单独把 fallback 搬到 scheduler 侧；
+2. **历史顺序**（git 证据，`git log -S` 核验）：`LookupKeyServer`（ZMQ 查询链路）最早出现于 `295018ec0`（PR #5719，distributed 模块重构，先于 layerwise 存在）；`create_scheduler_client` / `batch_get_key_info`（scheduler 直连查询）最早出现于 `5e3907448`（PR #10077 "Support Layerwise KV Pooling"，后经 #11021 revert、#11444 以 memcache 后端重新合入）。即 **ZMQ 是非 layerwise 的原始设计，scheduler 直连客户端正是随 layerwise 特性一起引入的**。
+
+最准确的表述：**结构上是"layerwise 新路径直连、非 layerwise 旧路径保持 ZMQ"（git 实证）；语义上非 layerwise 的主路径（HMA）在现行布局下只有 worker 能答（布局独有，非信息独有）。**
 
 （补充：直连/ZMQ 的分界是 `use_layerwise` 而非后端——layerwise(mooncake) 也走 scheduler 直连；后端只决定 layerwise 内部走 gva(memcache) 还是 store_lookup(mooncake) 两种直连风格。）
 
-### 6.5 追问展开：本地 HBM 命中的两种命运（非 layerwise 并集参与 / layerwise 为何重载）
+### 5.5 终局结论：非层命中为什么至今走 ZMQ
 
-**问题 1：** 非 layerwise 是不是把本地 HBM 命中当池子一部分？本地 HBM 命中在 vLLM scheduler 里不是有专门负责查询的吗？worker 为什么还要管本地命中？
+**一句话定稿**：非层命中走 ZMQ 是历史遗留的现行实现，**不是技术必然**——没有任何信息或能力上的障碍阻止 scheduler 直连查询；它至今没改，只是因为没有收益驱动。
 
-**问题 2：** pool_scheduler.py L526-528 注释说 layerwise 模式即便本地有缓存也要从池里重载。为什么？难道不能从本地吗？
+每一个可能的"必然性障碍"都被代码证据逐一排除：
 
-**回答：**
+| 曾经的可能障碍 | 排除证据 |
+|---|---|
+| scheduler 不知道 group 配置？ | factory 传全量 kv_cache_config（factory.py L75），五状态的推导原料 scheduler 全有 |
+| scheduler 连不上池？ | `store_scheduler` 直连客户端在 `__init__` **无条件创建**（pool_scheduler.py L177），非层模式下就在手里，只是查询分支不用（L488-498） |
+| 本地命中信息只有 worker 有？ | `hbm_hit_tokens` 本来就是 scheduler 传过去的（L497）；per-block 细节可从 block_hashes 重构（worker 恰好就是这么做的） |
+| 命中计算离不开 worker 机器？ | fallback 路径零本地合并（L2417-2464）；L278/L341 死分支证明"非层直查 + 跳过本地块"的草稿都写过 |
+| ZMQ 有性能必要性？ | ipc 一跳 + 4 字节应答（L369/L1040-1041），查询是低频调度路径非热路径；真正延迟大头 `m_store.exists` 的网络往返与走谁无关 |
 
-两个问题其实是同一枚硬币的两面：**非 layerwise 把本地命中"并入"外部命中一起算（并集模型）；layerwise(开复用) 把本地前缀"整个作废"从池重载（覆写模型）。** 分开看。
+**至今未改的稳态三条件**：① 路是现成的、没坏；② 改直连收益为零（省的只是 ipc 一跳）而风险为正（命中流水线两份实现的一致性风险——align_state 语义、granularity、交集算法任何一处漂移就是错命中）；③ 唯一"直连"的先例 layerwise（#10077）不是有人回头改老路，而是新需求从零写的新路径（新 key 格式、新存在性语义），没有搬迁成本可比。
 
-#### (a) 非 layerwise：并集命中模型（已修正"镜像"错误表述）
+**因果裁决**："依赖五个 worker 独有状态"回答的是"为什么 ZMQ 的应答方**有能力**算"（机器恰好长在那），回答不了"为什么**必须**是它"——五个状态证明了"机器在哪"，不能证明"必须在哪"。此前"能力性问题需要 worker 回答"的叙事，正是把"现行布局下恰好由 worker 回答"（事实）包装成了"只有 worker 能回答"（因果倒置）。可以因为历史原因不改，但不能说必须 ZMQ 和 worker 通信才能查询。
+
+---
+
+## 六、本地 HBM 命中的命运（并集 / 复用 / 减法）
+
+三个子问题：(a) 非 layerwise 怎么用本地命中；(b) layerwise 为什么（有时）要无视本地缓存全量重载；(c) 为什么查询从 block 0 起。
+
+### (a) 非 layerwise：并集命中模型
 
 不是"把本地 HBM 当作池的一部分"（存储上本地块不在池里，仍由 scheduler 认领），而是**命中数按"本地 HBM 前缀块 ∪ 外部池块"的并集算最长连续前缀**。
 
-**先澄清一个容易错的推断**：本地有某个块，**推不出**池对象存在（存池在请求结束后才发生、consumer 实例只读不写、池侧可淘汰、短请求可跳过保存）。worker 把本地块标记进 `exists` 用的**不是**"本地有⇒池有"，而是"本地有⇒**这块不需要池提供**"——集合的语义是**可用性（无需重算即可获得）**，不是池内容：要么已在本地 HBM，要么经 store 验证在池里。配套证据：load 路径 `start_load_kv` 里 `mask_num = vllm_cached_tokens // group_block_size * group_size`（pool_worker.py L900）——本地部分连 load 任务都不生成，两类块各走各的（本地留 HBM 直接用、池里的才传输），合起来恰好等于命中数。
+**先澄清一个容易错的推断**：本地有某个块，**推不出**池对象存在（存池在请求结束后才发生、consumer 只读不写、池侧可淘汰、短请求可跳过保存）。worker 把本地块标记进 `exists` 用的不是"本地有⇒池有"，而是"本地有⇒**这块不需要池提供**"——集合语义是**可用性（无需重算即可获得）**，不是池内容。配套证据：load 路径 `mask_num = vllm_cached_tokens // group_block_size * group_size`（pool_worker.py L900）——本地部分连 load 任务都不生成，两类块各走各的。
 
-本地 HBM 命中确实由 vLLM scheduler 的 `kv_cache_manager.get_computed_blocks_for_connector` 专门查询（它查完还要认领块，这只有 scheduler 能做）——**worker 完全没有重查本地**，本地结果是由 scheduler 查好后作为参数一路传进来的。证据链五步：
+**本地命中由谁查**：vLLM scheduler 的 `kv_cache_manager.get_computed_blocks_for_connector`（查完还要认领块，这只有 scheduler 能做）——**worker 完全没有重查本地**，本地结果是 scheduler 查好后作为参数传进来的。证据链五步：
 
 1. vllm scheduler 查本地（scheduler.py L757）→ 得 `block_aligned_local`；
 2. 作为参数传入（pool_scheduler.py L493-498）：`client.lookup(..., hbm_hit_tokens=num_computed_tokens)`；
-3. worker 只做"标记"不查询（pool_worker.py L2327-2332）：把前 `hbm_hit_tokens // group_block_size` 个块直接写进 `exists` 集合（不查任何 store，语义="无需重算"）；同时 L2333 算 `lookup_start`，配合 metadata.py L517-518 的 `if start_idx < mask_num: continue`——**本地前缀连外部 store 查询都跳过**；
-4. 在并集上算连续命中（pool_worker.py L2376-2381）：`find_longest_cache_hit(block_hashes, token_len, ExternalCachedBlockPool(hash_block_size, exists), ...)`——类名易误导，它包的是"**可用块视图**"（本地信任块 + store 验证块），不是"池内容视图"；**复用 vLLM 自己的命中查找算法**，只换后端；
-5. worker 返回并集总数，scheduler 侧换算增量（pool_scheduler.py L513-516 + L550）：`need_to_allocate = 总数 - 本地`，按契约返回"beyond what is already computed"。LoadSpec（L533-538）同时存 `vllm_cached_tokens`（本地部分）与 `kvpool_cached_tokens`（**并集总数**）。
+3. worker 只做"标记"不查询（pool_worker.py L2327-2332）：把前 `hbm_hit_tokens // group_block_size` 个块直接写进 `exists` 集合（不查任何 store）；L2333 算 `lookup_start`，配合 metadata.py L517-518 `if start_idx < mask_num: continue`——本地前缀连外部 store 查询都跳过；
+4. 在并集上算连续命中（L2376-2381）：`find_longest_cache_hit(block_hashes, token_len, ExternalCachedBlockPool(hash_block_size, exists), ...)`——类名易误导，它包的是"**可用块视图**"（本地信任块 + store 验证块），复用 vLLM 自己的命中查找算法，只换后端；
+5. worker 返回并集总数，scheduler 换算增量（L513-516 + L550）：`need_to_allocate = 总数 - 本地`。LoadSpec 同时存 `vllm_cached_tokens`（本地部分）与 `kvpool_cached_tokens`（**并集总数**）。
 
-**为什么必须合并、不能 scheduler 自己 `max(local, external)`**：连续性拼不出来。例：本地有 b0..b4，外部因淘汰剩 b0..b2 + b5..b10（b3-b4 是洞）→ 并集连续 11 块，b5..b10 从池里 load；若只回 external 自身连续命中 3 块，`ext(3) < local(5)` → `need_to_allocate = 0`，总命中停在 5 块，b5..b10 全部重算。ZMQ 只回传一个数，per-block 外部存在位图只在 worker 查询那一刻存在——**谁拿着完整位图，谁就得做并集连续性计算**，这又回到条目 6 的结论。
+**为什么必须合并、不能 scheduler 自己 `max(local, external)`**：连续性拼不出来。例：本地有 b0..b4，外部因淘汰剩 b0..b2 + b5..b10（b3-b4 是洞）→ 并集连续 11 块，b5..b10 从池里 load；若只回 external 自身连续命中 3 块，`ext(3) < local(5)` → `need_to_allocate = 0`，总命中停在 5 块，b5..b10 全部重算。**协议硬约束**：ZMQ 协议只回传一个 4 字节整数——server `result.to_bytes(4, "big")`（ascend_store_connector.py L369），client `int.from_bytes(resp, "big")`（pool_scheduler.py L1040-1041），per-block 外部存在位图根本无法回传。**谁拿着完整位图，谁就得做并集连续性计算**，合并必然落在应答方 worker。
 
-**重要限定：并集合并是 coordinator 路径专属**。`lookup_scheduler` 主体（pool_worker.py L2407-2416）先试 `_lookup_with_coordinator`，其返回 None 时（无 cache_coordinator / group 集合不完整，L2309-2312）fallback 到纯池查询：L2417-2464 对全部块直接 `m_store.exists`，`hbm_hit_tokens` 参数完全没用——**纯池命中，不含本地**。保守方向正确（少报只是多重算，多报会 load 失败）：
+**重要限定：并集合并是 coordinator 路径专属**。`lookup_scheduler` 先试 `_lookup_with_coordinator`，返回 None 时（无 coordinator / group 集合不完整，L2309-2312）fallback 到纯池查询：L2417-2464 对全部块直接 `m_store.exists`，`hbm_hit_tokens` 参数完全没用——**纯池命中，不含本地**。保守方向正确（少报只是多重算，多报会 load 失败）：
 
 | 路径 | exists 集合的语义 | 本地块怎么处理 |
 |---|---|---|
-| coordinator 路径（HMA/hybrid 开） | "无需重算即可用"的虚拟可用集：本地前缀（信任，不查）∪ store 验证块 | 留 HBM，load 从 `vllm_cached_tokens` 后开始 |
+| coordinator 路径（HMA/hybrid 开） | "无需重算即可用"：本地前缀（信任，不查）∪ store 验证块 | 留 HBM，load 从 `vllm_cached_tokens` 后开始 |
 | fallback 路径 | 纯池存在性 | 不并入，命中只算池里的 |
 
-**分工**：vllm scheduler 的 kv_cache_manager = 真查本地 + 认领块；worker = 不重查本地，只把本地结果标记进位图 + 查外部池 + 算并集最长连续前缀；pool_scheduler = 总数−本地=增量。两个查询不冗余：一个回答"本地有哪些块且认领它们"，一个回答"本地前缀如何与外部连续衔接"。
+**分工**：vllm scheduler = 真查本地 + 认领块；worker = 不重查本地，标记本地结果 + 查外部池 + 算并集最长连续前缀；pool_scheduler = 总数−本地=增量。两个查询不冗余：一个回答"本地有哪些块且认领它们"，一个回答"本地前缀如何与外部连续衔接"。
 
-#### (b) layerwise：先纠正前提——不是所有 layerwise 都重载，**开了 buffer 复用（`layerwise_num_shared_buffers < num_layers`）才重载**
+### (b) layerwise：开了 buffer 复用才重载，本地数据物理上"没了"
 
-**buffer 复用是什么**：把多个 transformer 层的 KV cache 映射到同一块物理 HBM buffer 上轮流使用。由 extra_config 的 `layerwise_num_shared_buffers` 控制（layerwise_cache_layout.py L17）；默认不传 = `num_layers`（每层独占，即"没开复用"）。61 层模型配 8 个共享 buffer 时，`storage_indices` 按 `range(slot, len(reused_layers), num_shared_buffers)` 切条带：slot 1 服务层 1/9/17/25/33/41/49/57，slot 2 服务层 2/10/18/...，KV tensor 从 61 块并成 9 块（含层 0 独立 slot），显存约降为 1/6.8。物理落地是改写 vLLM 的 `KVCacheTensor.shared_by`（`apply_layerwise_kv_cache_plan` L279-351 把 61 个单层 tensor 合并成 9 个）。约束：同 slot 的层 cache spec 必须一致（L326-333），且仅支持 attention 类 spec（indexer 等会 raise，L256-267）；`independent_layers` 默认 `[0]`（层 0 独占，可配 `"all"` 或列表）。
+**buffer 复用是什么**：把多个 transformer 层的 KV cache 映射到同一块物理 HBM buffer 轮流使用。由 extra_config 的 `layerwise_num_shared_buffers` 控制（layerwise_cache_layout.py L17）；默认不传 = `num_layers`（每层独占，即没开复用）。61 层模型配 8 个共享 buffer 时按 `range(slot, len(reused_layers), num_shared_buffers)` 切条带：slot 1 服务层 1/9/17/.../57，KV tensor 从 61 块并成 9 块（含层 0 独立 slot），显存约降为 1/6.8。物理落地是改写 vLLM 的 `KVCacheTensor.shared_by`（`apply_layerwise_kv_cache_plan` L279-351）。约束：同 slot 的层 cache spec 必须一致（L326-333），仅支持 attention 类 spec（L256-267）；`independent_layers` 默认 `[0]`。
 
 分水岭在 pool_worker.py L1147-1151：
 
@@ -493,62 +319,45 @@ load_start_block = (
 )
 ```
 
-- 没开复用（`layerwise_offload=False`，默认 `num_shared_buffers=num_layers`）：`load_start_block=本地命中块数`，本地照常用、照常跳过；
-- 开了复用：共享层从 block 0 重载；只有 `independent_layers`（独占 buffer 的层）仍跳过本地前缀。
-
-**追问：那 layerwise 本地到底存不存长期 KV cache？——两种变体，答案相反（修正"layerwise=流过模型"的过度概括）：**
+**三种变体对照**：
 
 | 变体 | HBM 长期 KV | prefix cache 本地命中 | 池的角色 |
 |---|---|---|---|
 | 非 layerwise | 全量常驻 | 有效（并集合并，见 (a)） | 跨实例副本 |
-| layerwise 无复用（默认） | **全量常驻（驻留模型）** | **有效（跳过本地前缀）** | 跨实例副本 |
+| layerwise 无复用（默认） | **全量常驻（驻留模型）** | **有效（load 从本地命中后开始）** | 跨实例副本 |
 | layerwise 有复用 | 只有旋转窗口（流过模型） | 对共享层失效（名义命中、数据已覆写） | **唯一全量副本** |
 
-无复用变体与"驻留模型"并不矛盾：每层独占 buffer → 块算完常驻 HBM 直到请求结束/淘汰，prefix cache 照常工作，与非 layerwise 的区别只在"传输按层走、存储按层分对象"。而 `force_layerwise_load` 注释里 "may not be in HBM" 的 **"may"**，区分的正是这两种情况——该 flag 对两种变体都置位，但无复用变体里 `_process_load_for_layer_batch` 的 `load_start_block >= full_blocks` 会 `continue`（L1171），实际不建 load 任务，属保守保护；复用变体才真正从 block 0 重载。
+**为什么开复用就必须重载**：
+1. **合并 tensor**：层 9 前向时覆写层 1 的 slot，层 10 覆写层 2 的……前向跑完，每个 slot 只剩"最后写它的那层"的数据；
+2. **hash 与数据脱节**：prefix cache 的 block hash 仍命中（这块当初全层算完过），但共享层数据已被覆写——这就是注释 "per-layer data that may not be in HBM" 的字面意思；
+3. **轮转协议**：`prefetch_layer_map` 定义 层N → 层N-8（同 slot 前任）；加载层 N 的任务带 `wait_for_save_layer=层N-8`（L1725）——必须先等前任层的 KV 存进池才允许覆写该 slot；`save_kv_layer` 每层算完立刻异步存池（L1780-1784）。
 
-**复用模式的隐藏代价：decode 每步也在轮转。** `wait_for_layer_load`（每层设闸）和 `save_kv_layer`（每层算完即存）是**每个 forward step 每层**都被调的钩子，不只 prefill——decode step t 的每个共享层都要走完整的"load 全部历史 KV → attention → save 全量回池"循环（load 前因 slot 已被同条带后层覆写）。代价 = 池读写流量按层×步放大，收益 = HBM KV 占用从 61 份降到 9 份。
+**复用模式的隐藏代价：decode 每步也在轮转**。`wait_for_layer_load` 和 `save_kv_layer` 是每个 forward step 每层都被调的钩子，不只 prefill——decode step t 的每个共享层都要走"load 全部历史 KV → attention → save 全量回池"循环。代价 = 池读写流量按层×步放大，收益 = HBM KV 占用从 61 份降到 9 份。本质：**拿 HBM 容量换池容量**。
 
-**为什么开复用就必须重载：本地数据物理上"没了"。**
+**为什么非 layerwise 配不上复用**：非层是驻留模型——KV 生命周期 = 请求生命周期，存池在请求结束后批量做（`wait_for_save` L1800-1818，不在关键路径）。复用在它下面 ① 物理不可能（attention 要读全部历史层 KV）；② prefix cache 体系崩溃（block hash 语义 = 所有层算完）；③ 轮转协议无意义；④ 收益不存在（其他请求的 KV 也需各自常驻）。复用的本质是"用轮转+池补偿驻留丢失"，是 layerwise 传输模型天然携带的配套机制。
 
-1. **合并 tensor**：`apply_layerwise_kv_cache_plan`（layerwise_cache_layout.py L279-351）把多层写进同一个 `KVCacheTensor(shared_by=[层A,层B,...])`。如 61 层模型配 8 个共享 buffer：层 9 前向时**覆写**层 1 的 slot，层 10 覆写层 2 的……前向跑完，每个 slot 只剩"最后写它的那层"的数据。
-2. **hash 与数据脱节**：vLLM prefix cache 的 block hash 仍命中（这块当初全层算完过），但共享层的数据已被后续层覆写——这就是注释 "per-layer data that may not be in HBM" 的字面意思。
-3. **轮转协议**：`prefetch_layer_map` 定义 `层N → 层N-8`（同 slot 前任）。加载层 N 的任务带 `wait_for_save_layer=层N-8`（L1725）——**必须先等层 N-8 的 KV 存进池，才允许加载覆写该 slot**；`save_kv_layer` 每层算完立刻异步存池（L1780-1784），因为 HBM 不打算留住它。
-
-**为什么非 layerwise 不需要/不能复用**：非 layerwise 是驻留模型——KV 的生命周期 = 请求的生命周期，块算完常驻 HBM 供全周期 attention 复用，存池在请求结束后批量做（`wait_for_save` L1800-1818，不在关键路径）。复用在它下面 ① 物理上不可能（attention 要读全部历史层 KV，叠层后不在 HBM）；② prefix cache 体系崩溃（block hash 语义 = 所有层算完，复用后数据被覆写）；③ 轮转协议无意义（不存在"层 N 等层 N-8 存完"的前向内时序约束）；④ 收益不存在（省下的 HBM 无法转化为更多常驻块，因为其他请求的 KV 也需各自常驻）。**复用的本质是"用轮转+池补偿驻留丢失"，这恰是 layerwise 传输模型天然携带的配套机制，所以只有 layerwise 配得上它。**
-
-**本质是设计目的而非缺陷**：layerwise(buffer 复用) 拿 HBM 容量换池容量——
-
-| 模式 | HBM 里有什么 | 池(DRAM)里有什么 |
-|---|---|---|
-| 非 layerwise / 无复用 | 每层全量 KV（block 常驻） | 同样数据的副本 |
-| layerwise + 复用 | 只有**旋转窗口**（如 8 个 slot） | **唯一的全量每层 KV 归宿** |
-
-vLLM"本地 prefix cache"隐含假设"一个 block 持有并保住所有层数据"；buffer 一轮转，这个假设物理破产——**不是"有本地缓存却不用"，而是本地缓存对应的共享层数据已被覆写、根本不剩**。所以只能逐层 just-in-time 从池里拉回（`wait_for_layer_load` 逐层设闸），`force_layerwise_load = use_layerwise and store_skip_tokens > 0` 为此存在：外部命中哪怕不超过本地，也要建 LoadSpec 走层加载。
-
-**追问：layerwise 查询为什么一律从 block 0 起，而非 layerwise 跳过本地已算部分？——"减法模型" vs "合并模型"（含一个反转）**
+### (c) 为什么查询一律从 block 0 起——减法模型 vs 合并模型
 
 两处查询函数有同样注释（pool_scheduler.py L276-277 / L330-331）："In layerwise mode, always query from block 0 because the remote pool stores per-layer data that may not match local prefix cache"。四条理由：
 
-1. **两个世界的独立性**（承接 (a) 的修正）：layerwise 池里一个块 hash 对应 61 个独立层对象，"本地已算过这块"对它们的存在性零信息量（别人存的、可能部分层、可能被淘汰），唯一可靠的判定方式就是逐 key 查池。
-2. **返回数的语义不同——减法模型 vs 合并模型（最核心）**。layerwise 直连查询完：`num_hit_blocks = query_start_block + num_queried_hit_blocks`（L308-309/L374），返回的是**池自己的总命中**；随后 scheduler 侧做减法 `need_to_allocate = num_external_hit_tokens - num_computed_tokens`（L513-516）。而 coordinator 路径是**合并模型**：把本地块塞进 `exists` 集合、查+合一起返回总数。**合并要求合并点同时持有"本地 per-block 状态"和"池 per-block 状态"**——worker 有（vLLM 传来的本地命中 + 自己查的池结果），scheduler 没有（connector 接口只给一个 `num_computed_tokens` 聚合整数）。所以 layerwise 直连只能选减法模型，被减数必须是池从 0 起的总数，查询自然从 0 开始。
-3. **复用场景下"跳过本地"直接是错的**：`layerwise_offload=True` 时本地块的共享层数据已被覆写，这些块恰恰必须从池重载，池对块 0..local_hit 的回答是刚需。
-4. **单值驱动不了 per-group 跳过**：layerwise 命中检查逐 group 算再取 min（L337-383 `hit_tokens = min(hits_per_group)`），混合架构下各 group 本地命中可能发散，拿一个聚合整数裁剪 per-group 查询起点不安全；从 0 查天然 group-safe。
+1. **两个世界的独立性**：layerwise 池里一个块 hash 对应 61 个独立层对象，"本地已算过这块"对它们的存在性零信息量（别人存的、可能部分层、可能被淘汰），唯一可靠的判定方式就是逐 key 查池。
+2. **返回数语义——减法模型 vs 合并模型（最核心）**：layerwise 直连查询返回的是**池自己的总命中**（`num_hit_blocks = query_start_block + num_queried_hit_blocks`，L308-309/L374），scheduler 侧做减法（L513-516）。coordinator 路径是合并模型：查+合一起返回总数。**合并要求合并点同时持有本地 per-block 状态和池 per-block 状态**——worker 有，scheduler 没有（connector 接口只给一个聚合整数）。所以 layerwise 直连只能选减法模型，被减数必须是池从 0 起的总数。
+3. **复用场景下"跳过本地"直接是错的**：`layerwise_offload=True` 时本地块的共享层数据已被覆写，这些块恰恰必须从池重载。
+4. **单值驱动不了 per-group 跳过**：layerwise 逐 group 算再取 min（L337-383），混合架构下各 group 本地命中可能发散，从 0 查天然 group-safe。
 
-**反转：非 layerwise 其实也不是"默认跳过本地"**。fallback 路径（pool_worker.py L2417-2464）调 `_build_lookup_keys(token_len, ...)` **没传 `mask_num`，同样从块 0 全查**，`hbm_hit_tokens` 参数根本没用上。即："跳过本地"是 **coordinator（HMA 开启）路径独有的优化**（`lookup_start` + `mask_num`）；两处三元表达式（`0 if use_layerwise else min(...)`）的 else 分支**接近死代码**——这两个函数当前只在 layerwise 分支被调用，else 只是防御性保留。准确图景：**"合并 + 跳过本地"是 coordinator 独有的优化路径；其余所有路径（layerwise 直连、非 layerwise fallback）都从 0 查、走减法模型。** layerwise 的特别之处不在"从 0 查"（fallback 也从 0 查），而在它的池是层粒度 + 减法模型是唯一可行选项。
+**补充：非 layerwise 也不是"默认跳过本地"**。fallback 路径（L2417-2464）调 `_build_lookup_keys` 没传 `mask_num`，同样从块 0 全查，`hbm_hit_tokens` 参数没用上。"跳过本地"是 coordinator（HMA）路径独有的优化（`lookup_start` + `mask_num`）；两处三元表达式（`0 if use_layerwise else min(...)`）的 else 分支接近死代码——这两个函数当前只在 layerwise 分支被调用。准确图景：**"合并 + 跳过本地"是 coordinator 独有的优化路径；其余所有路径（layerwise 直连、非 layerwise fallback）都从 0 查、走减法模型。**
 
-#### (c) 终极对照表（两条独立的轴：传输模式 × buffer 复用）
+### (d) 终极对照表（两条独立的轴）
 
-讨论中容易晕的根源：**两条互不相干的轴被混在一起**——
+容易晕的根源：**两条互不相干的轴被混在一起**——
 
 ```
 轴1：传输模式（use_layerwise？）
      决定：① 查询路径（直连/ZMQ） ② 池的粒度（61个层对象 / 1个块聚合对象）
 轴2：buffer 复用（layerwise_num_shared_buffers < num_layers？）
      决定：本地 HBM 的 KV 是"长期驻留"还是"旋转窗口（用完即走）"
-     —— 注意：这条轴只对 layerwise 有意义，非 layerwise 根本没有复用概念
+     —— 只对 layerwise 有意义，非 layerwise 没有复用概念
 ```
-
-轴 1 回答"怎么查"，轴 2 回答"本地数据还在不在"，两者独立。
 
 | | 非 layerwise | layerwise 无复用（默认） | layerwise 有复用 |
 |---|---|---|---|
@@ -556,29 +365,21 @@ vLLM"本地 prefix cache"隐含假设"一个 block 持有并保住所有层数�
 | **池粒度** | 1 块 = 1 个聚合对象 | 1 块 = 61 个层对象 | 同左 |
 | **查询起点** | coordinator:跳本地 / fallback:从0 | **从 0** | **从 0** |
 | **本地 HBM** | 全量驻留 | **全量驻留** | 只有旋转窗口 |
-| **本地命中用吗** | 用（并集合并，见 (a)） | 用（load 从本地命中后开始） | 不用（全量重载） |
+| **本地命中用吗** | 用（并集合并） | 用（load 从本地命中后开始） | 不用（全量重载） |
 | **池的角色** | 跨实例副本 | 跨实例副本 | **唯一全量副本** |
 
 三个最容易混的点：
-
 1. **"查询起点"和"本地信不信"是两件事**——从 0 查（减法模型）说的是怎么算命中数；信不信本地说的是 load 从哪开始。无复用 layerwise 从 0 查但信本地；有复用从 0 查且不信本地。
-2. **"本地有"永远推不出"池有"**——本地的价值只是"这块不需要从池拿"（可用性），不是"池里也有"（池内容）。见 (a) 的修正段。
-3. **复用和 layerwise 不是绑定的**——layerwise 默认也可以不复用（此时是"按层传输 + 本地驻留"的普通形态），复用只是 layerwise 的可选加成，用 HBM 容量换池依赖。
+2. **"本地有"永远推不出"池有"**——本地的价值是"这块不需要从池拿"（可用性），不是"池里也有"（池内容）。
+3. **复用和 layerwise 不是绑定的**——layerwise 默认也可以不复用（按层传输 + 本地驻留），复用只是可选加成，用 HBM 容量换池依赖。
 
-**最终答案：为什么非 layerwise 必须 ZMQ→worker，而 layerwise（无论复用与否）都直连？**（详见 6.4）
+**最终答案：为什么非 layerwise 走 ZMQ→worker，而 layerwise（无论复用与否）都直连？**（见第五部分，含 git 实证）
 
-- 决定查询路径的**只有 `use_layerwise` 这一个变量**（L472-498 的分支结构 + L177 的 `store_scheduler` 无条件创建证明"够不够得着池"不是原因；`layerwise_offload` 在查询分支里根本不出现，复用只决定查询结果怎么被消费——`load_start_block` 信不信本地）；
-- **layerwise 的查询是存在性问题**："池里这些层对象在不在？"——keys 由请求自带的 block_hashes + 层号 × rank 展开即可构造，答案非 0 即 1，scheduler 的只读元数据客户端自己就能查，直连省一跳 RPC；
-- **非 layerwise 的查询是能力性问题**："结合本地已有什么、granularity 怎么对齐、连续/断续怎么算、多 group 怎么交集，我这个 TP 组能不重算地服务多远？"——答案由 worker 独有状态参与计算（真实 rank 拓扑构造的 key、cache_transfer_granularity 命中位置、group 交集、HMA 下合并本地可用性），必须由 worker 回答，所以 ZMQ 委托。
-
-**一句话收束**：
-
-- 非 layerwise：本地命中是并集的一部分，scheduler 查好传入、worker 标记后与外部命中合并计算——**能从本地的从本地，外部只补齐衔接**；
-- layerwise 无复用（默认）：仍是驻留模型，本地 KV 照常长存，本地命中照常跳过；
-- layerwise 有复用：HBM 被设计成只留一个层窗口，旧层数据已被后续层覆写，**本地根本不剩**，只能从池逐层 just-in-time 重载（decode 每步同样轮转）。
+- 决定查询路径的**只有 `use_layerwise` 这一个变量**（`layerwise_offload` 在查询分支里根本不出现，复用只决定查询结果怎么被消费）；
+- **layerwise 的查询是存在性问题**：keys 由 block_hashes + 层号 × rank 展开即可构造，答案非 0 即 1，scheduler 的只读元数据客户端自己就能查，直连省一跳 RPC；
+- **非 layerwise 的查询是能力性问题**：其计算机器在现行布局下全部实现为 worker 方法，且 ZMQ 协议只回传 4 字节整数，合并计算必然落在应答方 worker（布局性原因 + 历史性原因，非信息必然）。
 
 ---
 
 > 有待补充/确认：
-> - ~~vllm 上游 `factory.py` 的 `create_connector`（isinstance 校验 + nop 回退）具体实现~~ **已核实（2026-08-27）**：`create_connector` 无 isinstance 校验、无 nop 回退；实际做 HMA 支持检查（HMA 启用且不支持 → `raise ValueError`），查不到名字时 `get_connector_class` 直接 `raise ValueError`。已更正条目 1.3。
 > - vllm 上游 `SimpleConnectorBase_V1` 等实现的入口
