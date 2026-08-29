@@ -1,6 +1,6 @@
 docker run -dit -u root \
--p 0.0.0.0:8161:22 \
---name refactor_816 \
+-p 0.0.0.0:8181:22 \
+--name refactor_818 \
 -e ASCEND_RUNTIME_OPTIONS=NODRV \
 --privileged=true \
 -v /usr/local/Ascend/firmware/:/usr/local/Ascend/firmware \
@@ -18,5 +18,5 @@ docker run -dit -u root \
 --cap-add=SYS_PTRACE \
 --security-opt seccomp=unconfined \
 -w /home \
-5bdc0c922b5b \
+9a24d007653b \
 /bin/bash
