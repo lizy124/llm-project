@@ -1,0 +1,52 @@
+transfer_data/refactor/layerwise/p1_p2_modification_plan.md
+  s_91656997ede36b::t_119896f5d180bc 1-274
+transfer_data/refactor/layerwise/requirements_analysis.md
+  s_91656997ede36b::t_f85fb943dc0e6a 110
+  s_91656997ede36b::t_fd2a291e8373c0 1-4,6-29,32-43,47-89,91-109,111-118,120-179,182-184,186-207
+  s_91656997ede36b::t_5232a4c3831133 90
+  s_91656997ede36b::t_9a3ed2f83081ad 5
+  s_91656997ede36b::t_1c8f087e7e838f 119
+  s_91656997ede36b::t_617a6d9182d199 30
+  s_91656997ede36b::t_c62a24178002f0 180-181,185
+  s_91656997ede36b::t_b5c70d012b4fab 31
+  s_91656997ede36b::t_ae1776df8386de 44-46
+transfer_data/refactor/layerwise/p0_modification_plan.md
+  s_91656997ede36b::t_e17473b03342a4 105-106
+  s_91656997ede36b::t_ba8ce20d497733 1-104,107-487
+utils/create_docker.md
+  h_3eaf4948cd6ab4 2-3,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "6560159415ea3b70104e1647d1a86cb1e2aa4218",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_91656997ede36b": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8fe82b8d68e54869cd9318",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "dedupe_key": "6a8fe82b8d68e54869cd9318:6a9236598d68e54869cd9517:afterEdit:9deec417",
+        "source_scene": "agent",
+        "external_session_id": "6a8fe82b8d68e54869cd9318",
+        "session_id": "6a8fe82b8d68e54869cd9318",
+        "tool_type": "builtin",
+        "runtime_client": "trae-tob-git-ai",
+        "operation_id": "6a9236598d68e54869cd9517",
+        "client_type": "ide",
+        "tool_use_id": "6a9236598d68e54869cd9517",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "edit_kind": "file_edit"
+      }
+    }
+  }
+}
