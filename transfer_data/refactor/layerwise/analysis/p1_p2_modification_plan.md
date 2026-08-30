@@ -169,7 +169,7 @@ def on_worker_ready(self) -> None:
 # memcache_backend.py
 def on_worker_ready(self) -> None:
     # Fail fast: 在 worker 启动阶段暴露 store 初始化错误，而非首次传输时。
-    # 此前注册的 buffers 由 init_store 内 _register_buffers_if_needed 补注册。
+    # 此前注册的 buffers 由 ensure_initialized 内 _register_buffers_if_needed 补注册。
     self.ensure_initialized()
 ```
 
@@ -182,7 +182,7 @@ self.m_store.on_worker_ready()
 self._start_kv_transfer_threads()
 ```
 
-**语义等价论证**（reviewer 关注点）：原顺序 `ensure_initialized → register_buffer`（直接注册）；新顺序 `register_buffer`（进入 `_pending_buffers`）→ `ensure_initialized`（`init_store` 末尾 `_register_buffers_if_needed` 补注册）。最终注册状态一致，fail-fast 时机一致（均在 worker 启动同步段）。mooncake/yuanrong 继承默认 no-op，行为零变化。
+**语义等价论证**（reviewer 关注点）：原顺序 `ensure_initialized → register_buffer`（直接注册）；新顺序 `register_buffer`（进入 `_pending_buffers`）→ `ensure_initialized`（其内部 memcache_backend.py:62-72 末尾 `_register_buffers_if_needed` 补注册）。最终注册状态一致，fail-fast 时机一致（均在 worker 启动同步段）。mooncake/yuanrong 继承默认 no-op，行为零变化。注：依赖的是 `ensure_initialized` 而非 `init_store`——#14697 已删除后者（已核实其 diff），不影响本论证。
 
 ### 2.3 提交归属
 

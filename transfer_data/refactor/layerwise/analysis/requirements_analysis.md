@@ -65,7 +65,7 @@ worker wait_for_layer_load → KVCacheStoreLayerRecvingThread (kv_transfer.py:14
 
 ## 3. 问题清单
 
-### P0-1 `use_gva_layerwise` 派生逻辑重复定义 4 处
+### P0-1 `use_gva_layerwise` 派生逻辑散布 4 处（2 处定义 + 1 处判断 + 1 处消费引用）
 
 同一布尔语义在 4 个文件独立计算：
 

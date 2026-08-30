@@ -23,8 +23,8 @@ ascend_store/
 │   ├── base.py            # [瘦身] 仅通用数据面；新增 GVALayerwiseCapable 抽象接口
 │   ├── gva_protocol.py    # [新增] GVA 常量 / GVAKeyFactory / GVASession / GVAHitChecker
 │   ├── memcache_backend.py   # [改] 继承 GVALayerwiseCapable
-│   ├── mooncake_backend.py   # [改] 删除 5 个 NotImplementedError 存根
-│   └── yuanrong_backend.py   # [改] 删除 5 个 NotImplementedError 存根
+│   ├── mooncake_backend.py   # [不动] 存根在 base.py 不在子类，接口移出后自然失去继承
+│   └── yuanrong_backend.py   # [不动] 同上
 ├── metadata.py            # [改] 新增 get_partial_block_index()（自 pool_worker 平移）
 ├── pool_worker.py         # [瘦身 ~420 行] GVA 协议方法删除，改为委托 self._gva_session
 └── pool_scheduler.py      # [瘦身 ~85 行] hit-check 委托 self._gva_hit_checker
@@ -166,8 +166,8 @@ class GVALayerwiseCapable(ABC):
 | 文件 | 动作 |
 |---|---|
 | memcache_backend.py | `class MemcacheBackend(Backend, GVALayerwiseCapable):`——5 个方法已有实现，仅加继承 |
-| mooncake_backend.py | 删除 5 个 `raise NotImplementedError` 存根（约 -15 行） |
-| yuanrong_backend.py | 同上（约 -15 行） |
+| mooncake_backend.py | **零改动**（勘误：5 个存根位于 base.py:35-48 而非子类，子类仅继承；接口移入 GVALayerwiseCapable 后两后端自然失去继承） |
+| yuanrong_backend.py | 零改动（同上） |
 
 ### 2.4 一致性校验（防能力表与实现漂移）
 
