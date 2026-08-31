@@ -1,4 +1,6 @@
 
+# 第一轮(head 735065fe1):7 个 UT 失败,见下方日志
+
   =================================== FAILURES ===================================
   _ TestGVALayerTransferFailures.test_write_finish_failure_does_not_complete_layer _
   
@@ -267,3 +269,27 @@
   FAILED tests/ut/distributed/ascend_store/test_kv_transfer.py::TestGVALayerReceivingTaskOwnership::test_handle_request_does_not_clear_worker_owned_tasks - AssertionError
   FAILED tests/ut/distributed/ascend_store/test_kv_transfer.py::TestGVALayerReceivingTaskOwnership::test_source_save_failure_stops_receiver_wait - AssertionError
   =========== 7 failed, 2826 passed, 12 skipped, 16 warnings in 56.15s ===========
+
+# 第二轮(head bfeaacb14):测试选择阶段失败,非 UT、非 PR 代码问题
+
+```
+Run git config --global --add safe.directory /__w/vllm-ascend/vllm-ascend
+  git config --global --add safe.directory /__w/vllm-ascend/vllm-ascend
+  git fetch origin main
+  pip install regex
+  python3 .github/workflows/scripts/select_tests.py \
+    --diff-base origin/main \
+    --modules a5 \
+    --runner-label-override linux-aarch64-a5-4 \
+    --pr-labels "module:tests,ready-precise"
+  shell: bash -el {0}
+
+select_tests.py: error: unrecognized arguments: --pr-labels module:tests,ready-precise
+Error: Process completed with exit code 1.
+```
+
+根因:#15386(revert #14198)从 main 的 select_tests.py 与 pr_test.yaml
+两边同时删除了 `--pr-labels`;pull_request 事件的 workflow YAML 取自
+PR head(旧基线,仍传该参数),checkout 的 merge commit 中脚本取 main
+新版(已删)——旧 workflow × 新脚本。处置:rebase 到 40f9834ee,
+详见 `PR-15367 record.md` 的 Rebase 记录。
