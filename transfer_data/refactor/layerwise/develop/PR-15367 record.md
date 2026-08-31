@@ -1,6 +1,6 @@
 # PR #15367(refactor_layerwise_part1)前后梳理
 
-> 代码:`refactor_layerwise_part1` @ `9f5c199ea`(5 commits,基于 `40f9834ee`)
+> 代码:`refactor_layerwise_part1` @ `16bdb52fd`(5 commits,基于 `40f9834ee`)
 > 基线:`40f9834ee` = upstream/main(2026-08-31;原基线 `9c3cf949d`,因
 > #15386 revert 触发的 CI 基线漂移而 rebase,见下方 rebase 记录)
 > 规模:14 files,+446/−66,零行为变化(生产行为;测试适配见提交 2)
@@ -127,11 +127,11 @@ docstring(说明设计约束),代码引用为零。
 
 | # | commit | 内容 | 文件 |
 |---|---|---|---|
-| 1 | `af30d1d20` | backend 能力表 + `use_gva_layerwise` 单点(仅新增,无调用方切换;能力表测试在提交 2 一并落地) | backend/__init__.py |
-| 2 | `d424aa6f1` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_backend.py, test_kv_transfer.py |
-| 3 | `ab31c1b8a` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py(新), metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
-| 4 | `4e2c72384` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__,补提交 2/3 的 stub 缺口 | layerwise_cache_layout.py, _mock_deps.py |
-| 5 | `9f5c199ea` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
+| 1 | `441b48cf3` | backend 能力表 + `use_gva_layerwise` 单点,`backend_supports` 内部归一化 strip+lower(仅新增,无调用方切换;能力表测试在提交 2 一并落地) | backend/__init__.py |
+| 2 | `6ecb899e9` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_backend.py, test_kv_transfer.py |
+| 3 | `12d312803` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py(新), metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
+| 4 | `e4009383c` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__,补提交 2/3 的 stub 缺口 | layerwise_cache_layout.py, _mock_deps.py |
+| 5 | `16bdb52fd` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
 
 提交 5 的 message 完整记录 #14465 → #15291 → 取代的因果链;PR 描述补
 一行 "Supersedes the connector-side flag restored by #15291 (gate moved
@@ -192,6 +192,30 @@ Rebase 记录(2026-08-31 第二轮,head `bfeaacb14` CI):
   5 个提交 hash 全部更新(`6334f638e`→`af30d1d20`、
   `f1f96928d`→`d424aa6f1`、`a1f4427a5`→`ab31c1b8a`、
   `5c840cf4c`→`4e2c72384`、`bfeaacb14`→`9f5c199ea`),已 force-push
+
+Gemini Code Assist review 处置(2026-08-31,review 于 03:04 UTC 生成,
+针对旧版代码——评论引用的 `GVALayerwiseCapable` 是已废弃的 PR-A ABC
+方案;实质意见 2 条):
+
+- **采纳:backend_supports 内部归一化**(strip+lower)。消除"调用方
+  必须先 lower"的隐式契约(layout 调用点不查 backend_map,新调用方
+  漏 lower 会静默 False——#14465 型静默失效温床);时机上该函数是
+  本 PR 新 API,合入后再改即二次破坏。三个现有调用点本就全部先
+  lower,生产行为零变化。配套:真值表 `MEMCACHE` 翻转为 True 并补
+  ` Memcache ` 用例,新增 `test_backend_supports_normalizes_name`
+- **不采纳:assert 换 raise TypeError**。理由:ascend_store 模块既有
+  74 处 assert(含本 PR 未动的代码),assert 是本库的不变量惯例;
+  `python -O` 剥断言后仍有 base 桩 NotImplementedError 兜底,失败
+  只延迟不消失;mypy 收窄两种写法等价。已在 PR 回复说明
+- 实施方式:软重置到 `40f9834ee` 后按 C1-C5 分组重建提交链(期间
+  发现 stash/amend 路径 parent 错位,推倒重来,最终逐 commit stat
+  复核)。相对 `9f5c199ea` 树差异恰好为 Gemini 修复(+14/−2,仅
+  `backend/__init__.py` 与 `test_backend.py`);UT 284 passed(新增
+  1 例)+ 2 个 coordinator 既有失败;ruff 通过。hash 更新:
+  `af30d1d20`→`441b48cf3`、`d424aa6f1`→`6ecb899e9`、
+  `ab31c1b8a`→`12d312803`、`4e2c72384`→`e4009383c`、
+  `9f5c199ea`→`16bdb52fd`,已 force-push 并在 PR 评论触发
+  `/gemini review` 对新 head 重审
 
 ## 5. 测试覆盖
 

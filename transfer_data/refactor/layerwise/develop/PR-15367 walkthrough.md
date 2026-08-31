@@ -2,17 +2,17 @@
 
 > 分工:`PR-15367 record.md` 记录前因、决策演化与 PR 间关系;本文档逐 hunk
 > 解释"改了什么、为什么这样写、付出了什么代价"。基审结论:设计成立。
-> 代码:`refactor_layerwise_part1` @ `9f5c199ea`(5 commits,基于 `40f9834ee`)
+> 代码:`refactor_layerwise_part1` @ `16bdb52fd`(5 commits,基于 `40f9834ee`)
 > 复核基准:每条陈述均可在本地 diff 中逐一指认;快速命令见 §7。
 
 ## 0. 全景
 
 ```
-C1 af30d1d20  定义能力表与单点函数(纯新增,无消费者)
-C2 d424aa6f1  线程入口断言 + 能力表测试 + 既有线程测试 spec 适配
-C3 ab31c1b8a  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
-C4 4e2c72384  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
-C5 9f5c199ea  gate 下沉:connector 纯转发 + 删 #15291 副本
+C1 441b48cf3  定义能力表与单点函数,backend_supports 内部归一化(纯新增,无消费者)
+C2 6ecb899e9  线程入口断言 + 能力表测试 + 既有线程测试 spec 适配
+C3 12d312803  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
+C4 e4009383c  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
+C5 16bdb52fd  gate 下沉:connector 纯转发 + 删 #15291 副本
 ```
 
 依赖方向:C3/C4 依赖 C1(函数已定义);C5 依赖 C3(worker gate 先存在);
@@ -54,12 +54,11 @@ def use_gva_layerwise(use_layerwise: bool, backend_name: str) -> bool: ...
   机制不动。
 - `use_gva_layerwise` 的 docstring 完整记录了 #14465 教训——这个函数
   存在的理由就是那段历史,写在定义处让删它的人先读到后果。
-- **大小写契约**:函数不做 `.lower()`,三个调用方各自先 lower 再传入。
-  这是与原 5 份副本行为一致的刻意选择(原副本也是先 lower 再比较),
-  避免本 PR 引入任何行为差。代价:`use_gva_layerwise(True, "MEMCACHE")`
-  返回 False,靠调用方纪律保证——真值表测试用 `(True, "MEMCACHE", False)`
-  用例把这个陷阱文档化了。更稳的做法(函数内归一化)属于行为变更,
-  不在本 PR 范围。
+- **大小写契约(已清偿)**:`backend_supports` 内部做 `strip().lower()`
+  归一化(Gemini review 2026-08-31 采纳项),调用方可传原始 config
+  字符串,新调用点不会因大小写变体静默漏过 gate。真值表用
+  `(True, "MEMCACHE", True)`、`(True, " Memcache ", True)` 把归一化
+  锁为显式契约。
 
 ### 1.3 被否的类属性方案
 
@@ -435,18 +434,20 @@ def set_external_slot_release_waiter(self, waiter: Callable[[int], None]) -> boo
 
 ```powershell
 $R = "d:\lzy\project\kv_pool\code\vllm-ascend"
-# PR 自身 diff 面(rebase 后基线 40f9834ee,应恒为 14 files +446/−66)
+# PR 自身 diff 面(基线 40f9834ee,应恒为 14 files +460/−68,含 Gemini 归一化)
 git -C $R diff upstream/main HEAD --stat
+# Gemini 修复面(相对 rebase 后 head 的增量应仅 2 文件 +14/−2)
+git -C $R diff 9f5c199ea HEAD --stat
 # 逐提交内容核对(§3.7/§4.3 的依据)
-git -C $R show --stat ab31c1b8a             # C3:6 文件,含 worker/scheduler
-git -C $R show --stat 4e2c72384             # C4:仅 layout + _mock_deps
-git -C $R show 4e2c72384 -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
+git -C $R show --stat 12d312803             # C3:6 文件,含 worker/scheduler
+git -C $R show --stat e4009383c             # C4:仅 layout + _mock_deps
+git -C $R show e4009383c -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
 # 全仓派生单点验证(应只剩 3 个消费调用点 + 定义 + docstring/注释)
 git -C $R grep -n "use_gva_layerwise" -- "vllm_ascend/**"
 # C2/C3 中间态 UT 断档复现(§3.7)
-git -C $R stash list; git -C $R checkout af30d1d20
+git -C $R stash list; git -C $R checkout 441b48cf3
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_backend.py --noconftest -q -p no:cacheprovider
-# 预期:ImportError(_BACKEND_CAPABILITIES);checkout ab31c1b8a 同理多两个文件挂
+# 预期:ImportError(_BACKEND_CAPABILITIES);checkout 12d312803 同理多两个文件挂
 git -C $R checkout refactor_layerwise_part1
 # 修复后全量(2 个 coordinator 失败为本地 stub 既有,非本 PR)
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/ --noconftest -q -p no:cacheprovider --ignore=tests/ut/distributed/ascend_store/test_layerwise_cache_layout.py
