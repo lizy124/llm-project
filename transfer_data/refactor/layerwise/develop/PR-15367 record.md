@@ -1,9 +1,9 @@
 # PR #15367(refactor_layerwise_part1)前后梳理
 
-> 代码:`refactor_layerwise_part1` @ `16bdb52fd`(5 commits,基于 `40f9834ee`)
+> 代码:`refactor_layerwise_part1` @ `ee6220d7c`(5 commits,基于 `40f9834ee`)
 > 基线:`40f9834ee` = upstream/main(2026-08-31;原基线 `9c3cf949d`,因
 > #15386 revert 触发的 CI 基线漂移而 rebase,见下方 rebase 记录)
-> 规模:14 files,+446/−66,零行为变化(生产行为;测试适配见提交 2)
+> 规模:12 files,+431/−66,零行为变化(生产行为;测试适配见提交 2)
 > 系列:layerwise GVA 重构第一批(前身 PR-A #15277 被本 PR 取代,见 §6)
 
 ## 1. 前因
@@ -39,7 +39,7 @@ connector 侧那份,但 `AscendStoreConnector.set_external_slot_release_waiter`
 
 | 做 | 不做(留给后续批次) |
 |---|---|
-| 派生单点化(CAP) | GVA 传输线程类搬入 backend |
+| 派生单点化(GATE 入 memcache 协议模块) | GVA 传输线程类搬入 backend |
 | key 构造统一(KEY) | worker 内 8 处 `self.use_gva_layerwise` 分支下沉 |
 | gate 从 connector 下沉 | metadata/kv_transfer 的 GVA 段落整体迁移 |
 | 基线替换:删 #15291 热修副本 | 任何行为语义变化 |
@@ -48,29 +48,39 @@ connector 侧那份,但 `AscendStoreConnector.set_external_slot_release_waiter`
 
 ## 3. 设计决策
 
-### 3.1 CAP:能力表 + 单点函数(`backend/__init__.py`)
+### 3.1 GATE:单点函数入 memcache 协议模块(`backend/gva_protocol.py`)
 
-形态:`_BACKEND_CAPABILITIES` 静态表(memcache → `{gva_layerwise}`,
-其余为空)+ `use_gva_layerwise(use_layerwise, backend_name)` 函数。
+最终形态:裸函数 `use_gva_layerwise(use_layerwise, backend_name)`,
+内部 `strip().lower()` 归一化后与 `"memcache"` 比较,与
+`GVAKeyFactory` 同住协议模块;`backend/__init__.py` 回归纯注册表
+(仅 `backend_map`,本 PR 零 diff)。
 
 **为什么是"字符串进、布尔出"的静态函数**:调用点
 `layerwise_cache_layout.get_gva_layerwise_config()` 发生在 KV cache 布局
 构建期,此时 connector / worker / backend 实例均未创建,手上只有
 `kv_connector_extra_config` 里的字符串——布局期没有任何实例可查询,这是
-根本约束。静态表让这一刻的回答无需 import 任何 backend 模块(被否的
-类属性方案恰要先拉起 `memcache_backend` 才能读到属性;torch 布局期本就
-已就绪,"不可拉起"不成立,不作为论据)。
+根本约束。函数所在模块零 import,布局期 import 它不拉起任何 backend
+实现。
 
-**为什么放 `backend/__init__.py`**:`backend_map`(名字→模块路径)已
-在此,backend 能力属于同类注册表知识。
+**为什么进协议模块而非 backend 类 / `__init__.py`**(三堵墙):
+布局期无实例(类方案要求静态映射兜底,两套机制);GVA 的编排
+(session/租约/hit-check)跨 worker/scheduler,塞进 backend 类违反
+"协议不持有 worker 状态";`memcache_backend.py` 顶部 import torch,
+协议知识并入会拖重依赖、破坏 UT stub 的纯度。`backend/__init__.py`
+曾为候选(与 `backend_map` 同址),被否:领域函数污染包入口,且其
+零 import 是无防护约定(明天谁加一个 re-export 就崩),独立模块的
+零 import 是结构性保证。
 
-**代价与对策**:静态表是第二事实源,会与类实现漂移。
-`test_backend.py` 的一致性测试锁定两侧:表声明 `gva_layerwise`
-⇔ 该类通过 MRO override 了全部 5 个 GVA 方法。
+**排他性的测试化**:`test_gva_protocol.py::TestGvaMemcacheExclusivity`
+直接断言"5 个 GVA store 方法仅被 MemcacheBackend override"——
+"GVA 是 memcache 专属协议"从 docstring 升级为可执行断言。
 
-**被否方案**:能力改为类属性(`Backend.GVA_LAYERWISE_CAPABLE`)只
-覆盖 worker/scheduler 两处(那里可拿到实例),布局处仍需静态表,
-变成两套机制,弃。
+**形态演化(同日三步,如实记录)**:能力注册表
+(`_BACKEND_CAPABILITIES` + `backend_supports`,住 `__init__.py`)→
+采纳 Gemini 归一化意见(head `16bdb52fd`)→ 识别到"专属协议"事实后
+压扁为裸函数、表消亡、迁入协议模块(head `ee6220d7c`)。中途形态
+未经历 CI,仅存在于当日 force-push 间隙。泛化机械(表+查询函数)为
+"未来第二能力"预留,事实不需要,压扁后护栏不丢(排他性直连断言)。
 
 ### 3.2 IFACE:基类不动 + 线程入口断言(经历过两次改向)
 
@@ -127,11 +137,11 @@ docstring(说明设计约束),代码引用为零。
 
 | # | commit | 内容 | 文件 |
 |---|---|---|---|
-| 1 | `441b48cf3` | backend 能力表 + `use_gva_layerwise` 单点,`backend_supports` 内部归一化 strip+lower(仅新增,无调用方切换;能力表测试在提交 2 一并落地) | backend/__init__.py |
-| 2 | `6ecb899e9` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_backend.py, test_kv_transfer.py |
-| 3 | `12d312803` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py(新), metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
-| 4 | `e4009383c` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__,补提交 2/3 的 stub 缺口 | layerwise_cache_layout.py, _mock_deps.py |
-| 5 | `16bdb52fd` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
+| 1 | `7b9e1e530` | `gva_protocol.py` 新建:`use_gva_layerwise` 单点(内部归一化);gate 真值表 + memcache 排他性测试 | gva_protocol.py(新), test_gva_protocol.py(新) |
+| 2 | `234419dce` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_kv_transfer.py |
+| 3 | `1dc6daae3` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py, metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
+| 4 | `83cbf9402` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__ 保持 backend_map 同步 | layerwise_cache_layout.py, _mock_deps.py |
+| 5 | `ee6220d7c` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
 
 提交 5 的 message 完整记录 #14465 → #15291 → 取代的因果链;PR 描述补
 一行 "Supersedes the connector-side flag restored by #15291 (gate moved
@@ -151,9 +161,13 @@ amend 补记;C3-C5 hash 随之更新(`765042e79`→`42fa31654`、
 - 提交 2/3 单独 checkout 时 ascend_store UT 不可运行(stub 手工
   mirror 缺 `_BACKEND_CAPABILITIES`/`use_gva_layerwise`,
   ImportError),提交 4 的 exec 修改回填——"每提交独立可验证"仅在
-  生产行为层面成立,UT 层面断档;PR CI 只测 head 故无感知
+  生产行为层面成立,UT 层面断档;PR CI 只测 head 故无感知。
+  **此断档已被当日第三次重塑消除**:gate 函数迁入 `gva_protocol.py`
+  后,子模块经 stub 包 `__path__` 解析(无需 exec),C3' 上用旧
+  stub 实测 151 passed——"每提交独立可验证"重新在 UT 层面成立
 - 上述 message 级偏差是否再 amend(需再 force-push)由作者定夺,
-  树级内容不改
+  树级内容不改(注:第三次重塑时 message 已随新形态重写,该条
+  针对 `16bdb52fd` 及更早形态的历史记录)
 
 CI 失败与修复记录(2026-08-31,head `735065fe1` 首轮 CI):
 
@@ -217,12 +231,34 @@ Gemini Code Assist review 处置(2026-08-31,review 于 03:04 UTC 生成,
   `9f5c199ea`→`16bdb52fd`,已 force-push 并在 PR 评论触发
   `/gemini review` 对新 head 重审
 
+第三次重塑:GVA 归位 memcache 协议模块(2026-08-31,head `16bdb52fd`
+→ `ee6220d7c`):
+
+- 触发:作者走读后裁定"GVA 是 memcache 专属协议"是铁的事实,
+  能力注册表是为不存在的"第二能力"预留的泛化机械;且 GVA 领域
+  函数不应住在 `backend/__init__.py`(污染包入口,零 import 从
+  约定变结构的诉求)
+- 改动:`_BACKEND_CAPABILITIES` 表与 `backend_supports` 消亡;
+  `use_gva_layerwise` 压扁为裸函数(保留归一化)迁入
+  `gva_protocol.py` 与 `GVAKeyFactory` 同住;一致性测试改为直连
+  断言(5 个 GVA 方法仅被 MemcacheBackend override);gate 相关
+  测试全部并入 `test_gva_protocol.py`;`backend/__init__.py` 与
+  `test_backend.py` 回归基线(退出 PR diff 面,14→12 files)
+- 附带收益:旧形态的"C2/C3 中间态 UT 断档"消失(见走读复核补记)
+- 实施:最终树先在 head 上完整构建并全量验证(UT 282 passed +
+  ruff),固化为 TEMP 提交取树 hash `888ce6beb`;软重置到基线后
+  按 C1'-C5' 分组重放(gva_protocol/test_gva_protocol 两文件按
+  gate-only → final 两阶段构造);重建后树 hash 与 TEMP 逐字节
+  一致,且 C1'/C2'/C3' 均当场跑过 UT(吸取首轮 CI 教训)
+- GitHub 侧:PR 描述重写(突出 memcache-exclusive 语义与
+  `backend/__init__.py` 回归纯净);补 follow-up 评论说明
+  `backend_supports` 已随重构消亡(前一条回复中的名称不再存在)
+
 ## 5. 测试覆盖
 
 | 文件 | 覆盖 |
 |---|---|
-| `test_backend.py` | 能力真值表(memcache/mooncake/yuanrong/大小写/False 组合);表↔MRO override 一致性;未知 backend / 未知 capability 返回 False |
-| `test_gva_protocol.py` | 三类 key 的字节级快照;hit_check 与 full_key 的 rank 格式一致性 |
+| `test_gva_protocol.py` | gate 真值表(memcache/mooncake/yuanrong/大小写/空白/False 组合);未知 backend 返回 False;memcache 排他性(5 个 GVA 方法仅被 MemcacheBackend override);三类 key 的字节级快照;hit_check 与 full_key 的 rank 格式一致性 |
 | `test_ascend_store_connector.py` | `set_external_slot_release_waiter` 转发契约:worker gate 拒绝(非 GVA backend)/接受两路;connector 不持有 flag 的回归守卫 |
 | `test_pool_worker.py` | worker gate 的接受/拒绝路径 |
 
@@ -249,8 +285,9 @@ Gemini Code Assist review 处置(2026-08-31,review 于 03:04 UTC 生成,
 - GVA 传输线程类(`kv_transfer.py` 内 LayerSendingThread /
   LayerRecvingThread 等)仍在通用传输层文件中,与 GVA 协议的物理收敛
   未完成
-- `gva_protocol.py` 目前只含 key 工厂,协议其余部分(租约管理、
-  write-finish 语义)仍散在 worker / 线程代码里
+- `gva_protocol.py` 目前含 gate 函数与 key 工厂,协议其余部分(租约
+  管理、write-finish 语义)仍散在 worker / 线程代码里(part2 的
+  GVASession/GVAHitChecker 归宿已定:同模块)
 - 提交 2 为线程入口断言在 `kv_transfer.py` 顶部引入了 `MemcacheBackend`
   直接 import——通用传输层重新持有具体 backend 引用,与收敛方向相反;
   part2 搬迁线程类时应随之消除(断言随线程类移入 backend 侧)

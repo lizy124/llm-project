@@ -2,80 +2,97 @@
 
 > 分工:`PR-15367 record.md` 记录前因、决策演化与 PR 间关系;本文档逐 hunk
 > 解释"改了什么、为什么这样写、付出了什么代价"。基审结论:设计成立。
-> 代码:`refactor_layerwise_part1` @ `16bdb52fd`(5 commits,基于 `40f9834ee`)
+> 代码:`refactor_layerwise_part1` @ `ee6220d7c`(5 commits,基于 `40f9834ee`)
 > 复核基准:每条陈述均可在本地 diff 中逐一指认;快速命令见 §7。
 
 ## 0. 全景
 
 ```
-C1 441b48cf3  定义能力表与单点函数,backend_supports 内部归一化(纯新增,无消费者)
-C2 6ecb899e9  线程入口断言 + 能力表测试 + 既有线程测试 spec 适配
-C3 12d312803  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
-C4 e4009383c  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
-C5 16bdb52fd  gate 下沉:connector 纯转发 + 删 #15291 副本
+C1 7b9e1e530  gva_protocol.py 新建:use_gva_layerwise 单点 + gate/排他性测试(纯新增,无消费者)
+C2 234419dce  线程入口断言 + 既有线程测试 spec 适配
+C3 1dc6daae3  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
+C4 83cbf9402  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
+C5 ee6220d7c  gate 下沉:connector 纯转发 + 删 #15291 副本
 ```
 
 依赖方向:C3/C4 依赖 C1(函数已定义);C5 依赖 C3(worker gate 先存在);
-C2 只依赖 C1。最终 diff:14 files,+446/−66。
+C2 只依赖 C1。最终 diff:12 files,+431/−66(`backend/__init__.py` 与
+`test_backend.py` 回归基线,不在 diff 面内)。
 
 ---
 
-## 1. C1 `6334f638e`:能力注册表(backend/__init__.py,+30)
+## 1. C1 `7b9e1e530`:GVA 协议模块与单点 gate(gva_protocol.py 新建 + test_gva_protocol.py 新建,+130)
 
-### 1.1 `_BACKEND_CAPABILITIES` 静态表
+### 1.1 模块选址:为什么是 `backend/gva_protocol.py`
+
+GVA 是 memcache 专属协议——这是本 PR 的领域基石,模块选址由它推出:
+
+- **不进 `MemcacheBackend` 类**:布局期调用点
+  `get_gva_layerwise_config()` 手上只有 config 字符串、无任何实例,
+  类方案必然要求另一份静态映射兜底(两套机制);且 GVA 的编排
+  (session/租约/hit-check)跨 worker/scheduler,塞进 store 客户端
+  类违反"协议不持有 worker 状态"(PR-A 评审既定裁定)。
+- **不进 `backend/__init__.py`**:领域函数污染包入口(`__init__` 的
+  自然读者要看的是包结构,不是 GVA gate);更关键的是 `__init__` 的
+  零 import 是**无防护约定**——明天谁加一个 re-export,布局期 import
+  安全就悄悄崩了。独立模块的零 import 是**结构性保证**:一个只有
+  表和纯函数的模块没有理由 import 任何东西。
+- **不进 `memcache_backend.py`**:顶部 `import torch` + 懒加载
+  `memcache_hybrid`,协议知识并入会拖重依赖、破坏 UT stub 纯度
+  (见 §4.2 的 exec 机制正是靠 `__init__`/`gva_protocol` 零 import
+  才成立)。
+- **`gva_protocol.py` 与 `GVAKeyFactory` 同住**:memcache 专属的一切
+  物理聚拢,文件系统即文档;part2 的 GVASession/GVAHitChecker 归宿
+  已定(同模块)。
+
+### 1.2 裸函数形态(能力表已消亡)
 
 ```python
-_BACKEND_CAPABILITIES: dict[str, frozenset[str]] = {
-    "mooncake": frozenset(),
-    "memcache": frozenset({"gva_layerwise"}),
-    "yuanrong": frozenset(),
-}
+def use_gva_layerwise(use_layerwise: bool, backend_name: str) -> bool:
+    return use_layerwise and backend_name.strip().lower() == "memcache"
 ```
 
-- **键空间与 `backend_map` 对齐**(同名同键),能力知识与注册表知识同址。
-- **mooncake/yuanrong 显式列空集而非省略**:表格完整表达"每个 backend
-  都被审视过、确认无此能力",省略键与"忘记登记"将不可区分。空集与
-  缺失在行为上等价(`backend_supports` 用 `.get(name, frozenset())`),
-  显式列出纯粹是给人看的。
-- **frozenset**:不可变(注册表无运行时修改场景)、membership O(1)。
-- **新 backend 忘登记的失败模式**:静默返回 False → GVA 关闭。可接受,
-  因为忘登记的必然是非 GVA backend(只有 memcache 实现 GVA 方法),
-  行为正确,只是少了显式声明。
+- **为什么裸函数而非表 + 查询函数**:`_BACKEND_CAPABILITIES` +
+  `backend_supports(name, capability)` 是为"未来第二能力"预留的
+  泛化机械;专属协议的事实不需要它。压扁后同样单点、同样消
+  #14465 病根,少一张表、一个泛化参数、约 20 行。放弃泛化的风险
+  (事实翻盘)翻盘成本极低(局部改一个函数),不是不可逆决策。
+- **内部归一化**(strip + lower,Gemini review 采纳项):调用方可传
+  原始 config 字符串。三个现有调用点本就全部先 lower,生产行为零
+  变化;消掉的是"未来调用方漏 lower 静默 False"(layout 调用点不查
+  `backend_map`,漏 lower 不会被 ValueError 挡住)。
+- docstring 完整记录 #14465 教训——函数存在的理由就是那段历史,
+  写在定义处让删它的人先读到后果。
 
-### 1.2 两层函数:`backend_supports` + `use_gva_layerwise`
+### 1.3 测试:排他性直连断言
 
-```python
-def backend_supports(backend_name: str, capability: str) -> bool: ...
-def use_gva_layerwise(use_layerwise: bool, backend_name: str) -> bool: ...
-```
+- `test_truth_table`:6 组用例,含归一化契约
+  `(True, "MEMCACHE", True)`、`(True, " Memcache ", True)` 与
+  `(False, "memcache", False)`。
+- `test_unknown_backend`:未知名字返回 False。
+- `test_gva_store_methods_only_on_memcache_backend`(**核心**):
+  遍历 `backend_map`(importlib 动态加载类),对 5 个 GVA 方法检查
 
-- 分工:`backend_supports` 是**通用机制**(表怎么查),`use_gva_layerwise`
-  是**领域用途**(当前唯一的派生)。未来出现第二个能力时只加领域函数,
-  机制不动。
-- `use_gva_layerwise` 的 docstring 完整记录了 #14465 教训——这个函数
-  存在的理由就是那段历史,写在定义处让删它的人先读到后果。
-- **大小写契约(已清偿)**:`backend_supports` 内部做 `strip().lower()`
-  归一化(Gemini review 2026-08-31 采纳项),调用方可传原始 config
-  字符串,新调用点不会因大小写变体静默漏过 gate。真值表用
-  `(True, "MEMCACHE", True)`、`(True, " Memcache ", True)` 把归一化
-  锁为显式契约。
+  ```python
+  owns_override = any(method in vars(cls) for cls in backend_class.__mro__ if cls is not Backend)
+  ```
 
-### 1.3 被否的类属性方案
+  原理:子类 `vars` 里出现该方法 = 真实 override;继承自 `Backend`
+  的桩只存在于 Backend 自己的 vars。断言 `owns_override ==
+  (name == "memcache")`——"GVA 是 memcache 专属协议"从 docstring
+  升级为可执行断言,新 backend 加入 `backend_map` 即自动纳入检查。
+  旧形态的表↔实现互锁(两个事实源对账)随之简化为单事实源直证。
 
-`Backend.GVA_LAYERWISE_CAPABLE = True` 只覆盖 worker/scheduler 两处
-(构造后有实例可查);布局期调用点 `get_gva_layerwise_config()` 手上
-只有 config 字符串、无任何实例,仍需静态表 → 变成两套机制,弃。
-布局期无实例是根本约束;"布局期不能 import torch"不成立(布局代码
-本身就 import vllm.config,torch 早已就绪),不作为论据。
+### 1.4 C1 就带测试(与旧形态的差异)
 
-### 1.4 为什么 C1 不带测试
-
-C1 是纯新增、零消费者——表此刻不可能被读错(没有读取方)。测试
-(真值表 + 表↔实现一致性)与 C2 的断言是一个语义单元,随 C2 落地。
+gate 测试随模块在 C1 落地而非推迟到 C2:模块 + 测试是自洽单元,
+且 `gva_protocol` 子模块经 UT stub 包 `__path__` 直接解析(见
+§4.2),C1 单独 checkout 即可运行测试——旧形态"helpers 住
+`__init__.py` 导致 C2/C3 UT 断档"的问题从根上不存在。
 
 ---
 
-## 2. C2 `d424aa6f1`:线程入口断言(kv_transfer.py +13,test_backend.py +63,test_kv_transfer.py +13/−4)
+## 2. C2 `234419dce`:线程入口断言(kv_transfer.py +13,test_kv_transfer.py +13/−4)
 
 ### 2.1 顶部 import `MemcacheBackend`(运行时,非 TYPE_CHECKING)
 
@@ -108,25 +125,11 @@ record §7 遗留)。
 (单次 isinstance)换错误定位从"某方法缺实现"提前为"gate 不变量
 被破坏",这笔账成立。
 
-### 2.4 test_backend.py 的能力测试(63 行,`TestBackendCapabilities`)
+### 2.4 gate 测试的位置
 
-- `_GVA_STORE_METHODS`:5 个方法名,与 base.py 的 5 个桩一一对应,
-  是"能力"的操作化定义。
-- `test_capability_table_matches_gva_store_methods`(核心):遍历
-  `backend_map` 全部条目(经 `importlib.import_module(entry["path"])`
-  动态加载类),对每个方法检查
-
-  ```python
-  owns_override = any(method in vars(cls) for cls in backend_class.__mro__ if cls is not Backend)
-  ```
-
-  原理:子类/中间类 `__dict__`(即 `vars`)里出现该方法 = 真实
-  override;继承自 `Backend` 的桩只存在于 Backend 自己的 vars。
-  断言 `owns_override == 表声明`,把"静态表是第二事实源"的漂移风险
-  锁死。新 backend 加入 backend_map 即自动纳入检查。
-- `test_use_gva_layerwise_truth_table`:5 组用例,含大小写陷阱
-  `(True, "MEMCACHE", False)`。
-- 未知 backend / 未知 capability 返回 False:防御性默认的显式锁定。
+旧形态把能力测试放 test_backend.py(随 C2);新形态下 gate 与排他性
+测试在 C1 随模块落地于 test_gva_protocol.py(见 §1.3)——测试跟知识
+走,GVA 的测试物理聚拢,`test_backend.py` 回归基线零 diff。
 
 ### 2.5 test_kv_transfer.py 的 spec 适配(首轮 CI 失败的修复)
 
@@ -158,13 +161,13 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ---
 
-## 3. C3 `ab31c1b8a`:GVAKeyFactory + 消费者切换(6 文件,+245/−38)
+## 3. C3 `1dc6daae3`:GVAKeyFactory + 消费者切换(6 文件,+199/−44)
 
 内容最多的提交,实际包含四类改动(key 工厂、partial index 迁移、
 **worker/scheduler 派生切换**、worker gate),后两类是切分时混入的,
 见 §3.7。
 
-### 3.1 gva_protocol.py:`GVAKeyFactory`(新文件,77 行)
+### 3.1 gva_protocol.py:`GVAKeyFactory`(扩展现有模块)
 
 - **为什么是 class + 3 staticmethod 而非模块级函数**:同族字符串构造
   归入一个命名空间;part2 的 GVASession/GVAHitChecker(原 PR-A 设计)
@@ -189,7 +192,8 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ### 3.3 pool_scheduler.py(17 行)
 
-- import:`backend_map, use_gva_layerwise` + `GVAKeyFactory`。
+- import:`backend_map`(backend)+ `GVAKeyFactory, use_gva_layerwise`
+  (gva_protocol)。
 - **派生切换**(此 hunk 在 C3,不是 C4):
 
   ```python
@@ -231,7 +235,7 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ### 3.6 测试
 
-- `test_gva_protocol.py`(新,83 行):
+- `test_gva_protocol.py`(追加快照段):
   - 快照期望值**从重构前的 pool_worker/pool_scheduler 实现转录**,
     不是从新实现生成——否则是同义反复,漂移测不出来。
   - `test_full_key_and_hit_check_key_share_rank_format`:断言
@@ -246,29 +250,23 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
     设 `worker.use_gva_layerwise` 两态,断言 False 拒绝(不落
     waiter)/ True 接受(落 waiter)。
 
-### 3.7 本提交的切分问题(如实记录,复核时发现)
+### 3.7 旧形态的切分问题(历史记录,新形态已消除)
 
-1. **派生切换 hunk 混入 C3**:record 原表格把"三处派生切换"记在 C4,
-   实际 worker/scheduler 两处在 C3、仅 layout 在 C4(C4 对这两个文件
-   的 diff 为空)。record 表格已按事实修正。
-2. **C2/C3 中间态 UT 不可运行**:UT 的 stub 包(`_mock_deps.py`)在
-   C4 之前是手工 mirror,只有 `backend_map`,没有
-   `_BACKEND_CAPABILITIES` / `use_gva_layerwise`。于是:
-   - C2 单独 checkout:`test_backend.py` 的
-     `from ...backend import _BACKEND_CAPABILITIES` 在 stub 下
-     ImportError——**C2 引入的测试自己要到 C4 才能跑**;
-   - C3 单独 checkout:上者 + worker/scheduler 真实模块 import
-     `use_gva_layerwise`,`test_pool_worker/test_pool_scheduler`
-     同样 ImportError。
-   - 影响面:生产运行行为仍逐提交保持(stub 只存在于 UT);PR CI
-     只测 head(全绿)。受影响的是"每个提交单独 checkout 可验证"
-     的主张与未来 bisect:在 C2/C3 上跑 UT 会看到与本 PR 无关的红。
-   - 理想切分:stub 的 exec 同步(现 C4 的 `_mock_deps` hunk)应随
-     C1 或 C2 落地。是否重排历史由作者定夺(需再 force-push)。
+1. **派生切换 hunk 混入 C3**(旧形态同样存在,新形态保留此切分,
+   且 C3' message 已如实记录):worker/scheduler 两处派生切换在 C3,
+   仅 layout 在 C4。
+2. **C2/C3 中间态 UT 不可运行(已消除)**:旧形态的 helpers 住
+   `backend/__init__.py`,而 UT stub 包的 `__init__` 是手工 mirror,
+   C4 之前缺 `_BACKEND_CAPABILITIES`/`use_gva_layerwise`,
+   ImportError——"每提交独立可验证"仅在生产行为层面成立。
+   **新形态下 gate 函数住 `gva_protocol.py` 子模块,经 stub 包
+   `__path__` 直接解析(不依赖 exec),C3' 上用旧 stub 实测
+   151 passed**——断档从根上消失,这也是"知识住对地方"的直接
+   工程回报。
 
 ---
 
-## 4. C4 `4e2c72384`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
+## 4. C4 `83cbf9402`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
 
 ### 4.1 layerwise_cache_layout.py
 
@@ -283,8 +281,9 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 - 第三处(也是最后一处)派生切换。原表达式 `backend == "memcache"
   and use_layerwise` 与新调用仅在 and 操作数顺序上不同,两者皆为纯
   布尔、无短路副作用,等价。
-- 该调用点在布局构建期,是"静态表必须字符串进布尔出"的根本原因
-  (见 §1.3)。
+- 该调用点在布局构建期,是"gate 函数必须字符串进布尔出且零 import"
+  的根本原因(见 §1.1/§1.2)。import 从 `...backend` 换为
+  `...backend.gva_protocol`(子模块,同样零 import)。
 
 ### 4.2 _mock_deps.py:从手工 mirror 到 exec 真实 `__init__.py`
 
@@ -295,31 +294,33 @@ with open(_backend_init_path, encoding="utf-8") as _backend_init_file:
 ```
 
 - **旧机制的问题**:手工 mirror 的 `backend_map` 是 stub 里的第二
-  事实源,真实表一改它就漂——本 PR 恰恰要往真实 `__init__` 里加
-  三个符号,mirror 模式注定跟不住。
+  事实源,真实表一改它就漂,mirror 模式注定跟不住。
 - **为什么不直接让真实包生效**:stub 包存在的意义是把 ascend_store
   及其 backend 从 torch_npu 等重依赖中隔离(`sys.modules` 已被 stub
   占位,import 机制永远命中 stub);而 `backend/__init__.py` 本身是
-  纯 dict + def、零 import,exec 它不会拉起重依赖——这是"只同步
-  这一个文件"的安全边界。
+  纯 dict、零 import,exec 它不会拉起重依赖——这是"只同步这一个
+  文件"的安全边界。
 - **为什么用 exec 而非 importlib**:目标路径的 `sys.modules` 条目
   已被 stub 占据,无法再经 import 机制加载真实 `__init__`;exec +
   `vars(_backend_pkg)` 是把真实源码注入 stub 命名空间的最小手段,
-  `from ...backend import use_gva_layerwise` 从此命中真实定义。
+  `from ...backend import backend_map` 从此命中真实定义。
+- **gva_protocol 为什么不需要特殊处理**:worker/scheduler/layout
+  import 的是**子模块**,Python 经 stub 包的 `__path__`(指向真实
+  backend 目录)直接加载真实 `gva_protocol.py`——零 import 的纯
+  模块,加载无副作用。这正是 §3.7 所说"C3' 上旧 stub 也能跑 UT"
+  的机制基础。
 - 附带删除了 mirror 版的 `_backend_module_paths` 字典。
 
-### 4.3 commit message 与实际范围的偏差
+### 4.3 commit message 与实际范围的偏差(旧形态历史)
 
-message 主体写 "Switch the consumer-side duplicated derivations
-(KVPoolWorker, KVPoolScheduler, get_gva_layerwise_config)"——但
-worker/scheduler 的切换实际发生在 C3(§3.7),本提交只完成 layout
-一处(可辩护为"完成 all call sites 的收尾",但 hunk 层面失实)。
-同时本提交的 `_mock_deps` hunk 实质是在偿还 C2/C3 的 UT 断档(§3.7
-第 2 条)。是否 amend 由作者定夺。
+旧形态 C4 message 的 "at all call sites" 以 hunk 论失实
+(worker/scheduler 在 C3)。新形态的 C4' message 已改为
+"at all call sites" 语义下的收尾描述并如实说明 worker/scheduler
+已切换。
 
 ---
 
-## 5. C5 `9f5c199ea`:gate 下沉(2 文件,+59/−5)
+## 5. C5 `ee6220d7c`:gate 下沉(2 文件,+59/−5)
 
 ### 5.1 删除 connector `__init__` 的 2 行——为什么是有意为之
 
@@ -434,20 +435,18 @@ def set_external_slot_release_waiter(self, waiter: Callable[[int], None]) -> boo
 
 ```powershell
 $R = "d:\lzy\project\kv_pool\code\vllm-ascend"
-# PR 自身 diff 面(基线 40f9834ee,应恒为 14 files +460/−68,含 Gemini 归一化)
+# PR 自身 diff 面(基线 40f9834ee,应恒为 12 files +431/−66)
 git -C $R diff upstream/main HEAD --stat
-# Gemini 修复面(相对 rebase 后 head 的增量应仅 2 文件 +14/−2)
-git -C $R diff 9f5c199ea HEAD --stat
-# 逐提交内容核对(§3.7/§4.3 的依据)
-git -C $R show --stat 12d312803             # C3:6 文件,含 worker/scheduler
-git -C $R show --stat e4009383c             # C4:仅 layout + _mock_deps
-git -C $R show e4009383c -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
+# 逐提交内容核对
+git -C $R show --stat 7b9e1e530             # C1:gva_protocol + 测试(2 文件,+130)
+git -C $R show --stat 1dc6daae3             # C3:6 文件,含 worker/scheduler
+git -C $R show --stat 83cbf9402             # C4:仅 layout + _mock_deps
+git -C $R show 83cbf9402 -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
 # 全仓派生单点验证(应只剩 3 个消费调用点 + 定义 + docstring/注释)
 git -C $R grep -n "use_gva_layerwise" -- "vllm_ascend/**"
-# C2/C3 中间态 UT 断档复现(§3.7)
-git -C $R stash list; git -C $R checkout 441b48cf3
-python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_backend.py --noconftest -q -p no:cacheprovider
-# 预期:ImportError(_BACKEND_CAPABILITIES);checkout 12d312803 同理多两个文件挂
+# 中间提交可验证性(§3.7:新形态无断档,C3' 用旧 stub 应 151 passed)
+git -C $R checkout 1dc6daae3
+python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_gva_protocol.py tests/ut/distributed/ascend_store/test_pool_worker.py tests/ut/distributed/ascend_store/test_pool_scheduler.py tests/ut/distributed/ascend_store/test_kv_transfer.py --noconftest -q -p no:cacheprovider
 git -C $R checkout refactor_layerwise_part1
 # 修复后全量(2 个 coordinator 失败为本地 stub 既有,非本 PR)
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/ --noconftest -q -p no:cacheprovider --ignore=tests/ut/distributed/ascend_store/test_layerwise_cache_layout.py
