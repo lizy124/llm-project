@@ -16,6 +16,15 @@
 | 45badca | C2 | `GVALayerwiseCapable` 接口抽取 + `on_worker_ready()` 生命周期钩子 |
 | e788a10 | C3 | `gva_protocol.py` 纯新增（GVAKeyFactory / GVASession / GVAHitChecker） |
 | a0bb5dc | C4 | worker / scheduler 委托切换，删除内联实现 |
+| b89884b | C5 | mypy 修复：`batch_write_finish`/`batch_remove_lease` 调用点 `assert isinstance(m_store, GVALayerwiseCapable)`；`_gva_hit_checker` assert non-None；UT mock 改 `_DualSpecStore`（Backend+GVALayerwiseCapable 双 spec） |
+
+## C5 mypy 修复（2026-08-30，rebase upstream/main 后 CI 报 3 错）
+
+- 错误：kv_transfer.py:1380/1581（Backend 无 capability 方法）+ pool_scheduler.py:405（GVAHitChecker | None）
+- 修法与 PR-B 的 de736a01 一致（assert narrowing）；GVA 线程仅运行于 memcache（实现该接口），assert 运行时也成立
+- UT mock `MagicMock(spec=_DualSpecStore)` 过 isinstance 断言；test_pool_worker 的 `object.__new__` 用法不走调用点，不受影响
+- 验证：UT 309 passed / 2 failed（coordinator 两例为 PR-A 起点即有的本地 stub 问题）；ruff 0.14.0 check+format 过；mypy narrowing 模式经本地最小复现实验验证（仓库 mypy.ini）
+- refactor_layerwise_B 已 rebase 到含 C5 的 A 上（3 处冲突均按 B 侧意图解决：import 单行、mock 单 spec、类删除）；B 最终 diff 与 rebase 前字节级一致（C5 被 B 自身 commit 序列完全消化），UT 314 passed
 
 ## C4 具体产出（已验证）
 
