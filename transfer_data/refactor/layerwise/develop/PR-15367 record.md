@@ -1,8 +1,8 @@
 # PR #15367(refactor_layerwise_part1)前后梳理
 
-> 代码:`refactor_layerwise_part1` @ `735065fe1`(5 commits,基于 `9c3cf949d`)
+> 代码:`refactor_layerwise_part1` @ `bfeaacb14`(5 commits,基于 `9c3cf949d`)
 > 基线:`9c3cf949d` = 合入 #15291 后的 upstream/main
-> 规模:13 files,+433/−62,零行为变化
+> 规模:14 files,+446/−66,零行为变化(生产行为;测试适配见提交 2)
 > 系列:layerwise GVA 重构第一批(前身 PR-A #15277 被本 PR 取代,见 §6)
 
 ## 1. 前因
@@ -127,10 +127,10 @@ docstring(说明设计约束),代码引用为零。
 | # | commit | 内容 | 文件 |
 |---|---|---|---|
 | 1 | `6334f638e` | backend 能力表 + `use_gva_layerwise` 单点(仅新增,无调用方切换;能力表测试在提交 2 一并落地) | backend/__init__.py |
-| 2 | `34de1fc01` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py) | kv_transfer.py, test_backend.py |
-| 3 | `42fa31654` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py(新), metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
-| 4 | `9f804019b` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__,补提交 2/3 的 stub 缺口 | layerwise_cache_layout.py, _mock_deps.py |
-| 5 | `735065fe1` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
+| 2 | `f1f96928d` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_backend.py, test_kv_transfer.py |
+| 3 | `a1f4427a5` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py(新), metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
+| 4 | `5c840cf4c` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__,补提交 2/3 的 stub 缺口 | layerwise_cache_layout.py, _mock_deps.py |
+| 5 | `bfeaacb14` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
 
 提交 5 的 message 完整记录 #14465 → #15291 → 取代的因果链;PR 描述补
 一行 "Supersedes the connector-side flag restored by #15291 (gate moved
@@ -153,6 +153,26 @@ amend 补记;C3-C5 hash 随之更新(`765042e79`→`42fa31654`、
   生产行为层面成立,UT 层面断档;PR CI 只测 head 故无感知
 - 上述 message 级偏差是否再 amend(需再 force-push)由作者定夺,
   树级内容不改
+
+CI 失败与修复记录(2026-08-31,head `735065fe1` 首轮 CI):
+
+- 首轮 CI 7 failed / 2826 passed,全部在 `test_kv_transfer.py`
+  的 7 个 layerwise 线程测试:提交 2 的入口
+  `assert isinstance(self.m_store, MemcacheBackend)` 打挂了既有
+  测试的裸 `MagicMock()` store fixture
+- 根因:push 前本地验证未覆盖 `test_kv_transfer.py`(教训:入口
+  加 isinstance 断言时,必须排查所有直接调用 `_handle_request`
+  的既有测试);本地复现与 CI 完全一致(非环境差异)
+- 修复:两个线程 fixture 改 `MagicMock(spec=MemcacheBackend)`
+  (PR-A b89884b 既定模式);`.store` 为实例属性、spec 限制属性
+  访问,需显式 `store.store = MagicMock(batch_copy=...)` 装配。
+  修复 amend 进提交 2(断言属提交 2,适配同属),提交 2-5 hash
+  更新(`34de1fc01`→`f1f96928d`、`42fa31654`→`a1f4427a5`、
+  `9f804019b`→`5c840cf4c`、`735065fe1`→`bfeaacb14`),相对
+  `735065fe1` 的树差异仅 `test_kv_transfer.py`(+13/−4)
+- 修复后本地全量 ascend_store UT:283 passed + 2 failed
+  (test_coordinator 两例为本地 stub 既有失败,同 PR-A 时代,
+  CI 有真实 vllm 可过);ruff check/format 通过
 
 ## 5. 测试覆盖
 

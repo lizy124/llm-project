@@ -2,21 +2,21 @@
 
 > 分工:`PR-15367 record.md` 记录前因、决策演化与 PR 间关系;本文档逐 hunk
 > 解释"改了什么、为什么这样写、付出了什么代价"。基审结论:设计成立。
-> 代码:`refactor_layerwise_part1` @ `735065fe1`(5 commits,基于 `9c3cf949d`)
+> 代码:`refactor_layerwise_part1` @ `bfeaacb14`(5 commits,基于 `9c3cf949d`)
 > 复核基准:每条陈述均可在本地 diff 中逐一指认;快速命令见 §7。
 
 ## 0. 全景
 
 ```
 C1 6334f638e  定义能力表与单点函数(纯新增,无消费者)
-C2 34de1fc01  线程入口断言 + 能力表测试(净新增,不动 base.py)
-C3 42fa31654  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
-C4 9f804019b  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
-C5 735065fe1  gate 下沉:connector 纯转发 + 删 #15291 副本
+C2 f1f96928d  线程入口断言 + 能力表测试 + 既有线程测试 spec 适配
+C3 a1f4427a5  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
+C4 5c840cf4c  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
+C5 bfeaacb14  gate 下沉:connector 纯转发 + 删 #15291 副本
 ```
 
 依赖方向:C3/C4 依赖 C1(函数已定义);C5 依赖 C3(worker gate 先存在);
-C2 只依赖 C1。最终 diff:13 files,+433/−62。
+C2 只依赖 C1。最终 diff:14 files,+446/−66。
 
 ---
 
@@ -76,7 +76,7 @@ C1 是纯新增、零消费者——表此刻不可能被读错(没有读取方)
 
 ---
 
-## 2. C2 `34de1fc01`:线程入口断言(kv_transfer.py +13,test_backend.py +63)
+## 2. C2 `f1f96928d`:线程入口断言(kv_transfer.py +13,test_backend.py +63,test_kv_transfer.py +13/−4)
 
 ### 2.1 顶部 import `MemcacheBackend`(运行时,非 TYPE_CHECKING)
 
@@ -129,9 +129,37 @@ record §7 遗留)。
   `(True, "MEMCACHE", False)`。
 - 未知 backend / 未知 capability 返回 False:防御性默认的显式锁定。
 
+### 2.5 test_kv_transfer.py 的 spec 适配(首轮 CI 失败的修复)
+
+首轮 CI(head `735065fe1`)7 failed:既有 7 个 layerwise 线程测试
+直接调 `_handle_request`,其 fixture 用裸 `MagicMock()` 当 store,
+过不了新断言。教训:入口加 isinstance 断言时,必须排查所有直接
+调用该入口的既有测试。
+
+修法(`TestGVALayerTransferFailures._make_sending_thread` /
+`TestGVALayerReceivingTaskOwnership._make_thread`):
+
+```python
+store = MagicMock(spec=MemcacheBackend)
+store.store = MagicMock(batch_copy=MagicMock(return_value=0))
+```
+
+- **spec=MemcacheBackend**:`MagicMock(spec=X)` 的 isinstance 检查
+  通过(mock 的 `__class__` 呈现为 spec 类),与 PR-A b89884b 的
+  `spec=_DualSpecStore` 同一模式。线程代码用到的 `set_device` /
+  `exists` / `get` / `put` / `batch_write_finish` /
+  `batch_remove_lease` 都是类方法,在 spec 的 dir 内,直接可访问。
+- **`.store` 必须显式装配**:它是 `__init__` 里赋值的**实例属性**,
+  不在 `dir(MemcacheBackend)` 中,spec 模式下 getattr 受限——先
+  setattr 一个 child mock(带 `batch_copy`),后续读取命中属性
+  字典,不再走 spec 检查。`store.store.batch_copy.return_value=0`
+  的旧写法第一句就是受限 getattr,会直接 AttributeError。
+- 修复 amend 进 C2:断言属 C2,既有测试的适配同属 C2,单独
+  checkout 时代码与测试自洽。
+
 ---
 
-## 3. C3 `42fa31654`:GVAKeyFactory + 消费者切换(6 文件,+245/−38)
+## 3. C3 `a1f4427a5`:GVAKeyFactory + 消费者切换(6 文件,+245/−38)
 
 内容最多的提交,实际包含四类改动(key 工厂、partial index 迁移、
 **worker/scheduler 派生切换**、worker gate),后两类是切分时混入的,
@@ -241,7 +269,7 @@ record §7 遗留)。
 
 ---
 
-## 4. C4 `9f804019b`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
+## 4. C4 `5c840cf4c`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
 
 ### 4.1 layerwise_cache_layout.py
 
@@ -292,7 +320,7 @@ worker/scheduler 的切换实际发生在 C3(§3.7),本提交只完成 layout
 
 ---
 
-## 5. C5 `735065fe1`:gate 下沉(2 文件,+59/−5)
+## 5. C5 `bfeaacb14`:gate 下沉(2 文件,+59/−5)
 
 ### 5.1 删除 connector `__init__` 的 2 行——为什么是有意为之
 
@@ -407,17 +435,19 @@ def set_external_slot_release_waiter(self, waiter: Callable[[int], None]) -> boo
 
 ```powershell
 $R = "d:\lzy\project\kv_pool\code\vllm-ascend"
-# 最终树与 amend 前逐字节一致
-git -C $R diff 345a4ecea 735065fe1          # 应为空
+# 最终树与首轮 CI 失败 head 的差异仅测试修复(spec 适配)
+git -C $R diff 735065fe1 bfeaacb14          # 应只有 test_kv_transfer.py
 # 逐提交内容核对(§3.7/§4.3 的依据)
-git -C $R show --stat 42fa31654             # C3:6 文件,含 worker/scheduler
-git -C $R show --stat 9f804019b             # C4:仅 layout + _mock_deps
-git -C $R show 9f804019b -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
+git -C $R show --stat a1f4427a5             # C3:6 文件,含 worker/scheduler
+git -C $R show --stat 5c840cf4c             # C4:仅 layout + _mock_deps
+git -C $R show 5c840cf4c -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
 # 全仓派生单点验证(应只剩 3 个消费调用点 + 定义 + docstring/注释)
 git -C $R grep -n "use_gva_layerwise" -- "vllm_ascend/**"
 # C2/C3 中间态 UT 断档复现(§3.7)
-git -C $R stash list; git -C $R checkout 34de1fc01
+git -C $R stash list; git -C $R checkout 6334f638e
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_backend.py --noconftest -q -p no:cacheprovider
-# 预期:ImportError(_BACKEND_CAPABILITIES);checkout 42fa31654 同理多两个文件挂
+# 预期:ImportError(_BACKEND_CAPABILITIES);checkout a1f4427a5 同理多两个文件挂
 git -C $R checkout refactor_layerwise_part1
+# 修复后全量(2 个 coordinator 失败为本地 stub 既有,非本 PR)
+python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/ --noconftest -q -p no:cacheprovider --ignore=tests/ut/distributed/ascend_store/test_layerwise_cache_layout.py
 ```

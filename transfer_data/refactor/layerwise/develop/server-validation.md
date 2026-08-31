@@ -8,7 +8,7 @@
 > 从 upstream/main 新开的分批实施第一批:仅收敛核心逻辑(CAP/IFACE/KEY/gate 下沉),
 > 5 个行为保持提交(见 PR Commits 列表),UT/CI 由 GitHub checks 覆盖,服务器侧
 > 实测项与下方 #15307 清单的 1/2/3 完全相同,逐项执行即可。
-> 代码:`refactor_layerwise_part1` @ 735065fe1(5 commits,基于 9c3cf949d,
+> 代码:`refactor_layerwise_part1` @ bfeaacb14(5 commits,基于 9c3cf949d,
 > 即含 #15291 热修的 main;本 PR 删除该热修的 connector 侧派生,属取代关系)。
 
 差异说明(相对 #15307,影响验证关注点):
@@ -26,7 +26,7 @@
 - 服务器:165(执行计划指定)
 - 容器:cxy 镜像(refactor_812 与新基线不兼容,禁止使用)
 - 代码(按所验 PR 取用,勿混用):
-  - #15367:`refactor_layerwise_part1` @ 735065fe1(5 commits,基于 9c3cf949d)
+  - #15367:`refactor_layerwise_part1` @ bfeaacb14(5 commits,基于 9c3cf949d)
   - #15307(已搁置,仅留档):`refactor_layerwise_B` @ b3a141331(10 commits,含 PR-A 5 个)
 - 日志:观察 debug 级日志需将 vllm logger 级别调至 DEBUG
 
