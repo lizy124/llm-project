@@ -1,8 +1,9 @@
 # PR #15367(refactor_layerwise_part1)前后梳理
 
-> 代码:`refactor_layerwise_part1` @ `ee6220d7c`(5 commits,基于 `40f9834ee`)
-> 基线:`40f9834ee` = upstream/main(2026-08-31;原基线 `9c3cf949d`,因
-> #15386 revert 触发的 CI 基线漂移而 rebase,见下方 rebase 记录)
+> 代码:`refactor_layerwise_part1` @ `2ff5cc890`(5 commits,基于 `e8f47fc11`)
+> 基线:`e8f47fc11` = upstream/main(2026-09-01;历经两次 rebase:首次因
+> #15386 revert 的 CI 基线漂移从 `9c3cf949d`→`40f9834ee`,第二次为
+> 重触发 CI 刷新 flake 判断→`e8f47fc11`,见下方记录)
 > 规模:12 files,+431/−66,零行为变化(生产行为;测试适配见提交 2)
 > 系列:layerwise GVA 重构第一批(前身 PR-A #15277 被本 PR 取代,见 §6)
 
@@ -137,11 +138,11 @@ docstring(说明设计约束),代码引用为零。
 
 | # | commit | 内容 | 文件 |
 |---|---|---|---|
-| 1 | `7b9e1e530` | `gva_protocol.py` 新建:`use_gva_layerwise` 单点(内部归一化);gate 真值表 + memcache 排他性测试 | gva_protocol.py(新), test_gva_protocol.py(新) |
-| 2 | `234419dce` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_kv_transfer.py |
-| 3 | `1dc6daae3` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py, metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
-| 4 | `83cbf9402` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__ 保持 backend_map 同步 | layerwise_cache_layout.py, _mock_deps.py |
-| 5 | `ee6220d7c` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
+| 1 | `1685f508a` | `gva_protocol.py` 新建:`use_gva_layerwise` 单点(内部归一化);gate 真值表 + memcache 排他性测试 | gva_protocol.py(新), test_gva_protocol.py(新) |
+| 2 | `abd351f34` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_kv_transfer.py |
+| 3 | `ee5e9ab4b` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py, metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
+| 4 | `935bb019c` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__ 保持 backend_map 同步 | layerwise_cache_layout.py, _mock_deps.py |
+| 5 | `2ff5cc890` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
 
 提交 5 的 message 完整记录 #14465 → #15291 → 取代的因果链;PR 描述补
 一行 "Supersedes the connector-side flag restored by #15291 (gate moved
@@ -253,6 +254,24 @@ Gemini Code Assist review 处置(2026-08-31,review 于 03:04 UTC 生成,
 - GitHub 侧:PR 描述重写(突出 memcache-exclusive 语义与
   `backend/__init__.py` 回归纯净);补 follow-up 评论说明
   `backend_supports` 已随重构消亡(前一条回复中的名称不再存在)
+
+第二轮 CI(16 卡 e2e flake)与第二次 rebase(2026-08-31 → 09-01):
+
+- head `ee6220d7c` 的 CI:29/30 checks 绿(ruff/mypy/全量 UT/其它
+  e2e),唯一失败 `a3-16 card-(part 1-1)` 的
+  `test_kimi_k3.py::test_k3_mla_pd_tp8`——600s 服务器就绪超时,
+  判定环境 flake(证据:该 job 在本 PR 旧 head `735065fe1` 曾全绿;
+  测试用 `MooncakeConnectorV1`,与 ascend_store 零 import 关联;
+  失败签名是基建超时而非断言,且 conftest `_wait_for_multiple_servers`
+  按 host 键控 ready 导致 `not_ready: []` 掩盖真实未就绪方——
+  captured log 显示 prefill 侧 50971 未就绪)。已在 PR 贴两条评论
+  (分析 + 更正未就绪方为 prefill)
+- 处置:`gh run rerun` 无 admin 权限,改为 rebase 重触发。main 前进
+  18 个提交(kv_transfer 侧变更均在 `kv_p2p/`/`sparse_kv_offload/`,
+  与 PR 的 ascend_store 面零重叠),零冲突;PR diff 面与 UT 结果
+  完全不变(12 files +431/−66;282 passed + 2 coordinator 既有失败)。
+  hash 更新:`1685f508a`/`abd351f34`/`ee5e9ab4b`/`935bb019c`/
+  `2ff5cc890`,已 force-push
 
 ## 5. 测试覆盖
 

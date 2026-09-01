@@ -2,17 +2,17 @@
 
 > 分工:`PR-15367 record.md` 记录前因、决策演化与 PR 间关系;本文档逐 hunk
 > 解释"改了什么、为什么这样写、付出了什么代价"。基审结论:设计成立。
-> 代码:`refactor_layerwise_part1` @ `ee6220d7c`(5 commits,基于 `40f9834ee`)
+> 代码:`refactor_layerwise_part1` @ `2ff5cc890`(5 commits,基于 `e8f47fc11`)
 > 复核基准:每条陈述均可在本地 diff 中逐一指认;快速命令见 §7。
 
 ## 0. 全景
 
 ```
-C1 7b9e1e530  gva_protocol.py 新建:use_gva_layerwise 单点 + gate/排他性测试(纯新增,无消费者)
-C2 234419dce  线程入口断言 + 既有线程测试 spec 适配
-C3 1dc6daae3  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
-C4 83cbf9402  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
-C5 ee6220d7c  gate 下沉:connector 纯转发 + 删 #15291 副本
+C1 1685f508a  gva_protocol.py 新建:use_gva_layerwise 单点 + gate/排他性测试(纯新增,无消费者)
+C2 abd351f34  线程入口断言 + 既有线程测试 spec 适配
+C3 ee5e9ab4b  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
+C4 935bb019c  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
+C5 2ff5cc890  gate 下沉:connector 纯转发 + 删 #15291 副本
 ```
 
 依赖方向:C3/C4 依赖 C1(函数已定义);C5 依赖 C3(worker gate 先存在);
@@ -92,7 +92,7 @@ gate 测试随模块在 C1 落地而非推迟到 C2:模块 + 测试是自洽单�
 
 ---
 
-## 2. C2 `234419dce`:线程入口断言(kv_transfer.py +13,test_kv_transfer.py +13/−4)
+## 2. C2 `abd351f34`:线程入口断言(kv_transfer.py +13,test_kv_transfer.py +13/−4)
 
 ### 2.1 顶部 import `MemcacheBackend`(运行时,非 TYPE_CHECKING)
 
@@ -161,7 +161,7 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ---
 
-## 3. C3 `1dc6daae3`:GVAKeyFactory + 消费者切换(6 文件,+199/−44)
+## 3. C3 `ee5e9ab4b`:GVAKeyFactory + 消费者切换(6 文件,+199/−44)
 
 内容最多的提交,实际包含四类改动(key 工厂、partial index 迁移、
 **worker/scheduler 派生切换**、worker gate),后两类是切分时混入的,
@@ -266,7 +266,7 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ---
 
-## 4. C4 `83cbf9402`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
+## 4. C4 `935bb019c`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
 
 ### 4.1 layerwise_cache_layout.py
 
@@ -320,7 +320,7 @@ with open(_backend_init_path, encoding="utf-8") as _backend_init_file:
 
 ---
 
-## 5. C5 `ee6220d7c`:gate 下沉(2 文件,+59/−5)
+## 5. C5 `2ff5cc890`:gate 下沉(2 文件,+59/−5)
 
 ### 5.1 删除 connector `__init__` 的 2 行——为什么是有意为之
 
@@ -435,17 +435,17 @@ def set_external_slot_release_waiter(self, waiter: Callable[[int], None]) -> boo
 
 ```powershell
 $R = "d:\lzy\project\kv_pool\code\vllm-ascend"
-# PR 自身 diff 面(基线 40f9834ee,应恒为 12 files +431/−66)
+# PR 自身 diff 面(基线 e8f47fc11,应恒为 12 files +431/−66)
 git -C $R diff upstream/main HEAD --stat
 # 逐提交内容核对
-git -C $R show --stat 7b9e1e530             # C1:gva_protocol + 测试(2 文件,+130)
-git -C $R show --stat 1dc6daae3             # C3:6 文件,含 worker/scheduler
-git -C $R show --stat 83cbf9402             # C4:仅 layout + _mock_deps
-git -C $R show 83cbf9402 -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
+git -C $R show --stat 1685f508a             # C1:gva_protocol + 测试(2 文件,+130)
+git -C $R show --stat ee5e9ab4b             # C3:6 文件,含 worker/scheduler
+git -C $R show --stat 935bb019c             # C4:仅 layout + _mock_deps
+git -C $R show 935bb019c -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
 # 全仓派生单点验证(应只剩 3 个消费调用点 + 定义 + docstring/注释)
 git -C $R grep -n "use_gva_layerwise" -- "vllm_ascend/**"
 # 中间提交可验证性(§3.7:新形态无断档,C3' 用旧 stub 应 151 passed)
-git -C $R checkout 1dc6daae3
+git -C $R checkout ee5e9ab4b
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_gva_protocol.py tests/ut/distributed/ascend_store/test_pool_worker.py tests/ut/distributed/ascend_store/test_pool_scheduler.py tests/ut/distributed/ascend_store/test_kv_transfer.py --noconftest -q -p no:cacheprovider
 git -C $R checkout refactor_layerwise_part1
 # 修复后全量(2 个 coordinator 失败为本地 stub 既有,非本 PR)
