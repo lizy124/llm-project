@@ -8,7 +8,7 @@
 > 从 upstream/main 新开的分批实施第一批:仅收敛核心逻辑(GATE 入 memcache 协议模块/IFACE/KEY/gate 下沉),
 > 5 个行为保持提交(见 PR Commits 列表),UT/CI 由 GitHub checks 覆盖,服务器侧
 > 实测项与下方 #15307 清单的 1/2/3 完全相同,逐项执行即可。
-> 代码:`refactor_layerwise_part1` @ 2ff5cc890(5 commits,基于 e8f47fc11,
+> 代码:`refactor_layerwise_part1` @ 1ff8dc141(5 commits,基于 e8f47fc11,
 > 即 2026-09-01 的 upstream/main;本 PR 删除 #15291 热修的 connector 侧
 > 派生,属取代关系)。
 
@@ -27,7 +27,7 @@
 - 服务器:165(执行计划指定)
 - 容器:cxy 镜像(refactor_812 与新基线不兼容,禁止使用)
 - 代码(按所验 PR 取用,勿混用):
-  - #15367:`refactor_layerwise_part1` @ 2ff5cc890(5 commits,基于 e8f47fc11)
+  - #15367:`refactor_layerwise_part1` @ 1ff8dc141(5 commits,基于 e8f47fc11)
   - #15307(已搁置,仅留档):`refactor_layerwise_B` @ b3a141331(10 commits,含 PR-A 5 个)
 - 日志:观察 debug 级日志需将 vllm logger 级别调至 DEBUG
 

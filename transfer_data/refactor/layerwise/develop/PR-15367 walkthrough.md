@@ -2,26 +2,26 @@
 
 > 分工:`PR-15367 record.md` 记录前因、决策演化与 PR 间关系;本文档逐 hunk
 > 解释"改了什么、为什么这样写、付出了什么代价"。基审结论:设计成立。
-> 代码:`refactor_layerwise_part1` @ `2ff5cc890`(5 commits,基于 `e8f47fc11`)
+> 代码:`refactor_layerwise_part1` @ `1ff8dc141`(5 commits,基于 `e8f47fc11`)
 > 复核基准:每条陈述均可在本地 diff 中逐一指认;快速命令见 §7。
 
 ## 0. 全景
 
 ```
-C1 1685f508a  gva_protocol.py 新建:use_gva_layerwise 单点 + gate/排他性测试(纯新增,无消费者)
-C2 abd351f34  线程入口断言 + 既有线程测试 spec 适配
-C3 ee5e9ab4b  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
-C4 935bb019c  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
-C5 2ff5cc890  gate 下沉:connector 纯转发 + 删 #15291 副本
+C1 bfd6f3354  gva_protocol.py 新建:use_gva_layerwise 单点(双参)+ gate/排他性测试(纯新增,无消费者)
+C2 6bb71ce78  线程入口断言 + 既有线程测试 spec 适配
+C3 e75fc891e  GVAKeyFactory + 消费者切换(worker/scheduler 派生、key、worker gate)
+C4 7f3f7e31a  layout 派生切换 + UT stub 同步(实际仅 2 文件,见 §4.3)
+C5 1ff8dc141  gate 下沉:connector 纯转发 + 删 #15291 副本
 ```
 
 依赖方向:C3/C4 依赖 C1(函数已定义);C5 依赖 C3(worker gate 先存在);
-C2 只依赖 C1。最终 diff:12 files,+431/−66(`backend/__init__.py` 与
+C2 只依赖 C1。最终 diff:12 files,+444/−68(`backend/__init__.py` 与
 `test_backend.py` 回归基线,不在 diff 面内)。
 
 ---
 
-## 1. C1 `7b9e1e530`:GVA 协议模块与单点 gate(gva_protocol.py 新建 + test_gva_protocol.py 新建,+130)
+## 1. C1 `bfd6f3354`:GVA 协议模块与单点 gate(gva_protocol.py 新建 + test_gva_protocol.py 新建,+251)
 
 ### 1.1 模块选址:为什么是 `backend/gva_protocol.py`
 
@@ -45,30 +45,34 @@ GVA 是 memcache 专属协议——这是本 PR 的领域基石,模块选址由�
   物理聚拢,文件系统即文档;part2 的 GVASession/GVAHitChecker 归宿
   已定(同模块)。
 
-### 1.2 裸函数形态(能力表已消亡)
+### 1.2 双参签名(抽象边界的最终裁定)
 
 ```python
-def use_gva_layerwise(use_layerwise: bool, backend_name: str) -> bool:
-    return use_layerwise and backend_name.strip().lower() == "memcache"
+def use_gva_layerwise(use_layerwise: bool, extra_config: Mapping[str, Any]) -> bool:
+    backend_name = str(extra_config.get("backend", "mooncake")).strip().lower()
+    return use_layerwise and backend_name == "memcache"
 ```
 
-- **为什么裸函数而非表 + 查询函数**:`_BACKEND_CAPABILITIES` +
-  `backend_supports(name, capability)` 是为"未来第二能力"预留的
-  泛化机械;专属协议的事实不需要它。压扁后同样单点、同样消
-  #14465 病根,少一张表、一个泛化参数、约 20 行。放弃泛化的风险
-  (事实翻盘)翻盘成本极低(局部改一个函数),不是不可逆决策。
-- **内部归一化**(strip + lower,Gemini review 采纳项):调用方可传
-  原始 config 字符串。三个现有调用点本就全部先 lower,生产行为零
-  变化;消掉的是"未来调用方漏 lower 静默 False"(layout 调用点不查
-  `backend_map`,漏 lower 不会被 ValueError 挡住)。
-- docstring 完整记录 #14465 教训——函数存在的理由就是那段历史,
-  写在定义处让删它的人先读到后果。
+- **参数分工是数据流事实**:`use_layerwise` 在 worker/scheduler 是
+  **构造参数**(connector 读 config 后传入,worker 另有 10+ 处非 GVA
+  layerwise 行为读它),必须由调用方作为权威值传入;layout 则自读
+  config,同源。backend 的键名、默认值(`"mooncake"`)、str+strip+
+  lower 归一化——这些"backend 字符串怎么读"的知识全部归函数。
+  旧标量签名 `(bool, str)` 的问题正是把这部分留在了调用方。
+- **为什么不是纯 dict-in(吃整个 extra_config)**:dict-in 会让
+  worker 的 gate 从"信构造参数"变成"重读 config",与
+  `self.use_layerwise` 形成隐性双源——3 个 UT 失败
+  (`_make_worker(use_layerwise=True)` 不写 config)当场证伪了
+  这条路。双参是"知识的完整归属"与"数据流权威不搬家"的交点。
+- **为什么裸函数而非表 + 查询函数**:能力表是为"未来第二能力"
+  预留的泛化机械;专属协议的事实不需要它(见 record §3.1 形态演化)。
+- docstring 完整记录 #14465 教训——函数存在的理由就是那段历史。
 
 ### 1.3 测试:排他性直连断言
 
-- `test_truth_table`:6 组用例,含归一化契约
-  `(True, "MEMCACHE", True)`、`(True, " Memcache ", True)` 与
-  `(False, "memcache", False)`。
+- `test_truth_table`:7 组用例(双参形态),含归一化契约
+  `(True, {"backend": "MEMCACHE"}, True)`、`(True, {"backend":
+  " Memcache "}, True)` 与键缺失默认 `(True, {}, False)`。
 - `test_unknown_backend`:未知名字返回 False。
 - `test_gva_store_methods_only_on_memcache_backend`(**核心**):
   遍历 `backend_map`(importlib 动态加载类),对 5 个 GVA 方法检查
@@ -92,7 +96,7 @@ gate 测试随模块在 C1 落地而非推迟到 C2:模块 + 测试是自洽单�
 
 ---
 
-## 2. C2 `abd351f34`:线程入口断言(kv_transfer.py +13,test_kv_transfer.py +13/−4)
+## 2. C2 `6bb71ce78`:线程入口断言(kv_transfer.py +13,test_kv_transfer.py +13/−4)
 
 ### 2.1 顶部 import `MemcacheBackend`(运行时,非 TYPE_CHECKING)
 
@@ -161,7 +165,7 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ---
 
-## 3. C3 `ee5e9ab4b`:GVAKeyFactory + 消费者切换(6 文件,+199/−44)
+## 3. C3 `e75fc891e`:GVAKeyFactory + 消费者切换(6 文件,+87/−39)
 
 内容最多的提交,实际包含四类改动(key 工厂、partial index 迁移、
 **worker/scheduler 派生切换**、worker gate),后两类是切分时混入的,
@@ -190,16 +194,19 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 - worker 里删除原静态方法,4 处调用从 `self._get_partial_block_index`
   改为直接调模块函数。
 
-### 3.3 pool_scheduler.py(17 行)
+### 3.3 pool_scheduler.py
 
 - import:`backend_map`(backend)+ `GVAKeyFactory, use_gva_layerwise`
   (gva_protocol)。
 - **派生切换**(此 hunk 在 C3,不是 C4):
 
   ```python
-  - self.use_gva_layerwise = self.use_layerwise and self.backend_name == "memcache"
-  + self.use_gva_layerwise = use_gva_layerwise(self.use_layerwise, self.backend_name)
-  ```
+- self.use_gva_layerwise = self.use_layerwise and self.backend_name == "memcache"
++ self.use_gva_layerwise = use_gva_layerwise(self.use_layerwise, extra_config)
+```
+
+  附带把 scheduler 处 `extra_config` 提为局部变量(原是从
+  `kv_connector_extra_config` 直接链式取 backend 键)。
 
 - `_make_layerwise_gva_keys_for_hit_check` 内联的两套 f-string 分支
   整体替换为一次 `GVAKeyFactory.hit_check_keys(...)` 调用;原
@@ -266,24 +273,21 @@ store.store = MagicMock(batch_copy=MagicMock(return_value=0))
 
 ---
 
-## 4. C4 `935bb019c`:layout 切换 + stub 同步(实际 2 文件,+23/−19)
+## 4. C4 `7f3f7e31a`:layout 切换 + stub 同步(实际 2 文件,+21/−20)
 
 ### 4.1 layerwise_cache_layout.py
 
 ```python
 - if str(extra_config.get("backend", "mooncake")).lower() == "memcache" and extra_config.get("use_layerwise", False):
-+ if use_gva_layerwise(
-+     extra_config.get("use_layerwise", False),
-+     str(extra_config.get("backend", "mooncake")).lower(),
-+ ):
++ if use_gva_layerwise(extra_config.get("use_layerwise", False), extra_config):
 ```
 
 - 第三处(也是最后一处)派生切换。原表达式 `backend == "memcache"
   and use_layerwise` 与新调用仅在 and 操作数顺序上不同,两者皆为纯
   布尔、无短路副作用,等价。
-- 该调用点在布局构建期,是"gate 函数必须字符串进布尔出且零 import"
-  的根本原因(见 §1.1/§1.2)。import 从 `...backend` 换为
-  `...backend.gva_protocol`(子模块,同样零 import)。
+- 该调用点在布局构建期,是"gate 函数必须无实例可查且零重 import"
+  的根本原因(见 §1.1/§1.2)。backend 键的读取从此归函数(layout
+  处它本就是从 config 读的,同源无争议)。
 
 ### 4.2 _mock_deps.py:从手工 mirror 到 exec 真实 `__init__.py`
 
@@ -320,7 +324,7 @@ with open(_backend_init_path, encoding="utf-8") as _backend_init_file:
 
 ---
 
-## 5. C5 `2ff5cc890`:gate 下沉(2 文件,+59/−5)
+## 5. C5 `1ff8dc141`:gate 下沉(2 文件,+59/−5)
 
 ### 5.1 删除 connector `__init__` 的 2 行——为什么是有意为之
 
@@ -435,17 +439,17 @@ def set_external_slot_release_waiter(self, waiter: Callable[[int], None]) -> boo
 
 ```powershell
 $R = "d:\lzy\project\kv_pool\code\vllm-ascend"
-# PR 自身 diff 面(基线 e8f47fc11,应恒为 12 files +431/−66)
+# PR 自身 diff 面(基线 e8f47fc11,应恒为 12 files +444/−68)
 git -C $R diff upstream/main HEAD --stat
 # 逐提交内容核对
-git -C $R show --stat 1685f508a             # C1:gva_protocol + 测试(2 文件,+130)
-git -C $R show --stat ee5e9ab4b             # C3:6 文件,含 worker/scheduler
-git -C $R show --stat 935bb019c             # C4:仅 layout + _mock_deps
-git -C $R show 935bb019c -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
+git -C $R show --stat bfd6f3354             # C1:gva_protocol + 测试(2 文件)
+git -C $R show --stat e75fc891e             # C3:6 文件,含 worker/scheduler
+git -C $R show --stat 7f3f7e31a             # C4:仅 layout + _mock_deps
+git -C $R show 7f3f7e31a -- "*pool_worker.py" "*pool_scheduler.py"  # 空 diff
 # 全仓派生单点验证(应只剩 3 个消费调用点 + 定义 + docstring/注释)
 git -C $R grep -n "use_gva_layerwise" -- "vllm_ascend/**"
-# 中间提交可验证性(§3.7:新形态无断档,C3' 用旧 stub 应 151 passed)
-git -C $R checkout ee5e9ab4b
+# 中间提交可验证性(§3.7:新形态无断档,C3 用旧 stub 应 151 passed)
+git -C $R checkout e75fc891e
 python d:\lzy\project\kv_pool\run_ascend_store_ut.py tests/ut/distributed/ascend_store/test_gva_protocol.py tests/ut/distributed/ascend_store/test_pool_worker.py tests/ut/distributed/ascend_store/test_pool_scheduler.py tests/ut/distributed/ascend_store/test_kv_transfer.py --noconftest -q -p no:cacheprovider
 git -C $R checkout refactor_layerwise_part1
 # 修复后全量(2 个 coordinator 失败为本地 stub 既有,非本 PR)

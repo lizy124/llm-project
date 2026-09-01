@@ -1,10 +1,10 @@
 # PR #15367(refactor_layerwise_part1)前后梳理
 
-> 代码:`refactor_layerwise_part1` @ `2ff5cc890`(5 commits,基于 `e8f47fc11`)
+> 代码:`refactor_layerwise_part1` @ `1ff8dc141`(5 commits,基于 `e8f47fc11`)
 > 基线:`e8f47fc11` = upstream/main(2026-09-01;历经两次 rebase:首次因
 > #15386 revert 的 CI 基线漂移从 `9c3cf949d`→`40f9834ee`,第二次为
 > 重触发 CI 刷新 flake 判断→`e8f47fc11`,见下方记录)
-> 规模:12 files,+431/−66,零行为变化(生产行为;测试适配见提交 2)
+> 规模:12 files,+444/−68,零行为变化(生产行为;测试适配见提交 2)
 > 系列:layerwise GVA 重构第一批(前身 PR-A #15277 被本 PR 取代,见 §6)
 
 ## 1. 前因
@@ -51,17 +51,36 @@ connector 侧那份,但 `AscendStoreConnector.set_external_slot_release_waiter`
 
 ### 3.1 GATE:单点函数入 memcache 协议模块(`backend/gva_protocol.py`)
 
-最终形态:裸函数 `use_gva_layerwise(use_layerwise, backend_name)`,
-内部 `strip().lower()` 归一化后与 `"memcache"` 比较,与
-`GVAKeyFactory` 同住协议模块;`backend/__init__.py` 回归纯注册表
+最终形态(双参签名):
+
+```python
+def use_gva_layerwise(use_layerwise: bool, extra_config: Mapping[str, Any]) -> bool:
+    backend_name = str(extra_config.get("backend", "mooncake")).strip().lower()
+    return use_layerwise and backend_name == "memcache"
+```
+
+与 `GVAKeyFactory` 同住协议模块;`backend/__init__.py` 回归纯注册表
 (仅 `backend_map`,本 PR 零 diff)。
+
+**参数分工(签名的关键裁定)**:`use_layerwise` 是调用方的权威值
+(worker/scheduler 的构造参数——worker 还有 10+ 处非 GVA 的 layerwise
+行为读它,不能换成重读 config;layout 则从 config 自读,同源);
+backend 的 config 键、默认值、归一化全部由函数拥有。即"backend 字符串
+怎么读"的知识单点化,"layerwise 是否开启"的权威不搬家。
+
+**签名演化(同日,如实记录)**:标量 `(bool, str)` → 尝试纯 dict-in
+(吃整个 extra_config)→ 3 个 UT 失败暴露 `use_layerwise` 在 worker 路径
+是构造参数而非 config 键(connector 读 config 后以参数传入),纯
+dict-in 会把 gate 的信任链从参数换到 config、与 `self.use_layerwise`
+形成隐性双源 → 改双参:尊重现有数据流,拿到主要收益(backend 键
+知识单点化)。
 
 **为什么是"字符串进、布尔出"的静态函数**:调用点
 `layerwise_cache_layout.get_gva_layerwise_config()` 发生在 KV cache 布局
 构建期,此时 connector / worker / backend 实例均未创建,手上只有
 `kv_connector_extra_config` 里的字符串——布局期没有任何实例可查询,这是
-根本约束。函数所在模块零 import,布局期 import 它不拉起任何 backend
-实现。
+根本约束。函数所在模块零 import(torch 之外的依赖为零),布局期 import
+它不拉起任何 backend 实现。
 
 **为什么进协议模块而非 backend 类 / `__init__.py`**(三堵墙):
 布局期无实例(类方案要求静态映射兜底,两套机制);GVA 的编排
@@ -138,11 +157,11 @@ docstring(说明设计约束),代码引用为零。
 
 | # | commit | 内容 | 文件 |
 |---|---|---|---|
-| 1 | `1685f508a` | `gva_protocol.py` 新建:`use_gva_layerwise` 单点(内部归一化);gate 真值表 + memcache 排他性测试 | gva_protocol.py(新), test_gva_protocol.py(新) |
-| 2 | `abd351f34` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_kv_transfer.py |
-| 3 | `ee5e9ab4b` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数;worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py, metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
-| 4 | `935bb019c` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__ 保持 backend_map 同步 | layerwise_cache_layout.py, _mock_deps.py |
-| 5 | `2ff5cc890` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
+| 1 | `bfd6f3354` | `gva_protocol.py` 新建:`use_gva_layerwise(use_layerwise, extra_config)` 单点(backend 键/默认值/归一化内置);gate 真值表 + memcache 排他性测试 | gva_protocol.py(新), test_gva_protocol.py(新) |
+| 2 | `6bb71ce78` | layerwise 线程入口 `assert isinstance(m_store, MemcacheBackend)`(净新增,不动 base.py);`test_kv_transfer.py` 两个线程 fixture 改 `spec=MemcacheBackend` mock 以过断言 | kv_transfer.py, test_kv_transfer.py |
+| 3 | `e75fc891e` | GVAKeyFactory 平移两份 key 构造 + `get_partial_block_index` 迁 metadata;worker/scheduler 两处派生切单点函数(双参);worker `set_external_slot_release_waiter` 加 gate、返回 bool(此刻唯一调用方 connector 仍持 #15291 gate 且忽略返回值,行为不变) | gva_protocol.py, metadata.py, pool_worker.py, pool_scheduler.py, 两个测试 |
+| 4 | `7f3f7e31a` | layout 派生切单点函数(worker/scheduler 已在提交 3 切换);UT stub 包执行真实 backend/__init__ 保持 backend_map 同步 | layerwise_cache_layout.py, _mock_deps.py |
+| 5 | `1ff8dc141` | gate 下沉:connector 纯转发 + 删 #15291 副本(gate 与 bool 返回已在提交 3 落地) | ascend_store_connector.py, test_ascend_store_connector.py |
 
 提交 5 的 message 完整记录 #14465 → #15291 → 取代的因果链;PR 描述补
 一行 "Supersedes the connector-side flag restored by #15291 (gate moved
@@ -272,6 +291,23 @@ Gemini Code Assist review 处置(2026-08-31,review 于 03:04 UTC 生成,
   完全不变(12 files +431/−66;282 passed + 2 coordinator 既有失败)。
   hash 更新:`1685f508a`/`abd351f34`/`ee5e9ab4b`/`935bb019c`/
   `2ff5cc890`,已 force-push
+
+签名重定:gate 改双参(2026-09-01,head `2ff5cc890` → `1ff8dc141`):
+
+- 触发:作者走读 layout 调用点,指出旧签名下"backend 键名/默认值/
+  str+lower 抽取"仍留在调用方,抽象边界欠一档;先试纯 dict-in
+- dict-in 被 3 个 UT 失败证伪:`use_layerwise` 在 worker/scheduler 是
+  **构造参数**(connector 读 config 后传入),不是 config 键——
+  纯 dict-in 把 gate 信任链从参数换成 config,与 `self.use_layerwise`
+  (驱动 10+ 处非 GVA layerwise 行为)形成隐性双源
+- 定稿双参 `(use_layerwise, extra_config)`:flag 是调用方权威值,
+  backend 键/默认值/归一化归函数——知识的完整归属以数据流事实为界
+- 实施:TEMP 树固化(hash `3b4d22022`)→ 分组重放;首轮重放 C3 的
+  cherry-pick 带入旧标量调用(树 hash 不符 + 125 failed 当场暴露),
+  以 TEMP 树文件版本修正后树 hash 逐字节一致;全量 UT 282 passed +
+  137 subtests,ruff 通过,C3 中间态复验 151 passed 无断档。
+  hash:`bfd6f3354`/`6bb71ce78`/`e75fc891e`/`7f3f7e31a`/`1ff8dc141`,
+  已 force-push
 
 ## 5. 测试覆盖
 
