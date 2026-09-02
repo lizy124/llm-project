@@ -1,0 +1,5 @@
+(Worker_TP2 pid=27276) INFO 09-01 15:09:13 [distributed/.../kv_connector/factory.py:62] Creating v1 connector with name: AscendMultiConnector and engine_id: 0-e26a7034ab92429e946fd43e67fb785a
+(Worker_TP1 pid=27275) INFO 09-01 15:09:13 [distributed/.../kv_connector/factory.py:62] Creating v1 connector with name: AscendMultiConnector and engine_id: 0-e26a7034ab92429e946fd43e67fb785a
+(Worker_TP0 pid=27274) INFO 09-01 15:09:13 [distributed/.../kv_connector/factory.py:62] Creating v1 connector with name: AscendMultiConnector and engine_id: 0-e26a7034ab92429e946fd43e67fb785a
+(Worker_TP3 pid=27277) INFO 09-01 15:09:13 [distributed/.../kv_connector/factory.py:62] Creating v1 connector with name: AscendMultiConnector and engine_id: 0-e26a7034ab92429e946fd43e67fb785a
+(EngineCore pid=27216) INFO 09-01 15:11:18 [distributed/.../kv_connector/factory.py:62] Creating v1 connector with name: AscendMultiConnector and engine_id: 0-e26a7034ab92429e946fd43e67fb785a

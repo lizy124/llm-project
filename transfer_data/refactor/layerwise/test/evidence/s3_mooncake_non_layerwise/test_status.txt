@@ -1,0 +1,2 @@
+RUNNING: S3 Qwen3-32B mooncake non-layerwise validation
+PASS: S3 mooncake non-layerwise (Qwen3-32B) — zero-regression evidence chain

@@ -1,0 +1,30 @@
+date=2026-09-01T15:07:16+08:00
+scenario=s1_pd_multiconn role=prefill model=/mnt/weight/DeepSeek-V2-Lite-Chat tp=4 chips=0,1,2,3
+kv_config={
+  "kv_connector": "MultiConnector",
+  "kv_role": "kv_producer",
+  "engine_id": "0",
+  "kv_connector_extra_config": {
+    "connectors": [
+      {
+        "kv_connector": "MooncakeLayerwiseConnector",
+        "kv_role": "kv_producer",
+        "kv_port": 30000,
+        "kv_connector_extra_config": {
+          "use_ascend_direct": true,
+          "prefill": {"dp_size": 1, "tp_size": 4},
+          "decode": {"dp_size": 1, "tp_size": 4}
+        }
+      },
+      {
+        "kv_connector": "AscendStoreConnector",
+        "kv_role": "kv_producer",
+        "kv_connector_extra_config": {
+          "backend": "memcache",
+          "lookup_rpc_port": "0",
+          "use_layerwise": true
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+(Worker_TP3 pid=15611) DEBUG 09-01 14:19:32 [pool_worker.py:1500] load_gvas: req=chatcmpl-90378131b10409ec-85fe8957 group=0 eff_bs=128 load_blocks=[0,27) keys=27 valid_gvas=27 lease_fail=0
+(EngineCore pid=15546) DEBUG 09-01 14:19:34 [pool_scheduler.py:389] hit_check: req=chatcmpl-b3f97a8019098855-94384d13 token_len=3457 hits_per_group=[3456] hit_tokens=3456
+(Worker_TP2 pid=15610) DEBUG 09-01 14:19:34 [pool_worker.py:1500] load_gvas: req=chatcmpl-b3f97a8019098855-94384d13 group=0 eff_bs=128 load_blocks=[0,27) keys=27 valid_gvas=27 lease_fail=0
+(Worker_TP1 pid=15609) DEBUG 09-01 14:19:34 [pool_worker.py:1500] load_gvas: req=chatcmpl-b3f97a8019098855-94384d13 group=0 eff_bs=128 load_blocks=[0,27) keys=27 valid_gvas=27 lease_fail=0
+(Worker_TP0 pid=15608) DEBUG 09-01 14:19:34 [pool_worker.py:1500] load_gvas: req=chatcmpl-b3f97a8019098855-94384d13 group=0 eff_bs=128 load_blocks=[0,27) keys=27 valid_gvas=27 lease_fail=0
+(Worker_TP3 pid=15611) DEBUG 09-01 14:19:34 [pool_worker.py:1500] load_gvas: req=chatcmpl-b3f97a8019098855-94384d13 group=0 eff_bs=128 load_blocks=[0,27) keys=27 valid_gvas=27 lease_fail=0

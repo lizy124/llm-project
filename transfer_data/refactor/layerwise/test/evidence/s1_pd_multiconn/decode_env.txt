@@ -1,0 +1,13 @@
+date=2026-09-01T15:11:40+08:00
+scenario=s1_pd_multiconn role=decode model=/mnt/weight/DeepSeek-V2-Lite-Chat tp=4 chips=4,5,6,7
+kv_config={
+  "kv_connector": "MooncakeLayerwiseConnector",
+  "kv_role": "kv_consumer",
+  "kv_port": 31000,
+  "engine_id": "1",
+  "kv_connector_extra_config": {
+    "use_ascend_direct": true,
+    "prefill": {"dp_size": 1, "tp_size": 4},
+    "decode": {"dp_size": 1, "tp_size": 4}
+  }
+}

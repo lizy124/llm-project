@@ -1,0 +1,2 @@
+RUNNING: S2 DSV2-Lite memcache layerwise validation
+PASS: S2 memcache layerwise (DSV2-Lite) — activation + valid_gvas>0 + pool evidence chain

@@ -69,6 +69,30 @@
 
 | 项 | 日期 | 服务器 | 结果 | 证据(日志/截图) |
 |---|---|---|---|---|
-| 1. MultiConnector PD | | | | |
-| 2. memcache layerwise | | | | |
-| 3. mooncake 非 layerwise | | | | |
+| 1. MultiConnector PD | 2026-09-01 | 165 / refactor_165 | PASS | 5/5 请求成功(3 合成共享前缀 4177 tokens + 2 GSM8K-lite);P/D 日志无 AttributeError,AscendMultiConnector 初始化路径确认走过;P 侧 load_gvas 28 行 + MetaService query_successes=1520;D 侧 layerwise recv 52 行。证据 `../test/evidence/s1_pd_multiconn/`,详报 `../test/e2e-report-20260901.md` |
+| 2. memcache layerwise | 2026-09-01 | 165 / refactor_165 | PASS | `hit_check hit_tokens=3456>0`;`load_gvas valid_gvas=27>0 lease_fail=0`;三维证据链 alloc_successes=28 stored_keys=28 query_successes=400;external hits=10240。证据 `../test/evidence/s2_memcache_layerwise/` |
+| 3. mooncake 非 layerwise | 2026-09-01 | 165 / refactor_165 | PASS | 请求 100%;无 load_gvas/hit_check(layerwise 标记缺席);master 三维 allocated_bytes=939.5MB key_count=112 active_clients=4;external hits=10240。证据 `../test/evidence/s3_mooncake_non_layerwise/` |
+
+验证代码:`refactor_layerwise_part1` @ `2a239d18a`(7 commits,基于 e8f47fc11
+之后 main)+ vllm @ `ba07e4a48`。拓扑:场景 1 为 DSV2-Lite P TP=4 + D TP=4 +
+layerwise proxy(单机 8 卡);场景 2 DSV2-Lite TP=4;场景 3 Qwen3-32B TP=4。
+过程问题均为测试基建修正(子 connector 禁写 engine_id、HBM 残留清理、
+pipefail 下 grep 静默退出、指标名按 memcache 1.2.0 实态修正),被测代码零改动。
+
+## 复测轮(rebase 后,2026-09-01 18:31–18:57)
+
+检视返工(4 commits)+ mypy 修复 + rebase 到 upstream/main `72a988f9d`(带入
+#15364 KV Pool 改动)后,同清单三项重测。验证代码:`refactor_layerwise_part1`
+@ `63be9e03b`(git bundle 部署,git rev-parse 证实;pip 版本串滞后系 editable
+构建缓存)+ vllm @ `ba07e4a48`(未动)。拓扑/模型/参数与首轮一致。
+
+| 项 | 日期 | 服务器 | 结果 | 证据 |
+|---|---|---|---|---|
+| 1. MultiConnector PD | 2026-09-01 | 165 / refactor_165 | PASS | 5/5(3 合成 4177 tokens + 2 GSM8K-lite);P/D 无 AttributeError;AscendMultiConnector ×5;P 侧 load_gvas 16 行 + MetaService query_successes=770;D 侧 recv 34 行;27 层 LayerMetadata 完整。证据 `record_final/s1_pd_multiconn_20260901_rebase/`,详报 `../test/e2e-report-20260901-rebase.md` |
+| 2. memcache layerwise | 2026-09-01 | 165 / refactor_165 | PASS | `hit_tokens=3328>0`;`valid_gvas=26>0 lease_fail=0`;三维 alloc=28 stored=28 query=130;external hits=3328。证据 `record_final/s2_memcache_layerwise_20260901_rebase/` |
+| 3. mooncake 非 layerwise | 2026-09-01 | 165 / refactor_165 | PASS | 请求 100%;无 load_gvas/hit_check;master 三维 939.5MB / 112 keys / 4 clients;external hits=3328。证据 `record_final/s3_mooncake_non_layerwise_20260901_rebase/` |
+
+两轮(返工前 `2a239d18a` / 返工+rebase 后 `63be9e03b`)全部 PASS,行为
+一致互证。数值差异(hit_tokens 3456→3328、load_gvas 行数 28→16)为滑动
+窗口命中块数/请求分布浮动,判据(>0)不变。过程问题 1 项:服务器到 GitHub
+间歇断连,改 git bundle 部署(测试基建,被测代码零改动)。

@@ -1,0 +1,285 @@
+# HELP memcache_segment_capacity_bytes Segment total capacity in bytes
+# TYPE memcache_segment_capacity_bytes gauge
+memcache_segment_capacity_bytes{segment="rank-0-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-1-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-2-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-3-dram"} 17179869184
+# HELP memcache_segment_allocated_bytes Segment allocated bytes
+# TYPE memcache_segment_allocated_bytes gauge
+memcache_segment_allocated_bytes{segment="rank-0-dram"} 39813120
+memcache_segment_allocated_bytes{segment="rank-1-dram"} 19906560
+memcache_segment_allocated_bytes{segment="rank-2-dram"} 15925248
+memcache_segment_allocated_bytes{segment="rank-3-dram"} 55738368
+# HELP memcache_total_capacity_bytes Total capacity by medium in bytes
+# TYPE memcache_total_capacity_bytes gauge
+memcache_total_capacity_bytes{medium="hbm"} 0
+memcache_total_capacity_bytes{medium="dram"} 68719476736
+# HELP memcache_allocated_bytes Allocated bytes by medium
+# TYPE memcache_allocated_bytes gauge
+memcache_allocated_bytes{medium="hbm"} 0
+memcache_allocated_bytes{medium="dram"} 131383296
+# HELP memcache_alloc_requests_total Total number of Alloc requests
+# TYPE memcache_alloc_requests_total counter
+memcache_alloc_requests_total 61
+# HELP memcache_alloc_successes_total Total number of Alloc successes
+# TYPE memcache_alloc_successes_total counter
+memcache_alloc_successes_total 61
+# HELP memcache_alloc_failures_total Total number of Alloc failures
+# TYPE memcache_alloc_failures_total counter
+memcache_alloc_failures_total 0
+# HELP memcache_batch_alloc_requests_total Total number of BatchAlloc requests
+# TYPE memcache_batch_alloc_requests_total counter
+memcache_batch_alloc_requests_total 4
+# HELP memcache_batch_alloc_successes_total Total number of BatchAlloc successes
+# TYPE memcache_batch_alloc_successes_total counter
+memcache_batch_alloc_successes_total 4
+# HELP memcache_batch_alloc_failures_total Total number of BatchAlloc failures
+# TYPE memcache_batch_alloc_failures_total counter
+memcache_batch_alloc_failures_total 0
+# HELP memcache_get_requests_total Total number of Get requests
+# TYPE memcache_get_requests_total counter
+memcache_get_requests_total 0
+# HELP memcache_get_successes_total Total number of Get successes
+# TYPE memcache_get_successes_total counter
+memcache_get_successes_total 0
+# HELP memcache_get_failures_total Total number of Get failures
+# TYPE memcache_get_failures_total counter
+memcache_get_failures_total 0
+# HELP memcache_get_not_found_total Total number of Get not found results
+# TYPE memcache_get_not_found_total counter
+memcache_get_not_found_total 0
+# HELP memcache_batch_get_requests_total Total number of BatchGet requests
+# TYPE memcache_batch_get_requests_total counter
+memcache_batch_get_requests_total 0
+# HELP memcache_batch_get_successes_total Total number of BatchGet successes
+# TYPE memcache_batch_get_successes_total counter
+memcache_batch_get_successes_total 0
+# HELP memcache_batch_get_failures_total Total number of BatchGet failures
+# TYPE memcache_batch_get_failures_total counter
+memcache_batch_get_failures_total 0
+# HELP memcache_batch_get_not_found_total Total number of BatchGet not found results
+# TYPE memcache_batch_get_not_found_total counter
+memcache_batch_get_not_found_total 0
+# HELP memcache_remove_requests_total Total number of Remove requests
+# TYPE memcache_remove_requests_total counter
+memcache_remove_requests_total 0
+# HELP memcache_remove_successes_total Total number of Remove successes
+# TYPE memcache_remove_successes_total counter
+memcache_remove_successes_total 0
+# HELP memcache_remove_failures_total Total number of Remove failures
+# TYPE memcache_remove_failures_total counter
+memcache_remove_failures_total 0
+# HELP memcache_remove_not_found_total Total number of Remove not found results
+# TYPE memcache_remove_not_found_total counter
+memcache_remove_not_found_total 0
+# HELP memcache_batch_remove_requests_total Total number of BatchRemove requests
+# TYPE memcache_batch_remove_requests_total counter
+memcache_batch_remove_requests_total 0
+# HELP memcache_batch_remove_successes_total Total number of BatchRemove successes
+# TYPE memcache_batch_remove_successes_total counter
+memcache_batch_remove_successes_total 0
+# HELP memcache_batch_remove_failures_total Total number of BatchRemove failures
+# TYPE memcache_batch_remove_failures_total counter
+memcache_batch_remove_failures_total 0
+# HELP memcache_batch_remove_not_found_total Total number of BatchRemove not found results
+# TYPE memcache_batch_remove_not_found_total counter
+memcache_batch_remove_not_found_total 0
+# HELP memcache_remove_all_requests_total Total number of RemoveAll requests
+# TYPE memcache_remove_all_requests_total counter
+memcache_remove_all_requests_total 0
+# HELP memcache_remove_all_successes_total Total number of RemoveAll successes
+# TYPE memcache_remove_all_successes_total counter
+memcache_remove_all_successes_total 0
+# HELP memcache_remove_all_failures_total Total number of RemoveAll failures
+# TYPE memcache_remove_all_failures_total counter
+memcache_remove_all_failures_total 0
+# HELP memcache_update_state_requests_total Total number of UpdateState requests
+# TYPE memcache_update_state_requests_total counter
+memcache_update_state_requests_total 61
+# HELP memcache_update_state_successes_total Total number of UpdateState successes
+# TYPE memcache_update_state_successes_total counter
+memcache_update_state_successes_total 61
+# HELP memcache_update_state_failures_total Total number of UpdateState failures
+# TYPE memcache_update_state_failures_total counter
+memcache_update_state_failures_total 0
+# HELP memcache_update_state_not_found_total Total number of UpdateState not found results
+# TYPE memcache_update_state_not_found_total counter
+memcache_update_state_not_found_total 0
+# HELP memcache_batch_update_state_requests_total Total number of BatchUpdateState requests
+# TYPE memcache_batch_update_state_requests_total counter
+memcache_batch_update_state_requests_total 4
+# HELP memcache_batch_update_state_successes_total Total number of BatchUpdateState successes
+# TYPE memcache_batch_update_state_successes_total counter
+memcache_batch_update_state_successes_total 4
+# HELP memcache_batch_update_state_failures_total Total number of BatchUpdateState failures
+# TYPE memcache_batch_update_state_failures_total counter
+memcache_batch_update_state_failures_total 0
+# HELP memcache_batch_update_state_not_found_total Total number of BatchUpdateState not found results
+# TYPE memcache_batch_update_state_not_found_total counter
+memcache_batch_update_state_not_found_total 0
+# HELP memcache_query_requests_total Total number of Query requests
+# TYPE memcache_query_requests_total counter
+memcache_query_requests_total 1581
+# HELP memcache_query_successes_total Total number of Query successes
+# TYPE memcache_query_successes_total counter
+memcache_query_successes_total 1520
+# HELP memcache_query_failures_total Total number of Query failures
+# TYPE memcache_query_failures_total counter
+memcache_query_failures_total 0
+# HELP memcache_query_not_found_total Total number of Query not found results
+# TYPE memcache_query_not_found_total counter
+memcache_query_not_found_total 61
+# HELP memcache_batch_query_requests_total Total number of BatchQuery requests
+# TYPE memcache_batch_query_requests_total counter
+memcache_batch_query_requests_total 52
+# HELP memcache_batch_query_successes_total Total number of BatchQuery successes
+# TYPE memcache_batch_query_successes_total counter
+memcache_batch_query_successes_total 52
+# HELP memcache_batch_query_failures_total Total number of BatchQuery failures
+# TYPE memcache_batch_query_failures_total counter
+memcache_batch_query_failures_total 0
+# HELP memcache_batch_query_not_found_total Total number of BatchQuery not found results
+# TYPE memcache_batch_query_not_found_total counter
+memcache_batch_query_not_found_total 0
+# HELP memcache_get_all_keys_requests_total Total number of GetAllKeys requests
+# TYPE memcache_get_all_keys_requests_total counter
+memcache_get_all_keys_requests_total 0
+# HELP memcache_get_all_keys_successes_total Total number of GetAllKeys successes
+# TYPE memcache_get_all_keys_successes_total counter
+memcache_get_all_keys_successes_total 0
+# HELP memcache_get_all_keys_failures_total Total number of GetAllKeys failures
+# TYPE memcache_get_all_keys_failures_total counter
+memcache_get_all_keys_failures_total 0
+# HELP memcache_exist_key_requests_total Total number of ExistKey requests
+# TYPE memcache_exist_key_requests_total counter
+memcache_exist_key_requests_total 0
+# HELP memcache_exist_key_successes_total Total number of ExistKey successes
+# TYPE memcache_exist_key_successes_total counter
+memcache_exist_key_successes_total 0
+# HELP memcache_exist_key_failures_total Total number of ExistKey failures
+# TYPE memcache_exist_key_failures_total counter
+memcache_exist_key_failures_total 0
+# HELP memcache_exist_key_not_found_total Total number of ExistKey not found results
+# TYPE memcache_exist_key_not_found_total counter
+memcache_exist_key_not_found_total 0
+# HELP memcache_batch_exist_key_requests_total Total number of BatchExistKey requests
+# TYPE memcache_batch_exist_key_requests_total counter
+memcache_batch_exist_key_requests_total 0
+# HELP memcache_batch_exist_key_successes_total Total number of BatchExistKey successes
+# TYPE memcache_batch_exist_key_successes_total counter
+memcache_batch_exist_key_successes_total 0
+# HELP memcache_batch_exist_key_failures_total Total number of BatchExistKey failures
+# TYPE memcache_batch_exist_key_failures_total counter
+memcache_batch_exist_key_failures_total 0
+# HELP memcache_batch_exist_key_not_found_total Total number of BatchExistKey not found results
+# TYPE memcache_batch_exist_key_not_found_total counter
+memcache_batch_exist_key_not_found_total 0
+# HELP memcache_mount_requests_total Total number of Mount requests
+# TYPE memcache_mount_requests_total counter
+memcache_mount_requests_total 8
+# HELP memcache_mount_successes_total Total number of Mount successes
+# TYPE memcache_mount_successes_total counter
+memcache_mount_successes_total 8
+# HELP memcache_mount_failures_total Total number of Mount failures
+# TYPE memcache_mount_failures_total counter
+memcache_mount_failures_total 0
+# HELP memcache_unmount_requests_total Total number of Unmount requests
+# TYPE memcache_unmount_requests_total counter
+memcache_unmount_requests_total 4
+# HELP memcache_unmount_successes_total Total number of Unmount successes
+# TYPE memcache_unmount_successes_total counter
+memcache_unmount_successes_total 4
+# HELP memcache_unmount_failures_total Total number of Unmount failures
+# TYPE memcache_unmount_failures_total counter
+memcache_unmount_failures_total 0
+# HELP memcache_evict_operations_total Total number of eviction operations
+# TYPE memcache_evict_operations_total counter
+memcache_evict_operations_total 0
+# HELP memcache_evict_to_ssd_total Total number of eviction to SSD operations
+# TYPE memcache_evict_to_ssd_total counter
+memcache_evict_to_ssd_total 0
+# HELP memcache_evict_ssd_delete_total Total number of SSD eviction delete operations
+# TYPE memcache_evict_ssd_delete_total counter
+memcache_evict_ssd_delete_total 0
+# HELP memcache_evict_mem_delete_total Total number of memory tier eviction delete operations
+# TYPE memcache_evict_mem_delete_total counter
+memcache_evict_mem_delete_total 0
+# HELP memcache_get_hits_dram_total Total number of Get hits served from DRAM
+# TYPE memcache_get_hits_dram_total counter
+memcache_get_hits_dram_total 0
+# HELP memcache_get_hits_ssd_total Total number of Get hits served from SSD (rewarm)
+# TYPE memcache_get_hits_ssd_total counter
+memcache_get_hits_ssd_total 0
+# HELP memcache_rewarm_total Total number of SSD->DRAM rewarm operations
+# TYPE memcache_rewarm_total counter
+memcache_rewarm_total 0
+# HELP memcache_rewarm_failed_total Total number of failed SSD->DRAM rewarm operations
+# TYPE memcache_rewarm_failed_total counter
+memcache_rewarm_failed_total 0
+# HELP memcache_rewarm_bytes_total Total bytes rewarmed from SSD to DRAM
+# TYPE memcache_rewarm_bytes_total counter
+memcache_rewarm_bytes_total 0
+# HELP memcache_rewarm_bytes_current Current bytes occupied by rewarmed data
+# TYPE memcache_rewarm_bytes_current gauge
+memcache_rewarm_bytes_current 0
+# HELP memcache_stored_keys Current number of stored keys
+# TYPE memcache_stored_keys gauge
+memcache_stored_keys 33
+# HELP memcache_segment_capacity_bytes Segment total capacity in bytes
+# TYPE memcache_segment_capacity_bytes gauge
+memcache_segment_capacity_bytes{segment="rank-0-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-1-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-2-dram"} 17179869184
+memcache_segment_capacity_bytes{segment="rank-3-dram"} 17179869184
+# HELP memcache_segment_allocated_bytes Segment allocated bytes
+# TYPE memcache_segment_allocated_bytes gauge
+memcache_segment_allocated_bytes{segment="rank-0-dram"} 39813120
+memcache_segment_allocated_bytes{segment="rank-1-dram"} 19906560
+memcache_segment_allocated_bytes{segment="rank-2-dram"} 15925248
+memcache_segment_allocated_bytes{segment="rank-3-dram"} 55738368
+# HELP memcache_total_capacity_bytes Total capacity by medium in bytes
+# TYPE memcache_total_capacity_bytes gauge
+memcache_total_capacity_bytes{medium="hbm"} 0
+memcache_total_capacity_bytes{medium="dram"} 68719476736
+# HELP memcache_allocated_bytes Allocated bytes by medium
+# TYPE memcache_allocated_bytes gauge
+memcache_allocated_bytes{medium="hbm"} 0
+memcache_allocated_bytes{medium="dram"} 131383296
+# HELP memcache_kv_events_published_total Total KV cache events published
+# TYPE memcache_kv_events_published_total counter
+memcache_kv_events_published_total 0
+# HELP memcache_kv_events_published_by_type_total Total KV cache events published by event type
+# TYPE memcache_kv_events_published_by_type_total counter
+memcache_kv_events_published_by_type_total{type="stored"} 0
+memcache_kv_events_published_by_type_total{type="removed"} 0
+memcache_kv_events_published_by_type_total{type="cleared"} 0
+# HELP memcache_kv_events_published_by_medium_total Total KV cache events published by storage medium
+# TYPE memcache_kv_events_published_by_medium_total counter
+memcache_kv_events_published_by_medium_total{medium="hbm"} 0
+memcache_kv_events_published_by_medium_total{medium="dram"} 0
+memcache_kv_events_published_by_medium_total{medium="ssd"} 0
+memcache_kv_events_published_by_medium_total{medium="unknown"} 0
+# HELP memcache_kv_events_dropped_total Total KV cache events dropped on queue pressure
+# TYPE memcache_kv_events_dropped_total counter
+memcache_kv_events_dropped_total 0
+# HELP memcache_kv_events_dropped_stored_total Total KV cache stored events dropped on full queue
+# TYPE memcache_kv_events_dropped_stored_total counter
+memcache_kv_events_dropped_stored_total 0
+# HELP memcache_kv_events_dropped_high_priority_total Total KV cache removed or cleared events dropped after hard queue limit
+# TYPE memcache_kv_events_dropped_high_priority_total counter
+memcache_kv_events_dropped_high_priority_total 0
+# HELP memcache_kv_events_skipped_unparsed_total Total KV cache events that could not derive block_hashes from object key
+# TYPE memcache_kv_events_skipped_unparsed_total counter
+memcache_kv_events_skipped_unparsed_total 0
+# HELP memcache_kv_events_queue_size Current KV cache event queue size
+# TYPE memcache_kv_events_queue_size gauge
+memcache_kv_events_queue_size 0
+# HELP memcache_kv_events_queue_capacity Configured KV cache event soft queue capacity
+# TYPE memcache_kv_events_queue_capacity gauge
+memcache_kv_events_queue_capacity 0
+# HELP memcache_kv_events_publisher_active Whether KV event publishing is active
+# TYPE memcache_kv_events_publisher_active gauge
+memcache_kv_events_publisher_active 0
+# HELP memcache_kv_events_last_sequence Last published KV event ZMQ sequence
+# TYPE memcache_kv_events_last_sequence gauge
+memcache_kv_events_last_sequence 0

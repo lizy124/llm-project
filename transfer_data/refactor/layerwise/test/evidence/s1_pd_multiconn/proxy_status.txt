@@ -1,0 +1,2 @@
+RUNNING: starting proxy
+{"status":"ok","prefill_instances":1,"decode_instances":1}PASS: proxy ready at http://127.0.0.1:9000
