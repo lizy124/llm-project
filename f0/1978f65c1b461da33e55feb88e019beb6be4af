@@ -1,0 +1,137 @@
+transfer_data/refactor/layerwise/test/e2e-report-20260901.md
+  s_55cc72a99389c8::t_829e37b5a1df93 9
+  s_55cc72a99389c8::t_f7865e513a9bf5 503,506-522
+  s_55cc72a99389c8::t_b2c48d54722ccd 1,3-8,11,13,15-50,53-267,269-295,303-321,330-340,343-344,346,348,350-357,359-362,364,366,368-443,445-478,480-502,504-505,523
+  s_55cc72a99389c8::t_0540c0ee8bc695 2,10,12,14,51-52,268,296-302,322-329,341-342,345,347,349,358,363,365,367,444,479
+transfer_data/refactor/layerwise/test/e2e-report-20260901-rebase.md
+  s_d4134898a8c0bf::t_356d9948dfef82 1-118
+transfer_data/refactor/layerwise/test/merge-readiness-analysis-20260901.md
+  s_d4134898a8c0bf::t_7fc0f3635f703b 1-115
+transfer_data/refactor/layerwise/develop/server-validation.md
+  s_55cc72a99389c8::t_635366ae40470f 75-80
+  s_d4134898a8c0bf::t_2e1a0ef4c2b219 81-98
+  s_55cc72a99389c8::t_7be77d5b8122f6 72-74
+utils/go.ps1
+  s_55cc72a99389c8::t_00bbf8ce3ca26d 1-2,5,16-18
+  s_55cc72a99389c8::t_6c6030298c879f 3-4,6-15,19-23
+"transfer_data/refactor/layerwise/develop/PR-15367 record.md"
+  s_55cc72a99389c8::t_47da969823276c 476-480
+  s_55cc72a99389c8::t_107effe09af11a 496-502
+  s_55cc72a99389c8::t_188528b201bbed 327-359
+  s_55cc72a99389c8::t_7789be9c8c3e77 360-361,364-379
+  s_d4134898a8c0bf::t_1cc7a78b27560d 573-583
+  s_55cc72a99389c8::t_a9cd0fda4dd4fe 362-363
+  s_d4134898a8c0bf::t_f9af52b343b81c 483,549-572,584-587
+  s_55cc72a99389c8::t_d7106a3b0c1bcb 384-385,387-388
+  s_55cc72a99389c8::t_608f5be4eb38d4 473-475
+  s_55cc72a99389c8::t_1c830937357ffc 503-505
+utils/remote_exec_guide.md
+  s_55cc72a99389c8::t_15c05596cc8a00 1-71
+transfer_data/refactor/layerwise/develop_new/layerwise_protocol_refactor_plan.md
+  s_d4134898a8c0bf::t_21978a0d1812cf 117
+  s_d4134898a8c0bf::t_3303bf277aaf55 153
+  s_d4134898a8c0bf::t_1ef55d2cfe23c8 124
+  s_d4134898a8c0bf::t_a34a8f7e92e49d 143-152
+  s_d4134898a8c0bf::t_9926a18abc7d6f 109-111
+  s_d4134898a8c0bf::t_4ca6a325be9111 133
+  s_d4134898a8c0bf::t_c3c57485076367 106-108
+  s_d4134898a8c0bf::t_b51bd6a71f5734 112-116
+  s_d4134898a8c0bf::t_460b3ca97cdff1 118-123
+  s_d4134898a8c0bf::t_7d147f14ab9fc9 125-127,130-132
+  s_d4134898a8c0bf::t_ec08a73d30265b 134-136,140-142
+transfer_data/envs/verify_guide.md
+  h_3eaf4948cd6ab4 1-858
+transfer_data/refactor/layerwise/test/E2E_PLAN.md
+  s_55cc72a99389c8::t_7f2ef36a04fa1d 1-117
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/decode_env.txt
+  s_55cc72a99389c8::t_f39ec03b64f6f7 1-13
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/decode_status.txt
+  s_55cc72a99389c8::t_66df7566f62761 1-2
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/metaservice_metrics.txt
+  s_55cc72a99389c8::t_c636398cff6658 1-285
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/prefill_env.txt
+  s_55cc72a99389c8::t_9dccfe487e3380 1-30
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/prefill_load_gvas_count.txt
+  s_55cc72a99389c8::t_f7e2cdf9f49545 1
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/prefill_multiconn_init.txt
+  s_55cc72a99389c8::t_1587b0e65c19aa 1-5
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/prefill_status.txt
+  s_55cc72a99389c8::t_d26b0f9744c548 1-2
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/proxy_status.txt
+  s_55cc72a99389c8::t_27951370f571e6 1-2
+transfer_data/refactor/layerwise/test/evidence/s1_pd_multiconn/test_status.txt
+  s_55cc72a99389c8::t_09dbf84ee1b122 1-2
+transfer_data/refactor/layerwise/test/evidence/s2_memcache_layerwise/env.txt
+  s_55cc72a99389c8::t_9cce58e6237c4d 1-15
+transfer_data/refactor/layerwise/test/evidence/s2_memcache_layerwise/layerwise_markers.txt
+  s_55cc72a99389c8::t_a6f7e223ff48c0 1-6
+transfer_data/refactor/layerwise/test/evidence/s2_memcache_layerwise/status.txt
+  s_55cc72a99389c8::t_5ab1360a589a6e 1-2
+transfer_data/refactor/layerwise/test/evidence/s2_memcache_layerwise/test_status.txt
+  s_55cc72a99389c8::t_b930c46829c6f9 1-2
+transfer_data/refactor/layerwise/test/evidence/s3_mooncake_non_layerwise/env.txt
+  s_55cc72a99389c8::t_f819307c2d3382 1-11
+transfer_data/refactor/layerwise/test/evidence/s3_mooncake_non_layerwise/pool_metrics.txt
+  s_55cc72a99389c8::t_0335a7b07b597f 1-279
+transfer_data/refactor/layerwise/test/evidence/s3_mooncake_non_layerwise/status.txt
+  s_55cc72a99389c8::t_79c9876a347d9f 1-2
+transfer_data/refactor/layerwise/test/evidence/s3_mooncake_non_layerwise/test_status.txt
+  s_55cc72a99389c8::t_a9b66cf650d2c6 1-2
+transfer_data/refactor/layerwise/test/evidence/s3_mooncake_non_layerwise/vllm_metrics.txt
+  s_55cc72a99389c8::t_a80be5348cb116 1-607
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "f01978f65c1b461da33e55feb88e019beb6be4af",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_55cc72a99389c8": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a923a118d68e54869cd9538",
+        "model": "kimi-k3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6a923a118d68e54869cd9538",
+        "edit_kind": "file_edit",
+        "dedupe_key": "6a923a118d68e54869cd9538:6a9682e58d68e54869cdaa79:afterEdit:47d37535",
+        "tool_use_id": "6a9682e58d68e54869cdaa79",
+        "operation_id": "6a9682e58d68e54869cdaa79",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "tool_type": "builtin",
+        "external_session_id": "6a923a118d68e54869cd9538"
+      }
+    },
+    "s_d4134898a8c0bf": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9683b18d68e54869cdaa80",
+        "model": "kimi-k3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "client_type": "ide",
+        "operation_id": "6a96bc0a8d68e54869cdae59",
+        "external_session_id": "6a9683b18d68e54869cdaa80",
+        "dedupe_key": "6a9683b18d68e54869cdaa80:6a96bc0a8d68e54869cdae59:afterEdit:75909d79",
+        "source_scene": "agent",
+        "edit_kind": "file_edit",
+        "session_id": "6a9683b18d68e54869cdaa80",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_type": "builtin",
+        "tool_use_id": "6a96bc0a8d68e54869cdae59",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    }
+  }
+}
