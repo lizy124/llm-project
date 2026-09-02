@@ -5,7 +5,7 @@
 >
 > - **定位**：[env_install/](../env_install/) 解决"环境装好"（镜像→容器→网络→vllm/vllm-ascend 安装），本指南解决"**池化验好**"——mooncake 如何拉起、vllm 池化场景如何启动、测试怎么设计、E2E 什么才算通过
 > - **适用范围**：vllm-ascend 池化相关特性开发 / 重构的 PR 验证（KV pool、AscendStoreConnector、mooncake/memcache backend、layerwise 等），跨服务器复用（51 / 112 / …）
-> - **当前覆盖范围（N5 声明）**：本库仅覆盖 **kv_both（PD-Mixed）单实例**路径；**PD 分诊（kv_producer/kv_consumer + MultiConnector + proxy_server）未覆盖**——后续 PR 触及 PD 路径时，先按官方 kv_pool §2.3/§3.5 + layerwise 专用 proxy（`/v1/metaserver`，`--host` 禁 0.0.0.0）补齐再验证，勿拿本库 kv_both 经验直接套 PD
+> - **当前覆盖范围（N5 声明，2026-09-01 更新）**：本库核心覆盖 **kv_both（PD-Mixed）单实例**路径；**PD 分诊（kv_producer/kv_consumer + MultiConnector + proxy_server）已有单机 8 卡实测**（PR15367 S1，165 服务器：P TP=4 + D TP=4 + layerwise proxy，5/5 请求 + 27 层 LayerMetadata 完整 + 无 AttributeError 判据，详见 §5.5b）——多机 PD / 大规模 PD 仍未覆盖，后续按官方 kv_pool §2.3/§3.5 + layerwise 专用 proxy（`/v1/metaserver`，`--host` 禁 0.0.0.0）扩展
 > - 后端包安装（mooncake-transfer-engine-npu / memfabric-hybrid / memcache-hybrid）→ [../env_install/7_kv_backends_install.md](../env_install/7_kv_backends_install.md)
 
 ---
@@ -19,8 +19,8 @@
 | 2 | mooncake 拉起 | 1_mooncake_startup.md | master 端口/配置/日志/kill/探活规范 |
 | 3 | memcache 拉起 | 1b_memcache_startup.md | MetaService 独立启动/两份 conf/环境变量/layerwise 参数面/指标观测差异/探针 |
 | 4 | vllm 池化启动 | 2_vllm_launch.md | 关键参数/启动脚本模板/READY 等待 |
-| 5 | 测试方法 | 3_test_method.md | 长 prompt 门槛/验证矩阵/并发流程/对照实验 |
-| 6 | E2E 判定 | 4_pass_criteria.md | 存/取/去重三维证据链 + 验收表模板 |
+| 5 | 测试方法 | 3_test_method.md | 长 prompt 门槛/验证矩阵/并发流程/对照实验/PD 分诊与 layerwise 正计数判据 |
+| 6 | E2E 判定 | 4_pass_criteria.md | 存/取/去重三维证据链 + 虚假通过防范（正计数+跨进程证人+阴性对照）+ 重构双轮夹逼 + 验收表模板 |
 | 7 | 判定误区 | 5_pitfalls.md | 哪些"看起来失败"其实正常，反之亦然 |
 | 8 | 已知硬限 | 6_known_limits.md | DSV4 NSA multi-spec、指标口径、不可构造路径 |
 
@@ -39,6 +39,7 @@
 | #14465 | DSV4 KV Pool（mooncake/memcache × layerwise 4 组矩阵） | map_51/pr14465_dsv4_kvpool/record_final/ |
 | #14912 | kv_metrics_observability（4 指标，sync/layerwise/async 三路径） | map_51/pr14912_kv_metrics/kv_metrics_observability/HANDOVER.md |
 | #15307 | GVA 线程收敛（进行中） | map_51/pr15307_gva_threads/PLAN.md |
+| #15367 | layerwise 协议返工（双轮夹逼复验 + 虚假通过防范方法论，含 PD 分诊 S1 单机 8 卡实测） | map_165/record_final/*_20260901_rebase/ + ../refactor/layerwise/test/e2e-report-20260901-rebase.md |
 
 ### 0.2 维护规则（与 env_install 一致）
 
@@ -603,6 +604,24 @@ layerwise（`use_layerwise=true` + `layerwise_prefetch_layers`）验证时额外
 2. 运行期：kv_transfer 日志的 layer load 事件时间戳（PR14912 的 `_TimedLayerLoadEvent` 语义）
 3. 指标口径与 sync 不同（load_keys = blocks×layers，放大 64 倍，**跨 path 不可直接对比**，见 §8.4）
 4. layerwise 存入时机在请求完成后（non-layerwise 亦然），不要期望请求中途看到 PutStart
+5. **layerwise 激活面（配置证据）**：worker 日志 `layerwise config: num_layers=N num_groups=M`——没有这行说明 gate 没开（backend 未 opt-in / 参数没传到）
+6. **layerwise 判据的正计数形态（PR15367 实测，memcache）**：
+   - 存侧：`load_gvas: req=... keys=N valid_gvas=N lease_fail=0`（keys>0 即入池；lease_fail=0 排除租约失败假阳性）
+   - 取侧：`hit_check: req=... token_len=N hits_per_group=[N] hit_tokens=N`（hit_tokens>0 即命中）
+   - 注意首行 `hit_check ... token_len=15 no participating groups` 是预热小请求的正常跳过，判据用 `hit_tokens=` 的行（长前缀请求）
+
+### 5.5b PD 分诊（kv_producer/kv_consumer + MultiConnector + proxy）观察点（PR15367 S1，单机 8 卡实测）
+
+PD 分诊拓扑：proxy :9000 → P :8100（TP=4，MooncakeLayerwise + AscendStore/memcache layerwise 双 connector）→ D :8200（TP=4，MooncakeLayerwise consumer）。判据（全部正计数）：
+
+| 判据 | 证据形态 | 封堵的失效 |
+|------|---------|-----------|
+| 成功率 100% | `success_rate=5/5`，每请求带回真实 `prompt_tokens=N completion=M`（死服务给不出带 token 计数的 completion） | 服务没起来 |
+| connector 初始化无异常 | P/D 日志 `Creating v1 connector with name: AscendMultiConnector` ×N，grep `AttributeError` = 0 | 初始化路径崩（waiter 下沉类重构的关键回归点） |
+| P 侧池写活跃 | prefill.log `load_gvas:` 行数 > 0 + MetaService `query_successes` > 0 | 起来了但没入池 |
+| D 侧接收完整 | decode.log layerwise recv 行数 > 0 + **27 层 LayerMetadata（`model.layers.0`–`26`）完整经 metaserver 到达 P**，`remote_engine_id` 与 D 配置一致 | KV 传输链路断裂/静默丢层 |
+
+要点：LayerMetadata 逐层数（0 到 num_layers-1 连续）是"传输内容完整"的强判据；P 侧发送行数与 D 侧接收行数应同量级（浮动属正常，判据是 >0）。
 
 ### 5.6 测试脚本纪律
 
@@ -610,6 +629,8 @@ layerwise（`use_layerwise=true` + `layerwise_prefetch_layers`）验证时额外
 - 长 prompt 不要硬编码在命令行里，脚本内拼接
 - 每轮测试的输出重定向到日志文件并保留（验证过程日志必须留档）
 - 请求体存 `/tmp/creq_$n.json` 便于事后检查响应内容是否正常
+- **服务器到 GitHub 断连时的代码部署走 git bundle**：本机 `git bundle create f.bundle '分支名' '^基线'`（⚠️ PowerShell 会吞 `..` range 且裸 hash 不产生 ref 条目，必须引号分支名 + ^排除式）→ scp 宿主机 → docker cp 进容器 → `git fetch /tmp/f.bundle 'refs/heads/b:refs/heads/from-bundle'` → `git reset --hard <sha>`；fetch 失败一次先 timeout 60 重试再降级 bundle
+- **e2e 多场景编排在宿主机 nohup 跑总脚本**（更新代码 → clean → 前置服务 → 逐场景 start/test/stop → clean），单场景失败不中断后续场景；场景间必须 stop + clean_npu，否则 HBM 残留污染下一场景
 
 ---
 
@@ -644,6 +665,18 @@ E2E PASS = 以下三维**同时**成立，且每维都有留档证据：
 
 三维关系：② 依赖 ①（先存才能取）；③ 证明 key 语义正确（同内容同 key）。
 只做 ① 不做 ②③ = 半程验证，不能判 PASS。
+
+#### ④ memcache 后端的等价三维口径（PR15367 实测，2026-09-01）
+
+mooncake 的 master_* 指标在 memcache 场景换为 MetaService 证据（:8000/metrics 拉取）+ vllm 侧指标：
+
+| 维度 | mooncake 口径 | memcache 等价口径（实测形态） |
+|------|--------------|------------------------------|
+| 存 | `master_allocated_bytes` / `master_key_count` 增长 | MetaService `alloc_successes=N stored_keys=N`（另一进程的独立计数）+ worker 日志 `load_gvas: keys=N valid_gvas=N` |
+| 取 | `External prefix cache hit rate > 0` | vllm `/metrics` 的 **`external_prefix_cache_hits_total`（counter，精确断言用这个而非滑动窗口 rate）** + scheduler 日志 `hit_check: hit_tokens=N` |
+| 去重 | 重发后 key_count 恒定 | 重发后 `stored_keys` 不再增长（或按 key 语义判等） |
+
+注意：memcache 1.2.0 无 put 类命名指标（memcache_*_alloc_* 是分配口径不是写入口径），存维以 MetaService `stored_keys` + `load_gvas` 日志双源交叉（见 §6.6 跨进程证人原则）。
 
 ### 6.2 服务健康（前置条件，不算 PASS 的一部分但必须确认）
 
@@ -688,7 +721,58 @@ E2E PASS = 以下三维**同时**成立，且每维都有留档证据：
 - PR 分支代码更新后须**复验**：干净基线重跑核心组，对比关键值（如 keys=61 / 41.31MB 两次复验一致 → 行为等价结论）
 - 版本快照（env.txt：commit + pip version + location）随每组留档，防"验证的到底是哪个 commit"争议
 
-### 6.6 判定流程图
+### 6.6 虚假通过防范（vacuous pass 防范，PR15367 沉淀）⚠️ 判据设计层，先于一切 PASS 判定
+
+**问题**：e2e"通过"可能是假的——三类典型形态：**A 服务根本没起来**；**B 起来了但 KV 没入池**；**C 入池了但静默不命中**（无报错、全 miss，验证却"通过"）。C 在 key 格式重构/迁移类 PR 中最阴险：key 静默漂移 = 永远 miss + 零报错。
+
+**总原则一句话**：判据全部是"正计数 + 跨进程证人"，静默失效的任何一类都会让对应计数归零、判据 FAIL，而不是侥幸通过；阴性对照排除"验证方法本身失效"。
+
+**① 正计数判据（不是"无错误"判据）**
+
+- PASS 条件必须写成**计数 > 0** 的形态（`hit_tokens=3328`、`valid_gvas=26`、`stored_keys=28`），不能写成"无 Traceback / 无 Segfault"
+- 无错误判据对 C 类静默失效**天然失明**：全 miss 也是无错误
+
+**② 跨进程证人原则：每类失效模式配一个独立于被测代码的证人**
+
+| 失效模式 | 证人（被测代码之外） |
+|---|---|
+| A 服务没起 | 每请求带回真实 `prompt_tokens=N completion=M`——死服务给不出带 token 计数的 completion |
+| B 没入池 | 存储后端**自己进程**的计数（mooncake `master_key_count` / memcache MetaService `stored_keys`）——worker 代码谎报存入不可能让服务端计数增长 |
+| C 静默不命中 | vllm `/metrics` 的 `external_prefix_cache_hits_total`（框架聚合，与 scheduler 日志的 `hit_tokens` 跨层对拍） |
+
+**③ 双向断言（证明测试对目标失效是敏感的，不是恒通过的）**
+
+- 不仅断言"命中 > 0"，还要断言"miss 被真实记录"：MetaService `query_not_found=28`（首发请求 miss 数）
+- 若 key 静默漂移：会计变成"恒 miss 无报错"→ `hit_tokens=0` → 判据 FAIL。**query_not_found 的存在证明 miss 通道也在被观测**，测试有区分度
+- 类似：`lease_fail=0` 与 `valid_gvas>0` 并读，排除"租约失败导致假阳性"
+
+**④ 跨层算术一致（多源对拍）**
+
+同一物理量在不同会计路径应可对账：`load_gvas keys=26` × 128 token/块 = `hit_tokens=3328` = `/metrics external_prefix_cache_hits_total=3328.0`；`load_gvas` 与 `hit_check` 应是**同一请求 ID**（`req=chatcmpl-...`）。编造或读错文件很难做到三处算术自洽。
+
+**⑤ 阴性对照（negative control）——排除验证方法本身失效**
+
+- 设计一个"该指标必然为 0"的场景做对照组：如 mooncake 非 layerwise 场景（S3）之于 memcache layerwise 场景（S2）
+- 用**同一组 grep/判定命令**跑两个场景：S2 `load_gvas:` 行数 >0 且 S3 = 0 行 → 证明 grep 模式有效、读的是本轮日志、能区分路径
+- 若验证方法本身坏了（grep 错文件/模式恒不匹配/读旧缓存日志），S2 也应得 0。**S2>0 且 S3=0 的不对称才是方法有效的证明**——单看 S3=0 毫无意义（恒真），单看 S2>0 不能排除巧合
+
+**⑥ 数值敏感性证明读的是活数据（不是死文件/常量）**
+
+- 两轮验证的数值应**不同**（时序浮动本身是活数据证据）：hit_tokens 3456→3328、请求 ID 不同
+- 日志行号漂移（`pool_scheduler.py:389`→`:388`）与两棵源码树的 rebase 偏移吻合——佐证两轮跑的各自声称的代码版本（配 §6.5 版本快照：容器内 `git rev-parse HEAD`）
+- 若两轮输出完全一致，反而要怀疑读了归档的旧日志
+
+### 6.7 重构类 PR 的双轮夹逼复验（behavior-preserving 验证）
+
+重构（宣称行为不变）的 PR，"行为等价"不能靠单轮 PASS 推断，**必须双轮夹逼**：
+
+- **轮 1（基线）**：重构前的 head 跑完整场景集，全部 PASS 才作为有效基线
+- **轮 2（复测）**：重构后（含 rebase / 检视返工 / bugfix）的 head 再跑**同构**场景集
+- 两轮同构 PASS = 重构未引入行为漂移的实证（不是推断）；中间夹着的所有高风险变更被夹逼验证
+- 数值浮动按 §6.6⑥ 归因（滑动窗口命中块数、请求分布），判据是 >0 类正计数，非定值对拍
+- 报告双轮并列（`e2e-report-*.md` ×2），互相引用；PR 描述 Test plan 写"re-verified on <head> + validated earlier on <基线> (two rounds, same results)"
+
+### 6.8 判定流程图
 
 ```
 请求发出且正常返回？
@@ -701,6 +785,8 @@ E2E PASS = 以下三维**同时**成立，且每维都有留档证据：
                         ├─ 否 → key 生成语义问题，FAIL
                         └─ 是 → E2E PASS，归档三维证据
 ```
+
+（判定前自检 §6.6：你的判据是正计数吗？有跨进程证人吗？阴性对照在哪？——三问答不上来的 PASS 是可疑的。）
 
 ---
 

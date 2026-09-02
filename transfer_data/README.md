@@ -4,7 +4,7 @@
 
 ## 子目录
 
-- `envs/`：环境变量清单及生成脚本。
+- `playbook/`：通用方法手册（agent 必读）——`create_env.md` 环境搭建指南 + `verify_guide.md` 池化 E2E 验证指南（判据设计/虚假通过防范/双轮夹逼等）+ `run_dir/` 场景运行手册（按场景一篇：环境变量/拉起/请求/判定，与具体 PR 解耦）。
 - `refactor/backend/`：backend 重构验证脚本和报告。
 - `refactor/kvpool/`：KV Pool 重构、PR 验证和模型场景脚本。
 - `refactor/weight_transfer/`：weight transfer 设计、时间线和验证记录。

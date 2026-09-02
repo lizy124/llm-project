@@ -1,6 +1,6 @@
 # map_165 E2E 计划 — PR #15367 服务器验证
 
-> 规则层:`../../llm-project/transfer_data/envs/create_env.md`(环境)+ `verify_guide.md`(验证)
+> 规则层:`../../llm-project/transfer_data/playbook/create_env.md`(环境)+ `verify_guide.md`(验证)
 > 需求层:`PR-15367 record.md` §服务器验证清单 + `server-validation.md`
 > 本文档 = 165 实例执行计划;结论产出归档到 `record_final/`。
 
