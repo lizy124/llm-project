@@ -1,0 +1,126 @@
+transfer_data/refactor/weight_transfer/error.md
+  h_3eaf4948cd6ab4 1-1601
+transfer_data/refactor/weight_transfer/05-pr-13049-validation-plan.md
+  s_c382870db74ff7::t_eea70e65d8ba15 15-17,20-27,37,40,42,44-45,47,49-57,59,61,63-71,73-76,78,80-86,99-102,105,107-110,114,116,120-121,124,126,128-130,132,134,136,138-141,143,146,149-153,155-160,162,164,171,173-175,177,179-180,182,188-189,196-198,204-208,212-222
+transfer_data/refactor/weight_transfer/06-pr-13049-validation-record.md
+  s_c382870db74ff7::t_9ddf274e841eab 47,49-53
+  s_c382870db74ff7::t_f8a4d1e33ae813 60-62,66,76
+  s_c382870db74ff7::t_bdde0d0e6137df 110,112,115-118,120-123,125-128,130-133,135-151,154,156
+  s_c382870db74ff7::t_7bc08451b723d1 15-16,23
+  s_c382870db74ff7::t_6e46d6ba03c969 81,84-90,95,98-100,103-108
+  s_c382870db74ff7::t_bbe02eb0a5e302 17,20,24,27,37,40,44-45,57,63,69-75,79,93,158,161-162,169,173-175,177,179,183,185,189,191,193-194,198,203-208,210
+draft/issues_10/issue_kv-35_P0_transfer_ipc_gil_release.md
+  s_3bc52d45abe6b3::t_bfde3c5ef5b1a0 1-103
+draft/kv_pool_社区任务发布_10issues.md
+  s_3bc52d45abe6b3::t_249e72481ee7fc 1-327
+transfer_data/refactor/backend/install_vllm.sh
+  s_e232f6cf5becea::t_c5348d19785740 1,3-7
+  s_e232f6cf5becea::t_bcdb24f439f85c 2
+transfer_data/refactor/backend/pip.conf
+  s_e232f6cf5becea::t_c410593c3fca01 4-5
+  s_e232f6cf5becea::t_7983df45bdde56 2-3
+  s_e232f6cf5becea::t_0febc5274ae40f 1
+transfer_data/refactor/backend/install_vllm_ascend.sh
+  s_e232f6cf5becea::t_f5923013fd39f8 2
+  s_e232f6cf5becea::t_c67c636d5758a3 1,3-7
+draft/issues_10/INDEX.md
+  s_3bc52d45abe6b3::t_d72243f974ac0c 96-98,103-105
+  s_3bc52d45abe6b3::t_bf13c2bad5689f 80-87
+  s_3bc52d45abe6b3::t_f94d18eae3c8af 8-9
+draft/kv_pool_社区任务发布_10issues_v2.md
+  s_3bc52d45abe6b3::t_99a3e266b5d325 149
+  s_3bc52d45abe6b3::t_3ff2ffa1083cb3 92
+  s_3bc52d45abe6b3::t_2b10ffe0648425 131
+  s_3bc52d45abe6b3::t_aca8e52450e629 41,45,49
+  s_3bc52d45abe6b3::t_20a1a1d02f864b 202
+  s_3bc52d45abe6b3::t_fd3ce9b6e76c0d 147,153,156-157
+  s_3bc52d45abe6b3::t_ca20423f45d114 1-40,42-44,46-48,50-91,93-130,132-146,148,150-152,154-155,158-201,203-253,255-302,304,306-308,310-311,313-355,357-404,406,408-458,460-509,515-553
+  s_3bc52d45abe6b3::t_26475fdef8096b 303,305,309,312
+  s_3bc52d45abe6b3::t_c720a9d7756f2c 510-514
+  s_3bc52d45abe6b3::t_282f6312d9cbb7 459
+  s_3bc52d45abe6b3::t_fea71186738237 356
+  s_3bc52d45abe6b3::t_e19bbcc8c0a90f 254
+  s_3bc52d45abe6b3::t_27da34e09cbc60 405,407
+utils/Signed-off-by.md
+  h_3eaf4948cd6ab4 1
+utils/create_docker.md
+  s_3bc52d45abe6b3::t_6eda1f6bf154e4 21
+utils/net_problem.md
+  s_3bc52d45abe6b3::t_9d3aae2f5e1a70 175-176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "4b1928715d87cb1ef5fdc8da0286b13beb6196bf",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_3bc52d45abe6b3": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7b09c53e86964ec3f57d89",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "source_scene": "agent",
+        "dedupe_key": "6a7b09c53e86964ec3f57d89:6a7c234b811d2f3bb8974d5f:afterEdit:f7d74e68",
+        "tool_type": "builtin",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "tool_use_id": "6a7c234b811d2f3bb8974d5f",
+        "external_session_id": "6a7b09c53e86964ec3f57d89",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "operation_id": "6a7c234b811d2f3bb8974d5f",
+        "session_id": "6a7b09c53e86964ec3f57d89",
+        "runtime_client": "trae-tob-git-ai"
+      }
+    },
+    "s_c382870db74ff7": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7ae8e33e86964ec3f578e8",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a7b008b3e86964ec3f57c82",
+        "session_id": "6a7ae8e33e86964ec3f578e8",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "external_session_id": "6a7ae8e33e86964ec3f578e8",
+        "tool_use_id": "6a7b008b3e86964ec3f57c82",
+        "tool_type": "builtin",
+        "runtime_client": "trae-tob-git-ai",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "source_scene": "agent",
+        "dedupe_key": "6a7ae8e33e86964ec3f578e8:6a7b008b3e86964ec3f57c82:afterEdit:59a72332"
+      }
+    },
+    "s_e232f6cf5becea": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7ace523e86964ec3f57678",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "tool_type": "builtin",
+        "client_type": "ide",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_use_id": "6a7be91c811d2f3bb8974787",
+        "external_session_id": "6a7ace523e86964ec3f57678",
+        "edit_kind": "file_edit",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "session_id": "6a7ace523e86964ec3f57678",
+        "operation_id": "6a7be91c811d2f3bb8974787",
+        "dedupe_key": "6a7ace523e86964ec3f57678:6a7be91c811d2f3bb8974787:afterEdit:9b64c211"
+      }
+    }
+  }
+}

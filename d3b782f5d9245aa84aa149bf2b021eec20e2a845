@@ -1,0 +1,51 @@
+transfer_data/playbook/run_dir/memcache-layerwise.md
+  s_d4134898a8c0bf::t_b27f0961858b85 1-132
+transfer_data/refactor/layerwise/test/E2E_PLAN.md
+  s_d4134898a8c0bf::t_702b0c247da57c 3
+transfer_data/playbook/run_dir/README.md
+  s_d4134898a8c0bf::t_8a7d396c4a6f13 7,10-12
+  s_d4134898a8c0bf::t_b4f1b07cf14bb4 1-6,8-9,13-28
+transfer_data/playbook/run_dir/mooncake-non-layerwise.md
+  s_d4134898a8c0bf::t_eb02e75f75a5a0 1-102
+transfer_data/playbook/run_dir/pd-multiconn.md
+  s_d4134898a8c0bf::t_e502b9ed5cd82d 1-190
+transfer_data/README.md
+  s_d4134898a8c0bf::t_d346f905bcdb43 7
+transfer_data/playbook/run_dir/common-prerequisites.md
+  s_d4134898a8c0bf::t_4afaf40b56c2b0 2,5-17,19-20,22-27,30-34,36,38-39,41-42,44-46,48-61,63-68,70-71,74,76-77,82,84-85,94-97,99-100
+  s_d4134898a8c0bf::t_bf1a30df288952 1,3-4,18,21,28-29,35,37,40,43,47,62,69,72-73,75,78-81,83,86-93,98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "d3b782f5d9245aa84aa149bf2b021eec20e2a845",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_d4134898a8c0bf": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a9683b18d68e54869cdaa80",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "session_id": "6a9683b18d68e54869cdaa80",
+        "edit_kind": "file_edit",
+        "operation_id": "6a9788428d68e54869cdaf94",
+        "external_session_id": "6a9683b18d68e54869cdaa80",
+        "tool_type": "builtin",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_use_id": "6a9788428d68e54869cdaf94",
+        "client_type": "ide",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "source_scene": "agent",
+        "dedupe_key": "6a9683b18d68e54869cdaa80:6a9788428d68e54869cdaf94:afterEdit:5e11fd0d"
+      }
+    }
+  }
+}

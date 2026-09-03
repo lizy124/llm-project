@@ -1,0 +1,32 @@
+transfer_data/refactor/kvpool/ascend-store-refactor-pr-analysis.md
+  s_175edf3dc1f6b8::t_8b7380bd0cb5ee 12-25,29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "677ee12c8b2fe7a75924660f1711821196a56c2a",
+  "prompts": {},
+  "sessions": {
+    "s_175edf3dc1f6b8": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a7eb7731bc36f6a179e150c",
+        "model": "glm-5.2"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6a7eb7731bc36f6a179e150c",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "tool_use_id": "6a7ec24c1bc36f6a179e15f5",
+        "source_scene": "agent",
+        "runtime_client": "trae-tob-git-ai",
+        "tool_type": "builtin",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "operation_id": "6a7ec24c1bc36f6a179e15f5",
+        "dedupe_key": "6a7eb7731bc36f6a179e150c:6a7ec24c1bc36f6a179e15f5:afterEdit:8e6292d7",
+        "session_id": "6a7eb7731bc36f6a179e150c"
+      }
+    }
+  }
+}

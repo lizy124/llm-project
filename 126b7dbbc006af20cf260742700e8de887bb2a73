@@ -1,0 +1,14 @@
+research_workspace/structure_analysis/vllm_ascend_kv_pool/notes.md
+  h_3eaf4948cd6ab4 1-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "126b7dbbc006af20cf260742700e8de887bb2a73",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  }
+}

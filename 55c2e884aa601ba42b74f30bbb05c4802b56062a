@@ -1,0 +1,80 @@
+ascend_project/README.md
+  s_85fa35c0f08925::t_e070f2eaeccdb9 1-16
+ascend_project/vLLM-Observability/todo-fixes-and-verifications.md
+  s_85fa35c0f08925::t_6349d06c471594 10
+transfer_data/README.md
+  s_85fa35c0f08925::t_396f41950150ee 8-12,16
+  s_85fa35c0f08925::t_346a1539654b14 17
+research_workspace/README.md
+  s_85fa35c0f08925::t_a6589735f75952 9,13
+research_workspace/structure_analysis/vllm_config_and_model_loading/README.md
+  s_85fa35c0f08925::t_f7f3dac89b338f 18,20,22,24,26,28,30,32,34,36
+draft/README.md
+  s_85fa35c0f08925::t_f12b1c81718bd0 7-8,10-12,15-18
+research_workspace/documents/overview/llm_inference_roadmap.md
+  s_85fa35c0f08925::t_a9fd87d6087a1d 232-233,255-257,283,313,341-344,370-373,402,453-455,902-903,905-908
+research_workspace/structure_analysis/vllm_entrypoints_api_layer/README.md
+  s_85fa35c0f08925::t_852415b49f9937 13,15,17,19,21,23,25,27
+research_workspace/structure_analysis/vllm_inference_engine_layer/README.md
+  s_85fa35c0f08925::t_614b24da4bb2be 9,12,15,18,24,27,30
+research_workspace/structure_analysis/vllm_model_executor_attention_layer/README.md
+  s_85fa35c0f08925::t_50c674ad1b991e 9,12,15,18,21,24,27,30
+research_workspace/structure_analysis/vllm_multimodal/README.md
+  s_85fa35c0f08925::t_eeab0ae200864a 16,18,20,22,24,28,30,32,34
+research_workspace/structure_analysis/vllm_native_acceleration_layer/02_build_system_and_extension_libs.md
+  s_85fa35c0f08925::t_b264c17447da7e 346
+research_workspace/structure_analysis/vllm_native_acceleration_layer/README.md
+  s_85fa35c0f08925::t_93582806e05e17 16,18,20,22,24,26,28,30,32,34
+research_workspace/structure_analysis/vllm_sampling_and_output/README.md
+  s_85fa35c0f08925::t_980b04626ab1c7 9,12,15,18,24,27,30
+research_workspace/structure_analysis/vllm_worker_executor_layer/README.md
+  s_85fa35c0f08925::t_186879e47507cc 21,24,27,30,33,36,39,42,48,51,54,61-67,71-72
+transfer_data/refactor/layerwise/analysis/review-response-pr2-plan.md
+  s_85fa35c0f08925::t_7a6c8753c96232 3
+transfer_data/refactor/layerwise/analysis/review-round-2.md
+  s_85fa35c0f08925::t_09d2821969ca18 3
+transfer_data/refactor/layerwise/analysis/review-round-3.md
+  s_85fa35c0f08925::t_bd4afa0c3fcd3b 3,76
+transfer_data/refactor/layerwise/analysis/review-round-4.md
+  s_85fa35c0f08925::t_315b120e321bc8 3
+transfer_data/refactor/layerwise/analysis/review-round2-response-pr2-plan.md
+  s_85fa35c0f08925::t_67072bc3618edc 3,5
+transfer_data/refactor/layerwise/analysis/review-round3-response-pr2-plan.md
+  s_85fa35c0f08925::t_88cefe2b78f50e 3,5
+transfer_data/refactor/layerwise/analysis/review-round4-response-pr2-plan.md
+  s_85fa35c0f08925::t_f151a79fc78741 3,5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "55c2e884aa601ba42b74f30bbb05c4802b56062a",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_85fa35c0f08925": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a98d3fa8d68e54869cdb11c",
+        "model": "DeepSeek-V4-Flash-Official"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "external_session_id": "6a98d3fa8d68e54869cdb11c",
+        "source_scene": "agent",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "session_id": "6a98d3fa8d68e54869cdb11c",
+        "operation_id": "6a98db0a8d68e54869cdb26e",
+        "tool_type": "builtin",
+        "client_type": "ide",
+        "edit_kind": "file_edit",
+        "runtime_client": "trae-tob-git-ai",
+        "dedupe_key": "6a98d3fa8d68e54869cdb11c:6a98db0a8d68e54869cdb26e:afterEdit:7c8b9f9b",
+        "tool_use_id": "6a98db0a8d68e54869cdb26e"
+      }
+    }
+  }
+}

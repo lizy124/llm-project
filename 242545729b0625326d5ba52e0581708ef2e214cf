@@ -1,0 +1,12 @@
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "242545729b0625326d5ba52e0581708ef2e214cf",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  }
+}

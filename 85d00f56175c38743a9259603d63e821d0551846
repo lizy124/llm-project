@@ -1,0 +1,32 @@
+draft/block_hash_to_str/issue_14148_design.md
+  s_19d9f3f210b2ac::t_4d3bf9cfd1c19d 1-199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "85d00f56175c38743a9259603d63e821d0551846",
+  "prompts": {},
+  "sessions": {
+    "s_19d9f3f210b2ac": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a8be93d1bc36f6a179e2a60",
+        "model": "glm-5.3"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "operation_id": "6a8bf6031bc36f6a179e2b5b",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "external_session_id": "6a8be93d1bc36f6a179e2a60",
+        "runtime_client": "trae-tob-git-ai",
+        "session_id": "6a8be93d1bc36f6a179e2a60",
+        "edit_kind": "file_edit",
+        "client_type": "ide",
+        "dedupe_key": "6a8be93d1bc36f6a179e2a60:6a8bf6031bc36f6a179e2b5b:afterEdit:482fd803",
+        "tool_use_id": "6a8bf6031bc36f6a179e2b5b",
+        "tool_type": "builtin",
+        "source_scene": "agent"
+      }
+    }
+  }
+}
