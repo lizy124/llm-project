@@ -11,10 +11,7 @@ test_record/
 ├── run_14148_ut.sh              # 服务器测试脚本（见 §3）
 ├── pool_worker.py.diff          # 生产代码改动 diff（+12/-15）
 ├── test_pool_worker.py.diff     # 新增 UT 的 diff（v2 审核后版本）
-└── logs/
-    ├── ut_after_fix.log         # 改动后全量 UT（v1）：80 passed
-    ├── ut_after_fix_v2.log      # 改动后全量 UT（v2，UT 审核改进后复跑）：80 passed
-    └── ut_before_fix_baseline.log  # 改动前基线 + 新UT：4 failed / 1 passed
+└── README.md                    # 验证记录（本文件；关键运行日志结论已内嵌于 §6，原始 .log 已清理）
 ```
 
 ## 1. 验证目标
@@ -94,13 +91,13 @@ docker exec refactor_810 bash -c 'cd /tmp/va_14148; PYTHONPATH=/tmp/vllm_14148 p
 
 ### 6.1 改动后：80 passed
 
-v2（UT 审核改进后复跑，当前版本）：[logs/ut_after_fix_v2.log](logs/ut_after_fix_v2.log) 尾部：
+v2（UT 审核改进后复跑，当前版本）尾部：
 
 ```
 ================= 80 passed, 14 warnings in 1.68s ================
 ```
 
-v1（初版 UT）：[logs/ut_after_fix.log](logs/ut_after_fix.log)，同样 80 passed。
+v1（初版 UT）：同样 80 passed。
 
 覆盖 6 个既有测试类 + 新增 7 用例（v2 调整后），无回归。
 
@@ -118,7 +115,7 @@ FAILED ...test_alloc_gvas_for_save_with_partial_lift_keeps_key_offsets_aligned
 
 ### 6.2 改动前基线：新计数测试失败
 
-将 [test_pool_worker.py.diff](test_pool_worker.py.diff) 的 UT 与 **main 版本**的 `pool_worker.py` 组合运行（仅跑 `-k converts_each_hash`），[logs/ut_before_fix_baseline.log](logs/ut_before_fix_baseline.log) 尾部：
+将 [test_pool_worker.py.diff](test_pool_worker.py.diff) 的 UT 与 **main 版本**的 `pool_worker.py` 组合运行（仅跑 `-k converts_each_hash`），尾部：
 
 ```
 FAILED ...test_alloc_gvas_for_save_converts_each_hash_once

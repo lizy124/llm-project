@@ -4,7 +4,7 @@
 - 被验证改动：方案 B（[issue_14148_design.md](issue_14148_design.md)）在 `_alloc_gvas_for_save` 中对 `block_hash_to_str` 去重，分支 `block_hash_to_str`
 - 报告日期：2026-08-24（v2：UT 审核后删 1 个平凡测试、补 1 个偏移盲区测试，并完成变异验证）
 - 验证环境：服务器 192.168.13.165，容器 `refactor_810`（Python 3.12.13 + pytest 8.3.2），测试目录 `/tmp/va_14148`
-- 过程原始记录：[test_record/README.md](test_record/README.md)、[test_record/logs/](test_record/logs/)
+- 过程原始记录：[test_record/README.md](test_record/README.md)（含运行脚本、diff；关键日志结论已内嵌，原始日志已清理）
 
 ---
 
@@ -14,8 +14,8 @@
 | --- | --- | --- | --- |
 | C1 | 问题是否真实存在 | **确认真实存在** | §3；[analysis.md](issue_14148_analysis.md) |
 | C2 | 方案 B 实现语义是否等价（key 不变、控制流不变） | **等价，无回归** | §4.1、§5.1 |
-| C3 | 改动后是否引入回归 | **无回归，80 passed**（v2 复跑确认） | §5.1；[logs/ut_after_fix_v2.log](test_record/logs/ut_after_fix_v2.log) |
-| C4 | 新增测试是否有效（能抓住缺陷） | **有效，基线 4 failed + 变异验证 1 failed** | §5.2、§5.6；[logs/ut_before_fix_baseline.log](test_record/logs/ut_before_fix_baseline.log) |
+| C3 | 改动后是否引入回归 | **无回归，80 passed**（v2 复跑确认） | §5.1；[test_record/README.md](test_record/README.md) |
+| C4 | 新增测试是否有效（能抓住缺陷） | **有效，基线 4 failed + 变异验证 1 failed** | §5.2、§5.6；[test_record/README.md](test_record/README.md) |
 | C5 | 冗余消除是否达成（issue 验收标准 2） | **达成**：每块 2.25 次 → 1 次 | §5.3 |
 | C6 | 边界场景（含新增 3 类 + 非零偏移）是否全部正确 | **全部正确，用例全覆盖** | §5.4 |
 | C7 | 是否暴露并澄清了原逻辑语义 | **澄清一处**：跳过块 GVA 在传输数组为 0 | §5.5 |
@@ -95,7 +95,7 @@ cd /tmp/va_14148
 PYTHONPATH=/tmp/vllm_14148 python3 -m pytest tests/ut/distributed/ascend_store/test_pool_worker.py -v
 ```
 
-[logs/ut_after_fix_v2.log](test_record/logs/ut_after_fix_v2.log) 尾部（v2 = UT 审核改进后复跑）：
+改动后全量 UT 记录见 [test_record/README.md](test_record/README.md)（§6.1，已含 v2 尾部结论，原始日志已清理）。v2（UT 审核改进后复跑）尾部：
 
 ```
 ================= 80 passed, 14 warnings in 1.68s ================
@@ -103,7 +103,7 @@ PYTHONPATH=/tmp/vllm_14148 python3 -m pytest tests/ut/distributed/ascend_store/t
 
 覆盖 6 个既有测试类 + **7 个新增用例**（73 既有 + 7 新增），**无失败、无报错**（14 条 warnings 均为上游 torch `jit.script_method` 弃用告警，与本次改动无关）。
 
-> 早期版本报告曾写"8 个新增用例"，经复核实际为 7 个，已在此更正；v1 日志 [logs/ut_after_fix.log](test_record/logs/ut_after_fix.log) 亦为 80 passed（当时含 1 个后经审核删除的平凡用例 `..._empty_hashes`，随后补入等价值的非零偏移用例 `..._with_partial_lift_keeps_key_offsets_aligned`，总数不变）。
+> 早期版本报告曾写"8 个新增用例"，经复核实际为 7 个，已在此更正；v1（初版）亦为 80 passed（当时含 1 个后经审核删除的平凡用例 `..._empty_hashes`，随后补入等价值的非零偏移用例 `..._with_partial_lift_keeps_key_offsets_aligned`，总数不变）。
 
 ### 5.2 C4：改动前基线 + 新 UT —— 计数测试失败（证明测试有效）
 
@@ -113,7 +113,7 @@ PYTHONPATH=/tmp/vllm_14148 python3 -m pytest tests/ut/distributed/ascend_store/t
 python3 -m pytest tests/ut/distributed/ascend_store/test_pool_worker.py -k converts_each_hash -v
 ```
 
-[logs/ut_before_fix_baseline.log](test_record/logs/ut_before_fix_baseline.log) 尾部：
+改动前基线记录见 [test_record/README.md](test_record/README.md)（§6.2，已含隐含结论，原始日志已清理）。尾部：
 
 ```
 FAILED ...test_alloc_gvas_for_save_converts_each_hash_once
@@ -177,7 +177,7 @@ python3 -m pytest ... -k partial_lift
 | 测试范围 | 仅 UT（`test_pool_worker.py`）。未含服务器冒烟（memcache + layerwise、mooncake）——属待办 |
 | 覆盖率方案 | 容器内 vllm `568afb3a13` 较旧，用本地 `58d3918e` Python 包 `PYTHONPATH=/tmp/vllm_14148` 覆盖；已验证仓库无 `.so` 编译扩展，纯 Python 覆盖可靠 |
 | 性能数据口径 | 以 `block_hash_to_str` 调用计数为准（精确确定性度量）；未单独采集 wall-clock（长 prompt 收益可由块数线性外推） |
-| 日志可追溯 | 服务器留存 `/home/lizhongyang/tmp/va_14148_results_20260824/`（独立目录未覆盖），本地归档 `test_record/logs/` |
+| 日志可追溯 | 服务器留存 `/home/lizhongyang/tmp/va_14148_results_20260824/`（独立目录未覆盖）；本地关键日志结论内嵌于 `test_record/README.md`，原始 `.log` 已清理 |
 
 ---
 
