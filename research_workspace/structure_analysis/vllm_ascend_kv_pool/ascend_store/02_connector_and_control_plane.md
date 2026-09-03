@@ -2,8 +2,8 @@
 
 源码基线：
 
-- vLLM Ascend：`d85e6714a09bef4d9de6b8c05e9425183d46ba23`
-- vLLM：`58d3918e3ea0a544ffedadad2ba84559e9c51d8f`
+- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 
 源码位置：
 
@@ -67,26 +67,28 @@ vLLM 主干代码不 import vllm-ascend，后者通过 entry point 把自己的 
 
 ```text
 EngineCore/AsyncLLM 每步调 schedule()
-  → Scheduler.schedule()                                  scheduler.py L439
-    → WAITING 请求循环                                     L687
-      → if request.num_computed_tokens == 0               L745  （新请求/首轮才查）
-        → kv_cache_manager.get_computed_blocks_for_connector()  L757 本地 HBM prefix 命中
-        → self.connector.get_num_new_matched_tokens(...)  L778  ★vLLM 调 connector
-          → AscendStoreConnector.get_num_new_matched_tokens()  ascend L138 薄转发
+  → Scheduler.schedule()
+    → WAITING 请求循环
+      → if request.num_computed_tokens == 0   （新请求/首轮才查）
+        → connector._get_local_prefix_cache_hit()  本地 HBM prefix 命中
+        → self.connector.get_num_new_matched_tokens(...)  ★vLLM 调 connector
+          → AscendStoreConnector.get_num_new_matched_tokens()  薄转发
             → KVPoolScheduler.get_num_new_matched_tokens    真正外部 pool 命中查询
 ```
 
 三个语义要点：
 
-- **connector 诞生**：`Scheduler.__init__ L140` 配了 `kv_transfer_config` 就 `create_connector(role=SCHEDULER)`；Ascend 侧 `__init__ L114` 建 `connector_scheduler = KVPoolScheduler(...)`。
-- **只在首轮查外部命中**：L745 仅当 `num_computed_tokens == 0`；先取本地 HBM 连续 prefix，再问外部。没配 `kv_transfer_config` 则 `self.connector` 为 None，走普通 prefix cache。
-- **传参语义**：L769-781 传入的是按 block 对齐后的本地命中数（`block_aligned_local`，减去尾块），让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。返回 `(ext_tokens, load_kv_async)`。这对应 `LoadSpec` 里 `vllm_cached_tokens` 与 `kvpool_cached_tokens` 分开。
+- **connector 诞生**：`Scheduler.__init__` 配了 `kv_transfer_config` 就 `create_connector(role=SCHEDULER)`；Ascend 侧 `__init__` 建 `connector_scheduler = KVPoolScheduler(...)`。
+- **只在首轮查外部命中**：仅当 `num_computed_tokens == 0` 才询问 connector；先取本地 HBM 连续 prefix，再问外部。没配 `kv_transfer_config` 则 `self.connector` 为 None，走普通 prefix cache。新版本中 `_get_local_prefix_cache_hit()` 封装了本地命中查询，并处理 connector 支持 `supports_divergent_local_hybrid_hits` 时的差异路径。
+- **传参语义**：传入的是按 block 对齐后的本地命中数（`block_aligned_local`，减去尾块），让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。返回 `(ext_tokens, load_kv_async)`。这对应 `LoadSpec` 里 `vllm_cached_tokens` 与 `kvpool_cached_tokens` 分开。
 
 ---
 
 ## 3. AscendStoreConnector 方法全景
 
-`__init__`（L114-125）：`role==SCHEDULER` 只建 `connector_scheduler`，否则只建 `connector_worker`；`role=worker 且 rank==0 且 !use_layerwise` 时额外起 `LookupKeyServer`（为什么，见 [07](07_lookup_path_design.md)）。Scheduler 侧拥有 `Request`、`KVCacheBlocks`、`SchedulerOutput` 和本地 block pool；Worker 侧拥有真实 tensor、NPU 地址、stream 和 backend client。connector 负责保持 vLLM 接口不变，并把调用转发给拥有相应资源的一侧。
+`__init__`：`role==SCHEDULER` 只建 `connector_scheduler`，否则只建 `connector_worker`；`role=worker 且 rank==0 且 !use_layerwise` 时额外起 `LookupKeyServer`（为什么，见 [07](07_lookup_path_design.md)）。Scheduler 侧拥有 `Request`、`KVCacheBlocks`、`SchedulerOutput` 和本地 block pool；Worker 侧拥有真实 tensor、NPU 地址、stream 和 backend client。connector 负责保持 vLLM 接口不变，并把调用转发给拥有相应资源的一侧。
+
+新版本中 `__init__` 还初始化了 `_mamba_copy_bufs = None` 和 `requires_mamba_state_copy_after_layer_load = self.use_layerwise`，为 layerwise Mamba 状态拷贝做准备。
 
 ### 3.1 转给 KVPoolScheduler（scheduler 侧，6 个）
 
@@ -99,20 +101,22 @@ EngineCore/AsyncLLM 每步调 schedule()
 | `request_finished_all_groups(request, block_ids)` | 多 KV group 结束判定 |
 | `bind_gpu_block_pool(gpu_block_pool)` | 给 scheduler 塞 BlockPool 用于 delayed free |
 
-### 3.2 转给 KVPoolWorker（worker 侧，10 个）
+### 3.2 转给 KVPoolWorker（worker 侧，12 个）
 
 | 方法 | 作用 |
 |---|---|
 | `register_kv_caches(kv_caches)` | 注册 HBM tensor、起传输线程 |
 | `start_load_kv(forward_context)` | 读 metadata、开始加载 |
-| `wait_for_layer_load(layer_name)` | layerwise 每层等待加载完 |
+| `wait_for_layer_load(layer_name)` | layerwise 每层等待加载完，之后执行 Mamba 状态拷贝 |
 | `save_kv_layer(layer_name, kv_layer, attn_metadata)` | layerwise 保存（含 `consumer_is_to_put` 判定） |
 | `wait_for_save()` | 非 layerwise 批量保存（含角色判定） |
 | `get_finished(finished_req_ids)` | 回传 `(done_sending, done_recving)` |
 | `get_block_ids_with_load_errors()` | 回传失败 block 集合 |
 | `get_kv_connector_kv_cache_events()` | 取 worker 的 `BlockStored` 事件包成 `AscendStoreKVEvents` |
 | `build_connector_worker_meta()` | 上行 worker metadata |
-| `set_external_slot_release_waiter(waiter)` | gva_layerwise 外部 slot 释放回调 |
+| `set_external_slot_release_waiter(waiter)` | 外部 slot 释放回调，委托给 worker 判定 |
+| `prepare_mamba_state_copy(copy_bufs)` | 准备 layerwise Mamba 状态拷贝 |
+| `finish_mamba_state_copy()` | 完成 layerwise Mamba 状态拷贝 |
 
 ### 3.3 connector 自身处理（7 个）
 
@@ -128,7 +132,7 @@ EngineCore/AsyncLLM 每步调 schedule()
 
 ### 3.4 契约外的扩展
 
-`set_external_slot_release_waiter` **不是 vLLM 基类方法**，是 Ascend 内部扩展，仅被 `AscendMultiConnector` L51 调用。读代码时遇到基类没有的方法，要先确认调用方是谁——这类方法只保证 Ascend 内部闭环，不参与 vLLM 生命周期。
+`set_external_slot_release_waiter` **不是 vLLM 基类方法**，是 Ascend 内部扩展，仅被 `AscendMultiConnector` 调用。新版本中该方法的门控逻辑简化：不再检查 `use_gva_layerwise`，而是直接委托给 worker 层判定。读代码时遇到基类没有的方法，要先确认调用方是谁——这类方法只保证 Ascend 内部闭环，不参与 vLLM 生命周期。
 
 ---
 
@@ -151,7 +155,7 @@ cache group 维度
   cache_transfer_granularity
 
 运行模式
-  load_async、use_layerwise、use_gva_layerwise
+  load_async、use_layerwise、use_layerwise_transfer
   consumer_is_to_load、consumer_is_to_put、save_decode_cache
 ```
 
@@ -190,13 +194,15 @@ block hash
   x PP rank（非 layerwise 查询时覆盖所有 PP）
 ```
 
+layerwise 模式下的 key 生成现已委托给 `self.layerwise_protocol.make_hit_check_keys()`，由 backend 提供协议实现，不再在 scheduler 中内联展开。
+
 `_get_store_lookup_hit_tokens()` 调用 backend `exists()`，并按 block 检查这一组 key 是否全部存在。命中必须是从查询起点开始的连续前缀：某一 block 出现明确 miss 后停止，异常状态则作为错误处理。
 
 非 layerwise 模式可以从 `num_computed_tokens` 之后开始查；layerwise 模式必须从 block 0 查询，因为远端逐层对象与本地 prefix cache 的覆盖范围不一定一致。
 
-### 5.2 MemCache GVA 路径
+### 5.2 MemCache layerwise 路径
 
-`use_layerwise=True` 且 backend 为 MemCache 时，Scheduler 通过 `_make_layerwise_gva_keys_for_hit_check()` 和 `batch_get_key_info()` 查询已分配的 GVA。每个 group、每个 block、每个有效 head/TP rank 都必须返回有效 size，当前 block 才算命中。不同 group 的命中长度最终取最小值：
+`use_layerwise=True` 且 backend 为 MemCache 时，Scheduler 通过 `_make_layerwise_hit_check_keys()`（委托给 `self.layerwise_protocol.make_hit_check_keys()`）和 `batch_get_key_info()` 查询已分配的 GVA。每个 group、每个 block、每个有效 head/TP rank 都必须返回有效 size，当前 block 才算命中。不同 group 的命中长度最终取最小值：
 
 ```text
 group 0 hit tokens = 4096
@@ -284,6 +290,8 @@ request.block_hashes
 
 异步 load 模式下，接口还会告诉 vLLM 需要 allocation，但请求可能先进入等待远端 KV 的状态；layerwise 模式则不沿用完全相同的异步等待语义。
 
+新版本中 Eagle 命中的处理逻辑得到改进：之前对 layerwise+Eagle 场景始终裁剪尾块（`max(num_computed_tokens, hit - lcm_block_size)`），现在改为仅当外部命中触及 prompt 的最后一个 granularity block 时才裁剪，避免在中间 block 边界上误伤有效的 mamba 状态快照。
+
 ---
 
 ## 8. update_state_after_alloc() 为什么关键？
@@ -301,7 +309,7 @@ KVCacheBlocks（按 group 组织）
 它把这些信息写入 Scheduler 侧状态：
 
 - `_unfinished_requests` 保存 request 与已分配 block ids；
-- `RequestTracker` 持续记录 token 长度、各 group block ids、已保存 token 和 GVA；
+- `RequestTracker` 持续记录 token 长度、各 group block ids、已保存 token 和 GVA；`token_ids` 仅在 `enable_kv_events` 为 True 时拷贝（`#15364` 性能优化，避免大序列的冗余内存拷贝）；
 - `_loading_req_ids` 标记仍在等待异步 load 的请求；
 - `LoadSpec.can_load` 根据 allocation 结果决定；
 - Mamba speculative block、SWA clip 和 layerwise GVA offset 在此后具备计算条件。
@@ -354,6 +362,8 @@ request finished
 
 Hybrid HMA 路径通过 `request_finished_all_groups()` 处理各 group block；SWA block 还可能先裁剪。Layerwise 路径当前不使用同一 sending event 延迟释放协议，因此直接释放，buffer 复用安全由 layer event、NPU event 和 slot release 机制保证。
 
+新版本中 layerwise 路径还额外跳过了 `_write_mamba_blocks_to_send_events`——layerwise 的 Mamba block 由 `KVCacheStoreSendingThread` 逐层释放，`build_connector_meta` 中再 bulk touch 会 double-reference 导致 block leak。
+
 `update_connector_output()` 还会聚合各 Worker 的 completed event count。达到预期 Worker 数后，Scheduler 才从绑定的 `BlockPool` 释放对应 block，防止分布式 rank 尚未完成时提前复用。
 
 ---
@@ -379,9 +389,10 @@ Hybrid HMA 路径通过 `request_finished_all_groups()` 处理各 group block；
 ```text
 1. vllm-ascend 通过 entry point 反向注入注册表，vLLM 全程只认名字不认实现。
 2. Ascend 替换了三个上游通用名字（MultiConnector/OffloadingConnector/SimpleCPUOffloadConnector）。
-3. AscendStoreConnector 是 23 个方法的薄转发层，真正逻辑在 KVPoolScheduler/KVPoolWorker。
+3. AscendStoreConnector 是 25 个方法的薄转发层，真正逻辑在 KVPoolScheduler/KVPoolWorker。
 4. 外部命中查询只在首轮发生，且传入的是 block 对齐后的本地命中数。
 5. coordinator 把外部存在性伪装成 BlockPool，复用 vLLM 可达性算法；存在由架构决定，使用由模式决定。
+6. 新版本中 layerwise key 生成委托给 backend protocol，简化了 scheduler 的职责；Eagle 命中裁剪改为条件触发，避免误伤中间 block 边界处的 mamba 状态。
 ```
 
 下一篇 [03](03_metadata_and_layout.md) 继续解释这些状态如何被编码成 key、request metadata、layer task 和地址布局。

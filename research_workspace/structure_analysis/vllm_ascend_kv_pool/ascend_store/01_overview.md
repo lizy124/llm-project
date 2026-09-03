@@ -2,8 +2,8 @@
 
 源码基线：
 
-- vLLM Ascend：`d85e6714a09bef4d9de6b8c05e9425183d46ba23`
-- vLLM：`58d3918e3ea0a544ffedadad2ba84559e9c51d8f`
+- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 
 `ascend_store` 不是一个简单的 KV backend 适配器。它同时包含 vLLM connector 适配、Scheduler 侧命中与状态管理、跨侧 metadata、NPU cache 注册与地址展开、异步传输线程、layerwise buffer 复用以及多种外部 backend。
 
@@ -77,7 +77,7 @@ Scheduler.schedule()
 
 两个语义要点：
 
-- **外部命中只在首轮查**：vLLM Scheduler 仅对 `num_computed_tokens == 0` 的请求询问 connector（scheduler.py L745）；先取本地 HBM 连续 prefix，再问外部。
+- **外部命中只在首轮查**：vLLM Scheduler 仅对 `num_computed_tokens == 0` 的请求询问 connector；先取本地 HBM 连续 prefix（通过 `_get_local_prefix_cache_hit()` 封装，处理 connector 的 `supports_divergent_local_hybrid_hits` 差异），再问外部。
 - **传入的是 block 对齐后的本地命中数**：让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。
 
 这里的 external hit 仍然只是"可恢复 token 范围"，并不代表 NPU block 已经装载完成。
@@ -114,7 +114,7 @@ vLLM 把 connector metadata 放入 `SchedulerOutput.kv_connector_metadata`，随
 
 Worker 收到 SchedulerOutput 后，`start_load_kv()` 读取 metadata、准备 load task、生成 key/address/size，提交接收线程（或同步直调 backend）。非 layerwise 路径以 request/批次组织；layerwise 路径进一步按当前 layer 组织任务。
 
-在 layerwise 模式下，模型 runner 在每个相关 layer 的 attention 前调用 `wait_for_layer_load()`；Worker 等待当前 layer event，并检查接收线程异常。非 layerwise 模式可能在更粗的阶段等待 load 完成，但仍需要满足 NPU stream/event 的可见性条件。**不要把"线程任务已入队"当成"attention 已可读"。**
+在 layerwise 模式下，模型 runner 在每个相关 layer 的 attention 前调用 `wait_for_layer_load()`；Worker 等待当前 layer event，并检查接收线程异常。新版本中 `wait_for_layer_load()` 之后还会执行 Mamba 状态拷贝（通过 `prepare_mamba_state_copy()/finish_mamba_state_copy()`）。非 layerwise 模式可能在更粗的阶段等待 load 完成，但仍需要满足 NPU stream/event 的可见性条件。**不要把"线程任务已入队"当成"attention 已可读"。**
 
 ### 3.5 forward 期间如何 save 新 KV
 
@@ -172,9 +172,9 @@ request bookkeeping 可以清理
 
 启用 `use_layerwise` 后，key 进一步包含 `layer_id`。每层有独立 load/save event，模型 forward 在 layer 边界等待或提交任务。
 
-### 4.3 MemCache GVA layerwise
+### 4.3 MemCache layerwise（GVA 路径）
 
-当 `use_layerwise=True` 且 backend 为 MemCache 时，进入 GVA 路径：外部对象先分配 GVA，Worker 再批量执行 GVA 与本地 HBM 地址之间的 copy。共享物理 buffer 时还要处理上一 owner layer 的 save、attention fence 和外部 slot release。
+当 `use_layerwise=True` 且 backend 为 MemCache 时，进入 GVA 路径：外部对象先分配 GVA，Worker 再批量执行 GVA 与本地 HBM 地址之间的 copy。共享物理 buffer 时还要处理上一 owner layer 的 save、attention fence 和外部 slot release。layerwise key 的生成由 backend 的 `layerwise_protocol` 提供，不再在 scheduler/worker 中内联。
 
 ### 4.4 Hybrid cache group
 

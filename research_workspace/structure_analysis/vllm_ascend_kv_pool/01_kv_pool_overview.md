@@ -2,8 +2,8 @@
 
 源码基线：
 
-- vLLM Ascend：`d85e6714a09bef4d9de6b8c05e9425183d46ba23`
-- vLLM：`58d3918e3ea0a544ffedadad2ba84559e9c51d8f`
+- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 - 对应关系：`vllm-ascend/.github/vllm-main-verified.commit`
 
 源码位置：

@@ -232,6 +232,8 @@ build_addrs(shared, layer_idx_in_group)
 
 `write_results` 暂存跨 layer 的 copy 结果；只有所有 layer 数据写完后，key 才应被 backend 视为完整可读对象。
 
+线程仅通过 `use_layerwise_transfer` 门控运行，内部所有 store 调用走 Backend 抽象接口，因此语义上保持 backend-agnostic——不区分当前是 MemCache 还是 Mooncake 的 layerwise 协议。
+
 ### 4.6 KVCacheStoreLayerRecvingThread
 
 这是 MemCache GVA layerwise 加载线程，依赖最多：
@@ -274,7 +276,9 @@ batch_remove_lease(keys)
 batch_write_finish(keys, results)
 ```
 
-基类默认对这些扩展方法抛出 `NotImplementedError`。因此调用方不能仅根据 `Backend` 类型就假设所有实现都支持 GVA；当前运行路径通过 backend 名称和 `use_gva_layerwise` 限制能力组合。
+基类默认对这些扩展方法抛出 `NotImplementedError`。因此调用方不能仅根据 `Backend` 类型就假设所有实现都支持 GVA；当前运行路径通过 `use_layerwise_transfer` 限制能力组合。
+
+新版本中 backend 注册表（`backend/__init__.py`）增加了 `layerwise_protocol` 布尔标志，通过 `get_layerwise_protocol()` 函数返回实现了 layerwise 协议的对象（含 `make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`）。layerwise key 的生成逻辑从 scheduler/worker 中移除，统一委托给 backend 提供的协议实现。
 
 Scheduler client 由 `create_scheduler_client()` 创建。默认可复用 backend 类本身，但具体实现可以构造只具备 lookup 能力的轻量 client。
 
@@ -289,7 +293,9 @@ Mooncake 路径提供完整对象式 `exists/put/get`：
 - 初始化 Mooncake store 与本地 segment；
 - 注册 NPU buffer；
 - 把多个地址片段作为同一 key 的 value；
-- `put/get` 返回或检查 Mooncake transfer 状态。
+- `put/get` 返回或检查 Mooncake transfer 状态；
+- 新增 `lazy_init` 支持，允许延迟初始化 backend；
+- 新增 `tenant_id` 配置项以支持 QoS 流量优先级隔离。
 
 它适合普通 key 和 key-based layerwise，不提供本文 GVA layerwise 所需的 alloc/lease/write-finish 接口。
 
@@ -301,7 +307,8 @@ MemCache 同时支持普通 `put/get` 与 GVA 扩展：
 - `batch_alloc()` 为新 key 分配外部 slot；
 - lease 控制 slot 生命周期；
 - `batch_write_finish()` 在所有数据写完后发布对象；
-- 底层 `store.batch_copy` 执行 GVA 与本地 NPU 地址间 copy。
+- 底层 `store.batch_copy` 执行 GVA 与本地 NPU 地址间 copy；
+- 新增 `MemcacheLayerwiseProtocol`（`make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`），作为 layerwise 路径的 key 协议实现。
 
 `ensure_initialized()` 是惰性初始化边界。Scheduler lookup client 与 Worker 数据 client 可以处于不同初始化阶段，因此代码不能假设构造 backend 后立即拥有所有设备资源。
 
