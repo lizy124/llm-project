@@ -1,0 +1,47 @@
+draft/block_hash_to_str/issue_14148_verification_report.md
+  s_85fa35c0f08925::t_2673a8f957c92d 98
+  s_85fa35c0f08925::t_ba662981f2151f 116
+  s_85fa35c0f08925::t_4f728c9eaf5679 7
+  s_85fa35c0f08925::t_4d73378ee86936 106
+  s_85fa35c0f08925::t_a6161f0dcfd1e0 17-18
+  s_85fa35c0f08925::t_be61a99cffcfa4 180
+draft/block_hash_to_str/test_record/README.md
+  s_85fa35c0f08925::t_cc6b69f6331fca 94
+  s_85fa35c0f08925::t_9c1f3cdd7cec19 14
+  s_85fa35c0f08925::t_ec962dbba4caf6 100
+  s_85fa35c0f08925::t_0b41beb4b5ba6f 118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "8504941338a7a9a0878fc3454bc653e9fbb19e58",
+  "prompts": {},
+  "humans": {
+    "h_3eaf4948cd6ab4": {
+      "author": "lizy124 <1950471827@qq.com>"
+    }
+  },
+  "sessions": {
+    "s_85fa35c0f08925": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a98d3fa8d68e54869cdb11c",
+        "model": "DeepSeek-V4-Flash-Official"
+      },
+      "human_author": "lizy124 <1950471827@qq.com>",
+      "custom_attributes": {
+        "tool_use_id": "6a98db0a8d68e54869cdb26e",
+        "source_scene": "agent",
+        "client_type": "ide",
+        "runtime_client": "trae-tob-git-ai",
+        "dedupe_key": "6a98d3fa8d68e54869cdb11c:6a98db0a8d68e54869cdb26e:afterEdit:7c8b9f9b",
+        "external_session_id": "6a98d3fa8d68e54869cdb11c",
+        "tool_type": "builtin",
+        "tool_id": "icube:applyChatSnapshotPatch",
+        "session_id": "6a98d3fa8d68e54869cdb11c",
+        "operation_id": "6a98db0a8d68e54869cdb26e",
+        "edit_kind": "file_edit"
+      }
+    }
+  }
+}
