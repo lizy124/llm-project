@@ -6,28 +6,28 @@
 
 建议按以下顺序阅读：
 
-1. [01_采样与输出总览.md](01_采样与输出总览.md)
+1. [01_sampling_and_output_overview.md](01_sampling_and_output_overview.md)
    - 先建立全局分层：请求参数、EngineCore、GPU sampler、Scheduler、OutputProcessor、OpenAI serving 的边界。
 
-2. [02_SamplingParams与协议转换.md](02_SamplingParams与协议转换.md)
+2. [02_sampling_params_and_protocol_conversion.md](02_sampling_params_and_protocol_conversion.md)
    - 梳理 OpenAI Completion/Chat/Responses 请求如何转为 `SamplingParams`，以及字段校验、默认值、结构化输出参数。
 
-3. [03_请求入队与ParallelSampling.md](03_请求入队与ParallelSampling.md)
+3. [03_request_enqueue_and_parallel_sampling.md](03_request_enqueue_and_parallel_sampling.md)
    - 梳理 `InputProcessor`、`EngineCoreRequest`、内部 `Request`，以及 `n > 1` parallel sampling 如何拆 child request。
 
-4. [04_GPU采样执行链路.md](04_GPU采样执行链路.md)
+4. [04_gpu_sampling_execution_flow.md](04_gpu_sampling_execution_flow.md)
    - 梳理模型 forward 后 hidden states 如何变 logits，如何进入普通 sampler 或 spec decode rejection sampler。
 
 5. [05_LogitsProcessor_Logprobs_StructuredOutput.md](05_LogitsProcessor_Logprobs_StructuredOutput.md)
    - 梳理 logits processor、allowed token、bad words、penalty、logprobs、grammar bitmask、reasoning gate。
 
-6. [06_ModelRunnerOutput到EngineCoreOutputs.md](06_ModelRunnerOutput到EngineCoreOutputs.md)
+6. [06_model_runner_output_to_engine_core_outputs.md](06_model_runner_output_to_engine_core_outputs.md)
    - 梳理 GPU/worker 输出如何进入 scheduler，并被整理成 `EngineCoreOutput(s)`。
 
-7. [07_OutputProcessor与RequestOutput.md](07_OutputProcessor与RequestOutput.md)
+7. [07_output_processor_and_request_output.md](07_output_processor_and_request_output.md)
    - 梳理 frontend 输出处理、detokenize、stop string、流式/非流式、logprobs 累积、collector。
 
-8. [08_OpenAI返回与调试地图.md](08_OpenAI返回与调试地图.md)
+8. [08_openai_returns_and_debug_map.md](08_openai_returns_and_debug_map.md)
    - 梳理 Completion/Chat serving 如何消费 `RequestOutput`，并给出按问题定位文件的调试地图。
 
 9. [question_and_answer.md](question_and_answer.md)

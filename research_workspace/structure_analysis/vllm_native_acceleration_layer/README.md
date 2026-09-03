@@ -13,25 +13,25 @@
 
 ## 文档索引
 
-1. [01_底层加速层总览.md](01_底层加速层总览.md)
+1. [01_native_acceleration_layer_overview.md](01_native_acceleration_layer_overview.md)
    - 总体结构、模块分层、C++/CUDA/Rust 在 vLLM 中的位置。
-2. [02_构建系统与扩展库.md](02_构建系统与扩展库.md)
+2. [02_build_system_and_extension_libs.md](02_build_system_and_extension_libs.md)
    - CMake、CUDA/HIP/CPU 分支、extension target、Rust 构建。
-3. [03_Python到Native算子的调用桥.md](03_Python到Native算子的调用桥.md)
+3. [03_python_to_native_operator_bridge.md](03_python_to_native_operator_bridge.md)
    - `current_platform.import_kernels()`、`torch.ops._C`、fake/meta 注册、Python wrapper。
-4. [04_CUDA核心算子_Attention与KVCache.md](04_CUDA核心算子_Attention与KVCache.md)
+4. [04_cuda_core_ops_attention_and_kv_cache.md](04_cuda_core_ops_attention_and_kv_cache.md)
    - PagedAttention、MLA、KV cache reshape/cache/gather/swap、RoPE/fused kernels。
-5. [05_量化_GEMM_CUTLASS_Marlin_Machete.md](05_量化_GEMM_CUTLASS_Marlin_Machete.md)
+5. [05_quant_gemm_cutlass_marlin_machete.md](05_quant_gemm_cutlass_marlin_machete.md)
    - INT8/FP8/FP4/NVFP4/AWQ/GPTQ/CUTLASS/Marlin/Machete/AllSpark。
-6. [06_MoE底层算子.md](06_MoE底层算子.md)
+6. [06_moe_low_level_ops.md](06_moe_low_level_ops.md)
    - topk、token/expert 对齐、permute/unpermute、grouped GEMM、MoE quant。
-7. [07_CPU后端.md](07_CPU后端.md)
+7. [07_cpu_backend.md](07_cpu_backend.md)
    - CPU attention、oneDNN、AVX/AMX/ARM/Power/RISC-V、SGL kernels、CPU MoE。
-8. [08_ROCm_内存_通信与外部项目.md](08_ROCm_内存_通信与外部项目.md)
+8. [08_rocm_memory_comm_and_external_projects.md](08_rocm_memory_comm_and_external_projects.md)
    - ROCm 扩展、custom all-reduce、cumem allocator、external projects。
-9. [09_Rust底层与Frontend.md](09_Rust底层与Frontend.md)
+9. [09_rust_low_level_and_frontend.md](09_rust_low_level_and_frontend.md)
    - Rust workspace、server、chat、text、LLM、engine-core-client、ZMQ 协议边界。
-10. [10_端到端调用链.md](10_端到端调用链.md)
+10. [10_end_to_end_call_chain.md](10_end_to_end_call_chain.md)
    - 从模型层 Python 到 native kernel 的调用路径，按 generate/attention/MoE/quant/Rust frontend 串联。
 
 ## 一句话总结

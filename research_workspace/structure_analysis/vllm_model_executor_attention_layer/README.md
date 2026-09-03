@@ -6,28 +6,28 @@
 
 建议按以下顺序阅读：
 
-1. [01_模型执行与Attention总览.md](01_模型执行与Attention总览.md)
+1. [01_model_execution_and_attention_overview.md](01_model_execution_and_attention_overview.md)
    - 总体说明模型执行层、Attention 层在 vLLM 推理链路中的位置和职责。
 
-2. [02_模型注册与加载链路.md](02_模型注册与加载链路.md)
+2. [02_model_registration_and_loading.md](02_model_registration_and_loading.md)
    - 梳理 architecture registry、model loader、权重加载、模型实例化、模型能力接口。
 
-3. [03_GPUModelRunner到ForwardContext.md](03_GPUModelRunner到ForwardContext.md)
+3. [03_gpu_model_runner_to_forward_context.md](03_gpu_model_runner_to_forward_context.md)
    - 梳理 GPUModelRunner 如何准备 batch、slot mapping、attention metadata，并通过 ForwardContext 调用模型。
 
-4. [04_Attention层核心实现.md](04_Attention层核心实现.md)
+4. [04_attention_layer_core_impl.md](04_attention_layer_core_impl.md)
    - 梳理 `model_executor/layers/attention/attention.py` 中 `Attention` 类、KV cache、forward、自定义 op 注册。
 
-5. [05_AttentionBackend选择与MetadataBuilder.md](05_AttentionBackend选择与MetadataBuilder.md)
+5. [05_attention_backend_selection_and_metadata_builder.md](05_attention_backend_selection_and_metadata_builder.md)
    - 梳理 `v1/attention/backend.py`、`selector.py`、backend registry、metadata builder、impl 的关系。
 
-6. [06_KVCacheSpec与KV_Tensor_SlotMapping.md](06_KVCacheSpec与KV_Tensor_SlotMapping.md)
+6. [06_kvcache_spec_and_kv_tensor_slot_mapping.md](06_kvcache_spec_and_kv_tensor_slot_mapping.md)
    - 梳理 KVCacheSpec、AttentionSpec、KV cache tensor、cache group、slot mapping、block table 如何衔接。
 
-7. [07_量化_MoE_LoRA_多模态.md](07_量化_MoE_LoRA_多模态.md)
+7. [07_quant_moe_lora_multimodal.md](07_quant_moe_lora_multimodal.md)
    - 梳理量化、KV cache quant、MoE、LoRA、多模态与模型执行/Attention 的关系。
 
-8. [08_CUDA_csrc_kernel调用链与调试地图.md](08_CUDA_csrc_kernel调用链与调试地图.md)
+8. [08_cuda_csrc_kernel_flow_and_debug_map.md](08_cuda_csrc_kernel_flow_and_debug_map.md)
    - 梳理 Python Attention 到 custom op、torch binding、CUDA/C++ kernel 的调用链，并给出调试地图。
 
 ## 一条核心主链

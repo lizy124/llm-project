@@ -7,7 +7,7 @@
 
 ## 一、C 轮修复（2026-08-26，提交 `089de2fc1`）
 
-依据：G审查报告.md（M1/m7 项）+ 本人对代码证据的复核。改前已逐条核实：
+依据：[g-review-report.md](g-review-report.md)（M1/m7 项）+ 本人对代码证据的复核。改前已逐条核实：
 
 1. kv_transfer.py 中 layer_load_finished_events 的 set 共 4 处（L1280/L1523/L1544/L1608），全部在传输线程侧；
 2. wait_for_layer_load()（pool_worker.py L1745-1764）在事件 wait 返回后才调 `_record_layerwise_load_finished()`——止表确实是"计算侧等待返回时刻"；

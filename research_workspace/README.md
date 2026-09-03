@@ -6,9 +6,11 @@
 
 - `documents/overview/`：学习路线、问题集、总体摘要和可直接复用的概览结论。
 - `documents/question/`：按主题拆分的深入问题与解答。
+- `documents/abstract/`：vLLM 十六主题拆解的总体摘要。
 - `documents/backup/`：历史版本或暂不维护的材料，仅作参考。
 - `structure_analysis/`：按 vLLM 组件和调用链组织的代码阅读成果。
 - `figure/`：研究笔记引用的 SVG/图示及其说明。
+- `notes/`：未归入专题分类的零散阅读笔记（如页面注意力/块生命周期）。
 
 ## 约定
 

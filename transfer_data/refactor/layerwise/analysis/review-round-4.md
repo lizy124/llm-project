@@ -1,6 +1,6 @@
 # 第四次审核与分析：v4 回应文档的核验
 
-> 审核对象：第三次审核回应与二PR执行方案.md（v4 · 执行基准）
+> 审核对象：第三次review-response-pr2-plan.md（v4 · 执行基准）
 > 审核性质：第四轮交叉审核——v4 证伪了三轮的一处细节（assert 崩溃不可达）并将破坏定性加重为"静默失效"，同时引入一项"本轮新发现"（scheduler 侧依赖面）；本轮重点核验：①证伪是否成立 ②定性加重是否正确 ③其新发现是否属实
 > 审核基线：`code/vllm-ascend` `refactor_layerwise` 分支（与前轮同一快照），本轮完整读取 `_prepare_load_gvas`（:1315-1515）与相关保护分支
 > 标尺不变：原始需求 4 —— "AscendStore Layerwise 代码重构，将后端强相关的逻辑收敛到 backend 文件中"

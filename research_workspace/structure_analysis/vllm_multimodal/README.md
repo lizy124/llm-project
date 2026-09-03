@@ -13,25 +13,25 @@
 
 ## 文档索引
 
-1. [01_多模态总览.md](01_多模态总览.md)
+1. [01_multimodal_overview.md](01_multimodal_overview.md)
    - vLLM 多模态整体分层、核心对象、端到端主链路。
-2. [02_入口与Prompt多模态输入.md](02_入口与Prompt多模态输入.md)
+2. [02_entry_and_multimodal_prompt_input.md](02_entry_and_multimodal_prompt_input.md)
    - OpenAI Chat、renderer、Python Prompt、`multi_modal_data` 如何进入预处理链。
-3. [03_MultiModalConfig与媒体解析.md](03_MultiModalConfig与媒体解析.md)
+3. [03_multimodal_config_and_media_parsing.md](03_multimodal_config_and_media_parsing.md)
    - `MultiModalConfig`、数量限制、media connector、`MultiModalDataParser`。
-4. [04_Processor与Placeholder机制.md](04_Processor与Placeholder机制.md)
+4. [04_processor_and_placeholder_mechanism.md](04_processor_and_placeholder_mechanism.md)
    - `BaseMultiModalProcessor`、prompt update、placeholder range、token merge。
-5. [05_Engine_Request与mm_features.md](05_Engine_Request与mm_features.md)
+5. [05_engine_request_and_mm_features.md](05_engine_request_and_mm_features.md)
    - `InputProcessor` 如何把 processor 输出转成 `MultiModalFeatureSpec` 并进入 `Request`。
 6. [06_Scheduler_EncoderBudget_Cache.md](06_Scheduler_EncoderBudget_Cache.md)
    - encoder budget、scheduler admission、scheduler 侧 encoder cache 生命周期。
-7. [07_GPUWorker_Encoder执行与Embedding合并.md](07_GPUWorker_Encoder执行与Embedding合并.md)
+7. [07_gpu_worker_encoder_execution_and_embedding_merge.md](07_gpu_worker_encoder_execution_and_embedding_merge.md)
    - GPU worker 组 batch、执行 `embed_multimodal`、gather embedding、写回输入 embedding。
-8. [08_多模态模型接口与典型实现.md](08_多模态模型接口与典型实现.md)
+8. [08_multimodal_model_interfaces_and_impls.md](08_multimodal_model_interfaces_and_impls.md)
    - `SupportsMultiModal`、`embed_multimodal`、LLaVA/Qwen2-VL/Qwen2-Audio/Whisper/Pixtral/Gemma3 等。
-9. [09_哈希_UUID_ProcessorCache与EncoderCache.md](09_哈希_UUID_ProcessorCache与EncoderCache.md)
+9. [09_hash_uuid_processor_cache_and_encoder_cache.md](09_hash_uuid_processor_cache_and_encoder_cache.md)
    - `MultiModalHasher`、UUID、`mm_hash`、`identifier`、processor cache 与 encoder cache 区别。
-10. [10_限制错误场景与调试地图.md](10_限制错误场景与调试地图.md)
+10. [10_limitations_errors_and_debug_map.md](10_limitations_errors_and_debug_map.md)
     - 限制校验、常见错误、测试覆盖、调试入口。
 11. [question_and_answer.md](question_and_answer.md)
     - 高频问题与定位答案。

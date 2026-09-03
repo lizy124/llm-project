@@ -6,28 +6,28 @@
 
 建议按以下顺序阅读：
 
-1. [01_推理引擎层总览.md](01_推理引擎层总览.md)
+1. [01_inference_engine_layer_overview.md](01_inference_engine_layer_overview.md)
    - 说明 vLLM 推理引擎层的边界、V0/V1 关系、分层架构和一条主链路。
 
-2. [02_请求生命周期_API到EngineCore.md](02_请求生命周期_API到EngineCore.md)
+2. [02_request_lifecycle_api_to_engine_core.md](02_request_lifecycle_api_to_engine_core.md)
    - 从 OpenAI API / AsyncLLM 到 EngineCoreRequest、EngineCoreClient、OutputProcessor 的请求生命周期。
 
-3. [03_EngineCore主循环与V0兼容.md](03_EngineCore主循环与V0兼容.md)
+3. [03_engine_core_main_loop_and_v0_compat.md](03_engine_core_main_loop_and_v0_compat.md)
    - 重点梳理 V1 `EngineCore` 初始化、KV cache 初始化、step 主循环、batch queue、V0 兼容层定位。
 
-4. [04_Scheduler调度机制.md](04_Scheduler调度机制.md)
+4. [04_scheduler_mechanism.md](04_scheduler_mechanism.md)
    - 详细梳理 `Scheduler` 的 waiting/running 状态机、token budget、chunked prefill、spec decode、preemption、encoder cache 等。
 
 5. [05_KVCache_Block_PrefixCaching.md](05_KVCache_Block_PrefixCaching.md)
    - 详细梳理 KV Cache 配置、KVCacheManager、BlockPool、prefix caching、block table、KV connector/offload。
 
-6. [06_Executor_Worker_ModelRunner执行层.md](06_Executor_Worker_ModelRunner执行层.md)
+6. [06_executor_worker_model_runner_layer.md](06_executor_worker_model_runner_layer.md)
    - 梳理 Executor 抽象、多进程/单进程/Ray 执行、GPU Worker、GPUModelRunner 的模型执行流程。
 
-7. [07_Attention_ModelExecutor_CUDA链路.md](07_Attention_ModelExecutor_CUDA链路.md)
+7. [07_attention_model_executor_cuda_flow.md](07_attention_model_executor_cuda_flow.md)
    - 梳理模型执行层、Attention 层、backend 抽象、forward context、slot mapping、csrc kernel 的衔接。
 
-8. [08_关键文件阅读顺序与调试地图.md](08_关键文件阅读顺序与调试地图.md)
+8. [08_key_file_reading_order_and_debug_map.md](08_key_file_reading_order_and_debug_map.md)
    - 给出新人阅读顺序、按问题类型定位文件、常见调试路径。
 
 ## 核心结论

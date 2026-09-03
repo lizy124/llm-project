@@ -1,6 +1,6 @@
 # 第二次审核与分析：审核回应与二 PR 执行方案
 
-> 审核对象：审核回应与二PR执行方案.md（v2）
+> 审核对象：review-response-pr2-plan.md（v2）
 > 审核性质：第二轮交叉审核——该文档本身是对第一次审核的反审核（逐条独立核实 + 2 项反指控），本轮重点验证其反指控是否成立、其自身方案是否引入新问题
 > 审核基线：`code/vllm-ascend` `refactor_layerwise` 分支（与第一次审核同一快照）+ GitHub #14697.diff 远端拉取
 > 标尺不变：原始需求 4 —— "AscendStore Layerwise 代码重构，将后端强相关的逻辑收敛到 backend 文件中"

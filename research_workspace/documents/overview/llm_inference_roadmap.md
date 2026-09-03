@@ -229,8 +229,8 @@
 参考资料：
 
 - `research_workspace/structure_analysis/vllm_entrypoints_api_layer/README.md`
-- `research_workspace/structure_analysis/vllm_entrypoints_api_layer/05_Chat与Completion请求链路.md`
-- `research_workspace/structure_analysis/vllm_entrypoints_api_layer/07_API层与Engine边界.md`
+- `research_workspace/structure_analysis/vllm_entrypoints_api_layer/05_chat_and_completion_request_flow.md`
+- `research_workspace/structure_analysis/vllm_entrypoints_api_layer/07_api_layer_engine_boundary.md`
 
 ### 第二层：EngineCore 与请求生命周期
 
@@ -252,9 +252,9 @@
 
 参考资料：
 
-- `research_workspace/structure_analysis/vllm_inference_engine_layer/01_推理引擎层总览.md`
-- `research_workspace/structure_analysis/vllm_inference_engine_layer/02_请求生命周期_API到EngineCore.md`
-- `research_workspace/structure_analysis/vllm_inference_engine_layer/03_EngineCore主循环与V0兼容.md`
+- `research_workspace/structure_analysis/vllm_inference_engine_layer/01_inference_engine_layer_overview.md`
+- `research_workspace/structure_analysis/vllm_inference_engine_layer/02_request_lifecycle_api_to_engine_core.md`
+- `research_workspace/structure_analysis/vllm_inference_engine_layer/03_engine_core_main_loop_and_v0_compat.md`
 
 ### 第三层：Scheduler 与 Continuous Batching
 
@@ -280,7 +280,7 @@
 
 参考资料：
 
-- `research_workspace/structure_analysis/vllm_inference_engine_layer/04_Scheduler调度机制.md`
+- `research_workspace/structure_analysis/vllm_inference_engine_layer/04_scheduler_mechanism.md`
 - `research_workspace/structure_analysis/vllm_scheduler_kv_cache/01_scheduler_overview.md`
 - `research_workspace/structure_analysis/vllm_scheduler_kv_cache/03_request_lifecycle.md`
 
@@ -310,7 +310,7 @@
 
 - `research_workspace/structure_analysis/vllm_inference_engine_layer/05_KVCache_Block_PrefixCaching.md`
 - `research_workspace/structure_analysis/vllm_scheduler_kv_cache/02_kv_cache_architecture.md`
-- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/06_KVCacheSpec与KV_Tensor_SlotMapping.md`
+- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/06_kvcache_spec_and_kv_tensor_slot_mapping.md`
 - `research_workspace/documents/pool/05_推理时存储KV_Cache.md`
 - `research_workspace/documents/pool/06_从池子复用KV_Cache.md`
 - `research_workspace/documents/pool/07_ChunkedTokenDatabase_键管理与地址计算.md`
@@ -338,10 +338,10 @@
 参考资料：
 
 - `research_workspace/structure_analysis/vllm_worker_executor_layer/README.md`
-- `research_workspace/structure_analysis/vllm_worker_executor_layer/02_Executor抽象与后端选择.md`
-- `research_workspace/structure_analysis/vllm_worker_executor_layer/07_GPU_CPU_XPU_Worker生命周期.md`
-- `research_workspace/structure_analysis/vllm_worker_executor_layer/08_ModelRunner执行链路.md`
-- `research_workspace/structure_analysis/vllm_worker_executor_layer/11_端到端调用链路.md`
+- `research_workspace/structure_analysis/vllm_worker_executor_layer/02_executor_abstraction_and_backend_selection.md`
+- `research_workspace/structure_analysis/vllm_worker_executor_layer/07_gpu_cpu_xpu_worker_lifecycle.md`
+- `research_workspace/structure_analysis/vllm_worker_executor_layer/08_model_runner_execution_flow.md`
+- `research_workspace/structure_analysis/vllm_worker_executor_layer/11_end_to_end_call_chain.md`
 
 ### 第六层：Attention、模型执行与底层 Kernel
 
@@ -367,10 +367,10 @@
 参考资料：
 
 - `research_workspace/structure_analysis/vllm_model_executor_attention_layer/README.md`
-- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/04_Attention层核心实现.md`
-- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/05_AttentionBackend选择与MetadataBuilder.md`
-- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/08_CUDA_csrc_kernel调用链与调试地图.md`
-- `research_workspace/structure_analysis/vllm_native_acceleration_layer/04_CUDA核心算子_Attention与KVCache.md`
+- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/04_attention_layer_core_impl.md`
+- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/05_attention_backend_selection_and_metadata_builder.md`
+- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/08_cuda_csrc_kernel_flow_and_debug_map.md`
+- `research_workspace/structure_analysis/vllm_native_acceleration_layer/04_cuda_core_ops_attention_and_kv_cache.md`
 
 ### 第七层：分布式推理与通信
 
@@ -399,7 +399,7 @@
 - `research_workspace/structure_analysis/vllm_distributed_communication/02_parallel_config_and_topology.md`
 - `research_workspace/structure_analysis/vllm_distributed_communication/04_process_groups_and_collectives.md`
 - `research_workspace/structure_analysis/vllm_distributed_communication/05_runtime_parallel_flows.md`
-- `research_workspace/structure_analysis/vllm_worker_executor_layer/10_分布式并行与通信.md`
+- `research_workspace/structure_analysis/vllm_worker_executor_layer/10_distributed_parallelism_and_communication.md`
 
 ### 第八层：PD 分离与 KV Transfer
 
@@ -450,9 +450,9 @@
 
 参考资料：
 
-- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/07_量化_MoE_LoRA_多模态.md`
-- `research_workspace/structure_analysis/vllm_native_acceleration_layer/05_量化_GEMM_CUTLASS_Marlin_Machete.md`
-- `research_workspace/structure_analysis/vllm_native_acceleration_layer/06_MoE底层算子.md`
+- `research_workspace/structure_analysis/vllm_model_executor_attention_layer/07_quant_moe_lora_multimodal.md`
+- `research_workspace/structure_analysis/vllm_native_acceleration_layer/05_quant_gemm_cutlass_marlin_machete.md`
+- `research_workspace/structure_analysis/vllm_native_acceleration_layer/06_moe_low_level_ops.md`
 - `research_workspace/structure_analysis/vllm_worker_executor_layer/09_KVCache_LoRA_KVTransfer_Profiler.md`
 
 ### 第十层：性能分析、稳定性与工程交付
@@ -899,13 +899,13 @@
 
 1. `research_workspace/structure_analysis/vllm_entrypoints_api_layer/README.md`
 2. `research_workspace/structure_analysis/vllm_inference_engine_layer/README.md`
-3. `research_workspace/structure_analysis/vllm_inference_engine_layer/02_请求生命周期_API到EngineCore.md`
-4. `research_workspace/structure_analysis/vllm_inference_engine_layer/04_Scheduler调度机制.md`
+3. `research_workspace/structure_analysis/vllm_inference_engine_layer/02_request_lifecycle_api_to_engine_core.md`
+4. `research_workspace/structure_analysis/vllm_inference_engine_layer/04_scheduler_mechanism.md`
 5. `research_workspace/structure_analysis/vllm_inference_engine_layer/05_KVCache_Block_PrefixCaching.md`
-6. `research_workspace/structure_analysis/vllm_worker_executor_layer/08_ModelRunner执行链路.md`
-7. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/04_Attention层核心实现.md`
-8. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/08_CUDA_csrc_kernel调用链与调试地图.md`
-9. `research_workspace/structure_analysis/vllm_native_acceleration_layer/04_CUDA核心算子_Attention与KVCache.md`
+6. `research_workspace/structure_analysis/vllm_worker_executor_layer/08_model_runner_execution_flow.md`
+7. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/04_attention_layer_core_impl.md`
+8. `research_workspace/structure_analysis/vllm_model_executor_attention_layer/08_cuda_csrc_kernel_flow_and_debug_map.md`
+9. `research_workspace/structure_analysis/vllm_native_acceleration_layer/04_cuda_core_ops_attention_and_kv_cache.md`
 10. `research_workspace/structure_analysis/vllm_distributed_communication/README.md`
 
 ### KV Pool / PD 分离主线

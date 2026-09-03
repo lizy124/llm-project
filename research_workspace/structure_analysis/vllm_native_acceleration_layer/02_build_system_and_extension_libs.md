@@ -343,7 +343,7 @@ cmake/cpu_extension.cmake
 
 入口位置：`code/vllm/CMakeLists.txt:143-154`。
 
-详细见 [07_CPU后端.md](07_CPU后端.md)。
+详细见 [07_cpu_backend.md](07_cpu_backend.md)。
 
 ## 8. Rust 构建系统
 

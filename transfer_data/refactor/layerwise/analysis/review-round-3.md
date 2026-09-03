@@ -1,6 +1,6 @@
 # 第三次审核与分析：v3 回应文档的核验
 
-> 审核对象：第二次审核回应与二PR执行方案.md（v3 · 执行基准）
+> 审核对象：第二次review-response-pr2-plan.md（v3 · 执行基准）
 > 审核性质：第三轮交叉审核——v3 是对我二轮审核的逐条回应，并升级了我提出的 LIFE 一行修复；本轮重点核验其升级方案的正确性、其对二轮的反批注是否成立、以及其自身是否引入新问题
 > 审核基线：`code/vllm-ascend` `refactor_layerwise` 分支（与前两轮同一快照）+ GitHub #12854 commit 80d3bc6 远端拉取
 > 标尺不变：原始需求 4 —— "AscendStore Layerwise 代码重构，将后端强相关的逻辑收敛到 backend 文件中"
@@ -73,7 +73,7 @@ v3 §2.1 末段称最小方案（仅 `on_worker_ready` 加 gate、不做 GVASess
 
 逻辑检验：`use_gva_layerwise = use_layerwise ∧ backend == "memcache"`。对 **memcache** 后端，layerwise 必是 GVA，故 memcache 的非 GVA ≡ 非 layerwise；key-mode layerwise 只存在于 mooncake/yuanrong，而 mooncake/yuanrong 继承 `on_worker_ready` 默认 no-op、**本就不在 LIFE 的影响范围内**。因此二轮写的"memcache + 非 layerwise + compress"就是精确的受影响集合，无"略窄"。v3 的"精确口径"引入了与 LIFE 无关的 key-mode 分支，是无效扩张而非精确化。
 
-**批注 b 指认有误**：v3 称二轮文档"认账主体实为我方 v2 回应（非第一次审核文档本身）"。事实是：反指控由 v2 提出、由**二轮审核的作者**（在《第二次审核与分析.md》中）认账；v2 作为被审对象没有认账任何东西。此项至多是"文档不会自己认账"的表述洁癖，指认则错了对象。
+**批注 b 指认有误**：v3 称二轮文档"认账主体实为我方 v2 回应（非第一次审核文档本身）"。事实是：反指控由 v2 提出、由**二轮审核的作者**（在《review-round-2.md》中）认账；v2 作为被审对象没有认账任何东西。此项至多是"文档不会自己认账"的表述洁癖，指认则错了对象。
 
 **处置**：两处批注从 §1 删除或改写为中性记录，不影响其余结论。
 

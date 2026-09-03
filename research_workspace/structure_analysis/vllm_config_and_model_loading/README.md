@@ -15,25 +15,25 @@
 
 ## 文档索引
 
-1. [01_配置与模型加载总览.md](01_配置与模型加载总览.md)
+1. [01_config_and_model_loading_overview.md](01_config_and_model_loading_overview.md)
    - 配置链路与模型加载链路的整体分层、核心对象、端到端总图。
-2. [02_EngineArgs到VllmConfig.md](02_EngineArgs到VllmConfig.md)
+2. [02_engine_args_to_vllm_config.md](02_engine_args_to_vllm_config.md)
    - CLI / Python API 到 `EngineArgs`，再到 `VllmConfig` 的构建过程。
-3. [03_VllmConfig与子配置体系.md](03_VllmConfig与子配置体系.md)
+3. [03_vllm_config_and_subconfigs.md](03_vllm_config_and_subconfigs.md)
    - `VllmConfig` 字段、`__post_init__()`、跨配置校验与默认策略修正。
-4. [04_ModelConfig与HF配置加载.md](04_ModelConfig与HF配置加载.md)
+4. [04_model_config_and_hf_loading.md](04_model_config_and_hf_loading.md)
    - `ModelConfig`、`get_config()`、HF/Mistral/ModelScope 配置解析、`hf_overrides`、`trust_remote_code`。
-5. [05_ModelArchitectureConfig归一化.md](05_ModelArchitectureConfig归一化.md)
+5. [05_model_architecture_config_normalization.md](05_model_architecture_config_normalization.md)
    - `ModelArchConfigConvertor` 如何把不同模型族配置转换成 vLLM 统一架构配置。
-6. [06_LoadConfig与ModelLoader选择.md](06_LoadConfig与ModelLoader选择.md)
+6. [06_load_config_and_model_loader_selection.md](06_load_config_and_model_loader_selection.md)
    - `LoadConfig` 与 `load_format -> loader` 映射，所有主要 loader 的职责差异。
-7. [07_模型注册与实例化链路.md](07_模型注册与实例化链路.md)
+7. [07_model_registry_and_instantiation.md](07_model_registry_and_instantiation.md)
    - `models/registry.py`、`initialize_model()`、模型接口协议与 architecture 解析。
-8. [08_权重发现过滤与迭代.md](08_权重发现过滤与迭代.md)
+8. [08_weight_discovery_filtering_iteration.md](08_weight_discovery_filtering_iteration.md)
    - checkpoint 文件发现、下载、本地缓存、safetensors/bin/pt/np_cache/streaming iterator。
-9. [09_Worker到ModelRunner加载链路.md](09_Worker到ModelRunner加载链路.md)
+9. [09_worker_to_model_runner_loading.md](09_worker_to_model_runner_loading.md)
    - V1 worker、GPUModelRunner、load/reload、post-process 与运行时边界。
-10. [10_量化并行Reload与调试地图.md](10_量化并行Reload与调试地图.md)
+10. [10_quant_parallel_reload_and_debug_map.md](10_quant_parallel_reload_and_debug_map.md)
     - 量化、TP/PP/EP/DP、layerwise reload、常见调试入口与阅读顺序。
 11. [question_and_answer.md](question_and_answer.md)
     - 高频问题与定位答案。
