@@ -260,4 +260,4 @@ Scheduler
 5. backend、传输线程和 attention fence 分别对应外部存储、异步数据面和设备可见性同步。
 ```
 
-后续阅读建议：先看 `02_ascend_store_core.md`，沿 `AscendStoreConnector -> Coordinator/PoolScheduler -> PoolWorker -> KVTransfer/backend` 继续展开；再分别阅读 offload 和重计算路径。
+后续阅读建议：先看 [ascend_store/01_overview.md](ascend_store/01_overview.md)（核心主线），沿 `AscendStoreConnector -> Coordinator/PoolScheduler -> PoolWorker -> KVTransfer/backend` 继续展开；旁路的 offload 和重计算路径见 [other_paths/](other_paths/)。

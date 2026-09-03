@@ -16,7 +16,7 @@
 
 本文的问题是：`kv_pool` 中 lookup、load、save 都可能异步执行，layerwise 模式还会把一次 forward 拆成多个 layer 阶段。系统如何保证传输顺序、NPU 数据可见性、请求结束后的资源释放，以及不同配置组合下的行为一致？
 
-本文只讨论跨组件的不变量和竞态。线程派生类、批量地址构造和 backend 方法的逐项说明见 [02_4](02_4_ascend_store_transfer_and_backend.md)，Worker 如何生成任务见 [02_3](02_3_ascend_store_worker_pipeline.md)。
+本文只讨论跨组件的不变量和竞态。线程派生类、批量地址构造和 backend 方法的逐项说明见 [05](05_transfer_backend_storage.md)，Worker 如何生成任务见 [04](04_worker_pipeline.md)。
 
 ---
 
@@ -63,7 +63,7 @@
 - 线程 run loop 和异常传播。
 ```
 
-六类派生线程及各自的完成边界见 `02_4`。本文只保留一个判断原则：先确认观察到的是 queue item、layer、request 还是 distributed sending event 的完成。
+六类派生线程及各自的完成边界见 [05](05_transfer_backend_storage.md)。本文只保留一个判断原则：先确认观察到的是 queue item、layer、request 还是 distributed sending event 的完成。
 
 ### 2.2 线程完成不等于 Scheduler 状态完成
 
@@ -255,4 +255,4 @@ Scheduler 命中并分配本地 blocks
 5. backend、use_layerwise、consumer_is_to_put 等配置会改变数据流路径，不能只当作性能参数。
 ```
 
-下一篇建议阅读 `06_code_reading_guide.md`，按文件和方法入口回顾完整阅读顺序，并把本文的异步边界对应到具体调用链。
+查询路径为何这样分叉（ZMQ/直连、减法/合并模型、buffer 复用），见 [07](07_lookup_path_design.md)。

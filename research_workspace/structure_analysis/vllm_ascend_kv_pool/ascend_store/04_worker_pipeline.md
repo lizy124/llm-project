@@ -1,4 +1,4 @@
-# 02_3. KVPoolWorker 如何把 Metadata 变成设备任务？
+# 04. KVPoolWorker 如何把 Metadata 变成设备任务？
 
 源码位置：
 
@@ -363,4 +363,4 @@ Worker 还通过 `build_connector_worker_meta()` 返回 completed sending event 
 8. partial block 和 TP mismatch 是否进入了专用展开路径？
 ```
 
-下一篇 [02_4](02_4_ascend_store_transfer_and_backend.md) 深入线程公共协议、六种派生线程以及三种 backend 的能力差异。
+下一篇 [05](05_transfer_backend_storage.md) 深入存储模型、线程公共协议、六种派生线程以及三种 backend 的能力差异。

@@ -1,4 +1,4 @@
-# 03. kv_offload 如何在 NPU 和 CPU 之间搬运 KV？
+# kv_offload 如何在 NPU 和 CPU 之间搬运 KV？
 
 源码基线：
 
@@ -250,4 +250,4 @@ CPU buffer 已分配、copy job 已提交，并不代表目标 NPU block 可以�
 6. load/save 的最终完成状态仍需通过 connector 回到 vLLM 调度链。
 ```
 
-下一篇建议阅读 `04_recompute_cpu_offload.md`，分析“不保存完整 KV”时的重计算路径。
+下一篇建议阅读 [recompute_cpu_offload.md](recompute_cpu_offload.md)，分析“不保存完整 KV”时的重计算路径。

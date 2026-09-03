@@ -1,4 +1,4 @@
-# 02_2. Key、Metadata 与 Cache Layout 如何描述一次传输？
+# 03. Metadata 与 Layout：Key、Tracker 与传输描述如何形成？
 
 源码位置：
 
@@ -326,4 +326,4 @@ layer event 与 request finished 不能互换；
 共享 buffer 的 owner 关系必须与 attention/save 依赖一起传递。
 ```
 
-下一篇 [02_3](02_3_ascend_store_worker_pipeline.md) 继续跟踪 Worker 如何把这些描述与真实 NPU tensor 结合，生成普通或 layerwise 设备任务。
+下一篇 [04](04_worker_pipeline.md) 继续跟踪 Worker 如何把这些描述与真实 NPU tensor 结合，生成普通或 layerwise 设备任务。

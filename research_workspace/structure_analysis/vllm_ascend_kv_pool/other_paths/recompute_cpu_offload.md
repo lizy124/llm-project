@@ -1,4 +1,4 @@
-# 04. Recompute CPU Offload 如何工作？
+# Recompute CPU Offload 如何工作？
 
 源码基线：
 
@@ -241,4 +241,4 @@ manager 报告匹配，只说明状态可用于恢复或减少重复工作；Wor
 5. 抢占、结束和 reset 的关键是 metadata/manager 状态回收，而不是单纯释放一块 CPU KV buffer。
 ```
 
-下一篇建议阅读 `05_data_flow_concurrency_and_config.md`，把 `ascend_store`、offload 和重计算三条路径放到同一条异步数据流和配置维度中比较。
+`ascend_store` 主线的异步数据流和配置维度见 [../ascend_store/06_concurrency_and_config.md](../ascend_store/06_concurrency_and_config.md)，可与本文的重计算路径对照阅读。

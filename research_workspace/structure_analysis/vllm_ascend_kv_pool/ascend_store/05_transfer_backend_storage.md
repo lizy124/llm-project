@@ -1,4 +1,4 @@
-# 02_4. 传输线程与 Backend 如何执行 KV I/O？
+# 05. 存储模型、传输线程与 Backend
 
 源码位置：
 
@@ -8,12 +8,64 @@
 - `ascend_store/backend/mooncake_backend.py`
 - `ascend_store/backend/yuanrong_backend.py`
 - `ascend_store/attention_fence.py`
+- `ascend_store/pool_worker.py`（`register_kv_caches`、`_allocated_gvas`）
 
-本文关注 `ascend_store` 的执行层：Worker 已经决定 key、block range 和 layer 后，线程怎样批量组织地址，三种 backend 分别提供什么能力，以及完成、异常和设备同步如何返回上层。
+本文关注 `ascend_store` 的执行层：数据存在哪两层存储、地址如何组织（存储模型），Worker 已经决定 key、block range 和 layer 后线程怎样批量组织地址（传输线程），三种 backend 分别提供什么能力，以及完成、异常和设备同步如何返回上层。行号均为核验时的准确位置。
 
 ---
 
-## 1. 执行层的边界
+## 1. 存储模型：两层存储与两套地址
+
+读传输代码前必须先钉死存储模型，否则 put/get、命中查询、容量规划都会读错。
+
+### 1.1 第 1 层：本地 KV 缓存 buffer = NPU HBM
+
+`register_kv_caches` 把 vLLM 分配在 NPU 上的 `kv_caches` tensor 登记给后端（pool_worker.py L762）：
+
+```python
+base_addr = cache.data_ptr()             # NPU HBM 地址
+self.m_store.register_buffer(ptrs, lengths)   # 登记本地 HBM buffer（put/get 的源/目标）
+```
+
+`register_buffer` 登记的是"给后端一块可搬移的内存区"，**不是持久化池本身**。这层存储的布局（每层 tensor、block 地址/stride、共享 buffer 映射）由 `layerwise_cache_layout.py` 和 `KVPoolWorker` 维护，详见 [04](04_worker_pipeline.md)。
+
+### 1.2 第 2 层：外部存储池 = host DRAM
+
+真正被查询的池在 host DRAM：
+
+- **mooncake**：每卡贡献的 DRAM 池；
+- **memcache**：host 侧 `DistributedObjectStore`。
+
+证据是 `MmcDirect` 的方向（memcache_backend.py L34-38）：
+
+- `COPY_L2G`（Local→Global）→ `put()`：**HBM → DRAM 池**（L214）
+- `COPY_G2L`（Global→Local）→ `get()`：**DRAM 池 → HBM**（L186）
+
+### 1.3 两套地址账本
+
+| 登记/分配 | 是什么 | 落在哪 |
+|---|---|---|
+| `register_buffer(ptrs, lengths)` | 本地 kv_cache 缓冲 | **HBM** |
+| `batch_alloc(keys, sizes)` → GVA（memcache_backend.py L153）；worker `_allocated_gvas` 缓存（pool_worker.py L359） | 池里的对象 | **DRAM** |
+
+**GVA（全局虚拟地址）**：memcache 后端为每个存入池的 KV 对象分配的寻址句柄。`batch_get_key_info`（memcache_backend.py L142）返回的 key_info 带 GVA 和 size，get/put 靠 GVA 做 DMA。GVA 只在 layerwise + memcache 组合下出现——因为只有 layerwise 把 KV 拆成"每层一个对象"，一个对象一个 GVA；非 layerwise 是整段连续 KV 一个块存，不走单对象寻址（见 [07](07_lookup_path_design.md) §3.3）。
+
+### 1.4 scheduler client 与 worker client 的能力差异
+
+- memcache `create_scheduler_client`（L100-105）返回 `cls(parallel_config, local_rank=0, init_bm=False)`——注释原文 "The scheduler is a single metadata client... must not initialize memcache storage"；
+- mooncake（L164-166）返回 `contribute_memory=False` 的 master 客户端。
+
+两者都是**只读元数据客户端**：能触到 DRAM 池（查 exists/key_info），但看不到 worker 的权威状态（布局、coordinator、per-block 位图），也不注册 HBM buffer、不执行数据搬运。这正是 [07](07_lookup_path_design.md) 中"两类查询语义"的物质基础——scheduler 客户端够答存在性问题，答不了能力性问题。
+
+### 1.5 常见误读纠正
+
+1. **`m_store` 不是"HBM 上的 map"**——它是外部后端对象，`exists` 查的是 DRAM 池；worker 的 HBM 只是 put/get 的本地侧 buffer。
+2. **"5G DRAM pooling" 指 mooncake 每卡贡献的 host DRAM 池**——与 `register_buffer` 登记的 HBM 是两类东西，容量规划时不要互相挪用。
+3. **GVA 不是 HBM 地址**——它寻址的是 DRAM 池里的对象；HBM 地址由 `register_buffer`/layout 层管理。两套账本在 `LayerBatchBuilder` 汇合（key/GVA 跨 layer 不变，本地 HBM 地址逐 layer 变化，见下节）。
+
+---
+
+## 2. 执行层的边界
 
 线程和 backend 的分工可以压缩为：
 
@@ -366,7 +418,7 @@ Layer event 不直接出现在 Scheduler 输出中。它只在 Worker 内保证 
 
 ```text
 任务没有生成
-  -> 先看 02_3 的 Worker 分流和 ReqMeta 条件
+  -> 先看 04 的 Worker 分流和 ReqMeta 条件
 
 key 数与地址数不一致
   -> LayerBatchBuilder / ChunkedTokenDatabase
@@ -384,4 +436,4 @@ load 返回失败
   -> stored request count、finished_sending、completed event 聚合
 ```
 
-跨线程的完整资源安全与配置组合继续见 [05](05_data_flow_concurrency_and_config.md)；一次请求如何穿过全部文件见 [06](06_code_reading_guide.md)。
+跨线程的完整资源安全与配置组合继续见 [06](06_concurrency_and_config.md)；一次请求如何穿过全部文件见 [01](01_overview.md)。
