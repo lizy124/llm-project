@@ -39,7 +39,7 @@
 | #14465 | DSV4 KV Pool（mooncake/memcache × layerwise 4 组矩阵） | map_51/pr14465_dsv4_kvpool/record_final/ |
 | #14912 | kv_metrics_observability（4 指标，sync/layerwise/async 三路径） | map_51/pr14912_kv_metrics/kv_metrics_observability/HANDOVER.md |
 | #15307 | GVA 线程收敛（进行中） | map_51/pr15307_gva_threads/PLAN.md |
-| #15367 | layerwise 协议返工（双轮夹逼复验 + 虚假通过防范方法论，含 PD 分诊 S1 单机 8 卡实测） | map_165/record_final/*_20260901_rebase/ + ../refactor/layerwise/test/e2e-report-20260901-rebase.md |
+| #15367 | layerwise 协议返工（双轮夹逼复验 + 虚假通过防范方法论，含 PD 分诊 S1 单机 8 卡实测） | map_165/record_final/*_20260901_rebase/ + ../refactor/layerwise/archive/test/e2e-report-20260901-rebase.md |
 
 ### 0.2 维护规则（与 env_install 一致）
 
