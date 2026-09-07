@@ -1,7 +1,7 @@
 # AscendStore / KVPool 读码笔记
 
 > 基于 vllm `commit 6e448d0ea9` + 本地 vllm-ascend 源码。行号均为核验时的准确位置。
-> 重组说明：按主题组织（挂载 → 结构 → 查询 → 存储 → 核心问题 → 本地命中），原 Q&A 随记序号已并入对应章节。
+> 重组说明：按主题组织（挂载 → 结构 → 查询 → 存储 → 核心问题 → 本地命中 → 显存模型），原 Q&A 随记序号已并入对应章节。
 
 ---
 
@@ -378,6 +378,69 @@ load_start_block = (
 - 决定查询路径的**只有 `use_layerwise` 这一个变量**（`layerwise_offload` 在查询分支里根本不出现，复用只决定查询结果怎么被消费）；
 - **layerwise 的查询是存在性问题**：keys 由 block_hashes + 层号 × rank 展开即可构造，答案非 0 即 1，scheduler 的只读元数据客户端自己就能查，直连省一跳 RPC；
 - **非 layerwise 的查询是能力性问题**：其计算机器在现行布局下全部实现为 worker 方法，且 ZMQ 协议只回传 4 字节整数，合并计算必然落在应答方 worker（布局性原因 + 历史性原因，非信息必然）。
+
+---
+
+## 七、KV cache 显存模型：VA、物理页与 base_addr
+
+> 与 `documents/question/kv_cache_transfer/11_kv_cache_memory_model.md` 互为冗余备份；本节面向 AscendStore 读码，保留与 pool_worker/metadata 直接相关的部分。
+
+### 7.1 启动时显存构成与 KV cache 大小推导
+
+vLLM 拉起服务，GPU/NPU 显存占用六块：模型权重（静态常驻）、KV cache（启动一次性预分配、占比最大）、激活/临时缓冲、CUDA graph、通信缓冲（NCCL/HCCL/KV transfer staging）、框架固定开销（context/driver 保留、allocator 碎片保留）。
+
+KV cache 大小推导链路（v1 路径，`vllm/v1/worker/`）：
+
+```text
+requested_memory = total_memory × gpu_memory_utilization    ← 是 total，不是 free
+                 （utils.py request_memory()；free < requested 直接 ValueError 拉不起）
+memory_profiling 包住 profile_run（mem_utils.py）：
+    进/出各一次 gc.collect() + empty_cache()               ← 进程内碎片此时归还驱动
+available_kv_cache_memory = requested_memory
+    - non_kv_cache_memory(权重+峰值激活+非torch) - cudagraph_estimate
+→ num_gpu_blocks → 分配 KV cache（运行期不再 malloc，耗尽走 preemption）
+```
+
+**"散落的空闲显存会不会分给 KV cache"——会**：`init_snapshot.free_memory` 来自 `get_memory_info`，是驱动视角全局 free，不关心历史碎片；profile 前后 `empty_cache` 已把进程内临时碎片归还；KV cache 大 tensor 走全新大分配。拿不到的只有：别的进程占的、context/driver 保留的、`empty_cache` 时仍被活跃张量持有的。注意时序单向性：启动后别人释放 vLLM 不感知不扩容；启动后有进程来抢，KV cache 已占住不被抢但新进程可能 OOM。
+
+### 7.2 base_addr：真实设备地址，不是逻辑编号
+
+采集链路（本仓库重点）：
+
+- `pool_worker.py` `_infer_cache_group_metadata()`（L693-701）：逐层 `cache.data_ptr()` 存入 `group_kv_caches_base_addr`；
+- `metadata.py` `set_group_buffers()`（L416）原样接收；
+- `prepare_value()`（L461）纯算术寻址：`addr = base_addr + block_id * block_stride`，交 HCCL/RDMA 做 DMA。
+
+**block_id 是逻辑的（block table 索引）；base_addr 是 `data_ptr()` 拿到的设备虚拟地址（VA），由 NPU SMMU 翻译到物理**。P→D 场景 D 侧 base_addr 通过 GET 响应传回 P 侧直接构造远端地址——跨进程传真实地址，不是逻辑占位。
+
+### 7.3 60 层 = 多少个 base_addr：账面 vs 物理
+
+账面：条目数 = 层数 × 每层 cache entry 数（MLA/DSV3 单 latent → 60；DSV4 main+indexer → 120；MHA K/V 分开 → 120）。`group_layer_cache_entry_offsets` 记每层起始下标，`kv_transfer.py` L103 按 `[base_offset:end_offset]` 切出某层地址组。
+
+物理：这 60/120 个 tensor 常是同一块大 flat buffer 的 views——vLLM 侧 `_allocate_kv_cache_tensors()` packed 条目多层 alias 同一 backing；本仓库 `_get_storage_key()`（L666-670）取 `untyped_storage().data_ptr()` 做 key，注册 MR 时同 storage 地址 min/max 合并成一个 region（L762-779）。**base_addr 条目是寻址粒度（定位"第 N 层的 block M"），物理上是同一块预分配显存的不同偏移**。
+
+### 7.4 连续 VA 段 ≠ 连续物理内存（核心心智模型）
+
+`torch.zeros(40G)` 的三步：① 向驱动要 40G 地址空间 → VA 无限，划一段连续编号；② 驱动从 HBM 空闲池找物理页（典型 2MB 一页，哪有空放哪）；③ 页表记录映射。页表形态（示意）：
+
+```text
+虚拟地址(编号)                物理位置(HBM)
+0x100000000 + 0~2MB     →   物理页 @ 0x5F8000000
+0x100000000 + 2~4MB     →   物理页 @ 0x212000000     ← 跳到很远
+0x100000000 + 4~6MB     →   物理页 @ 0x5F8200000     ← 跳回来贴着第一页
+```
+
+左边连续、右边不连续，两句描述同时成立——说的是同一块东西的两面（VA 编号连续 / 物理页散落）。每个使用者都不需要物理连续：NPU 算子走 SMMU 翻页表；`base+id×stride` 是纯 VA 算术；RDMA/HCCL 注册时驱动替它翻页表生成 SGL，散页照搬。
+
+佐证：`vllm/config/vllm.py` `_verify_kv_transfer_compat()` 禁止 `expandable_segments:True`（CUDA VMM）与 KV connector 组合，注释明说 VMM "can remap a virtual address range to different physical pages"、导致已注册 MR 指向 stale 物理页、首传即 `IBV_WC_REM_ACCESS_ERR`——能 remap 恰恰证明 VA 背后物理页本来就是页粒度映射、可散布的。**走 RDMA 注册的路径必须放弃动态重映射：对 pinned 内存，地址稳定比碎片治理重要。**
+
+心智模型：页表是图书馆索引卡——书架号连续排（VA 连续），每张卡指向的书在仓库哪个格子由哪有空决定（物理散落）；所有操作只跟卡片打交道，只有搬运工真正去仓库时才按卡片找格子。
+
+### 7.5 散页对 RDMA/HCCL 性能的影响：基本无感
+
+注册时（一次性）：`reg_mr` 走页表、pin 页、生成 SGL；物理页越碎 SGL 越长。实际形态是 **2MB 粒度散落**（NPU/GPU 大块分配天然大页背书），几十 GB MR 的 SGL 段数是千级，注册成本百 ms 量级；MR 启动注册一次全生命周期复用，不进稳态。传输时（稳态）：PCIe 事务本来就是 TLP 粒度（payload 典型 256B~4KB），物理连续不可能"一次搬几十 MB"，散页与连续页在这层无区别；RDMA 引擎对 SGL 流水线处理；2MB 段背书下 IOTLB 条目少命中率高。
+
+本仓库已做对的事：`_align_kv_ptrs`（L715-727）注册区起点向下对齐 2MB（注释 "raw tensor ptr must be align to 2MB"）；同 storage 多层地址 min/max 合并一个 region（MR 数从层数降到 storage 数）；sparse_kv_offload 的 CPU 侧 pin memory 同样 `_CPU_CACHE_ALIGNMENT = 2MB` 对齐。真正会差的情况仅限：4K 粒度真散页（大块分配不出现）、频繁 reg/dereg、IOTLB 小 + 工作集巨大 TLB 抖动。
 
 ---
 

@@ -70,7 +70,7 @@ hybrid/Mamba/SWA group 信息
 ```text
 use_layerwise
 backend_name
-use_gva_layerwise = use_layerwise and backend == memcache
+use_layerwise_transfer
 load_async
 consumer_is_to_put
 TP mismatch
@@ -301,6 +301,10 @@ load: GVA -> local HBM address
 
 保存结束还需 `batch_write_finish()` 发布结果；lease 与外部 slot 生命周期也只出现在这条路径。这里的 GVA 是外部存储地址，不是本地 vLLM block id。
 
+### 9.1 DCP 维度展开
+
+查询 key 的维度展开中，新版本增加了 DCP 维度：`_expand_lookup_keys_by_rank()` 从 PP × TP 扩展为 PP × DCP × TP，确保每个 DCP rank 的 block/layer key 在结果中连续排列，与 `lookup_scheduler()` 的 `[rank_shard][block]` 切片方式匹配。当前所有-rank KV pool lookup 仍假设 PCP=1。
+
 ---
 
 ## 10. Partial block 与 TP mismatch
@@ -316,7 +320,11 @@ partial_save_gva_per_group
 partial_load_gva_per_group
 ```
 
+`partial_block_index` 通过 `get_partial_block_index()`（模块级函数，定义在 `metadata.py`）计算，不再作为 Worker 实例方法。
+
 partial key 与完整 hash key 不同，因为不完整内容不能冒充可复用的完整 prefix block。
+
+新版本中 Eagle 全量命中场景（`kvpool_cached_tokens == target_token_len - 1`）走尾块重算路径，不跳过尾块——该 block 由正常 save 路径重新存储，而非假定远端 GVA 仍然有效。
 
 ### 10.2 TP mismatch
 

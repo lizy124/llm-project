@@ -2,8 +2,8 @@
 
 源码基线：
 
-- vLLM Ascend：`d85e6714a09bef4d9de6b8c05e9425183d46ba23`
-- vLLM：`58d3918e3ea0a544ffedadad2ba84559e9c51d8f`
+- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 
 源码位置：
 
@@ -219,9 +219,9 @@ Worker 根据 extra config 选择 `memcache`、`mooncake` 或 `yuanrong` 等 bac
 
 在 kv_consumer 角色下，如果该开关关闭，consumer 只执行 load，不向外部 store 发布 KV。`AscendStoreConnector.save_kv_layer()` 和 `wait_for_save()` 会据此跳过保存路径。
 
-### 8.4 `use_gva_layerwise`
+### 8.4 `use_layerwise_transfer`
 
-该模式通常与 layerwise 和 memcache backend 组合出现，会引入外部 slot release waiter、GVA key 和 partial key。阅读时要把“layerwise 传输”与“GVA 资源释放”分开追踪。
+该模式由 `use_layerwise` 和 backend 的 `layerwise_protocol` 标志共同决定，不再通过 `use_gva_layerwise` 派生。它引入外部 slot release waiter、GVA key 和 partial key。阅读时要把"layerwise 传输"与"GVA 资源释放"分开追踪。layerwise key 的生成由 backend 提供的 `layerwise_protocol` 实现（`make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`），不再在 scheduler/worker 中内联。
 
 ---
 

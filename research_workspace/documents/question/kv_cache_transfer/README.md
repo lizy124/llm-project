@@ -166,6 +166,19 @@ deferred_frees 保存什么？
 失败和异步完成如何闭环？
 ```
 
+### 11. KV Cache 显存模型
+
+- [KV Cache 的显存模型：VA、物理页与 base_addr](11_kv_cache_memory_model.md)
+
+回答：
+
+```text
+启动时显存被谁占用？KV cache 大小如何推导、何时分配？
+base_addr 从哪来，是逻辑编号还是真实地址？
+连续 VA 段和物理页散落如何同时成立？
+散页对 RDMA/HCCL 注册和传输性能有何影响？
+```
+
 ---
 
 ## 3. 推荐阅读路线

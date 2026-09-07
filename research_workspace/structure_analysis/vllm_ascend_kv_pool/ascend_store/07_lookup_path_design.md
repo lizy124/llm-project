@@ -2,8 +2,8 @@
 
 源码基线：
 
-- vLLM Ascend：`d85e6714a09bef4d9de6b8c05e9425183d46ba23`
-- vLLM：`58d3918e3ea0a544ffedadad2ba84559e9c51d8f`
+- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 
 源码位置：
 
@@ -110,7 +110,7 @@
 
 ### 3.3 "(gva/memcache)" 是什么
 
-**layerwise 模式运行在 memcache 后端上，每个按层存的 KV 对象用 GVA（全局虚拟地址）寻址**。`pool_scheduler.py L168`：`self.use_gva_layerwise = self.use_layerwise and self.backend_name == "memcache"`。
+**layerwise 模式运行在 memcache 后端上，每个按层存的 KV 对象用 GVA（全局虚拟地址）寻址**。layerwise 协议由 backend 的 `layerwise_protocol` 实现提供（`make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`），不再在 scheduler/worker 中通过 `use_gva_layerwise` 内联派生。
 
 - **memcache**：后端之一，用 `memcache_hybrid.DistributedObjectStore`（host 侧分布式对象存储，走 memfabric 交换网络）。
 - **gva**：每个存进 store 的 KV 对象分配一个 GVA；`batch_get_key_info`（memcache_backend.py L142）返回的 key_info 带 GVA 和 size（scheduler 用 `ki.size() > 0` 判存的来源）。get/put 也靠 GVA 做 DMA。

@@ -57,20 +57,20 @@ cache_family     # default、c1、c2、mixed 等
 `PoolKey` 再附加 `chunk_hash`，字符串大致为：
 
 ```text
-model@pcpN@dcpN@head_or_tp_rank:N@pp_rank:N
+model@pcp:N@dcp:N@head_or_tp_rank:N@pp_rank:N
 @group:N@cache_role:kv@cache_family:default@HASH
 ```
 
 `LayerPoolKey` 用 `layer_id` 代替 PP 级聚合对象中的层隐含关系：
 
 ```text
-model@pcpN@dcpN@head_or_tp_rank:N
+model@pcp:N@dcp:N@head_or_tp_rank:N
 @group:N@cache_role:kv@cache_family:default@layer_id:N@HASH
 ```
 
 普通路径按 chunk 存一个包含多层地址的对象；key-based layerwise 路径则把同一 `PoolKey` 用 `split_layers()` 展开为每层独立 key。
 
-MemCache GVA layerwise 使用另一套紧凑 key，由 Worker/Scheduler 的 `_make_layerwise_gva_key*()` 构造。它标识外部 GVA slot，而不是普通 backend object。
+Layerwise 路径的 key 由 backend 协议（`layerwise_protocol`）生成，不再在 scheduler/worker 中内联构造。
 
 ---
 
@@ -186,7 +186,7 @@ save_end_token（兼容字段 token_len_chunk）
   本轮完整 chunk 可保存到的位置
 ```
 
-若 partial chunk 默认被丢弃，`save_end_token` 会向下对齐；若 GVA layerwise 允许保存 partial block，则额外通过 partial GVA 描述尾块。`num_saved_tokens` 只有在本轮确实安排 save 时才推进。
+若 partial chunk 默认被丢弃，`save_end_token` 会向下对齐；若 GVA layerwise 允许保存 partial block，则额外通过 partial GVA 描述尾块。`partial_block_index` 由 `get_partial_block_index()`（模块级函数，定义在 `metadata.py` 中）计算。`num_saved_tokens` 只有在本轮确实安排 save 时才推进。
 
 ### 5.2 LoadSpec 为什么嵌在 ReqMeta 中？
 
