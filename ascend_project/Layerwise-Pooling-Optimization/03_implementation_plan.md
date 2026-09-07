@@ -1,6 +1,6 @@
 # SR20260820223202 Layerwise 池化性能优化 — 实施计划
 
-> 配套文档：设计方案见同目录 [design_proposal.md](design_proposal.md)，需求解读见 [requirements_analysis.md](requirements_analysis.md)
+> 配套文档：设计方案见同目录 [02_design_proposal.md](02_design_proposal.md)，需求解读见 [01_requirements_analysis.md](01_requirements_analysis.md)
 > 代码基线：vllm-ascend upstream/main @ `ff998aad1`，开发分支 `layerwise_pooling`（已创建）
 > 计划编制：2026-08-26；执行假设：1–2 名研发 + 51 服务器（8×A3，每卡 5G DRAM 池化配置）可用
 > 时间锚点：对齐 PD/池化验证强化 930 专项（9/12–9/18 nightly 结论窗口、9/19–9/24 性能基线窗口）

@@ -1,0 +1,57 @@
+{
+  "cfg": {
+    "pfx_tokens": 65536,
+    "n_prefix": 4,
+    "conc": "8,16",
+    "out": "/home/lizhongyang/pool165/data/hbm_baseline_64k.json",
+    "rounds": 8
+  },
+  "prefix_serial": {
+    "p0": {
+      "cold_lat": 23.17,
+      "cold_hits": 0.0,
+      "replay_lat": 0.42,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p1": {
+      "cold_lat": 10.0,
+      "cold_hits": 0.0,
+      "replay_lat": 0.52,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p2": {
+      "cold_lat": 9.91,
+      "cold_hits": 0.0,
+      "replay_lat": 0.42,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p3": {
+      "cold_lat": 10.03,
+      "cold_hits": 0.0,
+      "replay_lat": 0.5,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    }
+  },
+  "conc": {
+    "8": {
+      "wall": 11.39,
+      "lat_mean": 1.35,
+      "queries": 4210688.0,
+      "hits": 4194304.0,
+      "hit_rate": 99.61,
+      "kv_usage": 0.0
+    },
+    "16": {
+      "wall": 22.69,
+      "lat_mean": 2.67,
+      "queries": 8421376.0,
+      "hits": 8388608.0,
+      "hit_rate": 99.61,
+      "kv_usage": 0.0
+    }
+  }
+}

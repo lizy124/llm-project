@@ -1,7 +1,7 @@
 # Layerwise 池化优化 — 第一轮开发计划（指标基座 + not overlapped）
 
 > 分支：`layerwise_pooling`（基线 upstream/main @ `ff998aad1`）
-> 上游文档：[implementation_plan.md](implementation_plan.md)（P0-T1、P2-T1）、[design_proposal.md](design_proposal.md)（第七节）
+> 上游文档：[03_implementation_plan.md](03_implementation_plan.md)（P0-T1、P2-T1）、[02_design_proposal.md](02_design_proposal.md)（第七节）
 > 参考资产：`kv_metrics_observability` 分支 7 提交（PR #14912，已过 B/C 两轮审查）；vLLM-Observability 目录的验证记录
 > 编制：2026-08-26
 
@@ -44,7 +44,7 @@
 ### 2.3 落地后验证
 
 本地（Windows，CPU 可跑）：`py_compile` 全部改动文件；`pytest tests/ut/distributed/ascend_store/test_metrics.py tests/ut/distributed/ascend_store/test_ascend_store_connector.py`（预期 42 passed，与 B 文档本地口径一致）。
-全量回归在 165 执行（见 [test_plan.md](test_plan.md) T2）。
+全量回归在 165 执行（见 [05_test_plan.md](05_test_plan.md) T2）。
 
 ---
 

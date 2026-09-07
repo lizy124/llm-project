@@ -1,0 +1,742 @@
+序号	模型	产品形态	组网	卡数	输入/输出长度	是否开启prefix cache	是否开启池化	是否开启layerwise	参数配置	MAX_MODEL_LEN	MAX_NUM_BATCHED_TOKENS	命中率	总请求数	并发数	请求频率	前缀数量	aisbench结果截图	实际命中率	MTP采纳率	vllm的log日志	aisbench的log	极光平台链接		
+																								
+单前缀																								
+第1次	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	1	#NAME?	87.50%						
+第2次	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	1	#NAME?	87.50%		/tmp/inference/96b65f08-ccd6-4c7a-aca2-095c0479b617/mixed_single0_0/log_p.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260903_210818	https://jiguang.ascend.huawei.com/inference/task/96b65f08-ccd6-4c7a-aca2-095c0479b617		
+第3次	DS-V4-Flash	A3	PD混部	16	16000/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	1	#NAME?	76.78%		/tmp/inference/96b65f08-ccd6-4c7a-aca2-095c0479b617/mixed_single0_0/log_p_layerwise.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260905_114216	https://jiguang.ascend.huawei.com/inference/task/96b65f08-ccd6-4c7a-aca2-095c0479b617		
+修复内存后	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	1	#NAME?	87.50%		/tmp/inference/96b65f08-ccd6-4c7a-aca2-095c0479b617/mixed_single0_0/log_p_test_layerwise.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260905_224238	https://jiguang.ascend.huawei.com/inference/task/96b65f08-ccd6-4c7a-aca2-095c0479b617		
+	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	否	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache""                }
+            }' > log_p_unlayerwise.log 2>&1
+"	1048576	10240	90	128	32	0	1	#NAME?			/tmp/inference/bccb94a9-7a15-413e-967b-59c1ab11f83f/mixed_single0_0/log_p_unlayerwise.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260903_234013	https://jiguang.ascend.huawei.com/inference/task/bccb94a9-7a15-413e-967b-59c1ab11f83f		
+第1次	DS-V4-Flash	A3	PD混部	16	131072/1	是	否	否	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' > log_p_HBM.log 2>&1
+"	1048576	10240	90	128	32	0	1	#NAME?	85.45%		/tmp/inference/049ac517-ea21-419d-8b2c-4786f1f865e1/mixed_single0_0/log_p_HBM.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260904_090612	https://jiguang.ascend.huawei.com/inference/task/049ac517-ea21-419d-8b2c-4786f1f865e1		
+第2次	DS-V4-Flash	A3	PD混部	16	131072/1	是	否	否	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' > log_p_HBM.log 2>&1
+"	1048576	10240	90	128	32	0	1	#NAME?	85.45%	#NAME?	/tmp/inference/049ac517-ea21-419d-8b2c-4786f1f865e1/mixed_single0_0/log_p_HBM.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260904_100457	https://jiguang.ascend.huawei.com/inference/task/049ac517-ea21-419d-8b2c-4786f1f865e1		
+多前缀																								
+第1次	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	32	#NAME?	0.75%						
+修复内存后	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	是	"# ============ Configurable ============
+TP_SIZE=4
+DP_SIZE=4
+MAX_MODEL_LEN=1048576
+MAX_NUM_BATCHED_TOKENS=10240
+MAX_NUM_SEQS=64  
+#并发数
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm
+# export PYTHONPATH=$PYTHONPATH:/home/t00612968/vllm-ascend
+
+# MemCache config paths
+export MMC_LOCAL_CONFIG_PATH=/usr/local/python3.11.10/lib/python3.11/site-packages/memcache_hybrid/config/mmc-local.conf
+
+export VLLM_ASCEND_ENABLE_FLASHCOMM1=1
+export TASK_QUEUE_ENABLE=1
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/
+export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2:$LD_PRELOAD
+# export HCCL_INTRA_ROCE_ENABLE=1
+
+# ---------- 1. Environment Variables ----------
+export PYTHONHASHSEED=0
+export VLLM_USE_V1=1
+# export ASCEND_BUFFER_POOL=4:8
+export ASCEND_CONNECT_TIMEOUT=10000
+export ASCEND_TRANSFER_TIMEOUT=10000
+export PYTORCH_NPU_ALLOC_CONF=""expandable_segments:True""
+export OMP_PROC_BIND=false
+export OMP_NUM_THREADS=10
+export HCCL_BUFFSIZE=1024
+export VLLM_ASCEND_APPLY_DSV4_PATCH=1
+export HCCL_OP_EXPANSION_MODE=""AIV""
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+
+# ---------- 5. Launch vLLM ----------
+vllm serve /mnt/lsy/deepseekv4-flash-w8a8-mtp \
+    --host 0.0.0.0 \
+    --served-model-name dsv4 \
+    --enable-expert-parallel \
+    --no-disable-hybrid-kv-cache-manager \
+    --tokenizer-mode deepseek_v4 \
+    --tool-call-parser deepseek_v4 \
+    --enable-auto-tool-choice \
+    --quantization ascend \
+    --reasoning-parser deepseek_v4 \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --no-enable-prefix-caching \
+    --tensor-parallel-size ""${TP_SIZE}"" \
+    --data-parallel-size ""${DP_SIZE}"" \
+    --enforce-eager \
+    --model-loader-extra-config '{
+     ""enable_multithread_load"": true,
+     ""num_threads"": 128
+     }' \
+    --port 8100 \
+    --max-model-len ""${MAX_MODEL_LEN}"" \
+    --max-num-batched-tokens ""${MAX_NUM_BATCHED_TOKENS}"" \
+    --max-num-seqs ""${MAX_NUM_SEQS}"" \
+    --block-size 32 \
+    --gpu-memory-utilization 0.90 \
+    --api-server-count 1 \
+    --async-scheduling \
+    --compilation-config '{""cudagraph_mode"": ""FULL_DECODE_ONLY""}' \
+    --speculative-config '{""num_speculative_tokens"": 3,  ""method"":""mtp"",""enforce_eager"":true}' \
+    --additional-config '
+    {""ascend_compilation_config"":{
+        ""enable_npugraph_ex"":true,
+        ""enable_static_kernel"":false
+        },
+    ""enable_cpu_binding"": true,
+    ""enable_dsa_cp"": true,
+    ""enable_flashcomm1"": true}' \
+    --kv-transfer-config '{
+                ""kv_connector"": ""AscendStoreConnector"",
+                ""kv_role"": ""kv_both"",
+                ""kv_connector_extra_config"": {
+                    ""lookup_rpc_port"":""0"",
+                    ""backend"": ""memcache"",
+                    ""use_layerwise"": true,
+                    ""layerwise_prefetch_layers"":3
+                }
+            }' > log_p.log 2>&1"	1048576	10240	90	128	32	0	32	#NAME?	87.50%		/tmp/inference/96b65f08-ccd6-4c7a-aca2-095c0479b617/mixed_single0_0/log_p_test_layerwise.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260905_232330	https://jiguang.ascend.huawei.com/inference/task/96b65f08-ccd6-4c7a-aca2-095c0479b617		
+	DS-V4-Flash	A3	PD混部	16	131072/1	否	是	否		1048576	10240	90	128	32	0	32								
+第1次(重新拉起服务)	DS-V4-Flash	A3	PD混部	16	131072/1	是	否	否		1048576	10240	90	128	32	0	32	#NAME?	6.15%	没有值	/tmp/inference/577509af-4048-48ea-afae-d7b0a4781b94/mixed_single0_0/log_p_HBM_morePrefix.log	/usr/local/python3.11.10/lib/python3.11/site-packages/outputs/default/20260904_103224	https://jiguang.ascend.huawei.com/inference/task/577509af-4048-48ea-afae-d7b0a4781b94

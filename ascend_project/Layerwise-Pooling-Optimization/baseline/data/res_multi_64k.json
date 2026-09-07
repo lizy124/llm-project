@@ -1,0 +1,57 @@
+{
+  "cfg": {
+    "pfx_tokens": 65536,
+    "n_prefix": 4,
+    "conc": "8,16",
+    "out": "/home/lizhongyang/lw_verify/data/res_multi_64k.json",
+    "rounds": 8
+  },
+  "prefix_serial": {
+    "p0": {
+      "cold_lat": 11.3,
+      "cold_hits": 0.0,
+      "replay_lat": 0.58,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p1": {
+      "cold_lat": 10.11,
+      "cold_hits": 0.0,
+      "replay_lat": 0.6,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p2": {
+      "cold_lat": 10.16,
+      "cold_hits": 0.0,
+      "replay_lat": 0.53,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    },
+    "p3": {
+      "cold_lat": 10.02,
+      "cold_hits": 0.0,
+      "replay_lat": 0.44,
+      "replay_hits": 65536.0,
+      "replay_rate": 99.61
+    }
+  },
+  "conc": {
+    "8": {
+      "wall": 12.63,
+      "lat_mean": 1.51,
+      "queries": 4210688.0,
+      "hits": 4194304.0,
+      "hit_rate": 99.61,
+      "kv_usage": 0.0
+    },
+    "16": {
+      "wall": 23.32,
+      "lat_mean": 2.73,
+      "queries": 8421376.0,
+      "hits": 8388608.0,
+      "hit_rate": 99.61,
+      "kv_usage": 0.0
+    }
+  }
+}

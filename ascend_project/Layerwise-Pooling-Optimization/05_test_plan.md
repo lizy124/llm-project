@@ -1,6 +1,6 @@
 # Layerwise 池化优化 — 第一轮测试计划（165 服务器）
 
-> 被测对象：`layerwise_pooling` 分支（D1 整合 + D2 not overlapped 指标，见 [dev_plan.md](dev_plan.md)）
+> 被测对象：`layerwise_pooling` 分支（D1 整合 + D2 not overlapped 指标，见 [04_dev_plan.md](04_dev_plan.md)）
 > 测试环境：192.168.13.165（Ascend 910×8，refactor 系列容器，代码目录 `/vllm-workspace/vllm-ascend`）
 > 上游依据：B 修复文档遗留 P0-1（165 全量 UT 重跑）、P0-2（layerwise 指标语义实测确认）；SR 需求 not overlapped 指标验收
 > 编制：2026-08-26

@@ -1,6 +1,6 @@
 # SR20260820223202 Layerwise 池化性能优化 — 设计方案
 
-> 需求编号：SR20260820223202（需求解读见同目录 [requirements_analysis.md](requirements_analysis.md)）
+> 需求编号：SR20260820223202（需求解读见同目录 [01_requirements_analysis.md](01_requirements_analysis.md)）
 > 配套需求：AR20260820031213（可观测性，指标在两需求间交汇）
 > 代码基线：vllm-ascend upstream/main @ `ff998aad1`（2026-08-26），开发分支 `layerwise_pooling`
 > 编写时间：2026-08-26

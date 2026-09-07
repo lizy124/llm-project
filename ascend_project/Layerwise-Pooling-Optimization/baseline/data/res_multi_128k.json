@@ -1,0 +1,43 @@
+{
+  "cfg": {
+    "pfx_tokens": 131072,
+    "n_prefix": 2,
+    "conc": "4,8",
+    "out": "/home/lizhongyang/lw_verify/data/res_multi_128k.json",
+    "rounds": 4
+  },
+  "prefix_serial": {
+    "p0": {
+      "cold_lat": 12.79,
+      "cold_hits": 65536.0,
+      "replay_lat": 0.69,
+      "replay_hits": 131072.0,
+      "replay_rate": 99.81
+    },
+    "p1": {
+      "cold_lat": 12.79,
+      "cold_hits": 65536.0,
+      "replay_lat": 0.9,
+      "replay_hits": 131072.0,
+      "replay_rate": 99.81
+    }
+  },
+  "conc": {
+    "4": {
+      "wall": 6.13,
+      "lat_mean": 1.4,
+      "queries": 2101248.0,
+      "hits": 2097152.0,
+      "hit_rate": 99.81,
+      "kv_usage": 0.0
+    },
+    "8": {
+      "wall": 12.29,
+      "lat_mean": 2.75,
+      "queries": 4202496.0,
+      "hits": 4194304.0,
+      "hit_rate": 99.81,
+      "kv_usage": 0.0
+    }
+  }
+}
