@@ -1,0 +1,683 @@
+diff --git a/tests/ut/distributed/ascend_store/_mock_deps.py b/tests/ut/distributed/ascend_store/_mock_deps.py
+index 7d579c4072aa..d3497d538b00 100644
+--- a/tests/ut/distributed/ascend_store/_mock_deps.py
++++ b/tests/ut/distributed/ascend_store/_mock_deps.py
+@@ -29,6 +29,7 @@
+ import os
+ import sys
+ import types
++from dataclasses import dataclass, field
+ from typing import Any
+ from unittest.mock import MagicMock
+ 
+@@ -71,6 +72,7 @@
+     "vllm.distributed.kv_transfer.kv_connector.factory",
+     "vllm.distributed.kv_transfer.kv_connector.v1",
+     "vllm.distributed.kv_transfer.kv_connector.v1.base",
++    "vllm.distributed.kv_transfer.kv_connector.v1.metrics",
+     "vllm.distributed.parallel_state",
+     "vllm.envs",
+     "vllm.forward_context",
+@@ -96,6 +98,8 @@
+     "vllm.v1.core.single_type_kv_cache_manager",
+     "vllm.v1.kv_cache_interface",
+     "vllm.v1.kv_cache_spec_registry",
++    "vllm.v1.metrics",
++    "vllm.v1.metrics.utils",
+     "vllm.v1.outputs",
+     "vllm.v1.request",
+     "vllm.v1.serial_utils",
+@@ -121,6 +125,40 @@
+ _base_mod.KVConnectorRole.WORKER = "WORKER"
+ _base_mod.SupportsHMA = type("SupportsHMA", (), {})  # type: ignore[attr-defined]
+ 
++
++@dataclass
++class _MockKVConnectorStats:
++    data: dict = field(default_factory=dict)
++
++
++class _MockKVConnectorPromMetrics:
++    def __init__(
++        self,
++        vllm_config,
++        metric_types,
++        labelnames,
++        per_engine_labelvalues,
++    ):
++        metric_classes = list(metric_types.values())
++        self._gauge_cls = metric_classes[0]
++        self._counter_cls = metric_classes[1]
++        self._histogram_cls = metric_classes[2]
++        self.per_engine_labelvalues = per_engine_labelvalues
++
++
++_metrics_mod: Any = (
++    sys.modules["vllm.distributed.kv_transfer.kv_connector.v1.metrics"] if _MOCK_VLLM_DEPS else types.SimpleNamespace()
++)
++_metrics_mod.KVConnectorStats = _MockKVConnectorStats
++_metrics_mod.KVConnectorPromMetrics = _MockKVConnectorPromMetrics
++_metrics_mod.PromMetric = type("PromMetric", (), {})
++_metrics_mod.PromMetricT = type("PromMetricT", (), {})
++
++_metrics_utils_mod: Any = sys.modules["vllm.v1.metrics.utils"] if _MOCK_VLLM_DEPS else types.SimpleNamespace()
++_metrics_utils_mod.create_metric_per_engine = lambda metric, labelvalues: {
++    engine_idx: metric.labels(*values) for engine_idx, values in labelvalues.items()
++}
++
+ _events_mod: Any = sys.modules["vllm.distributed.kv_events"] if _MOCK_VLLM_DEPS else types.SimpleNamespace()
+ _events_mod.KVCacheEvent = type("KVCacheEvent", (), {})  # type: ignore[attr-defined]
+ _events_mod.KVConnectorKVEvents = type("KVConnectorKVEvents", (), {})  # type: ignore[attr-defined]
+diff --git a/tests/ut/distributed/ascend_store/test_metrics.py b/tests/ut/distributed/ascend_store/test_metrics.py
+new file mode 100644
+index 000000000000..bb0196b3fdcf
+--- /dev/null
++++ b/tests/ut/distributed/ascend_store/test_metrics.py
+@@ -0,0 +1,73 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Ascend project
++
++from unittest.mock import MagicMock
++
++import tests.ut.distributed.ascend_store._mock_deps  # noqa: F401
++from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
++    AscendStoreKVConnectorStats,
++    AscendStorePromMetrics,
++)
++
++
++class _MetricChild:
++    def __init__(self):
++        self.value = 0
++
++    def set(self, value):
++        self.value = value
++
++    def inc(self, value=1):
++        self.value += value
++
++    def observe(self, value):
++        self.value += value
++
++
++class _Metric:
++    def __init__(self, *args, **kwargs):
++        self.child = _MetricChild()
++
++    def labels(self, *args):
++        return self.child
++
++
++def test_stats_aggregate():
++    first = AscendStoreKVConnectorStats()
++    first.set_delayed_release(1, 2)
++    first.record_load_get(0.01, 3)
++    second = AscendStoreKVConnectorStats()
++    second.set_delayed_release(2, 5)
++    second.record_load_get(0.02, 5)
++
++    first.aggregate(second)
++
++    assert first.data == {
++        "delayed_release_requests": 2,
++        "delayed_release_blocks": 5,
++        "load_get_duration_seconds": [0.01, 0.02],
++        "load_get_keys": 8,
++    }
++
++
++def test_prom_metrics_observe():
++    prom = AscendStorePromMetrics(
++        MagicMock(),
++        {"gauge": _Metric, "counter": _Metric, "histogram": _Metric},
++        ["model_name"],
++        {0: ["test-model"]},
++    )
++
++    prom.observe(
++        {
++            "delayed_release_requests": 2,
++            "delayed_release_blocks": 5,
++            "load_get_duration_seconds": [0.01, 0.02],
++            "load_get_keys": 8,
++        }
++    )
++
++    assert prom._delayed_release_requests[0].value == 2
++    assert prom._delayed_release_blocks[0].value == 5
++    assert abs(prom._load_get_duration[0].value - 0.03) < 1e-9
++    assert prom._load_get_keys[0].value == 8
+diff --git a/tests/ut/distributed/ascend_store/test_pool_scheduler.py b/tests/ut/distributed/ascend_store/test_pool_scheduler.py
+index 52c5a955b16e..96d9a23e71a8 100644
+--- a/tests/ut/distributed/ascend_store/test_pool_scheduler.py
++++ b/tests/ut/distributed/ascend_store/test_pool_scheduler.py
+@@ -631,19 +631,32 @@ def _make_scheduler(self, mock_client_cls):
+         return KVPoolScheduler(make_config(), use_layerwise=False)
+ 
+     def test_update_finished(self):
+-        cases = [
+-            ("sending", {"r1", "r2", "r3"}, {"r1", "r2"}, {"r3"}),
+-            ("sending", {"r1"}, None, {"r1"}),
+-            ("recving", {"r1", "r2"}, {"r1"}, {"r2"}),
+-            ("recving", {"r1"}, None, {"r1"}),
++        sending_cases = [
++            ({"r1": 2, "r2": 3, "r3": 4}, {"r1", "r2"}, {"r3": 4}),
++            ({"r1": 2}, None, {"r1": 2}),
++        ]
++        for sending_initial, finished, sending_expected in sending_cases:
++            with self.subTest(direction="sending", finished=finished):
++                scheduler = self._make_scheduler()
++                for req_id, num_blocks in sending_initial.items():
++                    scheduler._set_delayed_free(req_id, num_blocks)
++                scheduler.update_finished_sending(finished)
++                self.assertEqual(scheduler._delayed_free_blocks_by_req, sending_expected)
++                self.assertEqual(
++                    scheduler._num_delayed_free_blocks,
++                    sum(sending_expected.values()),
++                )
++
++        recving_cases = [
++            ({"r1", "r2"}, {"r1"}, {"r2"}),
++            ({"r1"}, None, {"r1"}),
+         ]
+-        for direction, initial, finished, expected in cases:
+-            with self.subTest(direction=direction, finished=finished):
++        for recving_initial, finished, recving_expected in recving_cases:
++            with self.subTest(direction="recving", finished=finished):
+                 scheduler = self._make_scheduler()
+-                attribute = "_delayed_free_req_ids" if direction == "sending" else "_loading_req_ids"
+-                setattr(scheduler, attribute, initial)
+-                getattr(scheduler, f"update_finished_{direction}")(finished)
+-                self.assertEqual(getattr(scheduler, attribute), expected)
++                scheduler._loading_req_ids = recving_initial
++                scheduler.update_finished_recving(finished)
++                self.assertEqual(scheduler._loading_req_ids, recving_expected)
+ 
+ 
+ class TestKVPoolSchedulerUpdateConnectorOutput(unittest.TestCase):
+@@ -701,6 +714,19 @@ def test_non_ascend_meta_ignored(self):
+         scheduler.update_connector_output(output)
+         scheduler._block_pool.free_blocks.assert_not_called()
+ 
++    def test_finished_send_updates_delayed_release_metrics(self):
++        scheduler = self._make_scheduler()
++        scheduler._set_delayed_free("r1", 3)
++
++        entered = scheduler.get_stats()
++        self.assertEqual(entered.data["delayed_release_requests"], 1)
++        self.assertEqual(entered.data["delayed_release_blocks"], 3)
++
++        scheduler.update_finished_sending({"r1"})
++        released = scheduler.get_stats()
++        self.assertEqual(released.data["delayed_release_requests"], 0)
++        self.assertEqual(released.data["delayed_release_blocks"], 0)
++
+ 
+ class TestKVPoolSchedulerRequestFinishedAllGroups(unittest.TestCase):
+     """Test request_finished_all_groups."""
+@@ -749,7 +775,7 @@ def test_delay_free_with_blocks(self):
+         request.request_id = "r1"
+         delay, _ = scheduler.request_finished_all_groups(request, ([1, 2],))
+         self.assertTrue(delay)
+-        self.assertIn("r1", scheduler._delayed_free_req_ids)
++        self.assertEqual(scheduler._delayed_free_blocks_by_req["r1"], 2)
+ 
+     def test_no_delay_empty_blocks(self):
+         scheduler = self._make_scheduler()
+diff --git a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py
+index ed22581fd6ad..968a134a4bbb 100644
+--- a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py
++++ b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/ascend_store_connector.py
+@@ -16,6 +16,12 @@
+     KVConnectorRole,
+     SupportsHMA,
+ )
++from vllm.distributed.kv_transfer.kv_connector.v1.metrics import (
++    KVConnectorPromMetrics,
++    KVConnectorStats,
++    PromMetric,
++    PromMetricT,
++)
+ from vllm.forward_context import ForwardContext
+ from vllm.logger import logger
+ from vllm.utils.network_utils import make_zmq_socket
+@@ -30,6 +36,10 @@
+ from vllm.v1.worker import mamba_utils
+ 
+ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metadata import AscendStoreKVConnectorWorkerMetadata
++from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
++    AscendStoreKVConnectorStats,
++    AscendStorePromMetrics,
++)
+ from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.pool_scheduler import (
+     KVPoolScheduler,
+     get_zmq_rpc_path_lookup,
+@@ -319,6 +329,34 @@ def build_connector_worker_meta(self) -> AscendStoreKVConnectorWorkerMetadata |
+         assert self.connector_worker is not None
+         return self.connector_worker.build_connector_worker_meta()
+ 
++    def get_kv_connector_stats(self) -> KVConnectorStats | None:
++        connector_scheduler: KVPoolScheduler | None = getattr(self, "connector_scheduler", None)
++        if connector_scheduler is not None:
++            return connector_scheduler.get_stats()
++        connector_worker: KVPoolWorker | None = getattr(self, "connector_worker", None)
++        if connector_worker is not None:
++            return connector_worker.get_stats()
++        return None
++
++    @classmethod
++    def build_kv_connector_stats(cls, data: dict[str, Any] | None = None) -> KVConnectorStats:
++        return AscendStoreKVConnectorStats(data=data or {})
++
++    @classmethod
++    def build_prom_metrics(
++        cls,
++        vllm_config: VllmConfig,
++        metric_types: dict[type[PromMetric], type[PromMetricT]],
++        labelnames: list[str],
++        per_engine_labelvalues: dict[int, list[object]],
++    ) -> KVConnectorPromMetrics:
++        return AscendStorePromMetrics(
++            vllm_config,
++            metric_types,
++            labelnames,
++            per_engine_labelvalues,
++        )
++
+ 
+ class LookupKeyServer:
+     def __init__(
+diff --git a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py
+index 60cb63f11612..c20c777ed48a 100644
+--- a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py
++++ b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py
+@@ -878,6 +878,7 @@ def __init__(
+         invalid_block_ids: set[int] | None = None,
+         invalid_block_ids_lock: threading.Lock | None = None,
+         worker: Any = None,
++        record_load_get: Callable[[float, int], None] | None = None,
+     ):
+         super().__init__(
+             m_store,
+@@ -892,6 +893,7 @@ def __init__(
+         self._invalid_block_ids = invalid_block_ids if invalid_block_ids is not None else set()
+         self._invalid_block_ids_lock = invalid_block_ids_lock or threading.Lock()
+         self.worker = worker
++        self._record_load_get = record_load_get
+ 
+     def _handle_request(self, req_meta: ReqMeta):
+         try:
+@@ -967,7 +969,12 @@ def chunk_filter(start: int, group_id=group_id) -> bool:
+                 len(key_list_c),
+                 key_list_c[:3],
+             )
+-            ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
++            load_get_start = time.perf_counter() if self._record_load_get is not None else 0.0
++            try:
++                ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
++            finally:
++                if self._record_load_get is not None:
++                    self._record_load_get(load_get_start, len(key_list_c))
+             if ret is not None and any(r != 0 for r in ret):
+                 missing_block_ids = record_failed_blocks(
+                     block_id_list_c,
+diff --git a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/metrics.py b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/metrics.py
+new file mode 100644
+index 000000000000..a6658e86efa6
+--- /dev/null
++++ b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/metrics.py
+@@ -0,0 +1,133 @@
++# SPDX-License-Identifier: Apache-2.0
++# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Ascend project
++
++from dataclasses import dataclass
++from typing import Any
++
++from vllm.config import VllmConfig
++from vllm.distributed.kv_transfer.kv_connector.v1.metrics import (
++    KVConnectorPromMetrics,
++    KVConnectorStats,
++    PromMetric,
++    PromMetricT,
++)
++from vllm.v1.metrics.utils import create_metric_per_engine
++
++LOAD_GET_HISTOGRAM_BUCKETS = (
++    1e-3,
++    5e-3,
++    1e-2,
++    5e-2,
++    1e-1,
++    2e-1,
++    3e-1,
++    4e-1,
++    5e-1,
++    7.5e-1,
++    1.0,
++    1.5,
++    2.0,
++    3.0,
++    4.0,
++)
++
++
++@dataclass
++class AscendStoreKVConnectorStats(KVConnectorStats):
++    """Serializable AscendStore connector metrics."""
++
++    def reset(self) -> None:
++        self.data.clear()
++
++    def is_empty(self) -> bool:
++        return not self.data
++
++    def aggregate(self, other: KVConnectorStats) -> KVConnectorStats:
++        if durations := other.data.get("load_get_duration_seconds"):
++            self.data.setdefault("load_get_duration_seconds", []).extend(durations)
++        if num_keys := other.data.get("load_get_keys"):
++            self.data["load_get_keys"] = self.data.get("load_get_keys", 0) + num_keys
++        if "delayed_release_requests" in other.data:
++            self.data["delayed_release_requests"] = other.data["delayed_release_requests"]
++            self.data["delayed_release_blocks"] = other.data["delayed_release_blocks"]
++        return self
++
++    def reduce(self) -> dict[str, int | float]:
++        reduced: dict[str, int | float] = {
++            "delayed_release_requests": self.data.get("delayed_release_requests", 0),
++            "delayed_release_blocks": self.data.get("delayed_release_blocks", 0),
++        }
++        if durations := self.data.get("load_get_duration_seconds"):
++            reduced["load_get_count"] = len(durations)
++            reduced["load_get_avg_ms"] = round(sum(durations) / len(durations) * 1e3, 3)
++            reduced["load_get_total_keys"] = self.data.get("load_get_keys", 0)
++        return reduced
++
++    def record_load_get(self, duration_seconds: float, num_keys: int) -> None:
++        self.data.setdefault("load_get_duration_seconds", []).append(duration_seconds)
++        self.data["load_get_keys"] = self.data.get("load_get_keys", 0) + num_keys
++
++    def set_delayed_release(self, num_requests: int, num_blocks: int) -> None:
++        self.data["delayed_release_requests"] = num_requests
++        self.data["delayed_release_blocks"] = num_blocks
++
++
++class AscendStorePromMetrics(KVConnectorPromMetrics):
++    def __init__(
++        self,
++        vllm_config: VllmConfig,
++        metric_types: dict[type[PromMetric], type[PromMetricT]],
++        labelnames: list[str],
++        per_engine_labelvalues: dict[int, list[object]],
++    ) -> None:
++        super().__init__(vllm_config, metric_types, labelnames, per_engine_labelvalues)
++        self._delayed_release_requests = create_metric_per_engine(
++            self._gauge_cls(
++                name="vllm:ascend_store_delayed_release_requests",
++                documentation=("Requests whose KV blocks are waiting for AscendStore save."),
++                labelnames=labelnames,
++            ),
++            per_engine_labelvalues,
++        )
++        self._delayed_release_blocks = create_metric_per_engine(
++            self._gauge_cls(
++                name="vllm:ascend_store_delayed_release_blocks",
++                documentation=("KV block references held by requests waiting for AscendStore save."),
++                labelnames=labelnames,
++            ),
++            per_engine_labelvalues,
++        )
++        self._load_get_duration = create_metric_per_engine(
++            self._histogram_cls(
++                name="vllm:ascend_store_load_get_duration_seconds",
++                documentation="Histogram of per-worker non-layerwise AscendStore Backend.get duration.",
++                buckets=LOAD_GET_HISTOGRAM_BUCKETS,
++                labelnames=labelnames,
++            ),
++            per_engine_labelvalues,
++        )
++        self._load_get_keys = create_metric_per_engine(
++            self._counter_cls(
++                name="vllm:ascend_store_load_get_keys_total",
++                documentation="Number of keys fetched by AscendStore Backend.get.",
++                labelnames=labelnames,
++            ),
++            per_engine_labelvalues,
++        )
++
++    def observe(self, transfer_stats_data: dict[str, Any], engine_idx: int = 0) -> None:
++        metric = self._load_get_duration.get(engine_idx)
++        if metric is not None:
++            for duration in transfer_stats_data.get("load_get_duration_seconds", ()):
++                metric.observe(duration)
++        metric = self._load_get_keys.get(engine_idx)
++        if metric is not None:
++            metric.inc(transfer_stats_data.get("load_get_keys", 0))
++        metric = self._delayed_release_requests.get(engine_idx)
++        if metric is not None:
++            if "delayed_release_requests" in transfer_stats_data:
++                metric.set(transfer_stats_data["delayed_release_requests"])
++        metric = self._delayed_release_blocks.get(engine_idx)
++        if metric is not None:
++            if "delayed_release_blocks" in transfer_stats_data:
++                metric.set(transfer_stats_data["delayed_release_blocks"])
+diff --git a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py
+index 073e3ca3a206..ce597319aca5 100644
+--- a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py
++++ b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py
+@@ -52,6 +52,9 @@
+     normalize_block_ids_by_group,
+     uses_hybrid_kv_cache,
+ )
++from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
++    AscendStoreKVConnectorStats,
++)
+ 
+ 
+ class KVPoolScheduler:
+@@ -141,6 +144,9 @@ def __init__(
+         self._unfinished_requests: dict[str, tuple[Request, list[list[int]]]] = {}
+         self._loading_req_ids: set[str] = set()
+         self._delayed_free_req_ids: set[str] = set()
++        self._delayed_free_blocks_by_req: dict[str, int] = {}
++        self._num_delayed_free_blocks = 0
++        self._kv_stats = AscendStoreKVConnectorStats()
+ 
+         self._block_pool: BlockPool | None = None
+         self.sending_event_id = 0
+@@ -837,7 +843,7 @@ def build_connector_meta(self, scheduler_output: SchedulerOutput) -> KVConnector
+             self._request_trackers.pop(req_id, None)
+             self._unfinished_requests.pop(req_id, None)
+             self._loading_req_ids.discard(req_id)
+-            self._delayed_free_req_ids.discard(req_id)
++            self._set_delayed_free(req_id, 0)
+ 
+         meta = AscendConnectorMetadata(
+             scheduler_output.preempted_req_ids,
+@@ -927,6 +933,8 @@ def update_connector_output(self, connector_output: KVConnectorOutput):
+         """
+         hand the connector_output, free non-null mamba blocks and so on.
+         """
++        self.update_finished_sending(connector_output.finished_sending)
++
+         meta = connector_output.kv_connector_worker_meta
+         if not isinstance(meta, AscendStoreKVConnectorWorkerMetadata) or self._block_pool is None:
+             return
+@@ -957,22 +965,18 @@ def request_finished(
+         should be freed now or will be sent asynchronously and freed later.
+         """
+         if self.kv_role == "kv_consumer" and not self.consumer_is_to_put:
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+         if self.use_layerwise:
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+         tracker = self._request_trackers.get(request.request_id)
+         if tracker is None or tracker.num_saved_tokens <= 0:
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+-        delay_free_blocks = len(block_ids) > 0
+-        if delay_free_blocks:
+-            self._delayed_free_req_ids.add(request.request_id)
+-            logger.debug("Delaying free of %d blocks for request %s", len(block_ids), request.request_id)
+-        else:
+-            self._delayed_free_req_ids.discard(request.request_id)
+-        return delay_free_blocks, None
++        num_blocks = len(block_ids)
++        self._set_delayed_free(request.request_id, num_blocks)
++        return num_blocks > 0, None
+ 
+     def request_finished_all_groups(
+         self,
+@@ -981,41 +985,56 @@ def request_finished_all_groups(
+     ) -> tuple[bool, dict[str, Any] | None]:
+         """HMA path for hybrid KV cache groups."""
+         if self.kv_role == "kv_consumer" and not self.consumer_is_to_put:
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+         if self.use_layerwise:
+             # Free now: layerwise records no sending event, so delay-free would leak.
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+         tracker = self._request_trackers.get(request.request_id)
+         if tracker is not None and tracker.num_saved_tokens <= 0:
+-            self._delayed_free_req_ids.discard(request.request_id)
++            self._set_delayed_free(request.request_id, 0)
+             return False, None
+         block_ids = cast(tuple[list[int], ...], self.get_sw_clipped_blocks(block_ids))
+-        valid_group_block_ids = [group_block_ids for group_block_ids in block_ids if group_block_ids]
+-        delay_free_blocks = bool(valid_group_block_ids)
+-        if delay_free_blocks:
+-            self._delayed_free_req_ids.add(request.request_id)
+-            logger.debug(
+-                "Delaying free of %d KV cache groups for request %s",
+-                len(valid_group_block_ids),
+-                request.request_id,
+-            )
+-        else:
+-            self._delayed_free_req_ids.discard(request.request_id)
+-        return delay_free_blocks, None
++        num_blocks = sum(map(len, block_ids))
++        self._set_delayed_free(request.request_id, num_blocks)
++        return num_blocks > 0, None
+ 
+     def bind_gpu_block_pool(self, gpu_block_pool: "BlockPool") -> None:
+         self._block_pool = gpu_block_pool
+ 
+     def update_finished_sending(self, finished_sending: set[str] | None) -> None:
+         if finished_sending:
+-            self._delayed_free_req_ids.difference_update(finished_sending)
++            for req_id in finished_sending:
++                self._set_delayed_free(req_id, 0)
+ 
+     def update_finished_recving(self, finished_recving: set[str] | None) -> None:
+         if finished_recving:
+             self._loading_req_ids.difference_update(finished_recving)
+ 
++    def _set_delayed_free(self, req_id: str, num_blocks: int) -> None:
++        if num_blocks:
++            if req_id in self._delayed_free_req_ids:
++                return
++            self._delayed_free_req_ids.add(req_id)
++            self._delayed_free_blocks_by_req[req_id] = num_blocks
++            self._num_delayed_free_blocks += num_blocks
++            logger.debug("Delaying free of %d blocks for request %s", num_blocks, req_id)
++        else:
++            if req_id not in self._delayed_free_req_ids:
++                return
++            self._delayed_free_req_ids.discard(req_id)
++            num_blocks = self._delayed_free_blocks_by_req.pop(req_id)
++            self._num_delayed_free_blocks -= num_blocks
++        self._kv_stats.set_delayed_release(len(self._delayed_free_req_ids), self._num_delayed_free_blocks)
++
++    def get_stats(self) -> AscendStoreKVConnectorStats | None:
++        if self._kv_stats.is_empty():
++            return None
++        stats = self._kv_stats
++        self._kv_stats = AscendStoreKVConnectorStats()
++        return stats
++
+ 
+ class LookupKeyClient:
+     def __init__(self, vllm_config: "VllmConfig"):
+diff --git a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py
+index e9d7fe7da68f..40fb3ee52933 100644
+--- a/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py
++++ b/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py
+@@ -78,6 +78,9 @@
+     infer_tp_mismatch_info,
+     uses_hybrid_kv_cache,
+ )
++from vllm_ascend.distributed.kv_transfer.kv_pool.ascend_store.metrics import (
++    AscendStoreKVConnectorStats,
++)
+ from vllm_ascend.distributed.utils import (
+     get_decode_context_model_parallel_rank,
+     get_decode_context_model_parallel_world_size,
+@@ -126,6 +129,8 @@ def __init__(
+         self._init_kv_events(vllm_config)
+         self._init_state_vars()
+         self._init_layerwise_config()
++        self._kv_stats = AscendStoreKVConnectorStats()
++        self._kv_stats_lock = threading.Lock()
+ 
+     def _init_parallelism_info(self, model_config, parallel_config) -> None:
+         self.local_rank = envs.LOCAL_RANK
+@@ -597,6 +602,7 @@ def _start_kv_transfer_threads(self) -> None:
+                     ready_event,
+                     invalid_block_ids=self._invalid_block_ids,
+                     invalid_block_ids_lock=self._invalid_block_ids_lock,
++                    record_load_get=self._record_load_get,
+                 )
+                 self.kv_recv_thread.start()
+                 ready_event.wait()
+@@ -946,7 +952,11 @@ def chunk_filter(start: int, group_id=group_id, load_masks=load_masks) -> bool:
+                 len(key_list_c),
+                 key_list_c[:3],
+             )
+-            ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
++            load_get_start = time.perf_counter()
++            try:
++                ret = self.m_store.get(key_list_c, addr_list_c, size_list_c)
++            finally:
++                self._record_load_get(load_get_start, len(key_list_c))
+             if ret is not None and any(r != 0 for r in ret):
+                 missing_block_ids = record_failed_blocks(
+                     block_id_list_c,
+@@ -985,6 +995,19 @@ def chunk_filter(start: int, group_id=group_id, load_masks=load_masks) -> bool:
+                 len(key_list_c),
+             )
+ 
++    def _record_load_get(self, start_time: float, num_keys: int) -> None:
++        duration = time.perf_counter() - start_time
++        with self._kv_stats_lock:
++            self._kv_stats.record_load_get(duration, num_keys)
++
++    def get_stats(self) -> AscendStoreKVConnectorStats | None:
++        with self._kv_stats_lock:
++            if self._kv_stats.is_empty():
++                return None
++            stats = self._kv_stats
++            self._kv_stats = AscendStoreKVConnectorStats()
++            return stats
++
+     def _process_save_for_layer_batch(
+         self,
+         requests: list[ReqMeta],
+@@ -1979,7 +2002,11 @@ def _load_kv_tp_mismatch(
+             len(keys_c),
+             keys_c[:3],
+         )
+-        ret = self.m_store.get(keys_c, addrs_c, sizes_c)
++        load_get_start = time.perf_counter()
++        try:
++            ret = self.m_store.get(keys_c, addrs_c, sizes_c)
++        finally:
++            self._record_load_get(load_get_start, len(keys_c))
+         if ret is not None and any(r != 0 for r in ret):
+             missing_block_ids = record_failed_blocks(block_ids_c, ret)
+             with self._invalid_block_ids_lock:
