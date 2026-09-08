@@ -3,17 +3,20 @@
 源码基线：
 
 - vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
+
 - vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
 
 `ascend_store` 不是一个简单的 KV backend 适配器。它同时包含 vLLM connector 适配、Scheduler 侧命中与状态管理、跨侧 metadata、NPU cache 注册与地址展开、异步传输线程、layerwise buffer 复用以及多种外部 backend。
 
 当前主体源码超过 8,000 行，不能在一篇文章中同时解释清楚。本篇建立全局地图和一次请求的完整生命周期，具体实现拆到 `02` 至 `07`。
 
----
+***
 
 ## 1. 一句话定位
 
 `ascend_store` 把外部 KV 命中转换成 vLLM 可调度的 token 范围，再把 Scheduler 分配的本地 block 转换成 Worker 可执行的 key/address/size 任务，最后通过异步线程和 backend 完成 load/save。
+
+前半句的转换（外部命中 → token 范围）发生在 `KVPoolScheduler.get_num_new_matched_tokens()`：它以 `num_external_hit_tokens - num_computed_tokens` 得到 `need_to_allocate`——去掉本地 HBM 已覆盖的重叠前缀后，外部 store 真正额外贡献、需要分配本地 block 去承接的 token 数，Scheduler 据此回退 `num_computed_tokens` 决定跳过/补足。
 
 ```text
 Scheduler 控制面
@@ -32,21 +35,21 @@ Worker 数据面
 
 Scheduler 侧决定"哪些 token 可以从外部恢复、需要哪些本地 block"；Worker 侧决定"这些 block 对应哪些实际地址、怎样传输以及何时完成"。
 
----
+***
 
 ## 2. 源码地图
 
-| 文件 | 主要职责 |
-| --- | --- |
-| `ascend_store_connector.py` | 对接 vLLM connector 生命周期，按 role 转发到 Scheduler 或 Worker |
-| `pool_scheduler.py` | 外部命中查询、request tracker、分配后状态、connector metadata、结束与延迟释放 |
-| `coordinator.py` | hybrid KV cache group 的命中交集、可达 mask、Eagle/SWA/Mamba 语义适配 |
-| `metadata.py` | key 格式、token 到地址转换、request/transfer metadata 和 worker metadata |
-| `layerwise_cache_layout.py` | layerwise 物理层编号、共享 buffer、预取和复用关系 |
-| `pool_worker.py` | backend 初始化、NPU cache 注册、load/save 任务构造、同步与完成汇总 |
-| `kv_transfer.py` | 批量地址构造、线程公共协议、普通和 layerwise 发送/接收线程 |
-| `attention_fence.py` | attention 与复用 buffer 之间的 NPU event 顺序 |
-| `backend/` | Mooncake、MemCache、YuanRong 的存储协议适配 |
+| 文件                          | 主要职责                                                           |
+| --------------------------- | -------------------------------------------------------------- |
+| `ascend_store_connector.py` | 对接 vLLM connector 生命周期，按 role 转发到 Scheduler 或 Worker           |
+| `pool_scheduler.py`         | 外部命中查询、request tracker、分配后状态、connector metadata、结束与延迟释放        |
+| `coordinator.py`            | hybrid KV cache group 的命中交集、可达 mask、Eagle/SWA/Mamba 语义适配       |
+| `metadata.py`               | key 格式、token 到地址转换、request/transfer metadata 和 worker metadata |
+| `layerwise_cache_layout.py` | layerwise 物理层编号、共享 buffer、预取和复用关系                              |
+| `pool_worker.py`            | backend 初始化、NPU cache 注册、load/save 任务构造、同步与完成汇总                |
+| `kv_transfer.py`            | 批量地址构造、线程公共协议、普通和 layerwise 发送/接收线程                            |
+| `attention_fence.py`        | attention 与复用 buffer 之间的 NPU event 顺序                          |
+| `backend/`                  | Mooncake、MemCache、YuanRong 的存储协议适配                             |
 
 几个最大的文件分别承担不同层次的复杂度，不能仅按一次调用链顺序混在一起阅读：
 
@@ -57,7 +60,7 @@ pool_worker.py     设备资源与任务编排
 kv_transfer.py     异步执行与后端 I/O
 ```
 
----
+***
 
 ## 3. 一次请求的完整生命周期
 
@@ -78,11 +81,12 @@ Scheduler.schedule()
 两个语义要点：
 
 - **外部命中只在首轮查**：vLLM Scheduler 仅对 `num_computed_tokens == 0` 的请求询问 connector；先取本地 HBM 连续 prefix（通过 `_get_local_prefix_cache_hit()` 封装，处理 connector 的 `supports_divergent_local_hybrid_hits` 差异），再问外部。
+
 - **传入的是 block 对齐后的本地命中数**：让"更长的外部命中"接管不足一个 block 的尾巴，避免 CoW 竞争。
 
 这里的 external hit 仍然只是"可恢复 token 范围"，并不代表 NPU block 已经装载完成。
 
-### 3.2 为什么还要 allocate_slots()
+### 3.2 为什么还要 allocate\_slots()
 
 Scheduler 必须先为命中的外部 KV 分配本地 block，Worker 才知道外部数据应该写到哪里。因此命中查询后仍会回到：
 
@@ -119,7 +123,9 @@ Worker 收到 SchedulerOutput 后，`start_load_kv()` 读取 metadata、准备 l
 ### 3.5 forward 期间如何 save 新 KV
 
 - **layerwise save**：模型 runner 在 layer 边界调用 `save_kv_layer()`，把当前层的新 KV 地址交给发送线程。load/save 可以和后续 layer forward 重叠，但每层都需要自己的 event 和失败检查。
+
 - **非 layerwise save**：由 `wait_for_save()` 统一处理，Worker 记录 NPU event 确保 source KV 不再被当前 forward 使用，再让发送线程读取地址并调用 backend.put。
+
 - **consumer 角色**：`kv_role` 是 `kv_consumer` 且 `consumer_is_to_put` 关闭时，connector 跳过 save——consumer 只获取数据，不发布新 KV。
 
 ### 3.6 完成状态如何回到 Scheduler
@@ -160,7 +166,7 @@ request bookkeeping 可以清理
 
 注意三个事件不是同一件事：**传输任务完成、NPU tensor 对 attention 可见、请求 block 可以释放**，分别由线程、设备同步和 Scheduler 生命周期处理。
 
----
+***
 
 ## 4. 运行模式矩阵
 
@@ -180,18 +186,23 @@ request bookkeeping 可以清理
 
 Full Attention、SWA、Mamba 等 group 可能具有不同 block size 和可达范围。命中不能只看单一 group；Scheduler 和 Worker 都必须保留按 group 组织的 block ids、mask、地址与 cache family。
 
----
+***
 
 ## 5. 子篇导航
 
 - [02：挂载、契约与控制面](02_connector_and_control_plane.md)——插件机制、connector 方法全景、KVPoolScheduler 的命中查询与状态管理、coordinator 的 hybrid 语义。
+
 - [03：Metadata 与 Layout](03_metadata_and_layout.md)——Key/Tracker/ReqMeta 如何共同描述一项传输，layerwise 物理布局。
+
 - [04：Worker Pipeline](04_worker_pipeline.md)——NPU cache 注册、block id 展开为地址、普通/layerwise/GVA/partial/TP mismatch 分流。
+
 - [05：存储模型、传输线程与 Backend](05_transfer_backend_storage.md)——两层存储与两套地址、六类传输线程、三种 backend 能力差异。
-- [06：并发、同步与配置](06_concurrency_and_config.md)——三层同步语义、attention fence、delayed_free、配置组合如何改变路径。
+
+- [06：并发、同步与配置](06_concurrency_and_config.md)——三层同步语义、attention fence、delayed\_free、配置组合如何改变路径。
+
 - [07：查询路径设计决策](07_lookup_path_design.md)——ZMQ/直连分叉、减法/合并模型、buffer 复用、两条正交的轴。
 
----
+***
 
 ## 6. 阅读路线
 
@@ -245,7 +256,7 @@ key、block range、group 不对 -> 03
 失败后由谁决定重算、释放或报错？
 ```
 
----
+***
 
 ## 7. 本文结论
 
