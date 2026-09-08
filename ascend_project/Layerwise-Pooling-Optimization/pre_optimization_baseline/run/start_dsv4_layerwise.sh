@@ -74,8 +74,8 @@ nohup vllm serve /mnt/weight/DeepSeek-V4-Flash-w8a8-mtp \
                 "kv_connector_extra_config": {
                     "lookup_rpc_port":"0",
                     "backend": "memcache",
-                    "use_layerwise": true,
-                     "layerwise_prefetch_layers":0
+                    "use_layerwise": false,
+                     "layerwise_prefetch_layers":3
                 }
             }' > "$LOG" 2>&1 &
 

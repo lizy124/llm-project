@@ -63,9 +63,9 @@
 - 结果：**仍死锁**（单请求 120s 超时；32 并发 0/32）。
 - 结论：**预取窗口大小（3→1）不是关键**。
 
-### 2.11 TP8×DP1 + 131072 + layerwise + prefetch_layers=0（20:49，进行中）
-- 预期：`_submit_ready_layer_loads` 在 `current_layer≠0` 时每层仍提交 1 个加载任务 → **预计仍死锁**（若如此，根因是 layerwise 按层加载 + 层间等待机制本身，非预取）。
-- 代码依据：[pool_worker.py:1673](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1673) `submit_count = num_prefetch_layers if current_layer==0 else 1`；[pool_worker.py:1689](file:///D:/lzy/project/kv_pool/code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py#L1689) `wait_for_layer_load` 主线程阻塞等异步加载；`LayerLoadTask(wait_for_save_layer=...)` 加载依赖源层保存。
+### 2.11 TP8×DP1 + 131072 + layerwise + prefetch_layers=0（20:49）
+- 结果：**启动失败**。`layerwise_cache_layout.py:147 ValueError: layerwise_prefetch_layers must be at least 1`（`_PREFETCH_LAYERS` 强制 ≥1）。
+- **结论：layerwise 必然带 ≥1 层预取，而 prefetch=1/3 均死锁 → 本栈 layerwise 无可用调参组合（C2 升级为必然死锁）**。
 
 ### 2.12 死锁根因分析（layerwise 机制层面）
 - 死锁环（TP 多卡）：rank A 先进 attention（加载 gate 通过）→ 卡在 TP attention/MoE all_reduce（rank B 未到）→ rank A 的该层 KV 保存无法进行 → rank B 的层加载依赖源层保存（`wait_for_save_layer`）永远等不到 → rank B 卡 `wait_for_layer_load` → 循环等待。
