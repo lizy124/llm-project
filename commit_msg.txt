@@ -1,6 +1,0 @@
-docs: archive completed Layerwise and Observability proposals under Proposals/archive
-
-- 将 Layerwise-Pooling-Optimization、vLLM-Observability 两个已完结/收敛专项移入 Proposals/archive/ 归档区，ascend_project 仅保留当前活跃专项（A3_HCCS_TEST、vllm-api-compat）
-- 同步更新 Templates/01_requirements、02_design 中样板链接路径（ascend_project/ → archive/）
-- 修正 Technical/transfer_data/README.md：移除已迁入 Templates 的 playbook/ 条目、更新边界说明路径
-- 使用 git mv 迁移，保留历史
