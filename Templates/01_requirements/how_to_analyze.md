@@ -1,7 +1,7 @@
 # 01 — 需求分析（怎么分析一个新 PR/专项）
 
 > 新项目（如一个池化新 PR）到来时，第一步是需求分析。本章给出"怎么拆需求、怎么提问、怎么识别风险、怎么界定改动面"的方法论。
-> **样板**：[Layerwise-Pooling-Optimization/01_requirements_analysis.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/01_requirements_analysis.md)
+> **样板**：[Layerwise-Pooling-Optimization/01_requirements_analysis.md](../../Proposals/archive/Layerwise-Pooling-Optimization/01_requirements_analysis.md)
 
 ---
 
@@ -44,7 +44,7 @@
 
 ## 5. 样板参考
 
-[Layerwise-Pooling-Optimization/01_requirements_analysis.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/01_requirements_analysis.md) — KV 池化 Layerwise 传输加速专项的需求分析实例，包含：
+[Layerwise-Pooling-Optimization/01_requirements_analysis.md](../../Proposals/archive/Layerwise-Pooling-Optimization/01_requirements_analysis.md) — KV 池化 Layerwise 传输加速专项的需求分析实例，包含：
 - 需求背景与目标
 - 改动面（涉及的模块与代码路径）
 - 环境依赖与约束

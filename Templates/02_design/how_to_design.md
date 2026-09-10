@@ -1,7 +1,7 @@
 # 02 — 方案设计（怎么写设计提案、实施计划、测试计划）
 
 > 需求分析完成后，进入方案设计阶段。本章给出"怎么写设计提案、实施计划、测试计划"的方法论。
-> **样板**：[Layerwise-Pooling-Optimization/02_design_proposal.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/02_design_proposal.md)、[03_implementation_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/03_implementation_plan.md)、[04_dev_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/04_dev_plan.md)、[05_test_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/05_test_plan.md)
+> **样板**：[Layerwise-Pooling-Optimization/02_design_proposal.md](../../Proposals/archive/Layerwise-Pooling-Optimization/02_design_proposal.md)、[03_implementation_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/03_implementation_plan.md)、[04_dev_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/04_dev_plan.md)、[05_test_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/05_test_plan.md)
 
 ---
 
@@ -52,7 +52,7 @@
 
 ## 5. 样板参考
 
-- [02_design_proposal.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/02_design_proposal.md) — 设计提案实例
-- [03_implementation_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/03_implementation_plan.md) — 实施计划实例
-- [04_dev_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/04_dev_plan.md) — 开发计划实例
-- [05_test_plan.md](../../Proposals/ascend_project/Layerwise-Pooling-Optimization/05_test_plan.md) — 测试计划实例
+- [02_design_proposal.md](../../Proposals/archive/Layerwise-Pooling-Optimization/02_design_proposal.md) — 设计提案实例
+- [03_implementation_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/03_implementation_plan.md) — 实施计划实例
+- [04_dev_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/04_dev_plan.md) — 开发计划实例
+- [05_test_plan.md](../../Proposals/archive/Layerwise-Pooling-Optimization/05_test_plan.md) — 测试计划实例
