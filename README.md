@@ -1,7 +1,7 @@
 # LLM Project Notes
 
 这是围绕 LLM、vLLM、KV Cache/KV Pool 和 vLLM Ascend 的个人研究与验证资料库。
-目录整体分为**两大部分 + 两个独立区**：技术类文档（第一部分）、项目方案/规划区（第二部分），以及独立的 `assets`（非文档资产）与 `utils`（环境工具）。
+目录整体分为**两大部分 + 若干独立区**：技术类文档（第一部分）、项目方案/规划区（第二部分），以及项目执行手册 `Templates/`、非文档资产 `assets/`、环境工具 `utils/`。
 
 ## 目录分组图
 
@@ -23,7 +23,24 @@
 
 > `Technical/transfer_data` 内仍保留少量方案类文档（requirements/design/plan/review），未做二次拆分；如需阅读方案类材料，可同时参考两区。
 
-### 第三区：非文档资产 — `assets/`
+### 项目执行手册 — `Templates/`
+
+"新 PR / 新专项"从头走到尾的可复用方法论（需求分析 → 方案设计 → 环境搭建 → 池化拉起 → 测试设计 → 结果判定）：
+
+| 目录 | 内容 |
+|------|------|
+| `Templates/01_requirements` | 需求分析方法论 |
+| `Templates/02_design` | 设计提案/实施/测试计划方法论 |
+| `Templates/03_env_setup` | 环境搭建指南（建容器/配代理/装包） |
+| `Templates/04_pool_setup` | 池化后端**完整可跑方案**（memcache 共置/standalone、mooncake 单机） |
+| `Templates/05_vllm_launch` | 池化 vllm 启动（参数/READY/失败速查） |
+| `Templates/06_test_method` | 测试设计 + 按场景运行手册 |
+| `Templates/07_pass_criteria` | E2E 判定标准、误区清单、已知硬限 |
+| `Templates/_common` | IRON RULE、版本配对、端口规划等公共约束 |
+
+> 详细索引见 [Templates/README.md](Templates/README.md)。
+
+### 独立区：非文档资产 — `assets/`
 
 脚本、测试数据、E2E 证据、图片、diff 等所有非 md 文件，按来源顶层目录镜像存放：
 

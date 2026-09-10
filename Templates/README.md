@@ -22,8 +22,8 @@
 [03] 代码开发        ← （不在本手册，由用户/agent 自行完成）
    │
    ▼
-[04] 测试验证        ← Templates/03_env_setup → 04_backend_startup
-                       → 05_vllm_launch → 06_test_method → 07_pass_criteria
+[04] 测试验证        ← Templates/03_env_setup → 04_pool_setup → 05_vllm_launch
+                       → 06_test_method → 07_pass_criteria
    │
    ▼
 产出：Proposals/<专项>/（实例） + Technical/<专项>/（技术记录与证据） + assets/<专项>/（脚本/数据）
@@ -37,8 +37,9 @@
 | `01_requirements/how_to_analyze.md` | 怎么拆需求、提问、识别风险、界定改动面 | 方法论 + Layerwise 样板 |
 | `02_design/how_to_design.md` | 怎么写设计提案、实施计划、测试计划 | 方法论 + Layerwise 样板 |
 | `03_env_setup/env_setup_guide.md` | 镜像选择 → 建容器 → 配代理 → 查版本/卸载 → 装 vllm/vllm-ascend | transfer_data/playbook/create_env.md |
-| `04_backend_startup/mooncake_startup.md` | mooncake master 拉起规范（端口/配置/探活/停止） | verify_guide §2 |
-| `04_backend_startup/memcache_startup.md` | memcache MetaService 拉起规范（两份 conf/环境变量/探针/版本匹配铁律/独立端口变体） | verify_guide §3 + test_pool/01_memcache_kv_pool_setup.md |
+| `04_pool_setup/memcache-colocated.md` | memcache 共置模式完整可跑方案（hugepages→MetaService→vllm 接入→验证→坑） | test_pool/01a_memcache_kv_pool_setup.md |
+| `04_pool_setup/memcache-standalone.md` | memcache standalone（LocalService 独立进程）模式完整方案 | test_pool/01b_memcache_standalone.md |
+| `04_pool_setup/mooncake-single-node.md` | mooncake 单机基线完整方案（端口/配置/启动/验证/证据） | test_pool/01c_mooncake_single_node_baseline.md |
 | `05_vllm_launch/vllm_pool_launch.md` | 池化场景启动（关键参数/READY 等待/启动失败速查） | verify_guide §4 |
 | `06_test_method/test_design.md` | prompt 门槛/验证矩阵/标准测试流程/对照实验/脚本纪律 | verify_guide §5 |
 | `07_pass_criteria/pass_criteria.md` | 三维证据链/虚假通过防范/双轮夹逼/验收表模板/硬限 | verify_guide §6-8 |
@@ -48,7 +49,7 @@
 新 PR 到来时：
 1. 按 `01_requirements/how_to_analyze.md` 拆需求，产出 `Proposals/<专项>/01_requirements_analysis.md`
 2. 按 `02_design/how_to_design.md` 写设计/计划，产出 `Proposals/<专项>/02_design_proposal.md` 等
-3. 测试时按 `03_env_setup` → `04_backend_startup` → `05_vllm_launch` → `06_test_method` → `07_pass_criteria` 走，产出 `Technical/<专项>/`（技术记录与证据）+ `assets/<专项>/`（脚本/数据）
+3. 测试时按 `03_env_setup` → `04_pool_setup` → `05_vllm_launch` → `06_test_method` → `07_pass_criteria` 走，产出 `Technical/<专项>/`（技术记录与证据）+ `assets/<专项>/`（脚本/数据）
 
 ## 4. 维护规则
 
