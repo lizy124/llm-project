@@ -1,0 +1,41 @@
+## Motivation
+
+KV pooling (AscendStoreConnector, both `memcache` and `mooncake` backends, with/without `use_layerwise`) currently has **no nightly coverage**: a pooling regression would not be caught until a manual weekly/CI run happens. This PR brings KV pooling into the DeepSeek-V4-Flash nightly guardrails by **overlapping pooling config onto 4 existing nightly services** -- no new yaml files, no new test cases, no CI/runner script changes. Accuracy + performance are both guarded.
+
+The same integration shape is already proven by two merged weekly cases: `DSv4-Flash-Memcache-PD-layerwise` (multi-node PD, memcache) and `Qwen3.5-397B-Memcache-perf` (single-node, memcache). This PR reuses their structures verbatim.
+
+## Changes
+
+Two commits, +110/-7 across 4 nightly config yamls. Based on current upstream `main` (`31608b3f5`).
+
+| Nightly entry | Platform / topology | Pooling overlay | Guarded by |
+|---|---|---|---|
+| `DeepSeek-V4-flash-w8a8-PD-prefix` (multi-node PD) | a3, prefill DP4xTP4 + decode DP16xTP1 | yaml-level `kv_pool` (memcache, 5000/6000); both ends switch `MooncakeHybrid` -> `MultiConnector` (PD transfer kept as connectors[0] with `engine_id` preserved; `AscendStoreConnector` memcache producer `use_layerwise: true` / consumer `false`) | `acc_aime2025` (90) + appended `perf_TPOT50_3_5_1_5` (15569.48 / 0.95), aligned with the weekly case |
+| `DeepSeek_V4_Flash_A5` case #1 only | a5, single node DP8 | per-case `kv_pool` (mooncake, master 50088 / metrics 50089) + `AscendStoreConnector` `kv_both` `use_layerwise: true`; benchmarks expanded inline (decoupled from the shared anchor) | `acc` GPQA (87.4) + `perf` gsm8k; the 04/05/06 rejection-sampler comparison matrix and all other cases are untouched |
+| `acceptace_rate_deepseekv4-flash-w8a8-mtp` (MTP3) | a3, single node TP8 | `_kv_pool` memcache anchor + `AscendStoreConnector` `kv_both` `use_layerwise: false` appended to the shared `_server_cmd` (Qwen weekly precedent); both open/close cases carry the pool | acceptance rate (0.925 +/- 0.05) + `perf` (90) |
+| `DeepSeek-V4-Flash-W8A8-A3` (**read-path sentinel**) | a3, single node DP4xTP4 | per-case `kv_pool` (memcache, 5000/6000) + `AscendStoreConnector` `kv_both` `use_layerwise: true`; **`--enable-prefix-caching` flipped OFF** so the pool is the only KV hit path | `acc-gpqa` (86.36, unchanged) + `perf` on shared-prefix load `GSM8K_prefix90_in65536_bs1000_qwen` (recording placeholder, re-baseline after first run) |
+
+Ports follow the nightly conventions (memcache 5000/6000, mooncake master 50088 / metrics 50089); memcache pool services are per-case lifecycle on single-node runners and node-0 managed on the multi-node runner.
+
+`kv_load_failure_policy` is deliberately left at the default `fail` (loud failure) everywhere -- silent recompute would mask exactly the read-path bugs this guardrail exists to catch.
+
+**The A3 entry provides the only read-path coverage in the family**: its perf load carries a ~90% shared prefix, so waves 2+ of the batched load hit the pool and load KV back (in the PD / A5 / MTP3 entries the workloads have no shared prefix -- the query path is exercised, the hit path is not). The dataset is already used on the same runner pool by `qwen_3_6_27b_w8a8_A3`, so it is known to be present in the pod cache; it is qwen-tokenizer calibrated, which drifts under the `deepseek_v4` tokenizer -- acceptable for a perf-only sentinel.
+
+## Local static validation
+
+All 4 yamls pass `yaml.safe_load`; every JSON server arg passes `json.loads`; all `kv_pool` blocks round-trip through the real parser (`tests/e2e/common/kv_pool/config.py`).
+
+## Test plan
+
+- [ ] `/nightly DeepSeek-V4-flash-w8a8-PD-prefix` -- expect AIME 90 unchanged; TPOT50 ~15569 (write-path overhead watermark)
+- [ ] `/nightly DeepSeek_V4_Flash_A5` -- expect GPQA 87.4 unchanged; gsm8k perf re-baselined after first pooled run; remaining 5 cases byte-identical behavior
+- [ ] `/nightly acceptace_rate_deepseekv4-flash-w8a8-mtp` -- expect acceptance rate 0.925 unchanged; perf re-baselined
+- [ ] `/nightly DeepSeek-V4-Flash-W8A8-A3` -- expect GPQA 86.36 unchanged; perf records a new baseline (placeholder until then)
+- [ ] Pool service logs: memcache/mooncake start-stop clean per case
+- [ ] `kvpool hit tokens`: stays 0 in the PD / A5 / MTP3 entries (no shared prefixes there -- expected), **> 0 on the A3 perf waves 2+** (the read-path observation point). If the A3 entry logs `kvpool hit tokens: 0` with no errors, block_hashes are not being generated with prefix caching disabled -- in that case we follow up by reverting the A3 changes or re-enabling prefix caching (the entry would otherwise silently lose its read-path coverage)
+
+## Rollback
+
+Fully reversible: removing the `kv_pool` blocks and the `--kv-transfer-config` entries restores the original nightly configs verbatim (the A3 entry additionally restores `--enable-prefix-caching` and the prefix0 dataset).
+
+- vLLM main: https://github.com/vllm-project/vllm/commit/ced6857afa0ea7b2e3f0846a62e1394e90f15607
