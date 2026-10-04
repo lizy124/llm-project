@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 状态 | 待评审（PR #17624 已提交，前置 R9 gate 见 §5） |
-| 日期 | 2026-09-25（2026-09-29 rebase 更新） |
+| 状态 | 最终载体分工已确定；PR #17624 配置已同步，性能基线待实跑回填 |
+| 日期 | 2026-09-25（2026-10-04 载体矩阵修订） |
 | 仓库 | vllm-ascend（工作分支 `pool_nightly`，基于 main@31608b3f5） |
 
 ---
+
+> **2026-10-04 最终决议**：S2 改为 A5 Memcache layerwise，S4 改为 A3 Mooncake non-layerwise。本文后续基于旧 backend 分工的 S2/S4 配置、风险和决策记录作为历史保留；实际落地以本页 §2.1 及 `s2.md`、`s3.md`、`s4.md` 的最终修订为准。
 
 ## 1. 目标与约束
 
@@ -14,7 +16,7 @@
 
 **硬约束**：不新增用例、不新起服务、不新建 yaml、CI 注册不动、runner 脚本不动——池化配置一律**叠进 nightly 已有服务**，让已有/扩展的考题来看护。
 
-**设计基线**：各载体除池化外的服务参数保持 nightly 现状（不引入现状之外的新特性组合）；池 backend 分工——**memcache→a3、mooncake→a5**（mooncake 作为 PD 传输的角色由 S1 保留连接器继续看护）。
+**设计基线**：各载体除池化外的服务参数保持 nightly 现状。Memcache layerwise 由 S1/S2/S3 分别覆盖 A3 PD、A5 DP8×TP1、A3 DP4×TP4；Mooncake non-layerwise 由 S4 覆盖 A3 TP8×MTP3 的整块 KV 读写。
 
 **看护深度定义**（"池化精度"的完整含义）：
 - **写路径精度**：池化写池不得破坏本地 KV / PD 传输（由精度考题判卷）
@@ -22,21 +24,22 @@
 - **MTP3×池交互**：生产 MTP 档位为 3，draft KV 写池与 verify×池并发
 - **开销水位**：池化写池开销下的吞吐下限
 
-**实施分期**：Phase 1（S1 + S2 + S4，无外部依赖）→ Phase 2a（S3 perf-only 读路径哨兵，前置仅 R9 gate）→ Phase 2b（S3 acc-prefix 判卷，前置 = Q6 造数）。
+**实施状态**：四个载体均叠加到既有服务；S2/S3/S4 使用同一 prefix90 暖池方法看护读取性能，正式 baseline/threshold 在各自最终形态上重新测量。
 
 ---
 
 ## 2. 总体设计
 
-### 2.1 四载体看护矩阵（方案门面）
+### 2.1 四载体看护矩阵（最终方案门面）
 
-| 看护面 | S1（a3 1p1d） | S2 case #1（a5 单机） | S4（a3 单机 TP8） | S3（a3 单机，Phase 2a/2b） |
+| 场景 | 平台/拓扑 | 池 backend | layerwise | 准确的主要看护内容 |
 |---|---|---|---|---|
-| 池 backend | memcache | mooncake | memcache | memcache |
-| 写路径精度 | ✔ AIME2025 | ✔ GPQA | ✘（以接受率作 spec-decode 质量哨兵） | ✔ GPQA（保留，86.36 沿用） |
-| 读路径精度 | ✘（负载无前缀） | ✘（负载无前缀） | ✘ | **✔ 带前缀判分考题（全家族唯一，2b 交付）** |
-| MTP3×池交互 | ✘（decode 端仅 consumer） | ✘（MTP=1） | **✔（生产档位）** | ✘（MTP=1） |
-| 开销水位 | ✔ TPOT50 | ✔ gsm8k | ✔ gsm8k | ✔ 带前缀 perf（池化净效应水位，语义校准见 §3.4） |
+| S1 | A3，PD 分离 | memcache | Producer 开启，Consumer 关闭 | MultiConnector、PD 传输、Prefill 逐层写池、AIME 精度 |
+| S2 | A5，DP8×TP1 | memcache | 开启 | A5 `device_urma`、逐层写入/热池读取、GPQA 精度、性能 |
+| S3 | A3，DP4×TP4 | memcache | 开启 | A3 基础逐层热池读取、GPQA 精度、稳定性能哨兵 |
+| S4 | A3，TP8、MTP3 | mooncake | 关闭 | 整块 KV 写入/读取、MTP3 acceptance、verify 开关、性能 |
+
+精度由 S1 的 AIME 与 S2/S3 的 GPQA 承担；S4 的 acceptance rate 是 MTP 行为指标，不等同于答案正确率。严格的池命中后答案精度仍需要带共享前缀的可判分数据。
 
 ### 2.2 改动清单
 
@@ -120,7 +123,7 @@ kv_pool:
 
 **2026-09-29 rebase 记录**：上游 main 前进引发 PR #17624 冲突，已 rebase 至 main@31608b3f5。冲突源两个：#17628（CI DP 调度改造，yaml 顶层加 `dp_load_balancing: external`）与 #17661（MRV2 revert，**prefill 拓扑 TP1+CP4 → TP4**、删 `VLLM_USE_V2_MODEL_RUNNER`、additional-config 加 `enable_dsa_cp`）。解决 = connectors[0] 内嵌 prefill `tp_size` 随上游基座更新为 4。**这使 nightly prefill 拓扑与 weekly 先例首次精确一致**（此前 nightly 为 TP1+CP4 ≠ 先例 TP4——首版 PR 按nightly原状内嵌 `tp_size: 1`，与 §3.1 JSON 按先例形态记的 4 存在文档-实现偏差，本次 rebase 归一）。两处保留差异复核不变；`enable_dsa_cp`/`dp_load_balancing` 两例皆有，不构成新差异；weekly TPOT50 基线 15569.48/0.95 复核无误。现行 commit：`bf0278b90`（Phase 1 三载体）+ `e37e47e33`（S3 读路径哨兵，gate FAIL 的 revert 对象）。
 
-### 3.2 S2 case #1：a5 单机 mooncake 池化（Phase 1）
+### 3.2 S2 case #1：a5 单机 Mooncake 旧方案（历史，已由 `s2.md` 的 Memcache Layerwise 方案取代）
 
 **现状**：6 个 test_case 共享 `_server_cmd` anchor；case #1（GPQA_Accuracy_Test_01，MTP=1，135k）自带 GPQA 精度考题，是唯一不破坏 04/05/06 rejection sampler 对比矩阵的池化载体。
 
@@ -190,7 +193,7 @@ kv_pool:
 - 已知代价（R7）：case #1 池化后，a5"非池化 BF16 精度"失去 nightly 看护
 - 其余 5 个 case 一字不动；夜间服务次数不变
 
-### 3.3 S4：a3 单机 MTP3×池交互看护（Phase 1）
+### 3.3 S4：a3 单机 Memcache 旧方案（历史，已由 `s4.md` 的 Mooncake Non-layerwise 方案取代）
 
 **现状**：全 nightly 唯一真正测量+断言 MTP 接受率的用例——2 个 case（enable-open / enable-close）构成 verify 开关对比，均带 `spec_decode_acceptance`（0.925/0.05）+ perf（90/0.97）；TP8，MTP=3。
 
