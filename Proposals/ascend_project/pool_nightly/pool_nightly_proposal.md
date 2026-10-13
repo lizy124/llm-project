@@ -3,8 +3,8 @@
 | 项目 | 内容 |
 |---|---|
 | 状态 | 最终载体分工已确定；PR #17624 配置已同步，性能基线待实跑回填 |
-| 日期 | 2026-09-25（2026-10-04 载体矩阵修订） |
-| 仓库 | vllm-ascend（工作分支 `pool_nightly`，基于 main@31608b3f5） |
+| 日期 | 2026-09-25（2026-09-30 rebase、2026-10-04 载体矩阵修订） |
+| 仓库 | vllm-ascend（工作分支 `pool_nightly`，基于 main@c39b31aab） |
 
 ---
 
@@ -121,7 +121,9 @@ kv_pool:
 
 **注意**：与 weekly 先例的两处保留差异（nightly 现状）：prefill 端 prefix-caching 默认开（先例为关，见 Q1）、MooncakeHybrid 带 engine_id。其余全部对齐。性能影响分析见 §4.3。
 
-**2026-09-29 rebase 记录**：上游 main 前进引发 PR #17624 冲突，已 rebase 至 main@31608b3f5。冲突源两个：#17628（CI DP 调度改造，yaml 顶层加 `dp_load_balancing: external`）与 #17661（MRV2 revert，**prefill 拓扑 TP1+CP4 → TP4**、删 `VLLM_USE_V2_MODEL_RUNNER`、additional-config 加 `enable_dsa_cp`）。解决 = connectors[0] 内嵌 prefill `tp_size` 随上游基座更新为 4。**这使 nightly prefill 拓扑与 weekly 先例首次精确一致**（此前 nightly 为 TP1+CP4 ≠ 先例 TP4——首版 PR 按nightly原状内嵌 `tp_size: 1`，与 §3.1 JSON 按先例形态记的 4 存在文档-实现偏差，本次 rebase 归一）。两处保留差异复核不变；`enable_dsa_cp`/`dp_load_balancing` 两例皆有，不构成新差异；weekly TPOT50 基线 15569.48/0.95 复核无误。现行 commit：`bf0278b90`（Phase 1 三载体）+ `e37e47e33`（S3 读路径哨兵，gate FAIL 的 revert 对象）。
+**2026-09-29 rebase 记录**：上游 main 前进引发 PR #17624 冲突，已 rebase 至 main@31608b3f5。冲突源两个：#17628（CI DP 调度改造，yaml 顶层加 `dp_load_balancing: external`）与 #17661（MRV2 revert，**prefill 拓扑 TP1+CP4 → TP4**、删 `VLLM_USE_V2_MODEL_RUNNER`、additional-config 加 `enable_dsa_cp`）。解决 = connectors[0] 内嵌 prefill `tp_size` 随上游基座更新为 4。**这使 nightly prefill 拓扑与 weekly 先例首次精确一致**（此前 nightly 为 TP1+CP4 ≠ 先例 TP4——首版 PR 按nightly原状内嵌 `tp_size: 1`，与 §3.1 JSON 按先例形态记的 4 存在文档-实现偏差，本次 rebase 归一）。两处保留差异复核不变；`enable_dsa_cp`/`dp_load_balancing` 两例皆有，不构成新差异；weekly TPOT50 基线 15569.48/0.95 复核无误。
+
+**2026-09-30 rebase 记录**：上游 main 再度前进（31608b3f5 → c39b31aab）引发 PR #17624 dirty，冲突源两个：#17737（A5 全部 case 模型路径改 `deepseek-ai/DeepSeek-V4-Flash`）与 #15011（batch-sharded sampling，删各 case additional-config 的 `enable_reduce_sample`）。唯一真冲突在 A5 case #1 的 additional-config 行（S4 同改动区域不重叠，自动合并）。解决 = rebase 至 main@c39b31aab，以 upstream 新版 case #1（新模型路径 + 无 `enable_reduce_sample`）为底重放 kv_pool / kv-transfer-config / 内联 benchmarks 三层叠加。diff 体量复核不变（4 文件 +110/-7），静态校验与 merge-tree 全过。现行 commit：`8716c5ae7`（Phase 1 三载体）+ `2d4a53e4c`（S3 读路径哨兵，gate FAIL 的 revert 对象）。
 
 ### 3.2 S2 case #1：a5 单机 Mooncake 旧方案（历史，已由 `s2.md` 的 Memcache Layerwise 方案取代）
 
@@ -239,7 +241,7 @@ test_cases:
 **现状**：单 case 自包含（W8A8，DP4×TP4，prefix-caching 开），GPQA（86.36/5）+ GSM8K prefix0 性能（181.88/0.97）。
 
 **硬前置（按 2a/2b 分期）**：读路径看护 = perf-only 哨兵（2a）+ 判卷考题（2b），两者前置不同——
-- **2a（perf-only 读路径哨兵）**：前置仅 **R9 gate**（block_hashes 预验证，判据见 §5，脚本已随方案交付：`r9_gate.sh`）。**S3 yaml 已随 PR #17624 第二个 commit（e37e47e33）提交——gate 语义转为"合并前验证"：FAIL 则 revert 该 commit。**负载**不需要造数**——`GSM8K_prefix{0|90|99}_in{长度}_bs{批量}_{模型后缀}` 是现成家族。**数据集已定案：`GSM8K_prefix90_in65536_bs1000_qwen`**——选择依据不是 weekly 先例（397B weekly 在 a3-800**t**-16，与 S3 的 a3-800**i**-16 **不是同一机器池**，weekly 缓存证据不可迁移），而是**同池实证**：a3-800i-16 上注册的 `qwen_3_6_27b_w8a8_A3` 与 `Kimi-K2.5` nightly 正在用 prefix90 系数据集（in65536_bs1000_qwen ×2、in131072_bs1000_kimi 等），pod 缓存存在性有据（pod 禁网不能自下载，缓存实证是硬前提）。qwen tokenizer 校准在 DSV4 分词下 token 数漂移——perf 哨兵可接受（yaml 注释已记）。`_deepseek` 后缀 prefix90 变体从未被任何配置引用、无缓存证据，弃用；2b 补造 deepseek 判分变体时可替换。
+- **2a（perf-only 读路径哨兵）**：前置仅 **R9 gate**（block_hashes 预验证，判据见 §5，脚本已随方案交付：`r9_gate.sh`）。**S3 yaml 已随 PR #17624 第二个 commit（2d4a53e4c）提交——gate 语义转为"合并前验证"：FAIL 则 revert 该 commit。**负载**不需要造数**——`GSM8K_prefix{0|90|99}_in{长度}_bs{批量}_{模型后缀}` 是现成家族。**数据集已定案：`GSM8K_prefix90_in65536_bs1000_qwen`**——选择依据不是 weekly 先例（397B weekly 在 a3-800**t**-16，与 S3 的 a3-800**i**-16 **不是同一机器池**，weekly 缓存证据不可迁移），而是**同池实证**：a3-800i-16 上注册的 `qwen_3_6_27b_w8a8_A3` 与 `Kimi-K2.5` nightly 正在用 prefix90 系数据集（in65536_bs1000_qwen ×2、in131072_bs1000_kimi 等），pod 缓存存在性有据（pod 禁网不能自下载，缓存实证是硬前提）。qwen tokenizer 校准在 DSV4 分词下 token 数漂移——perf 哨兵可接受（yaml 注释已记）。`_deepseek` 后缀 prefix90 变体从未被任何配置引用、无缓存证据，弃用；2b 补造 deepseek 判分变体时可替换。
 - **2b（acc-prefix 判卷）**：前置 = Q6 数据集。生态缺口精确化：**不是"prefix 负载不存在"，而是"带共享前缀 + 可判分（jsonl 带判分字段 + 配套判分 dataset_conf）"不存在**——所有 prefix 类数据集均只配 perf conf 不判卷，所有精度数据集均无共享前缀。Q6 规格可能降级：若现成 prefix90 数据集的 jsonl 自带 ground truth，造数退化为"验证判卷性 + 补一个 dataset_conf"（待服务器侧看数据样例）。
 - **顺序约束不变**：`acc-gpqa → perf → acc-prefix`（perf 写满共享前缀、acc-prefix 暖池判卷）——但顺序有效性只约束 2b（两门同源才需前缀 token 级一致）；2a 单独上线时顺序自然退化为 `acc-gpqa → perf`，无额外条件。
 
@@ -353,7 +355,7 @@ TPOT50 基线 15569.48 来自 weekly **同款服务形态**（同形对标），
 **Phase 2a（S3 perf-only 读路径哨兵）——前置仅 R9 gate，不依赖造数**
 
 1. **R9 gate（脚本已交付：`r9_gate.sh`，随本方案目录）**：a3 测试机起池化服务——memcache 池（5000/6000，S4 `_kv_pool` 同款配置）+ AscendStoreConnector（`use_layerwise: true`, `kv_both`）+ `--no-enable-prefix-caching`，**S3 per-rank 同形态**（Eco-Tech/DeepSeek-V4-Flash-w8a8-mtp，TP4，block 128，MTP1，1M ctx；DP1 保证两条请求落在同一 engine、命中归因无歧义）——先发 1 条、再发 1 条**共享前缀**请求（~4k token 前缀，31 个 128-token 块）；判据 = 第 2 条请求 INFO 日志 **`kvpool hit tokens: >0`**（`pool_scheduler.py:715-721`，logger.info 默认可见；第 1 条同时验证写路径正常性）。**`kvpool hit tokens: 0` 且无报错 = 哑失效 = gate 不过**，S3 2a 不提 PR，按 R9 回退
-2. S3 改造已随 PR #17624 提交（e37e47e33）：kv_pool（memcache 5000/6000，S4 anchor 同款）+ prefix-off + AscendStoreConnector（memcache，`use_layerwise: true`，gva 路径）+ perf 数据集换 `GSM8K_prefix90_in65536_bs1000_qwen` + 记录式占位（baseline 1 / threshold 0.1，先例 qwen_3_6_27b `perf_prefix_90`）。gate FAIL 则 revert 该 commit 再定；`/nightly DeepSeek-V4-Flash-W8A8-A3` 触发
+2. S3 改造已随 PR #17624 提交（2d4a53e4c）：kv_pool（memcache 5000/6000，S4 anchor 同款）+ prefix-off + AscendStoreConnector（memcache，`use_layerwise: true`，gva 路径）+ perf 数据集换 `GSM8K_prefix90_in65536_bs1000_qwen` + 记录式占位（baseline 1 / threshold 0.1，先例 qwen_3_6_27b `perf_prefix_90`）。gate FAIL 则 revert 该 commit 再定；`/nightly DeepSeek-V4-Flash-W8A8-A3` 触发
 3. 首跑标定：perf 以实测回填并恢复 threshold 0.97（替换占位 baseline 1/threshold 0.1）；GPQA 86.36 预期沿用；`kvpool hit tokens` 日志顺带确证命中发生（可观测项，期望 perf 波次 2+ >0）
 4. 跑通后合入——**读路径"活着且不慢"哨兵上线**（lookup/load-back 崩溃或挂起即红；零命中哑失效由 hit 日志人肉/巡检观测）
 
@@ -378,8 +380,8 @@ TPOT50 基线 15569.48 来自 weekly **同款服务形态**（同形对标），
 | R5 | S2#1 mooncake 池 `global_segment_size=1GB` 未验证 | 池容量不足 | 首跑看 mooncake-master.log 按需调（Q3） |
 | R6 | S2 各 case / S4 各 case 共享 `_server_cmd` anchor | 未来他人改共享配置波及全部 case | 现状即如此；池化差异已收敛在自有字段（S2#1 的 kv_pool/extra/benchmarks；S4 有意改共享 anchor 本身） |
 | R7 | **已知代价**：S2#1 池化后 a5"非池化 BF16 精度"失看护；S3 深叠后 a3 单机"非池化 W8A8"参考水位消失（性能参考+趋势断点） | 非池化配置回归无人报警 | 方案评审确认接受。救济菜单：① 复议"追加独立 case"（违硬约束，需特批）；**② 备选 C（评审拍板）：a5 case #6（Maximum_Context 1M）目前零 benchmarks、纯起停冒烟——可挂 GPQA 条目恢复非池化 BF16 精度看护，零新服务零新 case；代价 = a5 夜间 +1~3h，且 #6 形态为 MTP4+block_verify ≠ #1 的 MTP1，属"新建非池化参考"而非 87.4 的趋势延续** |
-| R8 | **S3 2b 造数依赖**：带前缀**可判分**数据集不存在。查证已收窄缺口：`GSM8K_prefix90_in32768` 负载家族**已存在**且 a3 weekly 在用（qwen/glm 后缀，同规格同长度），缺的是 `_deepseek` 后缀 prefix90 变体（modelscope 是否已有待确认）+ 判卷 dataset_conf | 仅 2b 受阻；**2a 不受影响**（perf 哨兵只需负载家族现有变体） | 2a/2b 拆分后，2a 前置仅剩 R9 gate；2b 规格见 Q6（若现成 jsonl 自带判分字段，降级为"补 dataset_conf"）；2a 数据集已定案 `in65536_bs1000_qwen`（同池缓存实证，PR e37e47e33） |
-| R9 | **S3 关 prefix-caching 后池 lookup 的 block_hashes 生成待验证**（两条 lookup 路径均直接消费 `request.block_hashes`，代码级证据见 §4.2） | acc-prefix 命中不生效且**哑失效**（`kvpool hit tokens: 0`、无报错、考题假绿） | **Phase 2a 前置 gate，判据固定，脚本已交付 `r9_gate.sh`**（见 §5 Phase 2a 第 1 步）；S3 yaml 已在 PR #17624 中，gate FAIL 则 revert e37e47e33；回退：① 保 prefix + 负载超量制造 HBM 淘汰；② 退回浅叠（只保写路径） |
+| R8 | **S3 2b 造数依赖**：带前缀**可判分**数据集不存在。查证已收窄缺口：`GSM8K_prefix90_in32768` 负载家族**已存在**且 a3 weekly 在用（qwen/glm 后缀，同规格同长度），缺的是 `_deepseek` 后缀 prefix90 变体（modelscope 是否已有待确认）+ 判卷 dataset_conf | 仅 2b 受阻；**2a 不受影响**（perf 哨兵只需负载家族现有变体） | 2a/2b 拆分后，2a 前置仅剩 R9 gate；2b 规格见 Q6（若现成 jsonl 自带判分字段，降级为"补 dataset_conf"）；2a 数据集已定案 `in65536_bs1000_qwen`（同池缓存实证，PR 2d4a53e4c） |
+| R9 | **S3 关 prefix-caching 后池 lookup 的 block_hashes 生成待验证**（两条 lookup 路径均直接消费 `request.block_hashes`，代码级证据见 §4.2） | acc-prefix 命中不生效且**哑失效**（`kvpool hit tokens: 0`、无报错、考题假绿） | **Phase 2a 前置 gate，判据固定，脚本已交付 `r9_gate.sh`**（见 §5 Phase 2a 第 1 步）；S3 yaml 已在 PR #17624 中，gate FAIL 则 revert 2d4a53e4c；回退：① 保 prefix + 负载超量制造 HBM 淘汰；② 退回浅叠（只保写路径） |
 | R10 | **S4 唯一接受率哨兵暴露于池化变量**；接受率在含池化的流量上测量断言（warmup→benchmarks→接受率断言，`test_single_node.py:295-324`），nightly 内无非池化对照；池化故障时哨兵阶段性失明 | MTP3 看护诊断价值下降 | Qwen 结构先例降低失败概率；open/close 双 case 交叉诊断；基线首跑校准；**可逆门**——接受率掉线的归因动作固化为：本地跑一次非池化对照（移除 kv_pool + kv-transfer-config 即恢复纯哨兵），诊断路径不临场设计 |
 
 ---

@@ -4,7 +4,7 @@
 |---|---|
 | 适用对象 | A3 / A5 服务器上的执行 agent，及 PR 侧操作人 |
 | PR | `vllm-project/vllm-ascend#17624`（分支 `pool_nightly` @ fork `lizy124/vllm-ascend`） |
-| 提交 | `bf0278b90`（PD / A5 / MTP3 三载体）+ `e37e47e33`（A3 读路径哨兵，gate FAIL 时的 revert 对象），base `main@31608b3f5`，+110/-7，4 个 yaml |
+| 提交 | `8716c5ae7`（PD / A5 / MTP3 三载体）+ `2d4a53e4c`（A3 读路径哨兵，gate FAIL 时的 revert 对象），base `main@c39b31aab`，+110/-7，4 个 yaml |
 | 设计依据 | 同目录 `pool_nightly_proposal.md`（本指南是其执行视图；语义冲突时以 proposal 为准并回报） |
 | 配套件 | 同目录 `r9_gate.sh`（R9 gate 脚本）、`static_check.py`（静态校验） |
 | 版本配对 | vLLM main @ `ced6857afa0ea7b2e3f0846a62e1394e90f15607`（PR 已 pin），vllm-ascend = PR 分支 |
@@ -110,7 +110,7 @@ docker exec <容器名> bash /tmp/r9_gate.sh
 判定（脚本自动输出，agent 原样采集回报）：
 
 - `[R9-GATE] PASS — … hit tokens=N`（N>0，期望 ≈4000，即共享前缀对齐块数）→ 进入阶段 2
-- `[R9-GATE] FAIL — 请求#2 hit tokens=0 且无报错` → 哑失效成立，停止后续，报告并附判定行与日志尾；处置由操作人决策（revert `e37e47e33` 或 §5.3 R9 回退菜单）
+- `[R9-GATE] FAIL — 请求#2 hit tokens=0 且无报错` → 哑失效成立，停止后续，报告并附判定行与日志尾；处置由操作人决策（revert `2d4a53e4c` 或 §5.3 R9 回退菜单）
 - 其他 FAIL（端口占用 / MetaService 未就绪 / 服务提前退出 / 请求失败）→ 属环境问题，按报错提示处理后重跑，不计入 R9 结论
 
 ### 阶段 2：触发 nightly（PR 侧，R9 PASS 之后）
@@ -196,7 +196,7 @@ S3 的考题全绿不等于读路径活着。若 S3 日志中 `kvpool hit tokens
 
 | 失败形态 | 第一怀疑点 | 回退 / 缓解 |
 |---|---|---|
-| R9 gate FAIL（hit=0 无报错） | prefix-off 下 block_hashes 未生成 | revert `e37e47e33`；或回退菜单 ① 保 prefix + 超量负载制造 HBM 淘汰 ② 退回浅叠（只保写路径） |
+| R9 gate FAIL（hit=0 无报错） | prefix-off 下 block_hashes 未生成 | revert `2d4a53e4c`；或回退菜单 ① 保 prefix + 超量负载制造 HBM 淘汰 ② 退回浅叠（只保写路径） |
 | S1 PD 握手 / 路由异常 | MultiConnector 子条目 engine_id（上游是否逐子条目转发未证） | 删除子条目 engine_id、对齐 weekly 先例 |
 | S1 TPOT50 偏差 >5% | 见 §5.1 怀疑顺序 | 逐级排除后按实测重标 |
 | S2#1 起服务失败 | mooncake + kv_both + layerwise + fp8 KV 无先例叠加 | 阶梯回退：① layerwise 改 false → ② backend 改 memcache → ③ fp8 解档（case #1 内联 server_cmd，`--kv-cache-dtype` 改 auto）。故障只波及 case #1 |
