@@ -1,446 +1,163 @@
-# 05. 存储模型、传输线程与 Backend
+# 05. 存储模型、传输线程与 Backend 协议
 
-源码位置：
+基线与源码入口见 [00](../00_source_baseline.md)。主要文件：`kv_transfer.py`、`backend/base.py`、各 backend 和 protocol 模块。
 
-- `ascend_store/kv_transfer.py`
-- `ascend_store/backend/base.py`
-- `ascend_store/backend/memcache_backend.py`
-- `ascend_store/backend/mooncake_backend.py`
-- `ascend_store/backend/yuanrong_backend.py`
-- `ascend_store/attention_fence.py`
-- `ascend_store/pool_worker.py`（`register_kv_caches`、`_allocated_gvas`）
+## 1. 两侧内存与两种外部寻址
 
-本文关注 `ascend_store` 的执行层：数据存在哪两层存储、地址如何组织（存储模型），Worker 已经决定 key、block range 和 layer 后线程怎样批量组织地址（传输线程），三种 backend 分别提供什么能力，以及完成、异常和设备同步如何返回上层。行号均为核验时的准确位置。
+本地侧是 vLLM 分配的 NPU KV tensor；`register_buffer()` 让 backend 认识这些可读写区间。外部侧由 SDK/服务管理，可能是 host DRAM，也可能启用 SSD 层级。不能把本地 HBM 注册容量当作外部池容量。
 
----
-
-## 1. 存储模型：两层存储与两套地址
-
-读传输代码前必须先钉死存储模型，否则 put/get、命中查询、容量规划都会读错。
-
-### 1.1 第 1 层：本地 KV 缓存 buffer = NPU HBM
-
-`register_kv_caches` 把 vLLM 分配在 NPU 上的 `kv_caches` tensor 登记给后端（pool_worker.py L762）：
-
-```python
-base_addr = cache.data_ptr()             # NPU HBM 地址
-self.m_store.register_buffer(ptrs, lengths)   # 登记本地 HBM buffer（put/get 的源/目标）
-```
-
-`register_buffer` 登记的是"给后端一块可搬移的内存区"，**不是持久化池本身**。这层存储的布局（每层 tensor、block 地址/stride、共享 buffer 映射）由 `layerwise_cache_layout.py` 和 `KVPoolWorker` 维护，详见 [04](04_worker_pipeline.md)。
-
-### 1.2 第 2 层：外部存储池 = host DRAM
-
-真正被查询的池在 host DRAM：
-
-- **mooncake**：每卡贡献的 DRAM 池；
-- **memcache**：host 侧 `DistributedObjectStore`。
-
-证据是 `MmcDirect` 的方向（memcache_backend.py L34-38）：
-
-- `COPY_L2G`（Local→Global）→ `put()`：**HBM → DRAM 池**（L214）
-- `COPY_G2L`（Global→Local）→ `get()`：**DRAM 池 → HBM**（L186）
-
-### 1.3 两套地址账本
-
-| 登记/分配 | 是什么 | 落在哪 |
+| 描述 | 本地侧 | 外部侧 |
 |---|---|---|
-| `register_buffer(ptrs, lengths)` | 本地 kv_cache 缓冲 | **HBM** |
-| `batch_alloc(keys, sizes)` → GVA（memcache_backend.py L153）；worker `_allocated_gvas` 缓存（pool_worker.py L359） | 池里的对象 | **DRAM** |
+| bulk object | 每 key 对应多个地址片段 | key 定位完整 value |
+| MemCache GVA | 当前 layer 的 HBM 地址 | GVA + layer/entry offset |
+| Mooncake range | 当前 layer 的 HBM 地址 | key + 对象内 range offsets |
+| partial snapshot | 未完整 token page 的本地内容 | 独立身份/临时对象，不能冒充完整 hash 对象 |
 
-**GVA（全局虚拟地址）**：memcache 后端为每个存入池的 KV 对象分配的寻址句柄。`batch_get_key_info`（memcache_backend.py L142）返回的 key_info 带 GVA 和 size，get/put 靠 GVA 做 DMA。GVA 只在 layerwise + memcache 组合下出现——因为只有 layerwise 把 KV 拆成"每层一个对象"，一个对象一个 GVA；非 layerwise 是整段连续 KV 一个块存，不走单对象寻址（见 [07](07_lookup_path_design.md) §3.3）。
+MemCache 的 GVA 对象通常包含一组相关层的数据；逐层传输通过对象内偏移定位。GVA 与“每层单独对象”不是同义词。
 
-### 1.4 scheduler client 与 worker client 的能力差异
+## 2. 能力由注册表与 backend 显式声明
 
-- memcache `create_scheduler_client`（L100-105）返回 `cls(parallel_config, local_rank=0, init_bm=False)`——注释原文 "The scheduler is a single metadata client... must not initialize memcache storage"；
-- mooncake（L164-166）返回 `contribute_memory=False` 的 master 客户端。
+`backend_map` 当前注册 Mooncake、MemCache、YuanRong。`layerwise_protocol` 保存模块路径，`get_layerwise_data_plane()` 读取模块的 `LAYERWISE_DATA_PLANE`：
 
-两者都是**只读元数据客户端**：能触到 DRAM 池（查 exists/key_info），但看不到 worker 的权威状态（布局、coordinator、per-block 位图），也不注册 HBM buffer、不执行数据搬运。这正是 [07](07_lookup_path_design.md) 中"两类查询语义"的物质基础——scheduler 客户端够答存在性问题，答不了能力性问题。
+| backend | layerwise plane | 普通 get/put | 专用能力 |
+|---|---|---|---|
+| Mooncake | `block_key` | 有 | put/get session、range transfer、commit/revoke |
+| MemCache | `gva` | 有 | key info、alloc、lease、write finish、GVA copy |
+| YuanRong | 无专用 plane | 有 | object API；走保留的 KeyLayer 分支时不具备上述专用能力 |
 
-### 1.5 常见误读纠正
+基类对不支持的扩展抛 `NotImplementedError`。不要因为所有对象都叫 Backend，就假定它们有相同发布、错误码和内存注册语义。
 
-1. **`m_store` 不是"HBM 上的 map"**——它是外部后端对象，`exists` 查的是 DRAM 池；worker 的 HBM 只是 put/get 的本地侧 buffer。
-2. **"5G DRAM pooling" 指 mooncake 每卡贡献的 host DRAM 池**——与 `register_buffer` 登记的 HBM 是两类东西，容量规划时不要互相挪用。
-3. **GVA 不是 HBM 地址**——它寻址的是 DRAM 池里的对象；HBM 地址由 `register_buffer`/layout 层管理。两套账本在 `LayerBatchBuilder` 汇合（key/GVA 跨 layer 不变，本地 HBM 地址逐 layer 变化，见下节）。
+Scheduler client 是独立实例：Mooncake 不贡献池内存，MemCache 不初始化 Worker 的存储资源。两者可以查元数据，但不持有 Worker 注册的 KV tensor 地址。
 
----
-
-## 2. 执行层的边界
-
-线程和 backend 的分工可以压缩为：
-
-```text
-KVPoolWorker
-  决定本轮有哪些 request/group/layer 任务
-
-LayerBatchBuilder
-  把 block range 展开为批量 key/GVA/address/size
-
-KVTransferThread 派生类
-  排队、同步、拆批、调用 backend、记录完成或失败
-
-Backend
-  实现具体外部存储的 exists/alloc/put/get/copy 协议
-```
-
-执行层不决定外部命中应贡献多少 token，也不直接修改 vLLM request status。
-
----
-
-## 2. LayerBatchBuilder 为什么单独存在？
-
-GVA layerwise 的任务有明显的“跨 layer 不变部分”和“逐 layer 变化部分”：
+## 3. 最小对象协议
 
 ```text
-跨 layer 不变
-  req ids、block ranges、keys、GVA、每个请求的 offset/count
-
-逐 layer 变化
-  本地 HBM address、该层 cache entry、实际 size
+exists / batch_is_exist(keys)
+put(keys, [[addr...], ...], [[size...], ...])
+get(keys, [[addr...], ...], [[size...], ...])
 ```
 
-`LayerBatchBuilder.build_shared()` 先完成去重、key/GVA 检查和请求边界计算，生成 `SharedBlockData`；`build_addrs()` 再为指定 group 内 layer 展开本地地址。`build()` 是没有预计算 shared data 时的一步式入口。
+二维列表保持：
+```text
+key[i] <-> addrs[i] <-> sizes[i]
+```
+一 key 的 value 可以来自多层、K/V 两个 tensor、state/scale 等多个不连续区域。循环移位、去重、mask 过滤都必须保持三者配对。
 
-Builder 内部复用 NumPy buffer，减少 layerwise 热路径上反复分配数组。扩容由 `_ensure_buf()` 统一完成；生成结果前必须确认 request 的 block/GVA NumPy 快照覆盖任务范围。
+`put()` 的统一表面允许 bool、per-key bool list，以及遗留的 None（通过异常报告失败）；get 和专用批量协议有自己的返回约定。不能对所有方法都用 `all(result == 0)`。
 
-### 2.1 去重的原因
+`requires_exists_before_put` 表示 connector 是否需要在写入前过滤已存在 key；应服从 backend 声明，不能为所有后端硬加一轮 exists。
 
-同一物理 block 可能由于多个 request range 或共享 prefix 重复出现。`_dedupe_transfer_blocks()` 保留第一次出现的传输项，避免一次 batch 对同一 GVA/local address 重复 copy，也避免 stored request 引用计数被重复扣减。
+## 4. Mooncake block-key：session 与 range
 
-### 2.2 shared data 不能跨 step 复用
+当前 Mooncake layerwise 先调用 `validate_layerwise_support()` 确认客户端有 session/range APIs。旧 SDK 即使支持普通 get/put，也可能不支持此模式。
 
-它可以跨 layer 复用，但只属于当前 step 的 task 集合。下一轮 allocation、GVA offset 或 partial block 可能变化，不能把上一轮 `SharedBlockData` 当成长期 cache。
-
----
-
-## 3. KVTransferThread 提供什么公共协议？
-
-`KVTransferThread` 继承 `threading.Thread`，为所有方向提供共同状态：
+### 4.1 保存
 
 ```text
-request_queue
-finished_requests + done_task_lock
-stored_requests 引用计数
-failure 异常槽
-KV events
-backend、token database、并行与 block 配置
+Worker 为每 block key 决定 object_size
+  -> batch_put_start
+  -> 每层 LayerRangeReqMeta
+  -> batch_copy_put(keys, buffers, sizes, dst_offsets)
+  -> 该 group 的最后实际层完成
+  -> batch_commit
+  -> session tracker 将 key 转入 owner 的未来 load 集合
 ```
 
-### 3.1 run loop
+`batch_commit` 映射 SDK 的 put session end。开放写会话中的对象不能仅因已分配就作为完整可读对象命中。
 
-线程启动后先设置设备和 OS thread name，再持续从 queue 取任务并调用派生类 `_handle_request()`。若处理异常，则保存失败、清理当前 request 的必要状态，并让后续同步点通过 `raise_if_failed()` 抛出。
+range copy 失败或 commit 失败时 revoke 相关 key，防止部分写入对象留下可误用身份。异常清理还要覆盖本 forward 中已经 start、但尚未完成的其他对象。
 
-后台异常不能被解释成普通 cache miss。cache miss 是 lookup/get 返回的业务结果；线程异常可能意味着 backend、地址或同步协议已经失效。
-
-### 3.2 request-level 完成
-
-`set_finished_request()` 写入完成集合，`get_and_clear_finished_requests()` 原子取走匹配请求。派生线程必须在其真正的 request 完成边界调用它，而不是每处理一个 layer/block 就报告完成。
-
-### 3.3 stored request 引用计数
-
-Layerwise save 会把一个 request 拆成多个 layer/group task。`add_stored_request()`、`dec_stored_request()` 和 `try_finish_and_delete_stored_request()` 维护剩余任务数；只有最后一项完成，request 才进入 `finished_requests`。
-
-### 3.4 拆批限制
-
-`_split_transfer_packets()` 与 `_batch_copy_with_limits()` 根据最大 block 数或最大字节数拆分大批量传输：
+### 4.2 加载
 
 ```text
-完整 array
-  -> packet 1: [offset, end)
-  -> backend.store.batch_copy(...)
-  -> packet 2
-  -> ...
+batch_is_readable 检查 committed key
+  -> batch_get_start
+  -> 每层 batch_copy_get(keys, buffers, sizes, src_offsets)
+  -> 相关 range 调用完成
+  -> 最后相关 chunk/owner 退出时 batch_get_end
 ```
 
-拆批不改变 request 完成语义。只有所有 packet 成功后才能发布 write finish 或设置 layer event。
+`LayerwiseSessionTracker` 处理多个 request 共享同 key、chunked prefill 后续恢复、失败重试和 terminal owner 清理。get session 可跨 chunk 保留，不是每个调度 step 结束都无条件关闭；不能让某个请求的重试关闭另一个请求仍使用的 get session。
 
----
+### 4.3 返回形状
 
-## 4. 六类派生线程分别做什么？
+`require_aligned_batch_results()` 检查一 key 一结果且为整数，拒绝 None、数量不符、布尔值冒充整数等异常。各操作成功条件不同：copy 分支检查负值，commit 检查非零。读 SDK wrapper 和调用方时必须一起核对，不能只看类型。
 
-### 4.1 KVCacheStoreSendingThread
+## 5. MemCache GVA：alloc、lease 与发布
 
-这是非 layerwise 保存线程，输入为 `ReqMeta`。主要过程是：
+### 5.1 保存
 
 ```text
-等待 request.current_event
-  -> 按 group 和 store mask 遍历增量 token range
-  -> 生成 PoolKey/address/size
-  -> backend.put()
-  -> 更新 KV event（可选）
-  -> request finished
+完整/partial key
+  -> batch_alloc(keys, object_sizes, ttl)
+  -> GVA + 每层 offset
+  -> NPU producer event 完成
+  -> COPY_L2G: HBM -> 外部地址
+  -> 所有相关层 copy 完成
+  -> batch_write_finish(keys, results)
 ```
 
-它还处理重复存储请求、null block、并行 key 轮转和最后 chunk 完成条件。
+“分配到 GVA”“copy 完成”“发布完成”是三个阶段。写入失败必须按失败协议清理/撤销可误用的对象状态，不能发布部分成功为完整数据。
 
-### 4.2 KVCacheStoreRecvingThread
-
-这是非 layerwise 异步加载线程，输入同样为 `ReqMeta`：
+### 5.2 加载
 
 ```text
-读取 LoadSpec
-  -> 按 group/load mask 生成 key/address/size/block id
-  -> backend.get()
-  -> 将失败结果映射成本地 invalid block ids
-  -> request finished
+batch_get_key_info(for_load=True) / lease
+  -> 校验可用 GVA
+  -> COPY_G2L: 外部地址 -> 本层 HBM
+  -> layer event
+  -> 全部相关 copy 完成后移除本轮 load lease
 ```
 
-同步非 layerwise load 不使用此线程，而是在 `KVPoolWorker.start_load_kv()` 中执行相同方向的核心逻辑。
+Scheduler 查询使用 `batch_is_readable()`；当前实现要求正 size、有效非零 GVA。仅有 size 并不足以承诺直接恢复。
 
-### 4.3 KVCacheStoreKeyLayerSendingThread
+### 5.3 SSD 的边界
 
-这是普通 object key 的逐层保存线程。输入为当前 layer 的 `LayerTransferTask` 列表：
+`batch_alloc()` 可能返回 SSD hit sentinel，不能当普通 GVA 发起 DMA。`batch_get_key_info(for_load=True)` 对 SSD-only 且没有有效 GVA 的对象，使用注册的临时 NPU buffer 走普通 Get，等待 rewarm 后重新查询。
 
-```text
-复用 cached process_tokens
-  -> 为当前 layer 生成 LayerPoolKey 和本地地址
-  -> 过滤 backend 已存在的 key
-  -> 等待 sync_save_event[layer]
-  -> backend.put()
-  -> final layer + last chunk 时完成 request
-  -> 设置 layer_save_finished_event
-```
+**Scheduler 的 readability 查询本身不会调用这个 for-load rewarm。** 因此某个 SSD-only 对象可能在 lookup 阶段保守地被判不可读；不要把“SDK 能恢复 SSD”写成“所有 SSD 对象都会被这条 lookup 命中”。
 
-逐层 key 直接对应 backend object，不使用 GVA alloc/write-finish 协议。
+临时 buffer 的创建、注册、Get、注销属于恢复路径成本，也不能混入纯元数据查找的性能理解。
 
-### 4.4 KVCacheStoreKeyLayerRecvingThread
+## 6. LayerBatchBuilder 的两种输出
 
-这是普通 object key 的逐层加载线程。它先等待复用 slot 的前一 layer save，必要时等待 attention gate，然后：
+`build_shared()` 先处理同组跨层不变的 block rows、keys/GVA、request ids，再由 `build_addrs()` 加本层本地地址。
 
-```text
-LayerPoolKey
-  -> prepare_value_layer()
-  -> backend.get()
-  -> final layer + last chunk 时完成 request
-  -> 设置 layer_load_finished_event 和 get_event
-```
+| 输出 | 组织方式 | copy 输入 |
+|---|---|---|
+| `LayerBatchReqMeta` | 扁平 NumPy arrays | GVA/local address/size |
+| `LayerRangeReqMeta` | 每 key 的多个 buffer/range | key/buffers/sizes/offsets |
 
-当前实现期望一次 `LayerLoadTask` 至多携带一个 transfer task；这与 GVA multi-group batching 的组织方式不同。
+Builder 复用内部数组并做去重；同一保存对象不能因为多个共享 prefix/request range 而重复发布或错误扣计数。去重后的 request 完成与对象完成仍要独立记录。
 
-### 4.5 KVCacheStoreLayerSendingThread
+batch 限制按 `layerwise_max_transfer_blocks` / bytes 拆包。拆包不能提前触发 commit/write finish：完整对象需要的所有相关包和层都成功才可发布。
 
-这是 MemCache GVA layerwise 保存线程。Worker 已经把外部 GVA 放入 `SharedBlockData`，线程只需为当前 layer 构造本地地址：
+## 7. 六类传输线程
 
-```text
-build_addrs(shared, layer_idx_in_group)
-  -> 等待 sync_save_event[physical_layer]
-  -> batch_copy(local address -> GVA)
-  -> 最后相关 task 调用 batch_write_finish(keys, results)
-  -> stored request 引用归零后 request finished
-  -> 设置 layer save event
-```
+`KVTransferThread` 提供设备设置、队列、提交锁、停止标记、异常槽、finished/failed 集合、event 与 batch helpers。
 
-`write_results` 暂存跨 layer 的 copy 结果；只有所有 layer 数据写完后，key 才应被 backend 视为完整可读对象。
+| 派生类 | 输入 | 主要完成边界 |
+|---|---|---|
+| `KVCacheStoreSendingThread` | ReqMeta / batch fence | bulk request 保存 job，成功 offset 和 Mamba completed event |
+| `KVCacheStoreRecvingThread` | ReqMeta | bulk async request 接收完成 |
+| `KVCacheStoreKeyLayerSendingThread` | LayerTransferTask 列表 | object 逐层 put 与 layer event |
+| `KVCacheStoreKeyLayerRecvingThread` | LayerLoadTask | object 逐层 get 与 layer event |
+| `KVCacheStoreLayerSendingThread` | GVA 或 range tasks | GVA write finish / block-key commit 与 layer event |
+| `KVCacheStoreLayerRecvingThread` | GVA 或 range load tasks | load layer event、invalid/failed 记录 |
 
-线程仅通过 `use_layerwise_transfer` 门控运行，内部所有 store 调用走 Backend 抽象接口，因此语义上保持 backend-agnostic——不区分当前是 MemCache 还是 Mooncake 的 layerwise 协议。
+普通发送线程还有 `stored_requests` 的 job 账本与 `wait_for_requests_saved()`，用于 released block fence。layerwise 发送 base 则按 layer/group task 维护引用计数；不要混用两者的计数语义。
 
-### 4.6 KVCacheStoreLayerRecvingThread
+## 8. 失败不是一类结果
 
-这是 MemCache GVA layerwise 加载线程，依赖最多：
+| 情况 | 当前处理边界 |
+|---|---|
+| 外部没有对象 | lookup miss，按正常计算路径推进 |
+| 返回长度/类型不对 | batch shape error 或相应校验 |
+| 普通 get 某 key 失败 | invalid blocks 或 request failed，依路径而定 |
+| MemCache multi-group 恢复失败 | request-level failed；禁用当前保存，避免发布坏 KV |
+| block-key hybrid 恢复不完整 | abort/fail，拒绝将不完整状态送入 attention |
+| 保存失败 | 不推进成功水位/不发布；重试或 revoke/失败记录 |
+| 后台 fatal exception | 记录异常，等待/轮询处 `raise_if_failed` |
+| 等待 event 周期性超时 | 检查错误、打印后继续等待，不视为成功 |
 
-```text
-等待上一 owner layer 的 save event
-  -> 同步其 NPU save event
-  -> 检查 save thread failure
-  -> 构造所有 group 的 GVA/local address batch
-  -> 等待 attention_start_gate
-  -> 可选按 TP/layer 错开 H2D 提交
-  -> 等待 external slot release（适用时）
-  -> batch_copy(GVA -> local address)
-  -> 设置 layer load event
-```
-
-若当前 layer 没有实际 load task，也必须正确处理 slot release 并设置 layer event，否则 forward 会永远等待一个“空任务”。
-
----
-
-## 5. Backend 抽象提供哪些能力？
-
-`backend/base.py` 的最小统一接口是：
-
-```text
-set_device()
-register_buffer(ptrs, lengths)
-exists(keys)
-put(keys, addrs, sizes)
-get(keys, addrs, sizes)
-```
-
-GVA/lease 能力作为可选协议存在：
-
-```text
-batch_get_key_info(keys)
-batch_alloc(keys, sizes)
-batch_add_lease(keys, ttl)
-batch_remove_lease(keys)
-batch_write_finish(keys, results)
-```
-
-基类默认对这些扩展方法抛出 `NotImplementedError`。因此调用方不能仅根据 `Backend` 类型就假设所有实现都支持 GVA；当前运行路径通过 `use_layerwise_transfer` 限制能力组合。
-
-新版本中 backend 注册表（`backend/__init__.py`）增加了 `layerwise_protocol` 布尔标志，通过 `get_layerwise_protocol()` 函数返回实现了 layerwise 协议的对象（含 `make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`）。layerwise key 的生成逻辑从 scheduler/worker 中移除，统一委托给 backend 提供的协议实现。
-
-Scheduler client 由 `create_scheduler_client()` 创建。默认可复用 backend 类本身，但具体实现可以构造只具备 lookup 能力的轻量 client。
-
----
-
-## 6. 三种 backend 的语义差异
-
-### 6.1 MooncakeBackend
-
-Mooncake 路径提供完整对象式 `exists/put/get`：
-
-- 初始化 Mooncake store 与本地 segment；
-- 注册 NPU buffer；
-- 把多个地址片段作为同一 key 的 value；
-- `put/get` 返回或检查 Mooncake transfer 状态；
-- 新增 `lazy_init` 支持，允许延迟初始化 backend；
-- 新增 `tenant_id` 配置项以支持 QoS 流量优先级隔离。
-
-它适合普通 key 和 key-based layerwise，不提供本文 GVA layerwise 所需的 alloc/lease/write-finish 接口。
-
-### 6.2 MemcacheBackend
-
-MemCache 同时支持普通 `put/get` 与 GVA 扩展：
-
-- `batch_get_key_info()` 查询 key 对应 GVA/size；
-- `batch_alloc()` 为新 key 分配外部 slot；
-- lease 控制 slot 生命周期；
-- `batch_write_finish()` 在所有数据写完后发布对象；
-- 底层 `store.batch_copy` 执行 GVA 与本地 NPU 地址间 copy；
-- 新增 `MemcacheLayerwiseProtocol`（`make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`），作为 layerwise 路径的 key 协议实现。
-
-`ensure_initialized()` 是惰性初始化边界。Scheduler lookup client 与 Worker 数据 client 可以处于不同初始化阶段，因此代码不能假设构造 backend 后立即拥有所有设备资源。
-
-### 6.3 YuanrongBackend
-
-YuanRong 提供对象式 `exists/get/put` 和 buffer 注册，协议表面与 Mooncake 类似，但客户端配置、返回值和底层存储 API 不同。
-
-三种实现共享 connector 语义，不意味着错误码与完成细节完全一致。调用方依赖的是统一返回约定，而不是直接访问某个 SDK 的内部对象。
-
----
-
-## 7. put/get 中的地址为什么是二维列表？
-
-backend 接口形态是：
-
-```text
-keys:  [key0, key1, ...]
-addrs: [[addr00, addr01, ...], [addr10, ...], ...]
-sizes: [[size00, size01, ...], [size10, ...], ...]
-```
-
-一个外部 key 可以由多个不连续内存片段组成，例如多个 layer、K/V 两个 tensor 或 hybrid state entries。二维结构保持：
-
-```text
-keys[i] <-> addrs[i] <-> sizes[i]
-```
-
-每个 `addrs[i][j]` 又与 `sizes[i][j]` 一一对应。循环移位或过滤 key 时，三组数组必须同步重排，否则会把一个对象写入另一对象的地址。
-
-GVA batch copy 则将所有片段压平成同长 NumPy array，由 Builder 保存 request/offset 边界。
-
----
-
-## 8. 同步边界有几层？
-
-### 8.1 Python queue/event
-
-queue 决定任务何时被线程消费；`threading.Event` 表示某 layer 的 CPU 侧处理阶段完成。它不能证明 NPU stream 上的工作已经结束。
-
-### 8.2 torch.npu.Event
-
-`sync_save_events[layer]` 记录 forward 写 KV 的设备顺序。发送线程在读取本地 HBM 前必须 synchronize。复用 buffer 的接收线程也可能在清除前一 layer save event 后再次同步 NPU event。
-
-### 8.3 AttentionComputeStartGate
-
-gate 让后台线程等待 compute stream 真正到达 attention 提交边界，而不是仅依赖 Python 调用时序。它不是 load event 的替代品：前者允许在该边界启动相应预取，后者表示新内容已经加载完成；gate event 本身也不表示 attention op 已执行完。
-
-### 8.4 backend publish
-
-GVA copy 成功不等于 key 已发布。保存方向还要 `batch_write_finish()`，否则其他进程可能看到已经分配但内容不完整的 slot。
-
-因此正确顺序可能是：
-
-```text
-NPU producer event 完成
-  -> D2H/remote batch copy 完成
-  -> backend write finish
-  -> request send finished
-  -> Scheduler 允许释放 block
-```
-
----
-
-## 9. 错误如何传播？
-
-### 9.1 业务失败
-
-`get()` 返回逐项非零状态时，接收路径把失败项映射为对应本地 block id。上层可以回退已计算 token 或触发重算。
-
-### 9.2 线程异常
-
-地址不一致、backend 抛异常、batch copy 非零、write-finish 失败等会被线程捕获到 failure 槽。Worker 在 `wait_for_layer_load()`、`wait_for_save()` 或 `get_finished()` 的明确同步点调用 `raise_if_failed()`。
-
-### 9.3 等待超时
-
-layer wait 使用周期性超时是为了打印状态并检查另一线程是否失败，不是总超时后自动成功。只要依赖 event 未设置，线程就继续等待或抛出已记录异常。
-
-### 9.4 空任务
-
-空 task 不是错误。派生线程必须调用 `task_done()` 并设置对应 layer event，否则 queue join 或 forward wait 会死锁。
-
----
-
-## 10. 完成状态如何闭环？
-
-线程完成集合先被 `KVPoolWorker.get_finished()` 汇总为：
-
-```text
-finished_sending
-finished_recving
-invalid block ids
-completed events
-```
-
-connector 再包装为 `KVConnectorOutput`，Scheduler 侧分别执行：
-
-```text
-update_finished_recving()
-  -> 清除 loading request 状态
-
-update_finished_sending()
-  -> 清除 delayed-free 状态
-
-update_connector_output()
-  -> 聚合 Worker completed event
-  -> 达到 world size 后释放 sending blocks
-```
-
-Layer event 不直接出现在 Scheduler 输出中。它只在 Worker 内保证 forward 可以逐层推进；request-level finished 才跨过 connector 边界。
-
----
-
-## 11. 调试执行层的最短路径
-
-```text
-任务没有生成
-  -> 先看 04 的 Worker 分流和 ReqMeta 条件
-
-key 数与地址数不一致
-  -> LayerBatchBuilder / ChunkedTokenDatabase
-
-线程卡住
-  -> queue、layer event、sync_save_event、attention gate、slot waiter
-
-MemCache key 存在但读到旧数据
-  -> batch_copy 结果与 batch_write_finish 顺序
-
-load 返回失败
-  -> backend 返回数组、循环移位后的 block id 配对
-
-请求结束但 block 未释放
-  -> stored request count、finished_sending、completed event 聚合
-```
-
-跨线程的完整资源安全与配置组合继续见 [06](06_concurrency_and_config.md)；一次请求如何穿过全部文件见 [01](01_overview.md)。
+`stop()` 与提交锁防止关闭/失败后继续挂入无人消费的任务；`shutdown()` 必须先停止 store 使用者，再释放 native backend。并发顺序见 [06](06_concurrency_and_config.md)。

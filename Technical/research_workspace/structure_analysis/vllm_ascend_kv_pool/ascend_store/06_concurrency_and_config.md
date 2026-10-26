@@ -1,258 +1,147 @@
-# 05. kv_pool 的异步传输如何保证数据可用和资源安全？
+# 06. 并发、资源安全与配置矩阵
 
-源码基线：
+基线与源码入口见 [00](../00_source_baseline.md)。本篇围绕“何时允许使用、发布、覆盖、释放”组织。
 
-- vLLM Ascend：`0a97c475ab120ab2e182a358f5b1306eeddc7a8f`
-- vLLM：`ba07e4a48fc951300d97eb506217dd530583dea3`
+## 1. 五个不能互相替代的完成点
 
-源码位置：
+| 完成点 | 证明了什么 | 不能证明什么 |
+|---|---|---|
+| 队列 item 完成 | 后台处理了该项 | 全 request、所有 rank 已结束 |
+| NPU event 完成 | 指定 stream 已越过记录位置 | 外部对象已 commit |
+| layer load 完成 | 当前层恢复可以继续 | 整个模型的层都恢复完成 |
+| backend 发布完成 | key 对应完整对象可读 | 本地所有引用都可释放 |
+| resource fence 完成 | 此次覆盖/清理依赖已满足 | 其他请求的 I/O 也已结束 |
 
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/kv_transfer.py`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_worker.py`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/pool_scheduler.py`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/attention_fence.py`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/layerwise_cache_layout.py`
-- `code/vllm-ascend/vllm_ascend/distributed/kv_transfer/kv_pool/ascend_store/metadata.py`
+设备可见性、外部原子发布和本地 block 引用是不同维度。
 
-本文的问题是：`kv_pool` 中 lookup、load、save 都可能异步执行，layerwise 模式还会把一次 forward 拆成多个 layer 阶段。系统如何保证传输顺序、NPU 数据可见性、请求结束后的资源释放，以及不同配置组合下的行为一致？
+## 2. 当前普通保存的覆盖保护
 
-本文只讨论跨组件的不变量和竞态。线程派生类、批量地址构造和 backend 方法的逐项说明见 [05](05_transfer_backend_storage.md)，Worker 如何生成任务见 [04](04_worker_pipeline.md)。
+`KVPoolScheduler.request_finished*()` 返回 False，不请求上游按 request 延迟 free。`build_connector_meta()` 把 finished ∪ preempted 放入 `released_req_ids`。
 
----
-
-## 0. 本文要回答的问题
-
-```text
-1. 线程、Worker、设备 event 和 Scheduler 各自保证哪一层完成？
-2. layerwise load/save 和非 layerwise 路径的同步点有什么不同？
-3. AttentionComputeStartGate 解决的是哪一种竞态？
-4. cache_transfer_granularity 和 layerwise layout 如何影响可传输范围？
-5. finished_recving、finished_sending、delayed_free 分别意味着什么？
-6. 配置 backend、use_layerwise、consumer_is_to_put 时，运行路径如何变化？
+```mermaid
+sequenceDiagram
+    participant S as Scheduler
+    participant W as Worker
+    participant T as Save thread
+    S->>S: 请求 A 结束/抢占，block 账本允许复用
+    S->>W: 下一轮 metadata: released_req_ids 包含 A
+    W->>T: wait_for_requests_saved({A})
+    T-->>W: A 的所有 queued save chunks 已退出
+    W->>W: 新 forward 可覆盖同一地址
 ```
 
----
+普通 `wait_for_save()` 只入队。真正关键的是下一轮物理写入前，`handle_preemptions()` → `handle_released_saves()` → `wait_for_requests_saved()` 完成。
 
-## 1. 一句话回答
+该等待按 released request 筛选，不要求把所有无关请求的保存队列清空。request id 下多个 chunk/job 必须全退出；只等最近一个 batch 不足以证明地址安全。
 
-`kv_pool` 的异步安全依赖三层同步：传输线程自己的队列和完成状态、Worker 的 layer/event 等待、以及 NPU stream/event 对 attention 的设备级 fence；Scheduler 只有在 connector 回报合适的完成状态后，才推进请求或释放 block。
+源码中仍有“saves complete synchronously”的旧注释/文档字符串，但 `add_save_batch()` 执行体与 released fence 才是当前行为依据。当前普通 `done_sending` 返回空集合，不能再绘制 delayed-free→finished_sending 的主链。
 
-```text
-任务队列完成
-  != NPU tensor 已可读
-  != 请求资源已经可以复用
-```
+## 3. Mamba 的特殊 block 引用
 
-这三个条件必须分别满足。
+非 layerwise 保存某些 Mamba blocks 时，Scheduler 显式 touch 非 null、非 speculative scratch blocks。worker metadata 的 completed event count 达到预期 Worker 数后再 free。
 
----
+这里保留的是特定 block 的引用，不是整个请求的 delayed-free 状态。speculative scratch 需要 allocator 独占，不能额外 pin；layerwise 不重复 bulk touch。
 
-## 2. 线程完成为什么不足以证明数据安全？
+## 4. Layerwise 的依赖顺序
 
-### 2.1 线程只保证执行层完成
-
-`KVTransferThread` 提供 queue、finished set、stored request 引用计数和异常槽。派生类完成 backend I/O 后设置 layer 或 request 状态，但该状态只说明线程职责已经完成。
+共享 slot 的新 owner 不能覆盖旧 owner 仍在使用或保存的数据：
 
 ```text
-- request queue；
-- add_request / discard_finished_requests；
-- finished request 集合；
-- stored request 引用计数；
-- get_and_clear_finished_requests()；
-- raise_if_failed()；
-- 线程 run loop 和异常传播。
+旧 owner producer / save event
+  -> 等待旧 owner 的相关保存
+  -> 必要时等待 external slot release
+  -> attention start gate 允许提交预取
+  -> 新 owner load
+  -> 本层 load event
+  -> Mamba align copy（适用时）
+  -> 本层 attention/recurrent compute
+  -> 保存或推进下一层
 ```
 
-六类派生线程及各自的完成边界见 [05](05_transfer_backend_storage.md)。本文只保留一个判断原则：先确认观察到的是 queue item、layer、request 还是 distributed sending event 的完成。
+具体等待次序还按 GVA/range 分支实现，但上述依赖不可省略。
 
-### 2.2 线程完成不等于 Scheduler 状态完成
+`AttentionComputeStartGate`：
+- 在 attention 提交边界记录 NPU event。
+- 预取线程等待 event，使传输与 compute stream 对齐。
+- `on_start` / `on_finish` 扩展到 block-key hybrid 的保存与 transfer window。
+- `cancel()` 在 abort 后打开 gate 并去掉 callbacks，避免后台永远等待一个不会到达的 attention。
 
-线程只知道待处理的 `ReqMeta`、`LayerTransferTask` 或 shared block data。它不决定请求是否应当运行，也不修改 vLLM 的 request status。线程完成后，把请求 id 和 block/layer 结果暴露给 `KVPoolWorker.get_finished()`，再由 connector 回传 Scheduler。
+gate 只表示 stream 到达边界，不表示 attention op 完成，也不等于外部 load 完成。
 
-### 2.3 异常必须在同步点重新抛出
+## 5. 保留重叠与末层收口
 
-Worker 在等待 load/save 或轮询完成时调用 `raise_if_failed()`。这样后台线程的 backend 异常不会静默变成一个普通 cache miss，而会在明确的同步点被上层发现。周期性 wait timeout 的用途之一就是检查这类失败，并不表示等待已成功。
+Mooncake 当前协议 `fence_drains_recv()` 返回 False，让未来层预取继续运行；`send_fence_backlog()` 返回 8，attention 边界限制保存积压，不每层清空全部发送任务。这是当前内部策略，不是公开调参承诺。
 
----
+每层前依然等待本层所需 load。默认最后一层通过 `_wait_for_final_layer_save()` drain 未完成 PUT；空末层的 event 不能代替前面所有保存完成。
 
-## 3. 非 layerwise 路径的同步边界
+`VLLM_ASCEND_LW_DEFER_LAST_SAVE` 在当前 `pool_worker.py` 中直接读取，默认 `"0"`。启用后把 final drain 延至下一轮 `prepare_layerwise_step()`；teardown 也需处理尾部任务。它属于源码中的可选分支，本体系不把它当默认行为或通用稳定配置。
 
-非 layerwise 通常把一组 layer/block 作为整体任务提交：
+## 6. Session / lease 清理
 
-```text
-start_load_kv()
-  -> 生成整组 load task
-  -> kv_recv_thread.add_request()
-  -> forward 使用本地 KV 前等待必要完成状态
+| 资源 | 正常完成 | retry / 失败 | terminal 处理 |
+|---|---|---|---|
+| Mooncake put session | 全范围完成后 commit | revoke 未完成/失败 key | tracker 清请求的 pending owner 记录 |
+| Mooncake get session | 跨 chunk 保留必要 session | 释放本次失败 owner，保留可重试请求映射 | 相关 I/O 结束且最后 owner 退出才 end，并删除请求记录 |
+| MemCache load lease | 本轮 copy 全部结束后 remove | 失败禁止保存坏结果，按 cleanup/TTL 回收 | drain 后释放资源 |
+| partial snapshot | 新旧快照按顺序衔接 | 先保护旧 load，再建立新 save | 清 request 相关状态 |
+| 后台线程 | 正常消费任务 | failure 槽 + 提交门控 + 同步点抛出 | stop/join 后 backend.close |
 
-save_kv_layer()/wait_for_save()
-  -> 生成整组 save task
-  -> kv_send_thread.add_request()
-  -> 等待 request queue 或 NPU event
-```
+资源清理的时点必须晚于实际 range/copy 使用结束；仅删除 Python dict 不代表 native session 已结束。
 
-`KVPoolWorker.get_finished()` 从发送和接收线程分别收集完成请求。Scheduler 看到 `finished_recving` 后，才把异步 load 对应的请求视为可继续推进；看到 `finished_sending` 后，才可以解除保存任务对资源的占用。
+shutdown 的实际执行体是先 stop/join 传输线程，清本轮 GVA load lease，再调用 backend `close()`；不能由这个统一方法名推断每个 SDK 都做了完整 session teardown。当前 Mooncake 未覆盖基类的 no-op `close()`，正常/异常路径的 session end/revoke 与进程级 SDK 回收边界需分别看待。
 
----
+## 7. 核心配置：默认值与真实影响
 
-## 4. layerwise 路径为什么需要更多同步？
+以下来自当前代码的 extra config；backend SDK 配置文件另表说明。
 
-### 4.1 按 layer 交错
+| 配置 | 当前默认 | 主要影响 |
+|---|---|---|
+| `backend` | `"mooncake"` | backend、layerwise protocol 和数据面 |
+| `use_layerwise` | False | 每层 hooks、piecewise graph、查询与执行路径 |
+| `load_async` | False | bulk load 使用后台 recv / waiting-remote；layerwise 不返回此 async 标志 |
+| `consumer_is_to_load` | False | consumer 的外部 prefix 查询门控 |
+| `consumer_is_to_put` | False | consumer 保存权限 |
+| `save_decode_cache` | False | 保存 decode 新形成的完整范围，也参与 `can_put` |
+| `discard_partial_chunks` | True | 普通完整 chunk 保存/查询边界 |
+| `memcache_dp_init_barrier` | True | MemCache 初始化顺序协调 |
+| `layerwise_max_transfer_blocks` | 0 | 批量 blocks 限制，0 不额外限制 |
+| `layerwise_max_transfer_bytes` | 0 | 批量 bytes 限制，0 不额外限制 |
+| `h2d_stagger_us` | 0 | 逐层 H2D 提交错开 |
+| `qos_priority` | 未设置 | backend 注入 QoS，显式设置时只允许整数 0–4，拒绝 bool |
 
-layerwise 模式允许模型执行到某一层时，传输该层所需的 KV，而不是等待整组 KV 完成。`AscendStoreConnector` 在 `use_layerwise` 时：
+### 7.1 物理复用配置
 
-```text
-wait_for_layer_load(layer_name)
-  -> Worker 等待当前 layer 的完成 event
+仅 protocol 接受的模式生效，当前是 MemCache GVA 路径。
 
-save_kv_layer(layer_name, ...)
-  -> Worker 提交当前 layer 的 save task
-```
+| 配置 | 通用 layout 默认 | 含义 |
+|---|---|---|
+| `layerwise_num_shared_buffers` | `num_layers` | 非独立层的共享 slot 数；默认无复用 |
+| `layerwise_prefetch_layers` | `min(shared_buffers, 8)` | 通用 builder 的预取设置；Worker 还按具体 layout 推导窗口 |
+| `layerwise_independent_layers` | `[0]` | 独立层列表，也支持 `"all"` / 负索引 |
 
-`KVPoolWorker.process_layer_data()`、`_submit_ready_layer_loads()` 和 `layer_load_finished_events`/`layer_save_finished_events` 共同维护当前 layer 的流水。
+buffer 数、spec 分桶和实际 `has_layer_reuse` 一起决定是否复用；仅填一个参数不证明最终物理计划已合并。
 
-### 4.2 layer event 的含义
+## 8. 明确的组合边界
 
-layer event 表示某一层的传输阶段完成，不一定表示整个 request 的所有 layer 都完成。因此不能拿单层 event 直接当作 request-level `finished_recving`。
+| 组合 | 当前代码结论/校验入口 |
+|---|---|
+| layerwise | `requires_piecewise_for_cudagraph` 返回 True |
+| consumer + decode-only save + layerwise + 无 `consumer_is_to_put` | connector 明确拒绝；decode-only 保存采用非 layerwise |
+| Mooncake block-key + PCP>1 或 DCP>1 | `validate_topology` 拒绝 |
+| Mooncake block-key + P/D TP mismatch | `validate_runtime` 拒绝 |
+| Mooncake block-key + PP | namespace 纳入真实 partition；每个 stage 必须持有每个 group 的层，否则拒绝 |
+| Mooncake block-key + GVA buffer reuse | protocol `extract_layout_config` 返回 None，不加入该物理复用 |
+| 存在 private state 的专用 layerwise | 按 cacheable groups 与 backend 能力校验；不可随意退到普通 KeyLayer |
+| bulk TP mismatch | 专门 head-slice 路径；需符合 non-MLA/non-hybrid 等推导条件 |
 
-Worker 在等待 layer 时会循环等待 event，并周期性调用接收线程的 `raise_if_failed()`；超时不是成功，后台线程异常也不能被 event 等待吞掉。
+“代码有某个分支”不等于“任意模型、并行拓扑和 SDK 版本的笛卡尔积都支持”。校验应看 protocol、Worker 和模型 cache spec 三处。
 
-### 4.3 layerwise 与 CUDA graph
+## 9. Backend 配置不与 connector 开关混放
 
-`AscendStoreConnector.requires_piecewise_for_cudagraph()` 在启用 `use_layerwise` 时要求 piecewise graph mode。这反映了一个运行时事实：layerwise transfer 要在 forward 的 layer 边界插入 wait/save 操作，不能假设整个 forward 是一个不可切分的图。
+Mooncake 配置由 `MOONCAKE_CONFIG_PATH` 等当前加载逻辑读取，包含 master/metadata 地址、segment/local buffer、`protocol`、tenant、可选 SSD 等；当前 backend 仅接受其实现支持的 `"ascend"` protocol。`enable_ssd_offload` 还依赖 SDK setup 能力和绝对路径校验。
 
----
+MemCache 配置涉及其 SDK/global resource、内存注册、设备 copy 与 QoS。connector 的 `use_layerwise` 不自动建立 backend 服务，也不证明传输介质、地址与 QoS 配置已正确。
 
-## 5. AttentionComputeStartGate 解决什么问题？
+运行示例如需填写 Mooncake master 端口，按本仓库公共约束使用 **50088**；不要把服务地址示例当作已部署环境事实。
 
-### 5.1 竞态来源
-
-某些 backend worker 线程可能与 attention 所在的 NPU compute stream 并发运行。仅仅执行到 Python 调用点，不代表 compute stream 已经到达允许预取传输提交的 attention 边界，因此需要一个设备事件把两条时间线对齐。
-
-### 5.2 gate 的工作方式
-
-`attention_fence.py` 中的 `AttentionComputeStartGate` 使用 NPU event 和 condition：
-
-```text
-attention worker 在提交 attention op 前 record(stream)
-  -> gate 保存 event
-  -> transfer worker wait()
-  -> event synchronize 后确认 compute stream 已到达该边界
-```
-
-`record_attention_compute_start()` 和 `get/reset_attention_compute_start_gate()` 提供进程内的 gate 管理。它的职责是建立设备提交顺序，不是判断外部 backend key 是否存在，也不表示 attention op 已执行完成。
-
-### 5.3 与 load finished 的区别
-
-```text
-load finished：外部数据已经传到目标地址；
-attention gate：compute stream 已到达记录 event 的 attention 提交边界。
-```
-
-两者回答的是不同问题，不能用其中一个状态替代另一个。共享 buffer 的完整复用顺序还要结合上一 owner 的 layer save event 和 NPU save event 判断。
-
----
-
-## 6. delayed_free 和 finished_sending 为什么要分开？
-
-请求结束时，Scheduler 可能已经不再需要 request 的 bookkeeping，但外部 save 仍在后台进行。此时立即把 block 交回 free queue，可能导致：
-
-```text
-request A 的 block
-  -> save 尚未完成
-  -> 被 request B 重新分配
-  -> A 的发送线程仍读取同一地址
-  -> 产生覆盖或脏数据
-```
-
-因此 `KVPoolScheduler` 会把需要延迟释放的 request id 放入 metadata；Worker 的 `get_finished()` 根据 `delayed_free_req_ids` 过滤和收集发送完成集合。只有收到 `finished_sending` 后，Scheduler 才能安全推进真正的 block 释放。
-
-抢占请求、layerwise 请求和多 batch 并发会让这个窗口更长，所以不能把 request finished 事件直接等同于 buffer free。
-
----
-
-## 7. cache_transfer_granularity 和 layout 如何限制传输？
-
-### 7.1 transfer granularity
-
-`KVPoolScheduler._floor_to_cache_transfer_granularity()` 和 Worker 的 lookup/filter 逻辑会把命中范围向下裁剪到允许的传输粒度。原因是外部对象通常以完整 chunk/block 存储，半个 chunk 不能被当作可恢复 KV。
-
-因此命中 token 数可能小于请求实际命中的 hash 数，最终 Scheduler 只会把对齐后的范围纳入 load 计划。
-
-### 7.2 layerwise cache layout
-
-`layerwise_cache_layout.py` 和 metadata 中的 layer/group 描述负责把逻辑 KV group、物理 layer、block range 映射到传输任务。需要同时考虑：
-
-```text
-- KV cache group；
-- layer id/physical layer index；
-- K/V 子 tensor 和 stride；
-- partial block；
-- Mamba/SWA 等特殊状态。
-```
-
-layout 错误通常表现为“key 命中但目标 tensor 内容不完整”，而不是简单的 backend miss。
-
----
-
-## 8. 配置如何改变运行路径？
-
-### 8.1 `backend`
-
-Worker 根据 extra config 选择 `memcache`、`mooncake` 或 `yuanrong` 等 backend。backend 改变的是外部存储协议、地址注册和完成语义，不改变 connector 的 Scheduler/Worker 接口。
-
-### 8.2 `use_layerwise`
-
-启用后会同时改变：
-
-```text
-- connector 是否要求 piecewise graph；
-- lookup key 和命中粒度；
-- Worker 是否按 layer 提交 load/save；
-- wait_for_layer_load()/save_kv_layer() 是否生效；
-- layer event 和 GVA buffer 的管理方式。
-```
-
-它不是一个只影响性能的开关，而是改变了数据流拓扑。
-
-### 8.3 `consumer_is_to_put`
-
-在 kv_consumer 角色下，如果该开关关闭，consumer 只执行 load，不向外部 store 发布 KV。`AscendStoreConnector.save_kv_layer()` 和 `wait_for_save()` 会据此跳过保存路径。
-
-### 8.4 `use_layerwise_transfer`
-
-该模式由 `use_layerwise` 和 backend 的 `layerwise_protocol` 标志共同决定，不再通过 `use_gva_layerwise` 派生。它引入外部 slot release waiter、GVA key 和 partial key。阅读时要把"layerwise 传输"与"GVA 资源释放"分开追踪。layerwise key 的生成由 backend 提供的 `layerwise_protocol` 实现（`make_full_key`、`make_partial_key`、`make_hit_check_keys`、`extract_layout_config`），不再在 scheduler/worker 中内联。
-
----
-
-## 9. 一次异步 load 的状态图
-
-```text
-Scheduler 命中并分配本地 blocks
-  -> build_connector_meta()
-  -> Worker start_load_kv()
-  -> 生成 layer/block load tasks
-  -> recv thread 入队
-  -> backend.get / 设备写入
-  -> layer event 或 request finished
-  -> attention fence 确认可读
-  -> Worker get_finished()
-  -> Scheduler update_connector_output()
-  -> 请求继续运行
-```
-
-任一阶段失败，都不能只通过“请求已结束”清理：必须同时处理 load error、线程异常、block 状态和可能的延迟释放。
-
----
-
-## 10. 本文结论
-
-```text
-1. KVTransferThread 管理异步队列和请求完成，Worker 管理 layer/request 同步，attention fence 管理 NPU stream 顺序。
-2. layerwise event 只代表单层传输完成，request-level finished 仍由 Worker 汇总。
-3. finished_sending 与 delayed_free 分离，防止后台 save 读取已被复用的 block。
-4. cache_transfer_granularity 和 layout 决定命中范围能否安全地变成传输任务。
-5. backend、use_layerwise、consumer_is_to_put 等配置会改变数据流路径，不能只当作性能参数。
-```
-
-查询路径为何这样分叉（ZMQ/直连、减法/合并模型、buffer 复用），见 [07](07_lookup_path_design.md)。
+下一篇：[07 查询路径](07_lookup_path_design.md)；观测与验证见 [09](09_observability_testing.md)。

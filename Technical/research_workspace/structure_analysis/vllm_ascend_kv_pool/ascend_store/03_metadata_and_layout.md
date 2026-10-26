@@ -1,329 +1,194 @@
-# 03. Metadata 与 Layout：Key、Tracker 与传输描述如何形成？
+# 03. Metadata 与 Layout：身份、范围、地址和依赖
 
-源码位置：
+基线与源码入口见 [00](../00_source_baseline.md)。核心文件是 `metadata.py`、`layerwise_cache_layout.py`，执行期数组构造在 `kv_transfer.py::LayerBatchBuilder`。
 
-- `ascend_store/metadata.py`
-- `ascend_store/layerwise_cache_layout.py`
-- `ascend_store/attention_fence.py`
+## 1. 先区分五个生命周期
 
-本文关注 `ascend_store` 的描述层。Scheduler 和 Worker 不能共享 Python request 或 NPU tensor 指针，因此需要一组稳定的数据结构，把“外部对象是谁、本地目标在哪里、传输覆盖哪些 token/layer/group”表达清楚。
+| 描述 | 代表类型 | 谁持有 | 生命周期 |
+|---|---|---|---|
+| 外部身份 | `KeyMetadata`、`PoolKey`、backend key builder | 两侧分别推导 | 模型/布局配置 |
+| 请求账本 | `LoadSpec`、`RequestTracker` | Scheduler | 跨 schedule |
+| 下行快照 | `ReqMeta`、`AscendConnectorMetadata` | Scheduler→Worker | 一轮计划 |
+| 设备任务 | `LayerBlockRange`、`LayerTransferTask`、`LayerLoadTask` | Worker→线程 | 一层/一个批次 |
+| 批量参数 | `SharedBlockData`、`LayerBatchReqMeta`、`LayerRangeReqMeta` | Builder/线程 | 当前任务执行 |
 
----
+上行 `AscendStoreKVConnectorWorkerMetadata.completed_events` 是另一条完成计数通道，不能替代 load/save 计划。
 
-## 1. Metadata 不是一个单独对象
+## 2. Key 是外部数据布局协议
 
-源码中的 metadata 可以按生命周期分成四层：
+### 2.1 普通 PoolKey
 
-```text
-存储身份
-  KeyMetadata -> PoolKey / LayerPoolKey
-
-Scheduler 持久状态
-  LoadSpec + RequestTracker
-
-Scheduler -> Worker 请求描述
-  ReqMeta -> AscendConnectorMetadata
-
-Worker -> 传输线程任务
-  LayerBlockRange
-  SharedBlockData
-  LayerTransferTask / LayerLoadTask
-  LayerBatchReqMeta / LayerMultiBlockReqMeta
-```
-
-这几层不能混用。`RequestTracker` 跨调度轮次存在，`ReqMeta` 只描述一次 SchedulerOutput，`LayerTransferTask` 又只描述某一物理 layer/group 的执行单元。
-
----
-
-## 2. 外部 key 如何唯一标识 KV？
-
-### 2.1 KeyMetadata
-
-`KeyMetadata` 保存 key 前缀所需的模型和并行维度：
-
-```text
-model_name
-head_or_tp_rank
-pcp_rank / dcp_rank / pp_rank
-kv_cache_group_id
-cache_role       # kv 或 state
-cache_family     # default、c1、c2、mixed 等
-```
-
-`cache_role` 避免 KV 与 Mamba/state 使用相同 chunk hash 时冲突；`cache_family` 区分不同压缩比例或 cache spec。Hybrid 模型中只用 model name 和 hash 已不足以唯一定位对象。
-
-### 2.2 PoolKey 与 LayerPoolKey
-
-`PoolKey` 再附加 `chunk_hash`，字符串大致为：
+`KeyMetadata` 包含 model、head/TP、PCP/DCP/PP、group、cache role、cache family；`PoolKey` 再附加 chunk hash。普通 key 大致为：
 
 ```text
 model@pcp:N@dcp:N@head_or_tp_rank:N@pp_rank:N
 @group:N@cache_role:kv@cache_family:default@HASH
 ```
 
-`LayerPoolKey` 用 `layer_id` 代替 PP 级聚合对象中的层隐含关系：
+`cache_role` 区分 KV/state；family 区分压缩布局。`LayerPoolKey` 增加 layer id，用于 KeyLayer 分支；它不是所有 layerwise backend 的通用格式。
+
+### 2.2 MemCache 与 Mooncake 的专用 builder
+
+`backend/__init__.py` 加载协议模块；`bind_layerwise_keys()` 返回统一的 `LayerwiseKeyBuilder`。Scheduler 和 Worker 绑定相同身份，查询和实际读写必须落在同一 namespace。
+
+| 协议 | 身份重点 |
+|---|---|
+| MemCache GVA | 模型、group（多组时）、block hash、head/TP、PP |
+| Mooncake 单 group、PP=1 | `model@hash@head`，保留对应协议格式 |
+| Mooncake PP | `mooncake_pp_v3` namespace + PP stage + hash/head |
+| Mooncake hybrid | `mooncake_hybrid_v1` + layout hash + group/block size + hash/head；PP 时增加 stage |
+
+Mooncake namespace 的关键设计：
+- PP 使用真实 layer partition，而非假定等分。
+- Scheduler 可能已把 cache block size 改为最小 group block size，Worker 还保留 CLI 值；身份计算必须从共享的已解析 group 归一化。
+- `UniformTypeKVCacheSpecs` 与 merged spec 是同一布局的不同表示，不能直接序列化整个 spec 对象做 hash。
+- PP Worker 的 layer membership 是 stage-local，不能拿它与 Scheduler 的全局 membership 各自 hash。
+- TP、group page size、模型/cache/speculative 配置等影响兼容性的维度要纳入协议指定身份。
+
+结果是：key 命中率为零时，先比两侧实际 key，再查网络。两个进程“配置看起来相同”不证明生成 key 相同。
+
+## 3. 四种粒度
+
+| 粒度 | 描述 |
+|---|---|
+| `hash_block_size` | `request.block_hashes` 的粒度 |
+| `grouped_block_size[group]` | 当前 group 的逻辑 token page |
+| `cache_transfer_granularity` / LCM | cacheable groups 可共同恢复的范围 |
+| kernel page / block stride | 真实 tensor 页形状与字节间距 |
+
+`get_block_hashes()` 在 group page 大于 hash page 时选择对应聚合边界；不要假设 hash list 的第 i 项就是所有 group 的第 i 个 block。
+
+推导例：hash=16 tokens，group page=64 tokens，逻辑 page 对应 4 个 hash 页。token 水位 128 对该 group 是 2 页，对另一个 16-token group 则是 8 页。
+
+私有 state 通过 `infer_cacheable_group_ids()` 与公共 prefix 存储分离。不能为了凑齐所有 group 而发布不能独立复用的内部状态。
+
+## 4. ChunkedTokenDatabase：描述转换器
+
+它不保存 token 数据库实体，而保存 group block size、key 前缀、缓存 family、base addresses、block length/stride、每层 entry 范围和可达性 coordinator。
+
+主要能力：
+- `_iter_token_chunks` / `process_tokens`：将 token range 切 chunk 并生成 key。
+- `process_token_key_strings_with_block_ids`：将 hash、逻辑 range 与本地 block id 对齐。
+- `prepare_value` / `prepare_value_layer`：将逻辑块转成实际地址和大小。
+- `store_mask` / `load_mask` / `mask_allows_chunk`：应用 group 可达性约束。
 
 ```text
-model@pcp:N@dcp:N@head_or_tp_rank:N
-@group:N@cache_role:kv@cache_family:default@layer_id:N@HASH
+local_addr(entry, block_id)
+  = tensor_base(entry) + block_id * block_stride(entry)
+
+remote_offset(layer, entry)
+  = preceding_layers_payload_bytes + preceding_entries_bytes
 ```
 
-普通路径按 chunk 存一个包含多层地址的对象；key-based layerwise 路径则把同一 `PoolKey` 用 `split_layers()` 展开为每层独立 key。
+两个公式的坐标系不同：前者是本地 allocation，后者是外部聚合对象。`block_len` 是有效负载字节数，`block_stride` 是本地相邻页间距，二者不保证相等。
 
-Layerwise 路径的 key 由 backend 协议（`layerwise_protocol`）生成，不再在 scheduler/worker 中内联构造。
+## 5. RequestTracker 与 ReqMeta
 
----
+`RequestTracker` 持久保存累计 block ids、token length、`num_saved_tokens`、prompt/event token 信息、Mamba speculative 位置、GVA 与 partial 关联。Mamba null block 以 0 表示，不能当有效 KV 页传输。
 
-## 3. ChunkedTokenDatabase 解决什么问题？
+`ReqMeta.from_request_tracker()` 形成单轮快照：
 
-`ChunkedTokenDatabase` 是 key 模型与物理地址模型之间的核心转换器。名字容易让人误以为它存储 token，实际上它保存的是：
+| 字段 | 含义 |
+|---|---|
+| `target_token_len` | 本轮计算目标长度 |
+| `save_start_token` / `save_end_token` | 本轮安排保存的范围 |
+| `token_len_chunk` | save end 的兼容访问形式 |
+| `block_ids_by_group` | 当前本地页账本 |
+| `block_hashes` | 可生成外部完整 key 的身份材料 |
+| `load_spec` / `can_save` | 两个方向独立门控 |
+| `save_keys` / `load_keys` | GVA/会话相关 key |
+| `save_block_keys` / `load_block_keys` | block-key 的逐 slot 身份 |
+| `store_masks` / `load_masks` | hybrid 稀疏可达范围 |
+| partial/GVA 字段 | 未完整页、旧快照与新的保存目标 |
+
+tracker 水位表示已安排保存，不等于后端成功；非 layerwise 线程另记成功 offset，失败范围可在后续 step 重试。
+
+Scheduler 生成的 metadata 不包含真实 NPU 地址；到 Worker 后会给 ReqMeta 附加本地 event、NumPy 快照等执行期字段。不要把“下行可序列化”和“该类所有运行时字段都跨进程”混淆。
+
+### 5.1 完整 hash、加载与保存不能机械叠加
+
+`from_request_tracker()` 不只按 target length 向下取整，还检查实际可用 block hashes。speculative 调度可能跨过页边界，却尚未有已提交的 request hash；这时不能把尚未发送的页记成已保存。
+
+普通模式中，若 `load_spec.can_load=True` 且不需要 reuse partial snapshot，函数强制 skip save，避免同一批刚从池读取的 KV 又被同时安排回写。后续 cached-request step 再保存增量。reuse 的 partial 保存有不同需求，不能把该互斥规则写成对所有模式绝对成立。
+
+推导例：transfer granularity=64，目标长度=130，有两个完整 hash 页。普通保存最多到 128；若需要物理 reuse，则还要保护 request-scoped 尾部快照，不能把 128–130 两个 token 发布成一个完整的 64-token prefix 对象。
+
+### 5.2 Snapshot 身份与逻辑长度分离
+
+speculative rejection 会回退逻辑 token 数。仅用回退后的长度寻找前一轮 snapshot，可能读错旧 key。LoadSpec 因此额外保留：
+- `layerwise_snapshot_end_token`：实际保存过的 snapshot 身份。
+- `layerwise_snapshot_block_index` / `layerwise_snapshot_start_block`：含未 hash 页的保存范围。
+- `layerwise_previous_step`：区分本请求前一轮状态与其他请求的公共 prefix。
+
+Scheduler 先捕获 previous snapshot，再建立本轮 save metadata；Worker 先保护旧 load，再分配新 snapshot。逻辑水位、snapshot 身份与公共 block hash 是三个不同概念。
+
+### 5.3 保存 job 身份与 request id 分离
+
+`ReqMeta.store_job_id` 标识一次具体排队的保存操作。一个 request 可有多个 job，同一个 request id 还可能被后续 generation 复用；只按 request id 接收异步回调会让旧 job 更新新请求的成功水位。
+
+普通发送线程用 job 集合判断是否仍 live，只有有效 job 才能更新保存进度。released fence 必须等指定请求的所有 live jobs，而不是看到一次完成回调就放行。KV event token ids 同样使用稳定、有界快照，避免异步消费者读取 Scheduler 仍在增长的完整 token 列表。
+
+## 6. AscendConnectorMetadata 的三个集合
 
 ```text
-每个 group 的 KeyMetadata 与 block size
-各 group/cache_role 的 base addresses
-block length 与 block stride
-每个物理 layer 包含哪些 cache tensor entry
-cache family、layer count 和 coordinator
+requests            当前 ReqMeta 列表
+preempted_req_ids    抢占导致旧请求执行状态失效
+loading_req_ids      bulk async load 正在等待的请求
+released_req_ids    finished ∪ preempted；覆盖前需 fence 相关旧保存
 ```
 
-它提供三类能力。
+当前无 `delayed_free_req_ids`。`released_req_ids` 表示 block 账本已允许复用，而 Worker 还必须在物理写入前完成保护。
 
-### 3.1 token/chunk 迭代
+## 7. 从 range 到批量数组
 
-`_iter_token_chunks()`、`process_tokens()` 和 `process_token_key_strings*()` 把 token 区间切成外部传输 chunk，同时生成 key，并把 block id 与 chunk 对齐。
+`LayerBlockRange` 表示 group 内 `[start_block, end_block)`，可额外带 partial block。`LayerTransferTask` 再加：
+- physical layer 与 group 内 layer index。
+- `use_key_major_ranges`：使用 block-key range 表达。
+- `final_group_layer`：该 group 的最后实际层。
+- `write_finish_keys`：GVA 到最后相关 copy 才发布。
+- `shared_block_data`：同组跨层复用的逻辑行。
 
-处理时要同时尊重：
+group 的末层不一定是模型末层；对象提交与整轮 drain 必须分别处理。
 
-- `hash_block_size` 与 group block size 的比例；
-- cache transfer granularity；
-- load/store mask；
-- null block 是否跳过；
-- partial block 和保存起点。
+### 7.1 SharedBlockData
 
-### 3.2 block id 到地址
+跨层不变的 block ids、GVA 或 block keys、request ids、load keys 只计算一次。每层 Builder 再补本地地址与外部 offset。
 
-`prepare_value()` 根据 block ids、base address、block stride 和 group layer entries，构造 backend 所需的地址/长度列表。逻辑上可写成：
+它仅可在当前 step 的相关层之间共享，不能跨 step 盲目保留；allocation、partial snapshot、session owner 都会变化。
 
-```text
-address = tensor_base
-        + local_block_id * block_stride
-        + layer/cache-entry offset
-```
+### 7.2 两种批量结果
 
-真实实现还需要处理多个 tensor entry、不同 stride、group 和 cache role，因此返回的是地址与 size 数组，而非一个连续 pointer。
+| 类型 | 数据面 | 主要字段 |
+|---|---|---|
+| `LayerBatchReqMeta` | GVA | 平铺 `addr_array / size_array / gvas_array` |
+| `LayerRangeReqMeta` | block-key | keys、每 key 的 buffers/sizes/offsets、block ids |
 
-`prepare_value_layer()` 是逐层版本，只展开指定 `layer_id` 的 entry。
+range 模式下一个对象的每层 offset 由前面所有 entry payload 的累加得到；同一 key 的多段 source/size/offset 必须逐项配对。
 
-### 3.3 hybrid mask
+`LayerLoadTask` 还携带 `wait_for_save_layer` 和 `attention_start_gate`：任务描述不仅包括数据，还包括允许覆盖 buffer 的依赖。
 
-当绑定 `AscendStoreCoordinator` 后，`store_mask()`、`load_mask()` 和 `mask_allows_chunk()` 把 group 可达性约束应用到 key/地址生成过程。控制面决定共同 token 范围，描述层进一步决定该范围内每个 group 实际需要哪些 chunk。
+## 8. 物理 buffer 复用
 
----
+`get_layerwise_reuse_config()` 通过协议的 `extract_layout_config()` 决定是否加入物理复用。当前 MemCache 可提供此配置；Mooncake block-key 返回 None。
 
-## 4. RequestTracker 是跨轮次账本
+通用 layout 字段：
+- `independent_layers`：独占 buffer，默认 `[0]`，支持 `"all"` 和负索引。
+- `storage_indices`：每个 slot 的 layer owners。
+- `prefetch_layer_map[next] = previous_owner`。
+- `num_shared_buffers` / `num_prefetch_layers`。
+- `has_layer_reuse`。
 
-`RequestTracker` 只存在于 Scheduler 侧，生命周期通常覆盖多轮 schedule。关键字段包括：
+默认 shared buffer 数等于层数，因此默认不发生复用。真正复用还要按兼容 cache spec 分桶；不同 spec/stride 不允许随意 alias。`apply_layerwise_kv_cache_plan()` 校验 descriptor 覆盖、边界和连续页要求，再调整物理计划。
 
-```text
-req_id
-token_len
-allocated_block_ids_by_group
-num_saved_tokens
-token_ids / num_prompt_tokens
-block_gvas_by_group / gva_block_offset / last_block_gva
-mamba_group_ids / num_speculative_blocks / block_sizes
-```
+推导例：61 层，其中 layer 0 独立，其余同 spec；8 个共享 slot 可承载其余 60 层。只按等大 KV buffer 计，61 份变为约 9 份；这不是整卡显存缩减比例，权重、workspace、通信和其他 cache 仍占内存。
 
-其中：
+## 9. 应保持的不变量
 
-- `token_len` 表示 tracker 已推进到的目标长度；
-- `allocated_block_ids_by_group` 是当前累计本地 block 账本；
-- `num_saved_tokens` 是增量 save 的水位线；
-- GVA 字段保持 layerwise 外部 slot 跨调度轮次的关联；
-- Mamba 字段用于更新 speculative block 被移动或替换为 null block 后的账本。
+1. key 身份在 Scheduler/Worker/PP stage 间一致。
+2. 每个 token range 使用对应 group 的 hash/page 粒度。
+3. block id、GVA、key、size、offset 数组同步过滤/重排。
+4. partial snapshot 不能冒充完整 hash 对象，也不能 full/partial 重复传输。
+5. group final layer、model final layer、request last chunk 是不同边界。
+6. reuse owner、save event、attention gate 与任务一起传递。
 
-`update()` 追加新 block，但对 Mamba align group 会先调用 `update_mamba_spec_blocks()`，把已经失效或被复用的位置写为 block id 0。这里的 0 不是普通有效 block，而是后续地址生成时需要识别的 null block。
-
----
-
-## 5. ReqMeta 是一次调度的传输意图
-
-`ReqMeta.from_request_tracker()` 从持久 tracker 生成当前 SchedulerOutput 所需的快照。它需要同时表达 load 和 save：
-
-```text
-req_id
-target_token_len
-save_start_token / save_end_token
-block_ids_by_group
-block_hashes
-can_save
-load_spec
-kv_cache_group_ids
-is_last_chunk
-```
-
-还可能携带：
-
-```text
-event_id
-current_event
-partial_block_index / last_block_gva
-save_keys / load_keys
-block ids 和 GVA 的 NumPy 快照
-partial_save_gva_per_group / partial_load_gva_per_group
-```
-
-### 5.1 为什么同时有三个 token 长度？
-
-```text
-target_token_len
-  本轮 forward 完成后请求总长度
-
-save_start_token
-  tracker 上一次已保存到的位置
-
-save_end_token（兼容字段 token_len_chunk）
-  本轮完整 chunk 可保存到的位置
-```
-
-若 partial chunk 默认被丢弃，`save_end_token` 会向下对齐；若 GVA layerwise 允许保存 partial block，则额外通过 partial GVA 描述尾块。`partial_block_index` 由 `get_partial_block_index()`（模块级函数，定义在 `metadata.py` 中）计算。`num_saved_tokens` 只有在本轮确实安排 save 时才推进。
-
-### 5.2 LoadSpec 为什么嵌在 ReqMeta 中？
-
-同一个请求可能一边 load 已有前缀，一边在 forward 后 save 新产生的范围。因此 `ReqMeta` 不是 load task 或 save task，而是 Worker 对本轮请求的统一输入。Worker 再根据 `load_spec`、`can_save` 和运行模式拆分方向。
-
----
-
-## 6. AscendConnectorMetadata 是跨侧信封
-
-`AscendConnectorMetadata` 被放入 `SchedulerOutput.kv_connector_metadata`。它包含：
-
-```text
-requests             本轮 ReqMeta 列表
-preempted_req_ids    需要丢弃旧异步结果的请求
-loading_req_ids      仍处于远端 load 生命周期的请求
-delayed_free_req_ids request 已结束但 send 尚未完成
-```
-
-它传的是可序列化的计划与状态，不携带 NPU pointer。Worker 在收到它后，结合本进程已经注册的 cache 地址才能生成执行任务。
-
-反向的 `AscendStoreKVConnectorWorkerMetadata` 保存 completed event count，并支持多个 Worker metadata 聚合。它用于 Scheduler 确认分布式发送事件是否已被所有预期 Worker 完成。
-
----
-
-## 7. Worker 任务 metadata 如何逐步细化？
-
-### 7.1 LayerBlockRange
-
-`LayerBlockRange` 把一个 `ReqMeta` 限定到某个 group 的 `[start_block, end_block)`。同一请求在不同 group 的 effective block size 不同，因此 block range 必须按 group 重新计算。
-
-### 7.2 LayerTransferTask
-
-它加入：
-
-```text
-physical layer id
-layer index inside group
-group id
-若干 LayerBlockRange
-shared block data
-write-finish keys
-```
-
-这是 layerwise 发送/接收线程的主要任务单位。
-
-### 7.3 SharedBlockData
-
-GVA 路径中，key、GVA 和 block 范围对所有 layer 基本相同，只有本地 layer address 不同。`LayerBatchBuilder.build_shared()` 因此预先计算一次：
-
-```text
-request ids
-save/load keys
-GVA array
-每个 request 的 block offset/count
-```
-
-随后每层只用 `build_addrs()` 补充本层 HBM 地址，避免为每一层重复遍历 hash 与 block。
-
-### 7.4 LayerBatchReqMeta 与 LayerLoadTask
-
-`LayerBatchReqMeta` 是已经展开好的批量数组：
-
-```text
-req_ids
-layer_id
-addr_array / size_array / gvas_array
-save_keys / load_keys
-```
-
-`LayerLoadTask` 除传输任务外，还带 `wait_for_save_layer` 和 `AttentionComputeStartGate`。这说明 layerwise load 的输入不仅是数据地址，还包含复用 buffer 前必须满足的执行顺序。
-
----
-
-## 8. Layerwise layout 如何描述物理 buffer 复用？
-
-### 8.1 基本 layout
-
-`build_layerwise_cache_layout()` 根据配置生成：
-
-```text
-num_shared_buffers
-num_prefetch_layers
-independent_layers
-prefetch_layer_map
-storage_indices
-has_layer_reuse
-```
-
-independent layer 独占 buffer；其余 layer 按 slot 轮转共享。例如 8 层、2 个共享 buffer 时，可能形成：
-
-```text
-slot A: layer 1 -> 3 -> 5 -> 7
-slot B: layer 2 -> 4 -> 6
-```
-
-`prefetch_layer_map[next] = previous_owner` 表示 load `next` 前必须确保 `previous_owner` 对该物理 buffer 的 save/attention 使用已经完成。
-
-### 8.2 按 cache spec 分桶
-
-`build_layerwise_reuse_layout()` 先把 layer name 映射成物理 layer，再按主 cache spec 分桶。只有形状和语义兼容的 layer 才共享 slot。
-
-一个物理 layer 可能同时有 main cache 和 indexer cache。源码要求多 spec 情况必须正好是一主一 indexer，并对可复用 spec 做额外校验，防止不同布局被错误放进同一 buffer。
-
-### 8.3 MTP 物理层编号
-
-`get_layerwise_physical_layer_index()` 会识别普通 `layers.N` 和 `mtp.layers.N`。MTP layer 被放在 base model layers 之后，避免与主模型的同编号 layer 冲突。
-
----
-
-## 9. AttentionComputeStartGate 属于 metadata 的原因
-
-预取接收线程不能只根据 Python 已经调用到某处就提交传输，它需要等待 compute stream 真正到达 attention 边界。`AttentionComputeStartGate` 用 condition 保存一个 NPU event：
-
-```text
-模型执行侧在提交 attention op 前 record(stream)
-  -> gate 持有 event
-  -> transfer task 携带 gate
-  -> 接收线程 wait()
-  -> event synchronize 后确认 compute stream 已到达该边界
-```
-
-它被挂在 `LayerLoadTask` 上，是任务依赖的一部分；它表示“可以在 attention 边界启动相应传输”，不表示 attention op 已执行完，也不代表 backend load 或整个 request 已完成。
-
----
-
-## 10. 描述层的不变量
-
-阅读或修改 metadata 时应保持以下不变量：
-
-```text
-同一外部对象的 key 必须包含所有影响布局的维度；
-token range 必须能整除或明确描述 partial chunk；
-每个 group 的 block ids、block size、mask 和地址必须使用同一 group id；
-RequestTracker 不应携带 Worker 的真实 pointer；
-ReqMeta 是单轮快照，不能替代跨轮次 tracker；
-layer event 与 request finished 不能互换；
-共享 buffer 的 owner 关系必须与 attention/save 依赖一起传递。
-```
-
-下一篇 [04](04_worker_pipeline.md) 继续跟踪 Worker 如何把这些描述与真实 NPU tensor 结合，生成普通或 layerwise 设备任务。
+下一篇：[04 Worker Pipeline](04_worker_pipeline.md)。
